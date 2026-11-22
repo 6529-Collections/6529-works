@@ -1,5 +1,25 @@
 {
   "structs": {
+    "struct AgedCredits.Credit": [
+      {
+        "label": "total",
+        "offset": 0,
+        "slot": 0,
+        "type": "uint104"
+      },
+      {
+        "label": "aged",
+        "offset": 13,
+        "slot": 0,
+        "type": "uint104"
+      },
+      {
+        "label": "since",
+        "offset": 26,
+        "slot": 0,
+        "type": "uint48"
+      }
+    ],
     "struct IUniformEditionAuction.AuctionConfig": [
       {
         "label": "basePrice",
@@ -82,6 +102,12 @@
         "offset": 24,
         "slot": 0,
         "type": "uint32"
+      },
+      {
+        "label": "runsOnItsOwn",
+        "offset": 28,
+        "slot": 0,
+        "type": "bool"
       }
     ],
     "struct IUniformEditionAuctionStorage.ResultWord": [
@@ -312,7 +338,7 @@
       "label": "_credits",
       "offset": 0,
       "slot": 10,
-      "type": "mapping(address => uint256)"
+      "type": "mapping(address => struct AgedCredits.Credit)"
     },
     {
       "contract": "UniformEditionAuction",
@@ -320,6 +346,13 @@
       "offset": 0,
       "slot": 11,
       "type": "mapping(uint256 => mapping(address => uint256))"
+    },
+    {
+      "contract": "UniformEditionAuction",
+      "label": "_feeRecipients",
+      "offset": 0,
+      "slot": 12,
+      "type": "mapping(uint256 => address)"
     }
   ]
 }

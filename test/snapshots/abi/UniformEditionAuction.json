@@ -13,6 +13,11 @@
       },
       {
         "internalType": "address",
+        "name": "directory_",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
         "name": "editions_",
         "type": "address"
       },
@@ -160,19 +165,6 @@
     "type": "error"
   },
   {
-    "id": "0x8d6f91fb",
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "target",
-        "type": "address"
-      }
-    ],
-    "name": "BoundedCallFailed",
-    "signature": "BoundedCallFailed(address)",
-    "type": "error"
-  },
-  {
     "id": "0x7775c359",
     "inputs": [
       {
@@ -214,24 +206,6 @@
     ],
     "name": "CreditNotExpired",
     "signature": "CreditNotExpired(address,uint256)",
-    "type": "error"
-  },
-  {
-    "id": "0xfce4497d",
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "token",
-        "type": "address"
-      },
-      {
-        "internalType": "uint256",
-        "name": "id",
-        "type": "uint256"
-      }
-    ],
-    "name": "EditionNotCreated",
-    "signature": "EditionNotCreated(address,uint256)",
     "type": "error"
   },
   {
@@ -321,24 +295,6 @@
     ],
     "name": "InvalidRecipient",
     "signature": "InvalidRecipient(address)",
-    "type": "error"
-  },
-  {
-    "id": "0x2bf76211",
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "token",
-        "type": "address"
-      },
-      {
-        "internalType": "uint256",
-        "name": "id",
-        "type": "uint256"
-      }
-    ],
-    "name": "InvalidSaleTerms",
-    "signature": "InvalidSaleTerms(address,uint256)",
     "type": "error"
   },
   {
@@ -449,6 +405,24 @@
     "inputs": [],
     "name": "ReentrancyGuardReentrantCall",
     "signature": "ReentrancyGuardReentrantCall()",
+    "type": "error"
+  },
+  {
+    "id": "0x6dfcc650",
+    "inputs": [
+      {
+        "internalType": "uint8",
+        "name": "bits",
+        "type": "uint8"
+      },
+      {
+        "internalType": "uint256",
+        "name": "value",
+        "type": "uint256"
+      }
+    ],
+    "name": "SafeCastOverflowedUintDowncast",
+    "signature": "SafeCastOverflowedUintDowncast(uint8,uint256)",
     "type": "error"
   },
   {
@@ -1045,6 +1019,39 @@
   },
   {
     "anonymous": false,
+    "id": "0x5e2c9651e7abdb68cf247374efb1c467424e2bdced9b578b44016895638e920b",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "saleId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "id",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "bool",
+        "name": "runsOnItsOwn",
+        "type": "bool"
+      }
+    ],
+    "name": "EditionAdopted",
+    "signature": "EditionAdopted(uint256,address,uint256,bool)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
     "id": "0x2a00ae88790916c355d74c47251101f6daa7fe1b163c26b2add418af558d8080",
     "inputs": [
       {
@@ -1279,22 +1286,48 @@
     "type": "fallback"
   },
   {
-    "id": "0xff6b9a39",
+    "id": "0xe0d217f2",
     "inputs": [
       {
         "internalType": "uint256",
         "name": "saleId",
         "type": "uint256"
-      },
-      {
-        "internalType": "bytes",
-        "name": "item",
-        "type": "bytes"
       }
     ],
     "name": "abandon",
     "outputs": [],
-    "signature": "abandon(uint256,bytes)",
+    "signature": "abandon(uint256)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x701ad8f1",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "id",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes",
+        "name": "data",
+        "type": "bytes"
+      }
+    ],
+    "name": "adopt",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "saleId",
+        "type": "uint256"
+      }
+    ],
+    "signature": "adopt(address,uint256,bytes)",
     "stateMutability": "nonpayable",
     "type": "function"
   },
@@ -1455,7 +1488,7 @@
     "outputs": [
       {
         "internalType": "uint256",
-        "name": "",
+        "name": "amount",
         "type": "uint256"
       }
     ],

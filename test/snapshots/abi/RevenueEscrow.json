@@ -510,21 +510,6 @@
     "type": "event"
   },
   {
-    "id": "0x44b90c03",
-    "inputs": [],
-    "name": "UNCLAIMED_PERIOD",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
-    "signature": "UNCLAIMED_PERIOD()",
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
     "id": "0xbf7e214f",
     "inputs": [],
     "name": "authority",
@@ -587,7 +572,7 @@
       },
       {
         "internalType": "uint48",
-        "name": "maturesAt",
+        "name": "maturingLastAt",
         "type": "uint48"
       },
       {

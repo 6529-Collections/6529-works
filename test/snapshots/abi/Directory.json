@@ -1,0 +1,483 @@
+[
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "authority_",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "accounts_",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "federation_",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "federatedTerms_",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "federatedRecords_",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "constructor"
+  },
+  {
+    "id": "0xc2f31e5e",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "authority",
+        "type": "address"
+      }
+    ],
+    "name": "AccessManagedInvalidAuthority",
+    "signature": "AccessManagedInvalidAuthority(address)",
+    "type": "error"
+  },
+  {
+    "id": "0xaf77169d",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "caller",
+        "type": "address"
+      },
+      {
+        "internalType": "uint32",
+        "name": "delay",
+        "type": "uint32"
+      }
+    ],
+    "name": "AccessManagedRequiredDelay",
+    "signature": "AccessManagedRequiredDelay(address,uint32)",
+    "type": "error"
+  },
+  {
+    "id": "0x068ca9d8",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "caller",
+        "type": "address"
+      }
+    ],
+    "name": "AccessManagedUnauthorized",
+    "signature": "AccessManagedUnauthorized(address)",
+    "type": "error"
+  },
+  {
+    "id": "0xb927fe5e",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "module",
+        "type": "address"
+      }
+    ],
+    "name": "InvalidModule",
+    "signature": "InvalidModule(address)",
+    "type": "error"
+  },
+  {
+    "id": "0xa99c3931",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "slot",
+        "type": "bytes32"
+      }
+    ],
+    "name": "ModuleNotReady",
+    "signature": "ModuleNotReady(bytes32)",
+    "type": "error"
+  },
+  {
+    "id": "0x40343cbc",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "slot",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "address",
+        "name": "caller",
+        "type": "address"
+      }
+    ],
+    "name": "NotModule",
+    "signature": "NotModule(bytes32,address)",
+    "type": "error"
+  },
+  {
+    "anonymous": false,
+    "id": "0x2f658b440c35314f52658ea8a740e05b284cdc84dc9ae01e891f21b8933e7cad",
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "authority",
+        "type": "address"
+      }
+    ],
+    "name": "AuthorityUpdated",
+    "signature": "AuthorityUpdated(address)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x4269f60ea01fb342018e13abcba2ff1e41cf055d5d3fca5a8c044196a0b48662",
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "uint48",
+        "name": "previous",
+        "type": "uint48"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint48",
+        "name": "next",
+        "type": "uint48"
+      }
+    ],
+    "name": "ModuleDelaySet",
+    "signature": "ModuleDelaySet(uint48,uint48)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x230c42ee34613ec831fa45f3254d06dd923ae04ee5ddbeb6dc9c371f516aaf8c",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "slot",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "module",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint48",
+        "name": "readyAt",
+        "type": "uint48"
+      }
+    ],
+    "name": "ModuleProposed",
+    "signature": "ModuleProposed(bytes32,address,uint48)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x805f6cfd1882ecfb5ba14cc1b701b7242cf95893badde12b29ffd0236bef0422",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "slot",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "previous",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "module",
+        "type": "address"
+      }
+    ],
+    "name": "ModuleSet",
+    "signature": "ModuleSet(bytes32,address,address)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x675bb988a9e92cf64b105c329cfef3c29dcb2475b43701d44ba80b5d5277657c",
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "uint48",
+        "name": "previous",
+        "type": "uint48"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint48",
+        "name": "next",
+        "type": "uint48"
+      }
+    ],
+    "name": "UnclaimedPeriodSet",
+    "signature": "UnclaimedPeriodSet(uint48,uint48)",
+    "type": "event"
+  },
+  {
+    "id": "0x84f7a864",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "slot",
+        "type": "bytes32"
+      }
+    ],
+    "name": "activateModule",
+    "outputs": [],
+    "signature": "activateModule(bytes32)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0xbf7e214f",
+    "inputs": [],
+    "name": "authority",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "authority()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x8fb36037",
+    "inputs": [],
+    "name": "isConsumingScheduledOp",
+    "outputs": [
+      {
+        "internalType": "bytes4",
+        "name": "",
+        "type": "bytes4"
+      }
+    ],
+    "signature": "isConsumingScheduledOp()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xa2e68a27",
+    "inputs": [],
+    "name": "moduleDelay",
+    "outputs": [
+      {
+        "internalType": "uint48",
+        "name": "",
+        "type": "uint48"
+      }
+    ],
+    "signature": "moduleDelay()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x31b4a958",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "slot",
+        "type": "bytes32"
+      }
+    ],
+    "name": "moduleOf",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "moduleOf(bytes32)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x9b2c1793",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      }
+    ],
+    "name": "payoutAddress",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "payoutAddress(uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xaf085433",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "slot",
+        "type": "bytes32"
+      }
+    ],
+    "name": "pendingModule",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "module",
+            "type": "address"
+          },
+          {
+            "internalType": "uint48",
+            "name": "readyAt",
+            "type": "uint48"
+          }
+        ],
+        "internalType": "struct PendingModule",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "signature": "pendingModule(bytes32)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x09ea14aa",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "slot",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "address",
+        "name": "module",
+        "type": "address"
+      }
+    ],
+    "name": "proposeModule",
+    "outputs": [],
+    "signature": "proposeModule(bytes32,address)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x4114509b",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "slot",
+        "type": "bytes32"
+      }
+    ],
+    "name": "removeModule",
+    "outputs": [],
+    "signature": "removeModule(bytes32)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x7a9e5e4b",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "newAuthority",
+        "type": "address"
+      }
+    ],
+    "name": "setAuthority",
+    "outputs": [],
+    "signature": "setAuthority(address)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x6cb67613",
+    "inputs": [
+      {
+        "internalType": "uint48",
+        "name": "next",
+        "type": "uint48"
+      }
+    ],
+    "name": "setModuleDelay",
+    "outputs": [],
+    "signature": "setModuleDelay(uint48)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x6491f888",
+    "inputs": [
+      {
+        "internalType": "uint48",
+        "name": "next",
+        "type": "uint48"
+      }
+    ],
+    "name": "setUnclaimedPeriod",
+    "outputs": [],
+    "signature": "setUnclaimedPeriod(uint48)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x01ffc9a7",
+    "inputs": [
+      {
+        "internalType": "bytes4",
+        "name": "interfaceId",
+        "type": "bytes4"
+      }
+    ],
+    "name": "supportsInterface",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "signature": "supportsInterface(bytes4)",
+    "stateMutability": "pure",
+    "type": "function"
+  },
+  {
+    "id": "0x1753b545",
+    "inputs": [],
+    "name": "unclaimedPeriod",
+    "outputs": [
+      {
+        "internalType": "uint48",
+        "name": "",
+        "type": "uint48"
+      }
+    ],
+    "signature": "unclaimedPeriod()",
+    "stateMutability": "view",
+    "type": "function"
+  }
+]

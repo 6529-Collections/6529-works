@@ -1,0 +1,89 @@
+{
+  "structs": {
+    "struct WorkRules.Store": [
+      {
+        "label": "source",
+        "offset": 0,
+        "slot": 0,
+        "type": "address"
+      },
+      {
+        "label": "retired",
+        "offset": 20,
+        "slot": 0,
+        "type": "bool"
+      },
+      {
+        "label": "codeHash",
+        "offset": 0,
+        "slot": 1,
+        "type": "bytes32"
+      }
+    ]
+  },
+  "variables": [
+    {
+      "contract": "WorkRules",
+      "label": "_authority",
+      "offset": 0,
+      "slot": 0,
+      "type": "address"
+    },
+    {
+      "contract": "WorkRules",
+      "label": "_consumingSchedule",
+      "offset": 20,
+      "slot": 0,
+      "type": "bool"
+    },
+    {
+      "contract": "WorkRules",
+      "label": "_nameFallback",
+      "offset": 0,
+      "slot": 1,
+      "type": "string"
+    },
+    {
+      "contract": "WorkRules",
+      "label": "_versionFallback",
+      "offset": 0,
+      "slot": 2,
+      "type": "string"
+    },
+    {
+      "contract": "WorkRules",
+      "label": "delivery",
+      "offset": 0,
+      "slot": 3,
+      "type": "address"
+    },
+    {
+      "contract": "WorkRules",
+      "label": "versionOf",
+      "offset": 0,
+      "slot": 4,
+      "type": "mapping(address => mapping(uint256 => uint32))"
+    },
+    {
+      "contract": "WorkRules",
+      "label": "finalizeNoticeAt",
+      "offset": 0,
+      "slot": 5,
+      "type": "mapping(address => mapping(uint256 => uint48))"
+    },
+    {
+      "contract": "WorkRules",
+      "label": "fileStore",
+      "offset": 0,
+      "slot": 6,
+      "type": "mapping(address => mapping(uint256 => mapping(bytes32 => uint256)))"
+    },
+    {
+      "contract": "WorkRules",
+      "label": "_stores",
+      "offset": 0,
+      "slot": 7,
+      "type": "struct WorkRules.Store[]"
+    }
+  ]
+}

@@ -25,6 +25,16 @@
         "internalType": "bytes32",
         "name": "artistRegistryCodeHash",
         "type": "bytes32"
+      },
+      {
+        "internalType": "contract IEconomicsResolver",
+        "name": "economics_",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "entropyModule_",
+        "type": "address"
       }
     ],
     "stateMutability": "nonpayable",
@@ -119,26 +129,21 @@
     "type": "error"
   },
   {
-    "id": "0x5f18eda2",
+    "id": "0xc6d1d594",
     "inputs": [
-      {
-        "internalType": "bytes32",
-        "name": "product",
-        "type": "bytes32"
-      },
       {
         "internalType": "bytes32",
         "name": "contentHash",
         "type": "bytes32"
       },
       {
-        "internalType": "bytes32",
-        "name": "claimedBy",
-        "type": "bytes32"
+        "internalType": "uint256",
+        "name": "burnedTokenId",
+        "type": "uint256"
       }
     ],
     "name": "ContentUsed",
-    "signature": "ContentUsed(bytes32,bytes32,bytes32)",
+    "signature": "ContentUsed(bytes32,uint256)",
     "type": "error"
   },
   {
@@ -317,6 +322,24 @@
     "type": "error"
   },
   {
+    "id": "0x3f03abdd",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "caller",
+        "type": "address"
+      }
+    ],
+    "name": "NotSaleContract",
+    "signature": "NotSaleContract(address,address)",
+    "type": "error"
+  },
+  {
     "id": "0x5f0ef6bb",
     "inputs": [
       {
@@ -413,16 +436,16 @@
     "type": "error"
   },
   {
-    "id": "0xd81cc86c",
+    "id": "0x85d10384",
     "inputs": [
       {
-        "internalType": "address",
-        "name": "caller",
-        "type": "address"
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
       }
     ],
-    "name": "UnboundCaller",
-    "signature": "UnboundCaller(address)",
+    "name": "UnknownArtist",
+    "signature": "UnknownArtist(uint256)",
     "type": "error"
   },
   {
@@ -463,10 +486,64 @@
   },
   {
     "anonymous": false,
+    "id": "0x3148787f9c7b59535c75e7f202ad401ad0a5747807bcbba3a776fd1eb84f8776",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes32",
+        "name": "contentHash",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "beneficiary",
+        "type": "uint256"
+      }
+    ],
+    "name": "ContentReleased",
+    "signature": "ContentReleased(address,uint256,bytes32,uint256)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
     "id": "0x0a6387c9ea3628b88a633bb4f3b151770f70085117a15f9bf3787cda53f13d31",
     "inputs": [],
     "name": "EIP712DomainChanged",
     "signature": "EIP712DomainChanged()",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0xc2b63c3a530182bad21e5faaf67c6b3ffc1a8a10399bf37b73052324ae3a642b",
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "previous",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "next",
+        "type": "address"
+      }
+    ],
+    "name": "EntropyModuleSet",
+    "signature": "EntropyModuleSet(address,address)",
     "type": "event"
   },
   {
@@ -777,34 +854,12 @@
     "type": "function"
   },
   {
-    "id": "0xc1b2d1c0",
+    "id": "0x33a058d4",
     "inputs": [
       {
-        "components": [
-          {
-            "internalType": "address",
-            "name": "adapter",
-            "type": "address"
-          },
-          {
-            "internalType": "address",
-            "name": "economics",
-            "type": "address"
-          },
-          {
-            "internalType": "address",
-            "name": "entropyModule",
-            "type": "address"
-          },
-          {
-            "internalType": "address",
-            "name": "splitFactory",
-            "type": "address"
-          }
-        ],
-        "internalType": "struct IMintPolicy.MintContext",
-        "name": "context",
-        "type": "tuple"
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
       },
       {
         "internalType": "bytes",
@@ -819,6 +874,11 @@
           {
             "internalType": "bytes32",
             "name": "itemHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "contentHash",
             "type": "bytes32"
           },
           {
@@ -842,18 +902,23 @@
             "type": "uint8"
           },
           {
-            "internalType": "uint32",
+            "internalType": "bytes32",
+            "name": "seed",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "address",
+            "name": "royaltyReceiver",
+            "type": "address"
+          },
+          {
+            "internalType": "uint24",
             "name": "royaltyRate",
-            "type": "uint32"
+            "type": "uint24"
           },
           {
             "internalType": "bytes32",
             "name": "packageRoot",
-            "type": "bytes32"
-          },
-          {
-            "internalType": "bytes32",
-            "name": "contentHash",
             "type": "bytes32"
           },
           {
@@ -867,14 +932,26 @@
             "type": "bytes32"
           },
           {
+            "internalType": "address",
+            "name": "seller",
+            "type": "address"
+          }
+        ],
+        "internalType": "struct MintFacts",
+        "name": "facts",
+        "type": "tuple"
+      },
+      {
+        "components": [
+          {
             "internalType": "bytes32",
             "name": "saleKind",
             "type": "bytes32"
           },
           {
-            "internalType": "address",
-            "name": "currency",
-            "type": "address"
+            "internalType": "bytes",
+            "name": "params",
+            "type": "bytes"
           },
           {
             "internalType": "address",
@@ -895,34 +972,14 @@
             "internalType": "address",
             "name": "creator",
             "type": "address"
-          },
-          {
-            "internalType": "bytes",
-            "name": "params",
-            "type": "bytes"
           }
         ],
-        "internalType": "struct IMintPolicy.MintRecord",
-        "name": "r",
+        "internalType": "struct MintTerms",
+        "name": "terms",
         "type": "tuple"
       }
     ],
-    "signature": "authorize((address,address,address,address),bytes)",
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "id": "0x8d12f114",
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "target",
-        "type": "address"
-      }
-    ],
-    "name": "bindEditions",
-    "outputs": [],
-    "signature": "bindEditions(address)",
+    "signature": "authorize(address,bytes)",
     "stateMutability": "nonpayable",
     "type": "function"
   },
@@ -963,17 +1020,17 @@
     "type": "function"
   },
   {
-    "id": "0xb8ddbcb3",
+    "id": "0x2e239d97",
     "inputs": [],
-    "name": "editions",
+    "name": "economics",
     "outputs": [
       {
-        "internalType": "address",
+        "internalType": "contract IEconomicsResolver",
         "name": "",
         "type": "address"
       }
     ],
-    "signature": "editions()",
+    "signature": "economics()",
     "stateMutability": "view",
     "type": "function"
   },
@@ -1023,6 +1080,21 @@
     "type": "function"
   },
   {
+    "id": "0x6e2bf19f",
+    "inputs": [],
+    "name": "entropyModule",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "entropyModule()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "id": "0x881b19aa",
     "inputs": [
       {
@@ -1050,6 +1122,27 @@
       }
     ],
     "signature": "isApprovedItem(bytes32,bytes32,bytes32[])",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x673c804f",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "itemHash",
+        "type": "bytes32"
+      }
+    ],
+    "name": "isBarred",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "signature": "isBarred(bytes32)",
     "stateMutability": "view",
     "type": "function"
   },
@@ -1091,27 +1184,6 @@
       }
     ],
     "signature": "isMoveNonceUsed(uint256,uint256)",
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "id": "0x83ef8448",
-    "inputs": [
-      {
-        "internalType": "bytes32",
-        "name": "itemHash",
-        "type": "bytes32"
-      }
-    ],
-    "name": "isReleased",
-    "outputs": [
-      {
-        "internalType": "bool",
-        "name": "",
-        "type": "bool"
-      }
-    ],
-    "signature": "isReleased(bytes32)",
     "stateMutability": "view",
     "type": "function"
   },
@@ -1198,34 +1270,12 @@
     "type": "function"
   },
   {
-    "id": "0x22d94bbc",
+    "id": "0x04ad1cea",
     "inputs": [
       {
-        "components": [
-          {
-            "internalType": "address",
-            "name": "adapter",
-            "type": "address"
-          },
-          {
-            "internalType": "address",
-            "name": "economics",
-            "type": "address"
-          },
-          {
-            "internalType": "address",
-            "name": "entropyModule",
-            "type": "address"
-          },
-          {
-            "internalType": "address",
-            "name": "splitFactory",
-            "type": "address"
-          }
-        ],
-        "internalType": "struct IMintPolicy.MintContext",
-        "name": "context",
-        "type": "tuple"
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
       },
       {
         "internalType": "bytes",
@@ -1239,18 +1289,80 @@
         "components": [
           {
             "internalType": "bytes32",
-            "name": "saleKind",
+            "name": "itemHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "contentHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "uint256",
+            "name": "artistId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "collectionId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint8",
+            "name": "kind",
+            "type": "uint8"
+          },
+          {
+            "internalType": "uint8",
+            "name": "seedPolicy",
+            "type": "uint8"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "seed",
             "type": "bytes32"
           },
           {
             "internalType": "address",
-            "name": "currency",
+            "name": "royaltyReceiver",
             "type": "address"
           },
           {
-            "internalType": "uint256",
-            "name": "price",
-            "type": "uint256"
+            "internalType": "uint24",
+            "name": "royaltyRate",
+            "type": "uint24"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "packageRoot",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "mediaHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "recordFileId",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "address",
+            "name": "seller",
+            "type": "address"
+          }
+        ],
+        "internalType": "struct MintFacts",
+        "name": "facts",
+        "type": "tuple"
+      },
+      {
+        "components": [
+          {
+            "internalType": "bytes32",
+            "name": "saleKind",
+            "type": "bytes32"
           },
           {
             "internalType": "bytes",
@@ -1278,12 +1390,12 @@
             "type": "address"
           }
         ],
-        "internalType": "struct PrimaryTerms",
+        "internalType": "struct MintTerms",
         "name": "terms",
         "type": "tuple"
       }
     ],
-    "signature": "preview((address,address,address,address),bytes)",
+    "signature": "preview(address,bytes)",
     "stateMutability": "view",
     "type": "function"
   },
@@ -1313,8 +1425,43 @@
     "type": "function"
   },
   {
-    "id": "0xfe2f9b89",
+    "id": "0x98764eda",
     "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "contentHash",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint256",
+        "name": "beneficiary",
+        "type": "uint256"
+      }
+    ],
+    "name": "releaseContent",
+    "outputs": [],
+    "signature": "releaseContent(address,uint256,bytes32,uint256)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0xe83b5bf0",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
       {
         "internalType": "bytes32",
         "name": "contentHash",
@@ -1325,11 +1472,11 @@
     "outputs": [
       {
         "internalType": "uint256",
-        "name": "artistId",
+        "name": "",
         "type": "uint256"
       }
     ],
-    "signature": "releasedTo(bytes32)",
+    "signature": "releasedTo(address,bytes32)",
     "stateMutability": "view",
     "type": "function"
   },
@@ -1385,6 +1532,26 @@
     "name": "setAuthority",
     "outputs": [],
     "signature": "setAuthority(address)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x0efb8808",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "expected",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "next",
+        "type": "address"
+      }
+    ],
+    "name": "setEntropyModule",
+    "outputs": [],
+    "signature": "setEntropyModule(address,address)",
     "stateMutability": "nonpayable",
     "type": "function"
   },

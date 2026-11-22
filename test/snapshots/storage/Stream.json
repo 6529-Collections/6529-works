@@ -1,6 +1,6 @@
 {
   "structs": {
-    "struct Stream.CollectionData": [
+    "struct Collection": [
       {
         "label": "exists",
         "offset": 0,
@@ -26,137 +26,99 @@
         "type": "string"
       }
     ],
-    "struct Stream.Counts": [
+    "struct Minter": [
       {
-        "label": "minted",
+        "label": "activeFrom",
         "offset": 0,
         "slot": 0,
-        "type": "uint64"
-      },
-      {
-        "label": "burned",
-        "offset": 8,
-        "slot": 0,
-        "type": "uint64"
-      },
-      {
-        "label": "collections",
-        "offset": 16,
-        "slot": 0,
-        "type": "uint32"
-      },
-      {
-        "label": "minters",
-        "offset": 20,
-        "slot": 0,
-        "type": "uint24"
-      },
-      {
-        "label": "overflowTerms",
-        "offset": 23,
-        "slot": 0,
-        "type": "uint24"
-      },
-      {
-        "label": "replaced",
-        "offset": 26,
-        "slot": 0,
-        "type": "uint8"
-      }
-    ],
-    "struct Stream.Minter": [
-      {
-        "label": "admitted",
-        "offset": 0,
-        "slot": 0,
-        "type": "bool"
-      },
-      {
-        "label": "id",
-        "offset": 1,
-        "slot": 0,
-        "type": "uint24"
+        "type": "uint48"
       },
       {
         "label": "removedAt",
-        "offset": 4,
+        "offset": 6,
         "slot": 0,
-        "type": "uint40"
-      },
-      {
-        "label": "kindKey",
-        "offset": 9,
-        "slot": 0,
-        "type": "uint152"
+        "type": "uint48"
       }
     ],
-    "struct Stream.Terms": [
+    "struct PendingModule": [
       {
-        "label": "artistId",
-        "offset": 0,
-        "slot": 0,
-        "type": "uint160"
-      },
-      {
-        "label": "royaltyRate",
-        "offset": 20,
-        "slot": 0,
-        "type": "uint24"
-      },
-      {
-        "label": "feeShare",
-        "offset": 23,
-        "slot": 0,
-        "type": "uint24"
-      },
-      {
-        "label": "feeRecipientId",
-        "offset": 26,
-        "slot": 0,
-        "type": "uint24"
-      },
-      {
-        "label": "minterId",
-        "offset": 29,
-        "slot": 0,
-        "type": "uint24"
-      }
-    ],
-    "struct Stream.TokenData": [
-      {
-        "label": "seller",
+        "label": "module",
         "offset": 0,
         "slot": 0,
         "type": "address"
       },
       {
-        "label": "serial",
+        "label": "readyAt",
         "offset": 20,
         "slot": 0,
-        "type": "uint32"
-      },
-      {
-        "label": "collectionId",
-        "offset": 24,
-        "slot": 0,
-        "type": "uint32"
-      },
-      {
-        "label": "flags",
-        "offset": 28,
-        "slot": 0,
-        "type": "uint8"
-      },
-      {
-        "label": "termsId",
-        "offset": 29,
-        "slot": 0,
-        "type": "uint24"
-      },
+        "type": "uint48"
+      }
+    ],
+    "struct Work": [
       {
         "label": "itemHash",
         "offset": 0,
+        "slot": 0,
+        "type": "bytes32"
+      },
+      {
+        "label": "artistId",
+        "offset": 0,
         "slot": 1,
+        "type": "uint160"
+      },
+      {
+        "label": "collectionId",
+        "offset": 20,
+        "slot": 1,
+        "type": "uint32"
+      },
+      {
+        "label": "serial",
+        "offset": 24,
+        "slot": 1,
+        "type": "uint32"
+      },
+      {
+        "label": "kind",
+        "offset": 28,
+        "slot": 1,
+        "type": "uint8"
+      },
+      {
+        "label": "seedPolicy",
+        "offset": 29,
+        "slot": 1,
+        "type": "uint8"
+      },
+      {
+        "label": "outcome",
+        "offset": 30,
+        "slot": 1,
+        "type": "enum Outcome"
+      },
+      {
+        "label": "royaltyReceiver",
+        "offset": 0,
+        "slot": 2,
+        "type": "address"
+      },
+      {
+        "label": "royaltyRate",
+        "offset": 20,
+        "slot": 2,
+        "type": "uint24"
+      },
+      {
+        "label": "royaltyRateLocked",
+        "offset": 23,
+        "slot": 2,
+        "type": "bool"
+      },
+      {
+        "label": "seed",
+        "offset": 0,
+        "slot": 3,
         "type": "bytes32"
       }
     ]
@@ -206,157 +168,108 @@
     },
     {
       "contract": "Stream",
-      "label": "_authority",
+      "label": "rescueDelay",
       "offset": 0,
       "slot": 6,
+      "type": "uint48"
+    },
+    {
+      "contract": "Stream",
+      "label": "totalMinted",
+      "offset": 0,
+      "slot": 7,
+      "type": "uint256"
+    },
+    {
+      "contract": "Stream",
+      "label": "totalBurned",
+      "offset": 0,
+      "slot": 8,
+      "type": "uint256"
+    },
+    {
+      "contract": "Stream",
+      "label": "collectionCount",
+      "offset": 0,
+      "slot": 9,
+      "type": "uint256"
+    },
+    {
+      "contract": "Stream",
+      "label": "owner",
+      "offset": 0,
+      "slot": 10,
+      "type": "address"
+    },
+    {
+      "contract": "Stream",
+      "label": "contractURI",
+      "offset": 0,
+      "slot": 11,
+      "type": "string"
+    },
+    {
+      "contract": "Stream",
+      "label": "tokenOfContent",
+      "offset": 0,
+      "slot": 12,
+      "type": "mapping(bytes32 => uint256)"
+    },
+    {
+      "contract": "Stream",
+      "label": "_works",
+      "offset": 0,
+      "slot": 13,
+      "type": "mapping(uint256 => struct Work)"
+    },
+    {
+      "contract": "Stream",
+      "label": "_collections",
+      "offset": 0,
+      "slot": 14,
+      "type": "mapping(uint256 => struct Collection)"
+    },
+    {
+      "contract": "Stream",
+      "label": "_authority",
+      "offset": 0,
+      "slot": 15,
       "type": "address"
     },
     {
       "contract": "Stream",
       "label": "_consumingSchedule",
       "offset": 20,
-      "slot": 6,
+      "slot": 15,
       "type": "bool"
     },
     {
       "contract": "Stream",
-      "label": "workRecords",
-      "offset": 0,
-      "slot": 7,
-      "type": "address"
-    },
-    {
-      "contract": "Stream",
-      "label": "editions",
-      "offset": 0,
-      "slot": 8,
-      "type": "address"
-    },
-    {
-      "contract": "Stream",
-      "label": "defaultRenderer",
-      "offset": 0,
-      "slot": 9,
-      "type": "address"
-    },
-    {
-      "contract": "Stream",
-      "label": "_defaultRendererCodeHash",
-      "offset": 0,
-      "slot": 10,
-      "type": "bytes32"
-    },
-    {
-      "contract": "Stream",
-      "label": "_counts",
-      "offset": 0,
-      "slot": 11,
-      "type": "struct Stream.Counts"
-    },
-    {
-      "contract": "Stream",
-      "label": "_owner",
-      "offset": 0,
-      "slot": 12,
-      "type": "address"
-    },
-    {
-      "contract": "Stream",
-      "label": "_contractURI",
-      "offset": 0,
-      "slot": 13,
-      "type": "string"
-    },
-    {
-      "contract": "Stream",
-      "label": "_feeRecipients",
-      "offset": 0,
-      "slot": 14,
-      "type": "address[]"
-    },
-    {
-      "contract": "Stream",
-      "label": "_feeRecipientIds",
-      "offset": 0,
+      "label": "moduleDelay",
+      "offset": 21,
       "slot": 15,
-      "type": "mapping(address => uint24)"
+      "type": "uint48"
+    },
+    {
+      "contract": "Stream",
+      "label": "_modules",
+      "offset": 0,
+      "slot": 16,
+      "type": "mapping(bytes32 => address)"
+    },
+    {
+      "contract": "Stream",
+      "label": "_pending",
+      "offset": 0,
+      "slot": 17,
+      "type": "mapping(bytes32 => struct PendingModule)"
     },
     {
       "contract": "Stream",
       "label": "_minters",
       "offset": 0,
-      "slot": 16,
-      "type": "mapping(address => struct Stream.Minter)"
-    },
-    {
-      "contract": "Stream",
-      "label": "_collections",
-      "offset": 0,
-      "slot": 17,
-      "type": "mapping(uint256 => struct Stream.CollectionData)"
-    },
-    {
-      "contract": "Stream",
-      "label": "_tokens",
-      "offset": 0,
       "slot": 18,
-      "type": "mapping(uint256 => struct Stream.TokenData)"
-    },
-    {
-      "contract": "Stream",
-      "label": "_terms",
-      "offset": 0,
-      "slot": 19,
-      "type": "mapping(uint24 => struct Stream.Terms)"
-    },
-    {
-      "contract": "Stream",
-      "label": "_overflowIds",
-      "offset": 0,
-      "slot": 20,
-      "type": "mapping(bytes32 => uint24)"
-    },
-    {
-      "contract": "Stream",
-      "label": "_minterKinds",
-      "offset": 0,
-      "slot": 21,
-      "type": "mapping(uint24 => bytes32)"
-    },
-    {
-      "contract": "Stream",
-      "label": "_replaced",
-      "offset": 0,
-      "slot": 22,
-      "type": "address[4]"
-    },
-    {
-      "contract": "Stream",
-      "label": "_entropyEras",
-      "offset": 0,
-      "slot": 26,
-      "type": "uint256[]"
-    },
-    {
-      "contract": "Stream",
-      "label": "_sales",
-      "offset": 0,
-      "slot": 27,
-      "type": "mapping(uint256 => uint256)"
-    },
-    {
-      "contract": "Stream",
-      "label": "_contents",
-      "offset": 0,
-      "slot": 28,
-      "type": "mapping(bytes32 => uint256)"
-    },
-    {
-      "contract": "Stream",
-      "label": "_tombstoned",
-      "offset": 0,
-      "slot": 29,
-      "type": "mapping(bytes32 => bool)"
+      "type": "mapping(address => struct Minter)"
     }
   ]
 }

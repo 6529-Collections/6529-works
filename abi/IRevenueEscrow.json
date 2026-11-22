@@ -44,7 +44,7 @@
       },
       {
         "internalType": "uint48",
-        "name": "maturesAt",
+        "name": "maturingLastAt",
         "type": "uint48"
       },
       {

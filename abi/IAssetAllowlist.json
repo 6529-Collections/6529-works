@@ -24,29 +24,6 @@
         "internalType": "address",
         "name": "asset",
         "type": "address"
-      },
-      {
-        "internalType": "uint64",
-        "name": "expectedRevision",
-        "type": "uint64"
-      },
-      {
-        "internalType": "uint256",
-        "name": "floor",
-        "type": "uint256"
-      }
-    ],
-    "name": "admitAsset",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "asset",
-        "type": "address"
       }
     ],
     "name": "assetConfig",
@@ -467,17 +444,6 @@
   {
     "inputs": [
       {
-        "internalType": "address",
-        "name": "asset",
-        "type": "address"
-      }
-    ],
-    "name": "AssetNotAdmissible",
-    "type": "error"
-  },
-  {
-    "inputs": [
-      {
         "internalType": "bytes32",
         "name": "product",
         "type": "bytes32"
@@ -531,22 +497,6 @@
       }
     ],
     "name": "OpeningBidAboveCeiling",
-    "type": "error"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "asset",
-        "type": "address"
-      },
-      {
-        "internalType": "uint256",
-        "name": "allowedAt",
-        "type": "uint256"
-      }
-    ],
-    "name": "ReadmissionTooEarly",
     "type": "error"
   },
   {

@@ -1,6 +1,106 @@
 {
   "structs": {
-    "struct FederationRegistry.Template": [
+    "struct FederationRegistry.Delisting": [
+      {
+        "label": "recorded",
+        "offset": 0,
+        "slot": 0,
+        "type": "bool"
+      },
+      {
+        "label": "delisted",
+        "offset": 1,
+        "slot": 0,
+        "type": "bool"
+      }
+    ],
+    "struct IFederationRegistry.Item": [
+      {
+        "label": "approved",
+        "offset": 0,
+        "slot": 0,
+        "type": "bool"
+      },
+      {
+        "label": "used",
+        "offset": 1,
+        "slot": 0,
+        "type": "bool"
+      },
+      {
+        "label": "royaltyRate",
+        "offset": 2,
+        "slot": 0,
+        "type": "uint24"
+      }
+    ],
+    "struct IFederationRegistry.Listing": [
+      {
+        "label": "artistId",
+        "offset": 0,
+        "slot": 0,
+        "type": "uint160"
+      },
+      {
+        "label": "status",
+        "offset": 20,
+        "slot": 0,
+        "type": "enum IFederationRegistry.Status"
+      },
+      {
+        "label": "form",
+        "offset": 21,
+        "slot": 0,
+        "type": "enum IFederationRegistry.Form"
+      },
+      {
+        "label": "feeShare",
+        "offset": 22,
+        "slot": 0,
+        "type": "uint32"
+      },
+      {
+        "label": "deployer",
+        "offset": 0,
+        "slot": 1,
+        "type": "address"
+      },
+      {
+        "label": "partner",
+        "offset": 0,
+        "slot": 2,
+        "type": "address"
+      }
+    ],
+    "struct IFederationRegistry.Release": [
+      {
+        "label": "tokenId",
+        "offset": 0,
+        "slot": 0,
+        "type": "uint256"
+      },
+      {
+        "label": "beneficiary",
+        "offset": 0,
+        "slot": 1,
+        "type": "uint256"
+      }
+    ],
+    "struct IFederationRegistry.SaleContract": [
+      {
+        "label": "addedAt",
+        "offset": 0,
+        "slot": 0,
+        "type": "uint48"
+      },
+      {
+        "label": "removedAt",
+        "offset": 6,
+        "slot": 0,
+        "type": "uint48"
+      }
+    ],
+    "struct IFederationRegistry.Template": [
       {
         "label": "version",
         "offset": 0,
@@ -17,13 +117,7 @@
         "label": "status",
         "offset": 5,
         "slot": 0,
-        "type": "enum FederationRegistry.TemplateStatus"
-      },
-      {
-        "label": "deployer",
-        "offset": 6,
-        "slot": 0,
-        "type": "address"
+        "type": "enum IFederationRegistry.TemplateStatus"
       }
     ]
   },
@@ -44,17 +138,59 @@
     },
     {
       "contract": "FederationRegistry",
-      "label": "_templates",
+      "label": "entropyModule",
       "offset": 0,
       "slot": 1,
-      "type": "mapping(bytes32 => struct FederationRegistry.Template)"
+      "type": "address"
     },
     {
       "contract": "FederationRegistry",
-      "label": "_adapters",
+      "label": "isBarred",
       "offset": 0,
       "slot": 2,
-      "type": "mapping(address => bool)"
+      "type": "mapping(bytes32 => bool)"
+    },
+    {
+      "contract": "FederationRegistry",
+      "label": "_templates",
+      "offset": 0,
+      "slot": 3,
+      "type": "mapping(address => struct IFederationRegistry.Template)"
+    },
+    {
+      "contract": "FederationRegistry",
+      "label": "_listings",
+      "offset": 0,
+      "slot": 4,
+      "type": "mapping(address => struct IFederationRegistry.Listing)"
+    },
+    {
+      "contract": "FederationRegistry",
+      "label": "_delistings",
+      "offset": 0,
+      "slot": 5,
+      "type": "mapping(uint256 => struct FederationRegistry.Delisting)"
+    },
+    {
+      "contract": "FederationRegistry",
+      "label": "_saleContracts",
+      "offset": 0,
+      "slot": 6,
+      "type": "mapping(address => struct IFederationRegistry.SaleContract)"
+    },
+    {
+      "contract": "FederationRegistry",
+      "label": "_items",
+      "offset": 0,
+      "slot": 7,
+      "type": "mapping(address => mapping(bytes32 => struct IFederationRegistry.Item))"
+    },
+    {
+      "contract": "FederationRegistry",
+      "label": "_releases",
+      "offset": 0,
+      "slot": 8,
+      "type": "mapping(address => mapping(bytes32 => struct IFederationRegistry.Release))"
     }
   ]
 }

@@ -15,6 +15,43 @@
         "internalType": "bytes32",
         "name": "sourceCodeHash",
         "type": "bytes32"
+      },
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "directory",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "stream",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "editions",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "splitFactory",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "statementLog",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "packageRegistry",
+            "type": "address"
+          }
+        ],
+        "internalType": "struct Accounts.Wiring",
+        "name": "w",
+        "type": "tuple"
       }
     ],
     "stateMutability": "nonpayable",
@@ -109,19 +146,6 @@
     "type": "error"
   },
   {
-    "id": "0x3afc4899",
-    "inputs": [
-      {
-        "internalType": "bytes32",
-        "name": "name",
-        "type": "bytes32"
-      }
-    ],
-    "name": "AlreadyBound",
-    "signature": "AlreadyBound(bytes32)",
-    "type": "error"
-  },
-  {
     "id": "0x5b20679f",
     "inputs": [
       {
@@ -206,68 +230,6 @@
     "inputs": [],
     "name": "ExpectedValueMismatch",
     "signature": "ExpectedValueMismatch()",
-    "type": "error"
-  },
-  {
-    "id": "0x3a0479ef",
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "token",
-        "type": "address"
-      }
-    ],
-    "name": "FederatedContractRefused",
-    "signature": "FederatedContractRefused(address)",
-    "type": "error"
-  },
-  {
-    "id": "0xb70b497b",
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "token",
-        "type": "address"
-      },
-      {
-        "internalType": "enum IArtistRegistry.FederationStatus",
-        "name": "current",
-        "type": "uint8"
-      }
-    ],
-    "name": "FederatedStatusRefused",
-    "signature": "FederatedStatusRefused(address,uint8)",
-    "type": "error"
-  },
-  {
-    "id": "0x58858f3f",
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "token",
-        "type": "address"
-      },
-      {
-        "internalType": "uint32",
-        "name": "current",
-        "type": "uint32"
-      }
-    ],
-    "name": "FeeShareNotLowered",
-    "signature": "FeeShareNotLowered(address,uint32)",
-    "type": "error"
-  },
-  {
-    "id": "0x3c7f6848",
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "target",
-        "type": "address"
-      }
-    ],
-    "name": "InvalidBinding",
-    "signature": "InvalidBinding(address)",
     "type": "error"
   },
   {
@@ -547,27 +509,6 @@
     ],
     "name": "AuthorityUpdated",
     "signature": "AuthorityUpdated(address)",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "id": "0xd18d9295537e6da9cdfc3a07c1de8a8d8eb30fd42853acff19f097e2969f4784",
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "bytes32",
-        "name": "name",
-        "type": "bytes32"
-      },
-      {
-        "indexed": false,
-        "internalType": "address",
-        "name": "target",
-        "type": "address"
-      }
-    ],
-    "name": "Bound",
-    "signature": "Bound(bytes32,address)",
     "type": "event"
   },
   {
@@ -855,177 +796,6 @@
   },
   {
     "anonymous": false,
-    "id": "0x6b2a1b3a8725954154a06c0e100d75e409c0ff5593e919df78a8de1b952bd40b",
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "uint256",
-        "name": "artistId",
-        "type": "uint256"
-      },
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "token",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "bytes32",
-        "name": "codeHash",
-        "type": "bytes32"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint8",
-        "name": "form",
-        "type": "uint8"
-      },
-      {
-        "indexed": false,
-        "internalType": "address",
-        "name": "partner",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint32",
-        "name": "feeShare",
-        "type": "uint32"
-      },
-      {
-        "indexed": false,
-        "internalType": "address",
-        "name": "feeRecipient",
-        "type": "address"
-      }
-    ],
-    "name": "FederatedContractListed",
-    "signature": "FederatedContractListed(uint256,address,bytes32,uint8,address,uint32,address)",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "id": "0x34ddebd723a6fae844a0667301c47c47f0b958a848e80ac6a6d9f98937629a7b",
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "token",
-        "type": "address"
-      },
-      {
-        "indexed": true,
-        "internalType": "uint256",
-        "name": "artistId",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "enum IArtistRegistry.FederationStatus",
-        "name": "previous",
-        "type": "uint8"
-      },
-      {
-        "indexed": false,
-        "internalType": "enum IArtistRegistry.FederationStatus",
-        "name": "status",
-        "type": "uint8"
-      },
-      {
-        "indexed": false,
-        "internalType": "bytes32",
-        "name": "ref",
-        "type": "bytes32"
-      }
-    ],
-    "name": "FederatedContractStatus",
-    "signature": "FederatedContractStatus(address,uint256,uint8,uint8,bytes32)",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "id": "0xc7648c17054c8f47113daa71098fcf516d2dd4a9396ab95c941454d3e097360b",
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "token",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint32",
-        "name": "previous",
-        "type": "uint32"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint32",
-        "name": "share",
-        "type": "uint32"
-      }
-    ],
-    "name": "FederatedFeeShareLowered",
-    "signature": "FederatedFeeShareLowered(address,uint32,uint32)",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "id": "0x0fe1f870a2a94dfac17f383bdd9f7b03bb9adaa7ae996a9a7825832dcf71e87d",
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "uint256",
-        "name": "artistId",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "bool",
-        "name": "previous",
-        "type": "bool"
-      },
-      {
-        "indexed": false,
-        "internalType": "bool",
-        "name": "delisted",
-        "type": "bool"
-      },
-      {
-        "indexed": false,
-        "internalType": "bytes32",
-        "name": "ref",
-        "type": "bytes32"
-      }
-    ],
-    "name": "FederationDelistedSet",
-    "signature": "FederationDelistedSet(uint256,bool,bool,bytes32)",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "id": "0xb6b3a87c0596650c0cf0eb6eca374c8ddc3de178190eabdc7b67d09f2f3a431e",
-    "inputs": [
-      {
-        "indexed": false,
-        "internalType": "address",
-        "name": "previous",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "address",
-        "name": "next",
-        "type": "address"
-      }
-    ],
-    "name": "FederationRegistrySet",
-    "signature": "FederationRegistrySet(address,address)",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
     "id": "0x7b1a3f30c1ca888cfd6defd5d5df604c39c92f54a37840d7b876254accf0d4d7",
     "inputs": [
       {
@@ -1274,81 +1044,6 @@
     "type": "function"
   },
   {
-    "id": "0x3d4dbd3c",
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "target",
-        "type": "address"
-      }
-    ],
-    "name": "bindFederationRegistry",
-    "outputs": [],
-    "signature": "bindFederationRegistry(address)",
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "id": "0x56ea1bf8",
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "target",
-        "type": "address"
-      }
-    ],
-    "name": "bindPackageRegistry",
-    "outputs": [],
-    "signature": "bindPackageRegistry(address)",
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "id": "0x5b004c86",
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "target",
-        "type": "address"
-      }
-    ],
-    "name": "bindSplitFactory",
-    "outputs": [],
-    "signature": "bindSplitFactory(address)",
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "id": "0xa46c8086",
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "target",
-        "type": "address"
-      }
-    ],
-    "name": "bindStatementLog",
-    "outputs": [],
-    "signature": "bindStatementLog(address)",
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "id": "0x7d4b8f67",
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "target",
-        "type": "address"
-      }
-    ],
-    "name": "bindStream",
-    "outputs": [],
-    "signature": "bindStream(address)",
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
     "id": "0x5b57a2ed",
     "inputs": [
       {
@@ -1529,6 +1224,36 @@
     "type": "function"
   },
   {
+    "id": "0xc41c2f24",
+    "inputs": [],
+    "name": "directory",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "directory()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xb8ddbcb3",
+    "inputs": [],
+    "name": "editions",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "editions()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "id": "0x84b0196e",
     "inputs": [],
     "name": "eip712Domain",
@@ -1601,53 +1326,6 @@
     "outputs": [],
     "signature": "expireContest(uint256)",
     "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "id": "0x838c6165",
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "token",
-        "type": "address"
-      }
-    ],
-    "name": "federatedFeeShare",
-    "outputs": [
-      {
-        "internalType": "uint32",
-        "name": "",
-        "type": "uint32"
-      }
-    ],
-    "signature": "federatedFeeShare(address)",
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "id": "0xf209f5a3",
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "token",
-        "type": "address"
-      }
-    ],
-    "name": "federatedListing",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "artistId",
-        "type": "uint256"
-      },
-      {
-        "internalType": "enum IArtistRegistry.FederationStatus",
-        "name": "status",
-        "type": "uint8"
-      }
-    ],
-    "signature": "federatedListing(address)",
-    "stateMutability": "view",
     "type": "function"
   },
   {
@@ -1748,27 +1426,6 @@
     "type": "function"
   },
   {
-    "id": "0x455cf18c",
-    "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "accountId",
-        "type": "uint256"
-      }
-    ],
-    "name": "isFederationDelisted",
-    "outputs": [
-      {
-        "internalType": "bool",
-        "name": "",
-        "type": "bool"
-      }
-    ],
-    "signature": "isFederationDelisted(uint256)",
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
     "id": "0x229575fc",
     "inputs": [
       {
@@ -1792,83 +1449,6 @@
     ],
     "signature": "isWallet(uint256,address)",
     "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "id": "0xdd3b55e0",
-    "inputs": [
-      {
-        "components": [
-          {
-            "internalType": "uint256",
-            "name": "artistId",
-            "type": "uint256"
-          },
-          {
-            "internalType": "address",
-            "name": "token",
-            "type": "address"
-          },
-          {
-            "internalType": "uint8",
-            "name": "form",
-            "type": "uint8"
-          },
-          {
-            "internalType": "address",
-            "name": "partner",
-            "type": "address"
-          },
-          {
-            "internalType": "uint32",
-            "name": "feeShare",
-            "type": "uint32"
-          },
-          {
-            "internalType": "address",
-            "name": "feeRecipient",
-            "type": "address"
-          },
-          {
-            "internalType": "uint64",
-            "name": "deadline",
-            "type": "uint64"
-          }
-        ],
-        "internalType": "struct IArtistRegistry.FederatedListing",
-        "name": "listing",
-        "type": "tuple"
-      },
-      {
-        "internalType": "bytes",
-        "name": "consent",
-        "type": "bytes"
-      }
-    ],
-    "name": "listFederatedContract",
-    "outputs": [],
-    "signature": "listFederatedContract((uint256,address,uint8,address,uint32,address,uint64),bytes)",
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "id": "0xa8bf8adc",
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "token",
-        "type": "address"
-      },
-      {
-        "internalType": "uint32",
-        "name": "share",
-        "type": "uint32"
-      }
-    ],
-    "name": "lowerFederatedFeeShare",
-    "outputs": [],
-    "signature": "lowerFederatedFeeShare(address,uint32)",
-    "stateMutability": "nonpayable",
     "type": "function"
   },
   {
@@ -2308,76 +1888,6 @@
     "name": "setConsolidationSource",
     "outputs": [],
     "signature": "setConsolidationSource(address,address,bytes32)",
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "id": "0x8415daa1",
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "token",
-        "type": "address"
-      },
-      {
-        "internalType": "enum IArtistRegistry.FederationStatus",
-        "name": "status",
-        "type": "uint8"
-      },
-      {
-        "internalType": "bytes32",
-        "name": "ref",
-        "type": "bytes32"
-      }
-    ],
-    "name": "setFederatedStatus",
-    "outputs": [],
-    "signature": "setFederatedStatus(address,uint8,bytes32)",
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "id": "0x2a973e93",
-    "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "artistId",
-        "type": "uint256"
-      },
-      {
-        "internalType": "bool",
-        "name": "delisted",
-        "type": "bool"
-      },
-      {
-        "internalType": "bytes32",
-        "name": "ref",
-        "type": "bytes32"
-      }
-    ],
-    "name": "setFederationDelisted",
-    "outputs": [],
-    "signature": "setFederationDelisted(uint256,bool,bytes32)",
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "id": "0x747e3199",
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "expected",
-        "type": "address"
-      },
-      {
-        "internalType": "address",
-        "name": "next",
-        "type": "address"
-      }
-    ],
-    "name": "setFederationRegistry",
-    "outputs": [],
-    "signature": "setFederationRegistry(address,address)",
     "stateMutability": "nonpayable",
     "type": "function"
   },

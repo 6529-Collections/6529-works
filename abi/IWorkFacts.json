@@ -888,6 +888,22 @@
         "type": "uint256"
       }
     ],
+    "name": "NoRenderer",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      }
+    ],
     "name": "NotOnChainComplete",
     "type": "error"
   },

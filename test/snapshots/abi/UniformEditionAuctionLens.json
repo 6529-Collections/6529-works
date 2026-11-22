@@ -20,6 +20,21 @@
         "internalType": "address",
         "name": "escrow_",
         "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "directory_",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "economics_",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "packageRegistry_",
+        "type": "address"
       }
     ],
     "stateMutability": "nonpayable",
@@ -252,6 +267,21 @@
       }
     ],
     "signature": "ABANDON_DELAY()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x119d605e",
+    "inputs": [],
+    "name": "ADOPTED_RUN",
+    "outputs": [
+      {
+        "internalType": "uint32",
+        "name": "",
+        "type": "uint32"
+      }
+    ],
+    "signature": "ADOPTED_RUN()",
     "stateMutability": "view",
     "type": "function"
   },
@@ -542,13 +572,7 @@
       }
     ],
     "name": "checkAbandon",
-    "outputs": [
-      {
-        "internalType": "bool",
-        "name": "createEdition",
-        "type": "bool"
-      }
-    ],
+    "outputs": [],
     "signature": "checkAbandon(uint256)",
     "stateMutability": "view",
     "type": "function"
@@ -571,7 +595,7 @@
     "outputs": [
       {
         "internalType": "uint256",
-        "name": "",
+        "name": "total",
         "type": "uint256"
       }
     ],
@@ -721,6 +745,37 @@
     "type": "function"
   },
   {
+    "id": "0x75807250",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "creditOf",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "total",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "aged",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "since",
+        "type": "uint256"
+      }
+    ],
+    "signature": "creditOf(address)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "id": "0x4e052e08",
     "inputs": [
       {
@@ -755,6 +810,36 @@
       }
     ],
     "signature": "departures(uint256,uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xc41c2f24",
+    "inputs": [],
+    "name": "directory",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "directory()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x2e239d97",
+    "inputs": [],
+    "name": "economics",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "economics()",
     "stateMutability": "view",
     "type": "function"
   },
@@ -998,7 +1083,7 @@
     "type": "function"
   },
   {
-    "id": "0x8b0fd619",
+    "id": "0x2b98db6d",
     "inputs": [
       {
         "internalType": "address",
@@ -1014,6 +1099,11 @@
         "internalType": "bytes",
         "name": "data",
         "type": "bytes"
+      },
+      {
+        "internalType": "bool",
+        "name": "adopting",
+        "type": "bool"
       }
     ],
     "name": "masterTerms",
@@ -1034,6 +1124,36 @@
             "internalType": "enum IEnglishAuction.AuctionState",
             "name": "oneOfOneState",
             "type": "uint8"
+          },
+          {
+            "internalType": "address",
+            "name": "seller",
+            "type": "address"
+          },
+          {
+            "internalType": "uint32",
+            "name": "feeShare",
+            "type": "uint32"
+          },
+          {
+            "internalType": "address",
+            "name": "feeRecipient",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "royaltyReceiver",
+            "type": "address"
+          },
+          {
+            "internalType": "uint24",
+            "name": "royaltyRate",
+            "type": "uint24"
+          },
+          {
+            "internalType": "bool",
+            "name": "runsOnItsOwn",
+            "type": "bool"
           }
         ],
         "internalType": "struct IUniformEditionAuctionLens.MasterTerms",
@@ -1041,8 +1161,23 @@
         "type": "tuple"
       }
     ],
-    "signature": "masterTerms(address,uint256,bytes)",
+    "signature": "masterTerms(address,uint256,bytes,bool)",
     "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x16f23f68",
+    "inputs": [],
+    "name": "packageRegistry",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "packageRegistry()",
+    "stateMutability": "view",
     "type": "function"
   },
   {

@@ -13,7 +13,7 @@
       },
       {
         "internalType": "address",
-        "name": "artistRegistry_",
+        "name": "directory_",
         "type": "address"
       },
       {
@@ -28,6 +28,19 @@
   {
     "inputs": [],
     "name": "ABANDON_DELAY",
+    "outputs": [
+      {
+        "internalType": "uint32",
+        "name": "",
+        "type": "uint32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "ADOPTED_RUN",
     "outputs": [
       {
         "internalType": "uint32",
@@ -314,13 +327,7 @@
       }
     ],
     "name": "checkAbandon",
-    "outputs": [
-      {
-        "internalType": "bool",
-        "name": "createEdition",
-        "type": "bool"
-      }
-    ],
+    "outputs": [],
     "stateMutability": "view",
     "type": "function"
   },
@@ -341,7 +348,7 @@
     "outputs": [
       {
         "internalType": "uint256",
-        "name": "",
+        "name": "total",
         "type": "uint256"
       }
     ],
@@ -520,6 +527,35 @@
   {
     "inputs": [
       {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "creditOf",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "total",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "aged",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "since",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
         "internalType": "uint256",
         "name": "saleId",
         "type": "uint256"
@@ -548,6 +584,32 @@
         "internalType": "struct IUniformEditionAuction.Departure[]",
         "name": "list",
         "type": "tuple[]"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "directory",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "economics",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
       }
     ],
     "stateMutability": "view",
@@ -691,35 +753,6 @@
         "internalType": "address",
         "name": "token",
         "type": "address"
-      },
-      {
-        "internalType": "address",
-        "name": "escrow",
-        "type": "address"
-      }
-    ],
-    "name": "feeTerms",
-    "outputs": [
-      {
-        "internalType": "address",
-        "name": "recipient",
-        "type": "address"
-      },
-      {
-        "internalType": "uint256",
-        "name": "share",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "token",
-        "type": "address"
       }
     ],
     "name": "isTarget",
@@ -817,6 +850,11 @@
         "internalType": "bytes",
         "name": "data",
         "type": "bytes"
+      },
+      {
+        "internalType": "bool",
+        "name": "adopting",
+        "type": "bool"
       }
     ],
     "name": "masterTerms",
@@ -837,6 +875,36 @@
             "internalType": "enum IEnglishAuction.AuctionState",
             "name": "oneOfOneState",
             "type": "uint8"
+          },
+          {
+            "internalType": "address",
+            "name": "seller",
+            "type": "address"
+          },
+          {
+            "internalType": "uint32",
+            "name": "feeShare",
+            "type": "uint32"
+          },
+          {
+            "internalType": "address",
+            "name": "feeRecipient",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "royaltyReceiver",
+            "type": "address"
+          },
+          {
+            "internalType": "uint24",
+            "name": "royaltyRate",
+            "type": "uint24"
+          },
+          {
+            "internalType": "bool",
+            "name": "runsOnItsOwn",
+            "type": "bool"
           }
         ],
         "internalType": "struct IUniformEditionAuctionLens.MasterTerms",

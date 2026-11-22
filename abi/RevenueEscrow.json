@@ -17,19 +17,6 @@
   },
   {
     "inputs": [],
-    "name": "UNCLAIMED_PERIOD",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
     "name": "authority",
     "outputs": [
       {
@@ -86,7 +73,7 @@
       },
       {
         "internalType": "uint48",
-        "name": "maturesAt",
+        "name": "maturingLastAt",
         "type": "uint48"
       },
       {

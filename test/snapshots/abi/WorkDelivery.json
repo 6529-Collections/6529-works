@@ -13,7 +13,12 @@
       },
       {
         "internalType": "address",
-        "name": "stream_",
+        "name": "facts_",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "directory_",
         "type": "address"
       },
       {
@@ -70,6 +75,29 @@
     "type": "error"
   },
   {
+    "id": "0x6689d8f3",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "fileId",
+        "type": "bytes32"
+      }
+    ],
+    "name": "FileNotInWork",
+    "signature": "FileNotInWork(address,uint256,bytes32)",
+    "type": "error"
+  },
+  {
     "id": "0x9bbe2e1a",
     "inputs": [],
     "name": "InvalidLocator",
@@ -77,8 +105,13 @@
     "type": "error"
   },
   {
-    "id": "0xfe056f71",
+    "id": "0x1de1b6a7",
     "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
       {
         "internalType": "uint256",
         "name": "tokenId",
@@ -86,12 +119,17 @@
       }
     ],
     "name": "RecordNotOpen",
-    "signature": "RecordNotOpen(uint256)",
+    "signature": "RecordNotOpen(address,uint256)",
     "type": "error"
   },
   {
-    "id": "0xc81ebc28",
+    "id": "0x2a90e2ee",
     "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
       {
         "internalType": "uint256",
         "name": "collectionId",
@@ -99,7 +137,7 @@
       }
     ],
     "name": "UnknownCollection",
-    "signature": "UnknownCollection(uint256)",
+    "signature": "UnknownCollection(address,uint256)",
     "type": "error"
   },
   {
@@ -119,8 +157,14 @@
   },
   {
     "anonymous": false,
-    "id": "0x57ab57edc511e68ceac9b1e49b80959a2aa7279eb6fa0a548dabba84f3f42d33",
+    "id": "0xb5d4d95ff9549784d3d61566eaae61808ad2b59bf9f30b61aa9850506342c13d",
     "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
       {
         "indexed": true,
         "internalType": "uint256",
@@ -141,13 +185,19 @@
       }
     ],
     "name": "CollectionPreferredKindSet",
-    "signature": "CollectionPreferredKindSet(uint256,uint8,uint8)",
+    "signature": "CollectionPreferredKindSet(address,uint256,uint8,uint8)",
     "type": "event"
   },
   {
     "anonymous": false,
-    "id": "0x700a41d4664d4e095541038a6ae434f80ea7c64a803f26a15c0731a550f59855",
+    "id": "0x2be2d40d1e3e2acf8adbff5a51d1dd97f0cf0eea5ff40475c540b61daa6799ce",
     "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
       {
         "indexed": true,
         "internalType": "uint256",
@@ -174,13 +224,19 @@
       }
     ],
     "name": "FilePreferenceSet",
-    "signature": "FilePreferenceSet(uint256,bytes32,uint256,uint256)",
+    "signature": "FilePreferenceSet(address,uint256,bytes32,uint256,uint256)",
     "type": "event"
   },
   {
     "anonymous": false,
-    "id": "0xae55b5f8169727474b9a0919153dd994347738359264f23322588476f32ed939",
+    "id": "0x79bd2095ea832d3b4216661e3eebdcdc6b8bb450bff582ddfc2acb8441568e10",
     "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
       {
         "indexed": true,
         "internalType": "uint256",
@@ -231,13 +287,19 @@
       }
     ],
     "name": "LocatorAdded",
-    "signature": "LocatorAdded(uint256,bytes32,uint256,(uint8,string),address,bool)",
+    "signature": "LocatorAdded(address,uint256,bytes32,uint256,(uint8,string),address,bool)",
     "type": "event"
   },
   {
     "anonymous": false,
-    "id": "0xcd8a61573511056d5317f3c22545079ac7a90a155278ae43daeba085895a61d0",
+    "id": "0xeee30dfba1ae5bba90f3ebdab8b22be714b40a651b5d65fab3650c2f7e442fa8",
     "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
       {
         "indexed": true,
         "internalType": "uint256",
@@ -258,13 +320,19 @@
       }
     ],
     "name": "LocatorDead",
-    "signature": "LocatorDead(uint256,bytes32,uint256)",
+    "signature": "LocatorDead(address,uint256,bytes32,uint256)",
     "type": "event"
   },
   {
     "anonymous": false,
-    "id": "0x0c7addff33115506eceb32af47e39cfa360f77cd274f7a61785628f220a420e8",
+    "id": "0x62c03a611a79d750e9d6aff5dfdcb962020ced95e244bc267aee7b52bf11aef9",
     "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
       {
         "indexed": false,
         "internalType": "enum LocatorKind",
@@ -279,12 +347,17 @@
       }
     ],
     "name": "PreferredKindSet",
-    "signature": "PreferredKindSet(uint8,uint8)",
+    "signature": "PreferredKindSet(address,uint8,uint8)",
     "type": "event"
   },
   {
-    "id": "0xf3326c0f",
+    "id": "0xfc16e246",
     "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
       {
         "internalType": "uint256",
         "name": "tokenId",
@@ -315,7 +388,7 @@
     ],
     "name": "addLocator",
     "outputs": [],
-    "signature": "addLocator(uint256,bytes32,(uint8,string))",
+    "signature": "addLocator(address,uint256,bytes32,(uint8,string))",
     "stateMutability": "nonpayable",
     "type": "function"
   },
@@ -335,8 +408,13 @@
     "type": "function"
   },
   {
-    "id": "0x96ae08d7",
+    "id": "0x51fb706d",
     "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
       {
         "internalType": "uint256",
         "name": "collectionId",
@@ -351,13 +429,18 @@
         "type": "uint8"
       }
     ],
-    "signature": "collectionPreferredKind(uint256)",
+    "signature": "collectionPreferredKind(address,uint256)",
     "stateMutability": "view",
     "type": "function"
   },
   {
-    "id": "0x804cd0ad",
+    "id": "0x171fbcfb",
     "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
       {
         "internalType": "uint256",
         "name": "tokenId",
@@ -377,13 +460,48 @@
         "type": "uint256"
       }
     ],
-    "signature": "deadLocators(uint256,bytes32)",
+    "signature": "deadLocators(address,uint256,bytes32)",
     "stateMutability": "view",
     "type": "function"
   },
   {
-    "id": "0x8a2b4936",
+    "id": "0xc41c2f24",
+    "inputs": [],
+    "name": "directory",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "directory()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x7e74f360",
+    "inputs": [],
+    "name": "facts",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "facts()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x2f3caa0f",
     "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
       {
         "internalType": "uint256",
         "name": "tokenId",
@@ -403,7 +521,7 @@
         "type": "uint256"
       }
     ],
-    "signature": "filePreference(uint256,bytes32)",
+    "signature": "filePreference(address,uint256,bytes32)",
     "stateMutability": "view",
     "type": "function"
   },
@@ -423,8 +541,13 @@
     "type": "function"
   },
   {
-    "id": "0xe3fbd309",
+    "id": "0x9e5f165d",
     "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
       {
         "internalType": "uint256",
         "name": "tokenId",
@@ -454,13 +577,18 @@
         "type": "uint256"
       }
     ],
-    "signature": "locatorCounts(uint256,bytes32)",
+    "signature": "locatorCounts(address,uint256,bytes32)",
     "stateMutability": "view",
     "type": "function"
   },
   {
-    "id": "0x368445dd",
+    "id": "0xd3603237",
     "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
       {
         "internalType": "uint256",
         "name": "tokenId",
@@ -492,13 +620,18 @@
         "type": "tuple[]"
       }
     ],
-    "signature": "locators(uint256,bytes32)",
+    "signature": "locators(address,uint256,bytes32)",
     "stateMutability": "view",
     "type": "function"
   },
   {
-    "id": "0x9a3a206a",
+    "id": "0x9532f960",
     "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
       {
         "internalType": "uint256",
         "name": "tokenId",
@@ -517,7 +650,7 @@
     ],
     "name": "markLocatorDead",
     "outputs": [],
-    "signature": "markLocatorDead(uint256,bytes32,uint256)",
+    "signature": "markLocatorDead(address,uint256,bytes32,uint256)",
     "stateMutability": "nonpayable",
     "type": "function"
   },
@@ -537,8 +670,14 @@
     "type": "function"
   },
   {
-    "id": "0x6ac8d535",
-    "inputs": [],
+    "id": "0x1a738250",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      }
+    ],
     "name": "preferredKind",
     "outputs": [
       {
@@ -547,13 +686,18 @@
         "type": "uint8"
       }
     ],
-    "signature": "preferredKind()",
+    "signature": "preferredKind(address)",
     "stateMutability": "view",
     "type": "function"
   },
   {
-    "id": "0x253e787c",
+    "id": "0x4e8975bf",
     "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
       {
         "internalType": "uint256",
         "name": "tokenId",
@@ -580,7 +724,7 @@
             "type": "string"
           }
         ],
-        "internalType": "struct IWorkDelivery.Location",
+        "internalType": "struct ILocators.Location",
         "name": "location",
         "type": "tuple"
       },
@@ -590,7 +734,7 @@
         "type": "uint256"
       }
     ],
-    "signature": "preferredLocator(uint256,bytes32)",
+    "signature": "preferredLocator(address,uint256,bytes32)",
     "stateMutability": "view",
     "type": "function"
   },
@@ -625,8 +769,13 @@
     "type": "function"
   },
   {
-    "id": "0x4ddc92d1",
+    "id": "0x8217261f",
     "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
       {
         "internalType": "uint256",
         "name": "collectionId",
@@ -640,13 +789,18 @@
     ],
     "name": "setCollectionPreferredKind",
     "outputs": [],
-    "signature": "setCollectionPreferredKind(uint256,uint8)",
+    "signature": "setCollectionPreferredKind(address,uint256,uint8)",
     "stateMutability": "nonpayable",
     "type": "function"
   },
   {
-    "id": "0x65a48a4e",
+    "id": "0xd5af7764",
     "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
       {
         "internalType": "uint256",
         "name": "tokenId",
@@ -665,13 +819,18 @@
     ],
     "name": "setFilePreference",
     "outputs": [],
-    "signature": "setFilePreference(uint256,bytes32,uint256)",
+    "signature": "setFilePreference(address,uint256,bytes32,uint256)",
     "stateMutability": "nonpayable",
     "type": "function"
   },
   {
-    "id": "0x40ff5d7f",
+    "id": "0x0562c61f",
     "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
       {
         "internalType": "enum LocatorKind",
         "name": "kind",
@@ -680,23 +839,8 @@
     ],
     "name": "setPreferredKind",
     "outputs": [],
-    "signature": "setPreferredKind(uint8)",
+    "signature": "setPreferredKind(address,uint8)",
     "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "id": "0x6f2a6791",
-    "inputs": [],
-    "name": "stream",
-    "outputs": [
-      {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
-      }
-    ],
-    "signature": "stream()",
-    "stateMutability": "view",
     "type": "function"
   },
   {

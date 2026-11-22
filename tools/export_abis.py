@@ -20,10 +20,8 @@ to with a read-only `staticcall` (docs/integrators/abis-and-interface-ids.md). F
 abi/full/<Name>.json is the contract's ABI merged with what that call can serve (the forwarded
 surface's view and pure functions, events and errors): the ABI to call the deployed address with.
 
-While the plain core (ADR 0010) is built beside the old contracts, a few names are declared
-twice (`Stream`, `Editions`, `IStream`, `IEditions`, `IMintPolicy`, `IAccounts`). The one under
-src/core/ or src/interfaces/core/ is then exported as abi/core/<Name>.json; once integration
-deletes the old one, the new one moves to abi/<Name>.json by itself.
+If a name is ever declared twice in src/, the one under src/core/ or src/interfaces/core/ is
+exported as abi/core/<Name>.json. Today every name is declared once, so abi/core/ is empty.
 
 The output is deterministic: entries are sorted by kind, name and signature, keys are sorted,
 and nothing from the compiler metadata or bytecode is written. `--check` compares the committed
@@ -52,13 +50,10 @@ FULL_DIR = "full"
 INTERFACE_DIRS = ("src/interfaces/", "src/economics/interfaces/")
 EXCLUDED_DIRS = ("src/interfaces/external/",)
 # The deployed contract, and the ABI of what it forwards with a read-only call (its lens or
-# extension). The fallback of Stream forwards only IStreamViews; the auctions forward every call
-# they do not declare to their lens (the federated edition auction shares the edition auction's
-# fallback).
-# Keyed by source path, so the plain core's `Stream` (src/core/) is not taken for the old one.
+# extension). Only the edition auctions have one: they forward every call they do not declare to
+# their lens (the federated edition auction shares the edition auction's fallback). Keyed by
+# source path.
 FORWARDED = {
-    "src/stream/Stream.sol": "IStreamViews",
-    "src/sales/EnglishAuction.sol": "EnglishAuctionLens",
     "src/sales/UniformEditionAuction.sol": "UniformEditionAuctionLens",
     "src/federated/FederatedEditionAuction.sol": "FederatedEditionAuctionLens",
 }
