@@ -24,8 +24,8 @@ the coordinator change.
 | A wallet of a listed federated contract's artist | `requestFederatedSeed{value}(token, item)`, paying at least the wrapper's quote, all forwarded to it | ENT-20, ENT-21 |
 | The current coordinator, or the wrapper for its requests | `rawFulfillRandomWords(requestId, words)`; the first delivery fixes the seed, later ones are silent no-ops | ENT-4, ENT-6 to ENT-8, ENT-13 |
 | A federated template's first mint of a VRF item | `federatedSeedOf(token, contentHash)` | FED-72 |
-| `Stream.mint`, inside the auction's `start` | `isDeliveredContent(item.contentHash)`, one word, after the item is consumed; a `VRF` item whose content has no delivered seed reverts the start with `SeedNotDelivered` | ENT-12 |
-| `WorkRecords.openRecord`; the renderer before a record opens | `seedOfContent(item.contentHash)`; `seedOf(itemHash)` | ENT-3, ENT-18 |
+| The mint policy (`PackageRegistry.authorize`), inside the auction's `start` | `isDeliveredContent(item.contentHash)` and `seedOfContent`, one word each; a `VRF` item whose content has no delivered seed reverts the start with `SeedNotDelivered` | ENT-12 |
+| Readers of an item before its mint | `seedOf(itemHash)`, `isDelivered(itemHash)` | ENT-3 |
 | Governance | `setConfig`, `lowerCallbackGasLimit`, `setCoordinator`, `setWrapper` | ENT-9 to ENT-11; [role matrix](../../docs/audit/roles.md#entropymodule) |
 
 6529 Stream holds the module's address, and the federation registry answers it from there

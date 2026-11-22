@@ -77,9 +77,10 @@ events and their ordering: [Events and indexing](../../docs/integrators/events-a
   (`settlementOrderFor`), the first settler to sweep every departure settles the sale, and an
   order that skips a departure strands only its sender. A differential fuzz holds the Yul scan
   equal to `UniformClearing.clear` (10,000 runs nightly).
-- **The edition is bound at open.** `open` calls `Editions.bindMinter(id, item)` before it
-  records the sale (ADR 0005 §6), which also snapshots the edition's economics, so the split
-  paid is the split the edition reports.
+- **The edition is created at open.** `open` calls `Editions.create` once, with the maximum and
+  royalty from the master's terms, so the edition's minter is this sale contract; `adopt` (the
+  network) takes over an edition a removed sale contract left with no copies and no seal, after
+  `Editions.rebind`.
 - **Long departure logs.** The lens reads a log four entries per storage word and sorts with a
   heap in Yul, `O(n log n)` in any log order. A keeper pages with
   `settlementOrderFor(saleId, settler, fromPosition, max)`, `O(n log max)`: 21.9M gas for a page

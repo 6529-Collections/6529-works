@@ -16,7 +16,7 @@ are under [Relayed artist statement](../../docs/spec/disputes-and-statements.md#
 | [`IStatementLog`](../interfaces/IStatementLog.sol) | `Role`, `Statement`, events, errors and the external surface. |
 | [`HashRef`](../interfaces/types/HashRef.sol) | The content hash type and the numbers of its well-known algorithm IDs; the log accepts any non-zero ID and never interprets it (DSP-2). |
 | [`StatementKinds`](../interfaces/types/StatementKinds.sol) | Well-known kind labels (constants only); three are reserved: `DISPUTE_OUTCOME`, `CURATION_EVIDENCE` and `GOVERNANCE_MANIFEST`. Five are convention kinds (content-change proposal and acceptance, catalogue entry, citation, custody attestation), accepted under every role, whose writers and schemas readers apply ([Declarations and conventions](../../docs/spec/declarations-and-conventions.md)). |
-| [`IArtistRoleResolver`](../interfaces/IArtistRoleResolver.sol) | The one question the log asks about ARTIST statements; `ArtistRegistry` implements it. |
+| [`IArtistRoleResolver`](../interfaces/IArtistRoleResolver.sol) | The one question the log asks about ARTIST statements; the accounts module (`Accounts`) implements it. |
 
 ## Entry points
 

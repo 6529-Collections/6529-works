@@ -14,7 +14,6 @@ are in [Identity and recovery](../../docs/spec/identity-and-recovery.md) (`ID-*`
 | --- | --- |
 | `Accounts.sol` | The accounts module: [`IArtistRegistry`](../interfaces/IArtistRegistry.sol), which is also [`IAccounts`](../interfaces/core/IAccounts.sol) (who may act for an account), the statement log's [`IArtistRoleResolver`](../interfaces/IArtistRoleResolver.sol) (`isArtist`) and [`IArtistPayoutResolver`](../economics/interfaces/IArtistPayoutResolver.sol) (`payoutAddress`, which split vaults reach through `Directory.payoutAddress`). Replaceable. |
 | `ConsolidationAdapter.sol` | `IConsolidationSource` (declared in `IArtistRegistry.sol`) over the 6529 delegation contract: `isConsolidated(root, wallet)`, a live two-way all-collections use-case-999 consolidation, no minimum age. |
-| `ArtistRegistry.sol` | The earlier registry, with its interface beside it. Deleted at integration; nothing new uses it. |
 
 ## Entry points
 
