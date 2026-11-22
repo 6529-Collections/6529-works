@@ -70,7 +70,7 @@ the fork suites ([Safe fork tests](#safe-fork-tests)), coverage and mutation tes
 | Rule traceability | [`tools/check_rules.py`](../../tools/check_rules.py), [`tools/rules-uncovered.txt`](../../tools/rules-uncovered.txt) | Every spec rule names a test that exists, every invariant names its function ([below](#rule-traceability)) | `python tools/check_rules.py --uncovered` | PR (Docs) |
 | Coverage | `forge coverage` and [`tools/check_coverage.py`](../../tools/check_coverage.py) | What no test reaches, per contract, against a floor per contract ([below](#coverage)) | see below | after merge and daily |
 | Mutation | [`tools/mutation.py`](../../tools/mutation.py), on `slither-mutate` | Which changes to the code no test notices ([below](#mutation-testing)) | see below | weekly |
-| Live | [`script/Verify.s.sol`](../../script/Verify.s.sol) and the records in [`deployments/11155111/`](../../deployments/11155111) | The Sepolia rehearsals: every address, code hash, configuration value and event read back from the chain, and the v1 flows run for real | [`script/README.md`](../../script/README.md) | on demand |
+| Live | [`script/Verify.s.sol`](../../script/VerifyCore.s.sol) and the records in [`deployments/11155111/`](../../deployments/11155111) | The Sepolia rehearsals: every address, code hash, configuration value and event read back from the chain, and the v1 flows run for real | [`script/README.md`](../../script/README.md) | on demand |
 | Tool self-tests | `tools/test_*.py` | Each checker and generator reports the fault it exists to find | `python -m tools.test_check_rules`, and the same for each `tools/test_*.py` | PR |
 
 Conventions: forge-std assertions; `vm.expectRevert` with the exact selector and arguments;
@@ -144,7 +144,7 @@ puts the layout there and changes no bytecode (every artifact's creation and run
 compared byte for byte before and after the line was added). It fails on any difference, on a
 contract without a snapshot, and on a snapshot whose contract is gone, and it runs in about a
 second. Storage the code addresses itself at fixed slots in assembly is not in the compiler's
-layout: [`StreamLayout.t.sol`](../../test/stream/StreamLayout.t.sol) pins the slots the
+layout: `StreamLayout.t.sol` pins the slots the
 renderer reads. The tool's unit tests plant a renamed parameter, a changed event, a new error, a
 moved slot, a retyped and a shifted struct member, a missing and a stale snapshot, and show each
 fails; on the real tree a parameter renamed in `GovernedVault` and a state variable inserted
@@ -243,15 +243,15 @@ crytic-compile 0.4.2 from the repository's lock. It has not run in CI.
 FORK_MAINNET_RPC=https://ethereum-rpc.publicnode.com forge test --match-path "test/fork/Safe*" -vv
 ```
 
-[`SafeForkBase.sol`](../../test/fork/SafeForkBase.sol) uses Safe v1.4.1's singleton, proxy
+`SafeForkBase.sol` uses Safe v1.4.1's singleton, proxy
 factory, `MultiSendCallOnly` and `CompatibilityFallbackHandler` at their canonical addresses,
 each code-hash pinned. The network and the fee vault's destination are 2-of-3 Safes; the deploy
 library installs genesis and the network Safe accepts it in a real Safe transaction.
-[`SafeNetwork.t.sol`](../../test/fork/SafeNetwork.t.sol) (9 tests): delayed setters scheduled and
+`SafeNetwork.t.sol` (9 tests): delayed setters scheduled and
 executed through the manager in MultiSend batches (GV-2, ECO-4, ECO-37, ECO-41), a stale revision
 reverting the whole batch, a direct call and a one-of-three signature refused, the no-delay
 signer kill (CUR-17, CUR-23, CUR-24), unpause, the brake (GV-5, GV-6) and a handover to a second
-Safe. [`SafeAccounts.t.sol`](../../test/fork/SafeAccounts.t.sol) (11 tests): a Safe as an artist
+Safe. `SafeAccounts.t.sol` (11 tests): a Safe as an artist
 account signing wallet-prefixed ERC-1271 proofs (acceptance and move, CUR-7, CUR-10; a relayed
 statement, DSP-9; royalty consent, WS-14; a signed release, ECO-20), each invalidated by an owner
 swap; a Safe releasing its own share, bidding, winning a 721 and receiving 1155 copies; the museum
@@ -283,7 +283,7 @@ share) each failed. The four gaps the lane found (Stream's genesis dependencies,
 renderer's code hash, whether an escrow recovery used a consent, an edition's artist ID) were
 fixed in the contracts' events, and are now ordinary replay checks.
 
-[`RealVectors.t.sol`](../../test/replay/RealVectors.t.sol) takes the 6529 Network Museum record
+`RealVectors.t.sol` takes the 6529 Network Museum record
 6529NM-W-0029, copied byte for byte from a pinned commit of the Museum's CC0 records (the artwork
 image itself is not copied: only its length, SHA-256 and chunk hashes), uploads the record with
 the uploader's layout, sells the work through a curated sale, opens and finalizes the record, and

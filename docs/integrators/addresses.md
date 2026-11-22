@@ -24,7 +24,7 @@ pages describe.
 ## Checking an instance yourself
 
 - **Code.** Each record pins every contract's address and code hash.
-  [`script/Verify.s.sol`](../../script/Verify.s.sol) recomputes every address from the recorded
+  [`script/Verify.s.sol`](../../script/VerifyCore.s.sol) recomputes every address from the recorded
   constructor parameters and compares the code, the module slots, the minters, the settings
   and the governance configuration with the chain. Run it from the instance's source commit.
 - **Governance.** The genesis policy each instance installed is committed under `config/`. The

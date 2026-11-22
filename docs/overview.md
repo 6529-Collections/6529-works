@@ -88,7 +88,7 @@ event carrying the old and the new value:
 | `moduleDelay` | each token contract and `Directory` | 7 days | An addition already announced keeps the time it was given |
 | `rescueDelay` | `Stream` (each federated token has its own) | 14 days | Read when a rescue is attempted |
 | `rebindDelay` | `Editions` | 14 days | Read when a rebind is attempted |
-| `unclaimedPeriod` | `Directory`, read by `SplitLedger` and `RevenueEscrow` | 180 days | Read when a forfeit or expiry is attempted |
+| `unclaimedPeriod` | `Directory`, read by `SplitLedger`, `RevenueEscrow` and both auctions | 180 days | The split ledger and the auctions read it when a forfeit or expiry is attempted. The escrow also reads it at every deposit and recovery; an amount it has already counted as aged stays aged |
 
 **Numbers compiled into replaceable contracts.** These are fixed in today's modules and change
 only when the network installs a different module: the accounts module's 2-day own change,
@@ -107,7 +107,8 @@ map is the [role matrix](audit/roles.md); what the network can do, to whom and h
 
 **A curated 1/1.**
 1. The work is approved by curation; the artist and every party sign the item.
-2. Anyone calls `start` on `EnglishAuction`. The auction asks the mint policy, which checks
+2. Anyone calls `start` on `EnglishAuction` (or on `SaleStarter`, which also deploys the work's
+   split vaults and opens its record in the same transaction). The auction asks the mint policy, which checks
    the item and answers the mint facts and the sale terms. The auction mints the token into its
    own custody and opens a 24-hour clock (a governed value).
 3. Bidders bid in ETH. An outbid bid becomes a credit its owner claims.

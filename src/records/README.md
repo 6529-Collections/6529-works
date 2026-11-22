@@ -71,7 +71,7 @@ events in [StatementLog events](../../docs/integrators/events-and-indexing.md#st
 - **Tests:** `forge test --match-path 'test/records/**'`: unit, policy, gas rule, golden vectors and a
   handler-based invariant suite whose model ([`StatementModel.sol`](../../test/records/StatementModel.sol))
   rebuilds hashes and heads from events. Dispute paths end to end:
-  [`Dispute.t.sol`](../../test/integration/Dispute.t.sol). Coverage and mutation testing:
+  `Dispute.t.sol`. Coverage and mutation testing:
   [Testing](../../docs/testing/README.md).
 
 ## See also

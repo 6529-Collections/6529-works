@@ -29,7 +29,7 @@ EIP-712 domains integrators need are in
   [Curation](../../docs/spec/curation.md#rules-and-invariants)). Signers, the uploader and
   off-chain tooling compute the same values, so a change here is a breaking change for them.
 - **Roles in NatSpec are hints.** Some governed functions name the role their selector is meant
-  to map to; the binding mapping is [`config/genesis.example.json`](../../config/genesis.example.json),
+  to map to; the binding mapping is [`config/genesis.core.example.json`](../../config/genesis.core.example.json),
   rendered as the [role and permission matrix](../../docs/audit/roles.md).
 - **Events and errors.** Event signatures and topic0 values are owned by
   [Events and indexing](../../docs/integrators/events-and-indexing.md), which the docs checker

@@ -91,7 +91,7 @@ the gas it held reverts the whole call with `BoundedCallShortfall(target)`: your
 or a dependency burns everything it is given. A typical `tokenURI` uses about 0.3M gas
 ([flows.md](../../deployments/11155111/flows.md), section 4); the worst case the protocol allows
 uses about 7.8M (the budget proof in
-[`TokenUriBudget.t.sol`](../../test/integration/TokenUriBudget.t.sol)).
+`TokenUriBudget.t.sol`).
 
 - Leave `gas` unset in `eth_call` (nodes then use their call gas cap), or set at least
   10,000,000 for `tokenURI` and `uri`, and 40,000,000 for `fullTokenURI`.

@@ -129,7 +129,7 @@ own, and claims open when the first sweep completes.) `claimBid` mints a winner'
 sends its refund to an address it names; `claimBidFor` lets anyone push a claim, crediting the
 refund. Supply reaches exactly k once every winner has claimed.
 
-**6529 Stream Editions** ([`IEditions`](../../src/interfaces/IEditions.sol)).
+**6529 Stream Editions** ([`IEditions`](../../src/interfaces/core/IEditions.sol)).
 - `name()` is "6529 Stream Editions" and `symbol()` `STREAMEDITIONS` (D139, decision 13). The
   identifiers `Editions`, `IEditions`, `PRODUCT_EDITIONS` and the `"EDITIONS"` binding label
   stay: renaming them would change genesis keys, tools, selectors and events for nothing a
@@ -336,7 +336,7 @@ be claimed.
   `swept` going down. A call on a settled sale returns `true`.
 - A shared public relayer such as Multicall3 is one settler for all its callers, who would
   share one sweep: keepers settle directly or through their own contract
-  ([runbook](../../script/README.md#the-edition-auction-keeper)).
+  ([runbook](../../script/README.md#keepers)).
 - LIM-EA-4 now reads: a dense book's settlement costs more calls, each of bounded gas, and a
   griefer's sweep never blocks a keeper's.
 
@@ -357,7 +357,7 @@ Made by PR #81, with the review fixes of #80 and #81.
   dependencies on their own (one-shot binds, pinned code hashes, the auctions' economics
   resolver: the edition auction's lens copies it at construction) do not follow, so a
   replacement is a set planned with them
-  ([the procedure](../../script/README.md#replacing-one-of-streams-dependencies)). Stream's
+  ([the procedure](../../script/README.md#modules-and-minters)). Stream's
   immutable split factory keeps the genesis artist registry as the payout resolver of every
   Stream work, so that registry is only partly replaceable (LIM-GV-16). The artist registry's
   one `register` caller is governed (`setPackageRegistry`, 30 days), so a successor package
@@ -664,13 +664,13 @@ over as the edition auction lands.
   end plus the close offset. If nobody opens it by then, this adapter can never sell that
   work's editions. The edition is still unbound, so a later admitted adapter of its kind can
   open it (decision 14). The keeper opens the edition auction in the same batch as the 1/1's
-  start (decision 7; [runbook](../../script/README.md#the-edition-auction-keeper)).
+  start (decision 7; [runbook](../../script/README.md#keepers)).
 - **LIM-EA-12: settlement waits for `createEdition`.** (Added 1 November 2026 with the adapter, PR #77.) A sale with winners settles only once
   the edition exists (`EditionNotCreated`). `createEdition` is permissionless and
   deterministic once the 1/1 settles, but it takes the master's item, its package root and a
   Merkle proof, which the frozen `settle(saleId, order)` and `claimBid` cannot carry, and the
   adapter has no bytecode to store them. So a keeper or any participant creates the edition
-  first ([runbook](../../script/README.md#the-edition-auction-keeper)).
+  first ([runbook](../../script/README.md#keepers)).
 
 ## Alternatives considered
 

@@ -64,12 +64,12 @@ under [VrfEntropyModule events](../../docs/integrators/events-and-indexing.md#vr
 - **Operations** (dedicated subscription, the coordinator change in one batch, why Chainlink's
   `migrate` cannot be used) are in the spec's
   [coordinator change](../../docs/spec/entropy.md#coordinator-change) and the
-  [runbook, step 7](../../script/README.md#7-chainlink-vrf-the-entropy-module).
+  [runbook, step 7](../../script/README.md#4-after-the-broadcast).
 - **Bytecode:** wide margin; figures in the
   [audit scope](../../docs/audit/scope.md#curation-identity-and-records).
 - **Tests:** `forge test --match-path 'test/entropy/**'`: unit, fuzz, the invariant suite,
   governance and `VrfEntropyManaged.t.sol`, which installs the module under the real
-  `GovernanceConfigurator`. End to end: [`VrfWork.t.sol`](../../test/integration/VrfWork.t.sol).
+  `GovernanceConfigurator`. End to end: `VrfWork.t.sol`.
   Mocks are in
   [`test/mocks/entropy/EntropyMocks.sol`](../../test/mocks/entropy/EntropyMocks.sol). Coverage and
   mutation testing: [Testing](../../docs/testing/README.md).

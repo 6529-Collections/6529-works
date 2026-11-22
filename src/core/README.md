@@ -40,7 +40,7 @@ zero allowed), with an event carrying the old and the new value:
 | `moduleDelay` | 7 days | `Stream`, `Editions`, `Directory` | Modules announced and minters added after it; one already announced keeps its time |
 | `rescueDelay` | 14 days | `Stream` (and each federated token) | Every rescue attempted after it, removals already made included |
 | `rebindDelay` | 14 days | `Editions` | Every rebind attempted after it |
-| `unclaimedPeriod` | 180 days | `Directory`, read by the split ledger and the escrow | Every forfeit or expiry attempted after it |
+| `unclaimedPeriod` | 180 days | `Directory`, read by the split ledger, the escrow and both auctions | Every forfeit or expiry attempted after it; the escrow also reads it at every deposit and recovery, and an amount it has already counted as aged stays aged |
 
 ## If a module is missing, hostile or out of gas
 
