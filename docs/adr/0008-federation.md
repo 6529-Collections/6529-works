@@ -605,3 +605,14 @@ provider for (off until the network sets a wrapper). A revoked template can be r
 (C26); a replacement registry inherits every listing (C3). The context's "the network adds no
 control whose only purpose is to restrict that" and "exit is one-way and clean" are history.
 Current rules: [Federation](../spec/federation.md#rules-and-invariants).
+
+## Amendment note (22 November 2026, [ADR 0010](0010-plain-permanent-core.md))
+
+A federated artist's pair is now the same plain token bases as 6529 Stream and Stream Editions
+(`StreamBase`, `EditionsBase`) with a different gate: its minters are whatever the federation
+module, found through `Directory`, allows; its records live in the shared `WorkFacts`; its terms
+and records modules are the network's shared federated modules. Each copy remains a full
+contract (no proxy, no clone). An unsold federated work waits in the network's sale contract and
+can be offered again there; the artist still cannot take it without a sale. A collaborator's
+consent covers the item and its royalty rate. The template deployers' description here is
+history.

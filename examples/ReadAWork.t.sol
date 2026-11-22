@@ -1,109 +1,102 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-// Example: read everything a marketplace or wallet shows for one 6529 Stream work.
+// Example: read everything a marketplace or wallet shows for one 6529 Stream work, and the
+// network's settings that a careful collector may want to watch.
 //
-// The reads are plain view calls. A front end makes the same calls with `cast call` or a
-// library such as viem; the cast versions are in examples/README.md.
+// The reads are plain view calls on the permanent contracts (ADR 0010): `Stream` for ownership,
+// the facts fixed at mint and how the first sale ended; `WorkFacts` for the work's permanent
+// record; the token's renderer for the metadata. A front end makes the same calls with
+// `cast call` or a library such as viem; the cast versions are in examples/README.md.
 //
-// The work is set up the way it is on chain: a curated package, a sale started through
-// SaleStarter (which also opens the work's record), one bid, and settlement.
+// The core is deployed here with pass-through modules (test/mocks/core/CoreFixture.sol): the
+// reads are the same on the full deployment.
 
-import { IWorkDelivery } from "src/interfaces/IWorkDelivery.sol";
-import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
-import { IStreamViews } from "src/interfaces/IStreamViews.sol";
-import { MediaFile } from "src/interfaces/types/ContentTypes.sol";
-import { License } from "src/interfaces/types/PackageTypes.sol";
-import { PrimaryOutcome } from "src/interfaces/types/SaleTypes.sol";
-import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
-import { ContentAddresses as CA } from "test/helpers/ContentAddresses.sol";
-import { IntegrationBase } from "test/integration/IntegrationBase.sol";
+import { Vm } from "forge-std/Vm.sol";
+import { Collection, Facts, Outcome, Slots, Work } from "src/interfaces/core/CoreTypes.sol";
+import { IStream } from "src/interfaces/core/IStream.sol";
+import { CoreFixture } from "test/mocks/core/CoreFixture.sol";
 
-contract ExampleReadAWork is IntegrationBase {
-    address internal artist;
-    address internal collector = makeAddr("collector");
+contract ExampleReadAWork is CoreFixture {
     uint256 internal tokenId;
-    bytes32 internal root;
+    uint256 internal constant PRICE = 1 ether;
 
     function setUp() public override {
         super.setUp();
-        artist = _actor("artist");
-        Work[] memory works = _one(_work(artist, collectionId));
-        root = _publish(works);
-        _keep(root, works);
-        // Start through SaleStarter: auction, payout vaults and record in one transaction.
-        uint256 saleId = deployment.saleStarter
-            .start(
-                IEnglishAuction(address(auction)),
-                address(stream),
-                _mintData(root, works, 0),
-                works[0].media
-            );
-        tokenId = auction.auction(saleId).tokenId;
-        _ethBid(saleId, collector, 1 ether);
-        _settleAtEnd(saleId);
+        // A sale contract mints the work into its custody, records the sale and delivers it.
+        vm.recordLogs();
+        tokenId = _sell(1, collector);
     }
 
-    function test_ReadAWork() public {
-        // 1. Who owns it. 6529 Stream is a plain ERC-721.
+    function test_ReadAWork() public view {
+        // 1. Who owns it. 6529 Stream is a plain OpenZeppelin ERC-721: ownerOf and transfers
+        //    never call another contract.
         assertEq(stream.ownerOf(tokenId), collector);
 
-        // 2. What 6529 Stream stores for it. `work` is served by Stream's views extension
-        //    through Stream's own address: call it on Stream with the IStreamViews ABI
-        //    (abi/full/Stream.json has both surfaces).
-        IStreamViews.WorkCore memory core = IStreamViews(address(stream)).work(tokenId);
-        assertEq(core.collectionId, collectionId);
-        assertEq(core.artistId, artists.artistIdOf(artist), "the lead artist's account ID");
-        assertEq(core.serial, 1, "first work in the collection");
+        // 2. What Stream keeps for it: one plain struct. The item hash commits to the approved
+        //    item (content, media, parties, payees, license, sale terms); artistId, the
+        //    collection, the serial, the kind and the seed never change after mint.
+        Work memory work = stream.workOf(tokenId);
+        assertEq(work.itemHash, _facts(1).itemHash);
+        assertEq(work.artistId, ARTIST);
+        assertEq(work.collectionId, 1);
+        assertEq(work.serial, 1, "first work in the collection");
 
-        // 3. The record: the descriptive JSON file, the media commitment, the license and
-        //    whether the record is finalized. Every per-token view of WorkRecords reverts with
-        //    RecordNotOpen until the record opens, so check `isOpen` first.
-        assertTrue(records.isOpen(tokenId));
-        IWorkRecords.RecordInfo memory r = records.record(tokenId);
-        assertEq(r.recordFileId, _package(root)[0].item.recordFileId);
-        assertFalse(r.finalized, "the artist has not finalized yet");
+        // 3. Its collection.
+        Collection memory c = stream.collectionOf(work.collectionId);
+        assertEq(c.name, "Genesis");
 
-        // 4. The license: an SPDX ID and the content-store file that holds its text.
-        License memory license = records.licenseOf(tokenId);
-        assertEq(license.spdxId, "CC0-1.0");
-        assertEq(license.textFileId, cc0TextFileId);
+        // 4. How the first sale ended. The outcome is stored; the price is only logged
+        //    (`PrimarySale`, see test_ThePriceIsInTheLog).
+        assertEq(uint8(work.outcome), uint8(Outcome.SOLD));
 
-        // 5. The media list (primary file first) and, for each file, the copy to serve.
-        //    Here the artist registers an Arweave copy; `preferredLocator` then names it.
-        MediaFile[] memory media = records.mediaOf(tokenId);
-        assertEq(media.length, 1);
-        vm.prank(artist);
-        delivery.addLocator(tokenId, media[0].fileId, CA.ar("example arweave copy"));
-        (IWorkDelivery.Location memory where,) = records.preferredLocator(tokenId, media[0].fileId);
-        assertEq(where.uri, CA.arweave("example arweave copy"), "an ar:// URI");
+        // 5. The permanent record in WorkFacts: media (fixed when the record opens), the
+        //    descriptive record (frozen at finalize), the license, and the pinned renderer.
+        //    This work's record is not opened yet: `opened` is false and every field is empty.
+        Facts memory facts_ = facts.factsOf(address(stream), tokenId);
+        assertFalse(facts_.opened);
+        assertFalse(facts_.finalized);
 
-        // 6. The metadata: a data: URI with the ERC-721 JSON (name, description, image or
-        //    animation, attributes, license). Give the call plenty of gas (up to 8M, the
-        //    tokenURI budget): it reads the record and media from the content store.
-        string memory uri = stream.tokenURI(tokenId);
-        assertTrue(_startsWith(uri, "data:application/json"));
+        // 6. Who draws it: the renderer pinned at finalize, or, before that, the token's
+        //    RENDERER module. `tokenURI` asks it and never falls back to another one.
+        assertEq(stream.rendererOf(tokenId), stream.moduleOf(Slots.RENDERER));
+        assertEq(stream.tokenURI(tokenId), "data:,mock");
 
-        // 7. Royalties (ERC-2981): the receiver is the work's royalty split wallet, the rate
-        //    is 6.529% at launch (6,529 out of 100,000).
-        (address receiver, uint256 amount) = stream.royaltyInfo(tokenId, 1 ether);
-        assertEq(receiver, core.royaltyReceiver);
-        assertEq(amount, uint256(1 ether) * core.royaltyRate / 100_000);
-
-        // 8. How the primary sale ended: outcome, currency and price.
-        (PrimaryOutcome outcome, address currency, uint256 price) = stream.primarySale(tokenId);
-        assertEq(uint8(outcome), uint8(PrimaryOutcome.SOLD));
-        assertEq(currency, address(0), "ETH");
-        assertEq(price, 1 ether);
+        // 7. Royalties (ERC-2981): two storage reads, no other contract asked.
+        (address receiver, uint256 amount) = stream.royaltyInfo(tokenId, PRICE);
+        assertEq(receiver, work.royaltyReceiver);
+        assertEq(amount, PRICE * work.royaltyRate / 100_000);
     }
 
-    function _startsWith(string memory s, string memory prefix) internal pure returns (bool) {
-        bytes memory a = bytes(s);
-        bytes memory b = bytes(prefix);
-        if (a.length < b.length) return false;
-        for (uint256 i; i < b.length; ++i) {
-            if (a[i] != b[i]) return false;
+    function test_ThePriceIsInTheLog() public {
+        // Read the PrimarySale event (an indexer does the same from eth_getLogs).
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bytes32 topic = IStream.PrimarySale.selector;
+        bool found;
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].emitter != address(stream) || logs[i].topics[0] != topic) continue;
+            assertEq(uint256(logs[i].topics[1]), tokenId);
+            assertEq(address(uint160(uint256(logs[i].topics[2]))), collector, "the buyer");
+            (Outcome outcome, uint256 price) = abi.decode(logs[i].data, (Outcome, uint256));
+            assertEq(uint8(outcome), uint8(Outcome.SOLD));
+            assertEq(price, PRICE);
+            found = true;
         }
-        return true;
+        assertTrue(found);
+    }
+
+    function test_ReadTheNetworksSettings() public view {
+        // The waiting periods in the permanent contracts are the network's settings, not fixed
+        // promises: each has a launch value and the network may change it at once (an event
+        // carries the old and the new value). Read them; never assume a number.
+        assertEq(stream.moduleDelay(), 7 days, "before an added module or minter takes effect");
+        assertEq(stream.rescueDelay(), 14 days, "after a minter's removal, before a rescue");
+        assertEq(editions.rebindDelay(), 14 days, "after a minter's removal, before a rebind");
+        assertEq(directory.unclaimedPeriod(), 180 days, "before unclaimed money can be swept");
+
+        // The modules in force, and whether one is announced (`readyAt` zero: none).
+        assertEq(stream.moduleOf(Slots.TERMS), address(terms));
+        assertEq(stream.pendingModule(Slots.TERMS).readyAt, 0);
+        assertTrue(stream.isMinter(address(sale)));
     }
 }

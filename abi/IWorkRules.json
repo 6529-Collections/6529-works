@@ -1,0 +1,736 @@
+[
+  {
+    "inputs": [],
+    "name": "FINALIZE_NOTICE",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "delivery",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "expectedStateHash",
+        "type": "bytes32"
+      }
+    ],
+    "name": "finalize",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      }
+    ],
+    "name": "finalizeNoticeAt",
+    "outputs": [
+      {
+        "internalType": "uint48",
+        "name": "",
+        "type": "uint48"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      },
+      {
+        "components": [
+          {
+            "internalType": "string",
+            "name": "spdxId",
+            "type": "string"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "textFileId",
+            "type": "bytes32"
+          }
+        ],
+        "internalType": "struct License",
+        "name": "next",
+        "type": "tuple"
+      },
+      {
+        "components": [
+          {
+            "internalType": "uint8",
+            "name": "kind",
+            "type": "uint8"
+          },
+          {
+            "internalType": "uint256",
+            "name": "collectionId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "contentHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "mediaHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "recordFileId",
+            "type": "bytes32"
+          },
+          {
+            "components": [
+              {
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+              },
+              {
+                "internalType": "uint8",
+                "name": "role",
+                "type": "uint8"
+              }
+            ],
+            "internalType": "struct Party[]",
+            "name": "parties",
+            "type": "tuple[]"
+          },
+          {
+            "components": [
+              {
+                "internalType": "uint256",
+                "name": "artistId",
+                "type": "uint256"
+              },
+              {
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+              },
+              {
+                "internalType": "uint32",
+                "name": "share",
+                "type": "uint32"
+              }
+            ],
+            "internalType": "struct ISplitWallet.Payee[]",
+            "name": "payees",
+            "type": "tuple[]"
+          },
+          {
+            "components": [
+              {
+                "internalType": "string",
+                "name": "spdxId",
+                "type": "string"
+              },
+              {
+                "internalType": "bytes32",
+                "name": "textFileId",
+                "type": "bytes32"
+              }
+            ],
+            "internalType": "struct License",
+            "name": "license",
+            "type": "tuple"
+          },
+          {
+            "internalType": "uint8",
+            "name": "seedPolicy",
+            "type": "uint8"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "seed",
+            "type": "bytes32"
+          },
+          {
+            "components": [
+              {
+                "internalType": "bytes32",
+                "name": "saleKind",
+                "type": "bytes32"
+              },
+              {
+                "internalType": "address",
+                "name": "currency",
+                "type": "address"
+              },
+              {
+                "internalType": "bytes",
+                "name": "params",
+                "type": "bytes"
+              }
+            ],
+            "internalType": "struct SaleTerms",
+            "name": "sale",
+            "type": "tuple"
+          },
+          {
+            "components": [
+              {
+                "internalType": "uint32",
+                "name": "maxCount",
+                "type": "uint32"
+              },
+              {
+                "internalType": "address",
+                "name": "currency",
+                "type": "address"
+              },
+              {
+                "internalType": "bytes32",
+                "name": "saleKind",
+                "type": "bytes32"
+              },
+              {
+                "internalType": "bytes",
+                "name": "params",
+                "type": "bytes"
+              }
+            ],
+            "internalType": "struct EditionTerms",
+            "name": "edition",
+            "type": "tuple"
+          }
+        ],
+        "internalType": "struct PackageItem",
+        "name": "item",
+        "type": "tuple"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "expectedStateHash",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint64",
+        "name": "deadline",
+        "type": "uint64"
+      },
+      {
+        "internalType": "bytes[]",
+        "name": "partySignatures",
+        "type": "bytes[]"
+      }
+    ],
+    "name": "relicense",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint16",
+        "name": "powers",
+        "type": "uint16"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "expectedStateHash",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint64",
+        "name": "deadline",
+        "type": "uint64"
+      },
+      {
+        "internalType": "bytes",
+        "name": "artistSignature",
+        "type": "bytes"
+      }
+    ],
+    "name": "renounce",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "renderer",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "expectedStateHash",
+        "type": "bytes32"
+      }
+    ],
+    "name": "repinRenderer",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "expected",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "next",
+        "type": "address"
+      }
+    ],
+    "name": "setDelivery",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "recordFileId",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "expectedStateHash",
+        "type": "bytes32"
+      }
+    ],
+    "name": "setRecord",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint24",
+        "name": "rate",
+        "type": "uint24"
+      },
+      {
+        "components": [
+          {
+            "internalType": "uint8",
+            "name": "kind",
+            "type": "uint8"
+          },
+          {
+            "internalType": "uint256",
+            "name": "collectionId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "contentHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "mediaHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "recordFileId",
+            "type": "bytes32"
+          },
+          {
+            "components": [
+              {
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+              },
+              {
+                "internalType": "uint8",
+                "name": "role",
+                "type": "uint8"
+              }
+            ],
+            "internalType": "struct Party[]",
+            "name": "parties",
+            "type": "tuple[]"
+          },
+          {
+            "components": [
+              {
+                "internalType": "uint256",
+                "name": "artistId",
+                "type": "uint256"
+              },
+              {
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+              },
+              {
+                "internalType": "uint32",
+                "name": "share",
+                "type": "uint32"
+              }
+            ],
+            "internalType": "struct ISplitWallet.Payee[]",
+            "name": "payees",
+            "type": "tuple[]"
+          },
+          {
+            "components": [
+              {
+                "internalType": "string",
+                "name": "spdxId",
+                "type": "string"
+              },
+              {
+                "internalType": "bytes32",
+                "name": "textFileId",
+                "type": "bytes32"
+              }
+            ],
+            "internalType": "struct License",
+            "name": "license",
+            "type": "tuple"
+          },
+          {
+            "internalType": "uint8",
+            "name": "seedPolicy",
+            "type": "uint8"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "seed",
+            "type": "bytes32"
+          },
+          {
+            "components": [
+              {
+                "internalType": "bytes32",
+                "name": "saleKind",
+                "type": "bytes32"
+              },
+              {
+                "internalType": "address",
+                "name": "currency",
+                "type": "address"
+              },
+              {
+                "internalType": "bytes",
+                "name": "params",
+                "type": "bytes"
+              }
+            ],
+            "internalType": "struct SaleTerms",
+            "name": "sale",
+            "type": "tuple"
+          },
+          {
+            "components": [
+              {
+                "internalType": "uint32",
+                "name": "maxCount",
+                "type": "uint32"
+              },
+              {
+                "internalType": "address",
+                "name": "currency",
+                "type": "address"
+              },
+              {
+                "internalType": "bytes32",
+                "name": "saleKind",
+                "type": "bytes32"
+              },
+              {
+                "internalType": "bytes",
+                "name": "params",
+                "type": "bytes"
+              }
+            ],
+            "internalType": "struct EditionTerms",
+            "name": "edition",
+            "type": "tuple"
+          }
+        ],
+        "internalType": "struct PackageItem",
+        "name": "item",
+        "type": "tuple"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "expectedStateHash",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint64",
+        "name": "deadline",
+        "type": "uint64"
+      },
+      {
+        "internalType": "bytes[]",
+        "name": "partySignatures",
+        "type": "bytes[]"
+      }
+    ],
+    "name": "setRoyaltyRate",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      }
+    ],
+    "name": "workStateHash",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "previous",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "next",
+        "type": "address"
+      }
+    ],
+    "name": "DeliverySet",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "dueAt",
+        "type": "uint256"
+      }
+    ],
+    "name": "FinalizeNoticeRecorded",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint16",
+        "name": "powers",
+        "type": "uint16"
+      }
+    ],
+    "name": "PowersRenounced",
+    "type": "event"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "dueAt",
+        "type": "uint256"
+      }
+    ],
+    "name": "FinalizeNotDue",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      }
+    ],
+    "name": "InvalidConsent",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "caller",
+        "type": "address"
+      }
+    ],
+    "name": "NotWorkArtist",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "expected",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "actual",
+        "type": "bytes32"
+      }
+    ],
+    "name": "StateHashMismatch",
+    "type": "error"
+  }
+]

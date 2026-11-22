@@ -13,7 +13,7 @@ and indexers.
 > the cited contract rules already enforce. A document that breaks a convention is still
 > accepted on chain; readers apply the rules below, and a reader that skips them shows claims
 > the protocol never checked (LIM-CNT-13). Where a rule depends on the work powers, it reads
-> `IWorkPowers`, which `WorkRecords` implements beside `IWorkRecords`
+> `IWorkPowers`, which the RECORDS module `WorkRules` implements
 > ([ADR 0006](../adr/0006-work-powers-and-conventions.md)).
 
 ## Contracts
@@ -24,13 +24,13 @@ This page adds no contract logic. The conventions use these reads and paths:
 | --- | --- | --- |
 | `StatementLog` | [`StatementLog.sol`](../../src/records/StatementLog.sol) | Every convention statement: `append`, `appendSigned`, `appendPlatform`; `chainOf`, `latestDisputeOutcome`, `artistResolver` |
 | `StatementKinds` | [`StatementKinds.sol`](../../src/interfaces/types/StatementKinds.sol) | The convention kind labels (constants only; the [registry](disputes-and-statements.md#statement-kind-registry) lists them) |
-| `WorkRecords` | [`WorkRecords.sol`](../../src/stream/WorkRecords.sol) | `mediaOf` (finding the declarations file), `record`, `licenseOf`, `preferredLocator`, `pinnedRenderer`, `seedOf`, `workStateHash`; the `RecordOpened` event; `delivery`, whose `locators` (the first delivery contract, [`WorkDelivery.sol`](../../src/stream/WorkDelivery.sol)) count each file's copies |
-| `WorkRecords` as `IWorkPowers` | [`IWorkPowers.sol`](../../src/interfaces/IWorkPowers.sol) | `renouncedPowers` (which powers over a work have been renounced, DCL-8), reported through ERC-165 |
+| `WorkFacts`, `WorkRules` | [`WorkFacts.sol`](../../src/core/WorkFacts.sol), [`IWorkRules`](../../src/interfaces/core/IWorkRules.sol) | `factsOf` (media, record, license, finalized, on-chain complete, pinned renderer, locks), `workStateHash`; the `RecordOpened` event; `delivery`, whose `locators` ([`WorkDelivery.sol`](../../src/stream/WorkDelivery.sol)) count each file's copies |
+| `WorkRules` as `IWorkPowers` | [`IWorkPowers.sol`](../../src/interfaces/IWorkPowers.sol) | `renouncedPowers` (which powers over a work have been renounced, DCL-8), reported through ERC-165 |
 | `ContentStore` | [`ContentStore.sol`](../../src/content/ContentStore.sol) | `fileInfo` (MIME type, encoding, length), `read`, `isComplete`, `sha256Of` |
 | `DependencyRegistry` | [`DependencyRegistry.sol`](../../src/content/DependencyRegistry.sol) | `resolve` (a declared dependency's file and whether it is deprecated, DCL-5) |
-| `Stream` | [`Stream.sol`](../../src/stream/Stream.sol) | `ownerOf`, `coreOf`, `primarySale`, `editionOf`, `rendererOf`, `defaultRenderer`; the `WorkMinted` event (the content hash and the package root) |
-| `ArtistRegistry`, `ConsolidationAdapter` | [`ArtistRegistry.sol`](../../src/identity/ArtistRegistry.sol), [`ConsolidationAdapter.sol`](../../src/identity/ConsolidationAdapter.sol) | `artist` (the profile document hash), `activeAuthorityOf`, `pendingChange`, `consolidationSource`; `isEstablished`, `effectiveAt` |
-| `PackageRegistry` | [`PackageRegistry.sol`](../../src/curation/PackageRegistry.sol) | `consumedItemOf` (whether proposed bytes were minted as another work) |
+| `Stream` | [`Stream.sol`](../../src/core/Stream.sol) | `ownerOf`, `workOf` (item hash, artist ID, collection, kind, outcome, seed, royalty), `rendererOf`; the `WorkMinted` event (the content hash and the package root) and `PrimarySale` (the price) |
+| `Accounts` (accounts module), `ConsolidationAdapter` | [`IArtistRegistry`](../../src/interfaces/IArtistRegistry.sol), [`ConsolidationAdapter.sol`](../../src/identity/ConsolidationAdapter.sol) | `artist` (the profile document hash), `activeAuthorityOf`, `pendingChange`, `consolidationSource`; `isEstablished`, `effectiveAt` |
+| `PackageRegistry` | [`PackageRegistry.sol`](../../src/curation/PackageRegistry.sol) | content release and barred items; with `Stream.tokenOfContent`, whether proposed bytes were minted as another work |
 | `EnglishAuction`, `UniformEditionAuction` | [`EnglishAuction.sol`](../../src/sales/EnglishAuction.sol), [`UniformEditionAuction.sol`](../../src/sales/UniformEditionAuction.sol) | `pendingDelivery`; `saleIdOf`, `clearing` (primary prices) |
 
 The JSON Schemas (Draft 2020-12) are in [`schemas/`](schemas/), with an example of each
@@ -46,15 +46,15 @@ These facts, read from the code, decide what can be a convention.
 | Fact | Where the code says so | Consequence for conventions |
 | --- | --- | --- |
 | A statement kind is any non-zero `bytes32`; only `DISPUTE_OUTCOME`, `CURATION_EVIDENCE` and `GOVERNANCE_MANIFEST` are reserved. | `StatementLog._validate`, `_append` ([DSP-2, DSP-4](disputes-and-statements.md#rules-and-invariants)) | A new kind needs no deployment, and the log accepts every convention kind under every role (`test_Kinds_ConventionKindsAreAcceptedUnderEveryRole`). Readers enforce each kind's writer. |
-| ARTIST is any wallet of the lead artist's account, and only for a 6529 Stream work or an edition (through its master). | `ArtistRegistry.isArtist` ([ID-11](identity-and-recovery.md#rules-and-invariants)) | No ARTIST statement about an item before its mint (LIM-ID-11) or about the artist subject `(ArtistRegistry, artistId)`. Co-artists other than the lead have no ARTIST lane. |
+| ARTIST is any wallet of the lead artist's account, and only for a 6529 Stream work or an edition (through its master). | `Accounts.isArtist` ([ID-11](identity-and-recovery.md#rules-and-invariants)) | No ARTIST statement about an item before its mint (LIM-ID-11) or about the artist subject `(ArtistRegistry, artistId)`. Co-artists other than the lead have no ARTIST lane. |
 | OWNER is the ERC-721 `ownerOf`, else any ERC-1155 holder, read when the entry is appended (for a relayed entry, when it is relayed). | `StatementLog._owns` ([who may write](disputes-and-statements.md#who-may-write)) | The log proves the signer owned the token at the entry's block. An edition has many OWNER writers. A work in auction custody is owned by the adapter. |
 | CURATOR and PLATFORM may write about any subject; there are no other roles. | `StatementLog._isAuthorized`, `IStatementLog.Role` | A custodian, a venue or a collaborator has no lane of its own: its words reach the log only inside a document someone with a role posts. |
 | A statement carries a hash and one locator: a URI of at most 2,048 bytes, or a content-store file ID. The log never reads the document. | `StatementLog._validate` (`MAX_URI_BYTES`) | The document's size is bounded only by where it is stored: a content-store file holds up to 512 chunks ([WS-26](works-and-storage.md#rules-and-invariants)). DCL-1 sets a convention limit. |
 | The renderer validates the whole record JSON and copies only its known members; other members are validated and ignored, and count toward the record's bounds (12,288 bytes, 1,024 units). | `Renderer` contract notes, `JsonScan` ([LIM-CNT-5](../audit/known-limitations.md#content-records-and-rendering)) | An extra record member is invisible in metadata, can be replaced by `setRecord` until finalize, and spends the record's budget. Promises fixed at approval do not belong there. |
 | The renderer uses only the PRIMARY file, the first PREVIEW image, and the locator of a license text listed among the media; no other AUXILIARY file reaches the metadata. | `Renderer._media`, `_preview`, `_licenseUrl` | A declarations file changes nothing a marketplace sees through `tokenURI`. |
-| The ordered media list, each entry's file ID, declared SHA-256 and role, is committed by the item's media hash, which the curation signer attests; `openRecord` opens only that exact list, and nothing changes it afterwards. A file ID commits to the chunk hashes, length, encoding, MIME type and declared SHA-256. | `WorksHashing.mediaHash`, `WorkRecords.openRecord` ([WS-2, WS-6, WS-25](works-and-storage.md#rules-and-invariants)) | An AUXILIARY file's bytes are fixed from approval. The declared SHA-256 is never recomputed on chain (WS-30, LIM-CNT-3), so the signer checks it; the chunk hashes bind the bytes at every read (WS-28). |
-| `mediaOf` reverts until the record opens; `openRecord` reverts while a listed manifest is unregistered; `syncOnChain` needs every listed file complete. | `WorkRecords.openRecord`, `mediaOf`, `syncOnChain` ([WS-1, WS-17](works-and-storage.md#rules-and-invariants)) | A declarations file must be registered before the record can open, and uploaded in full before the work can become on-chain complete. Before the open, a reader finds it only in the package data. |
-| The artist's profile document hash is set at the first package acceptance and changes only by a staged identity change (the account's own, 2 days, or the network's replacement, 14 days). | `ArtistRegistry.register`, `stageChange` ([change kinds](identity-and-recovery.md#change-kinds)) | An artist-wide document can be named from the profile document, at the pace of identity changes (DCL-17). |
+| The ordered media list, each entry's file ID, declared SHA-256 and role, is committed by the item's media hash, which the curation signer attests; `WorkFacts.open` opens only that exact list, and nothing changes it afterwards. A file ID commits to the chunk hashes, length, encoding, MIME type and declared SHA-256. | `WorksHashing.mediaHash`, `WorkFacts.open` ([WS-2, WS-6, WS-25](works-and-storage.md#rules-and-invariants)) | An AUXILIARY file's bytes are fixed from approval. The declared SHA-256 is never recomputed on chain (WS-30, LIM-CNT-3), so the signer checks it; the chunk hashes bind the bytes at every read (WS-28). |
+| `factsOf` is empty until the record opens; `WorkFacts.open` reverts while a listed manifest is unregistered; `markOnChainComplete` needs every listed file complete. | `WorkFacts.open`, `factsOf`, `markOnChainComplete` ([WS-1, WS-17](works-and-storage.md#rules-and-invariants)) | A declarations file must be registered before the record can open, and uploaded in full before the work can become on-chain complete. Before the open, a reader finds it only in the package data. |
+| The artist's profile document hash is set at the first package acceptance and changes only by a staged identity change (the account's own, 2 days, or the network's replacement, 14 days). | `Accounts.register`, `stageChange` ([change kinds](identity-and-recovery.md#change-kinds)) | An artist-wide document can be named from the profile document, at the pace of identity changes (DCL-17). |
 
 ### Document format
 
@@ -68,7 +68,7 @@ token ID. A statement that carries one:
 | `kind` | The kind's label hash from the [registry](disputes-and-statements.md#statement-kind-registry) |
 | `schema` | `keccak256` of the UTF-8 schema `$id`, for example `keccak256("urn:6529-works:schema:citation:v1")`; the registry lists each value |
 | `content` | Algorithm 2 (SHA-256) of the document's bytes as published |
-| `uri` or `fileId` | An `ar://` or `ipfs://` content address of the document ([storage](../integrators/storage.md#4-locators-content-addresses-only)), or a complete content-store file |
+| `uri` or `fileId` | An `ar://` or `ipfs://` content address of the document ([storage](works-and-storage.md#add-a-locator-and-switch-the-preferred-location)), or a complete content-store file |
 | `supersedes` | The entry hash of the earlier entry of the same kind this one replaces, or zero |
 
 A reader refuses a convention document over 65,536 bytes; the declarations document has its own
@@ -111,7 +111,7 @@ declarations file is incomplete. Examples: a still image with a physical twin
 ([`declarations-generative.json`](schemas/examples/declarations-generative.json)) and a time
 capsule ([`declarations-time-capsule.json`](schemas/examples/declarations-time-capsule.json)).
 
-A reader finds it with `WorkRecords.mediaOf(tokenId)`, then `ContentStore.fileInfo(fileId)` for
+A reader finds it with `WorkFacts.factsOf(token, tokenId).media`, then `ContentStore.fileInfo(fileId)` for
 each AUXILIARY entry, then `ContentStore.read`, or fetches the copy at a locator and checks its
 SHA-256 against the media entry. The sections, all optional:
 
@@ -138,7 +138,7 @@ a `reason`.
 | `display` | Instructions for display: aspect ratio, background, looping, sound, interaction | Every work |
 
 A storage receipt's `form` follows the storage guide's rule for what a locator holds
-([which bytes a locator holds](../integrators/storage.md#4-locators-content-addresses-only)): for a
+([which bytes a locator holds](works-and-storage.md#add-a-locator-and-switch-the-preferred-location)): for a
 `Gzip`, `Base64` or `GzipBase64` file a copy may be either the stored stream (the one that can
 rebuild the content-store file, whose ID commits to those exact bytes) or the decoded media, and
 the receipt says which. A `stored` copy is always checked by its bytes against the file's
@@ -201,7 +201,7 @@ CHECK_storage:
       require f.sha256 == m.sha256Hash
       require |{(r.network, r.provider) for r in f.receipts}| >= 2
       for r in f.receipts:
-          require r.uri passes WorkRecords' locator shape (WS-18) and r.network matches it
+          require r.uri passes the delivery module's locator shape (WS-18) and r.network matches it
           b := fetch(r.uri)
           if r.form == stored:   require |b| == fileInfo(m.fileId).length
                                  and keccak256(chunk i of b) == chunkHash(m.fileId, i) for every i
@@ -300,12 +300,12 @@ been renounced. The powers, in bit order (a power's bit index is its position):
 
 | Power | Bit (value) | What renouncing it stops | Fact-sheet row it covers (DCL-27) |
 | --- | --- | --- | --- |
-| `ROYALTY_RATE` | 0 (1) | Any further `WorkRecords.setRoyaltyRate` | `royalty_rate` |
-| `RELICENSE` | 1 (2) | Any further `WorkRecords.relicense` | `license` |
-| `RENDERER_REPIN` | 2 (4) | Any further `WorkRecords.repinRenderer`; renounceable only once the work is finalized | `renderer` |
+| `ROYALTY_RATE` | 0 (1) | Any further `WorkRules.setRoyaltyRate` | `royalty_rate` |
+| `RELICENSE` | 1 (2) | Any further `WorkRules.relicense` | `license` |
+| `RENDERER_REPIN` | 2 (4) | Any further `WorkRules.repinRenderer`; renounceable only once the work is finalized | `renderer` |
 
 A reader shows a power as renounced when `renouncedPowers(tokenId)` has its bit, and as retained
-otherwise; where the deployment's `WorkRecords` does not report `IWorkPowers` through ERC-165, it
+otherwise; where the token's RECORDS module does not report `IWorkPowers` through ERC-165, it
 shows the powers as not available.
 
 ### Living work
@@ -362,7 +362,7 @@ gather every holder's consent. The renderer shows an edition its master's media.
 ignore both kinds about an edition subject, and never apply a master's accepted change to its
 edition: an edition always shows the approved content, and a reader labels an EDITION_MASTER whose
 display changed accordingly. A proposed content hash is not reserved on chain: a reader checks
-`PackageRegistry.consumedItemOf(sha256)` and flags a proposal whose bytes were minted as another
+`Stream.tokenOfContent(sha256)` and flags a proposal whose bytes were minted as another
 work.
 
 ```mermaid
@@ -388,7 +388,7 @@ stateDiagram-v2
 Stream token, with a [`catalogue-entry.v1`](schemas/catalogue-entry.v1.schema.json) document
 ([example](schemas/examples/catalogue-entry.json)). The latest valid entry for the work, following
 `supersedes`, is its entry. An entry about a master covers its edition. Two works of the same artist
-(the same `coreOf(tokenId).artistId` on the same 6529 Stream) whose current entries share a
+(the same `workOf(tokenId).artistId` on the same 6529 Stream) whose current entries share a
 `catalogueNumber` are both flagged; the same number in two artists' catalogues is not a duplicate.
 
 **DCL-17. The artist-wide catalogue.** The log cannot hold it: `isArtist` is false for the artist
@@ -397,7 +397,7 @@ would not be the artist's. The catalogue is therefore a
 [`catalogue.v1`](schemas/catalogue.v1.schema.json) document ([example](schemas/examples/catalogue.json))
 that the artist's profile document names by hash, in a member
 `"catalogue": {"sha256": "0x…", "locators": ["ar://…"]}`. The profile document's hash is the one
-`ArtistRegistry.artist(artistId)` returns; it changes only through a staged identity change, with
+`Accounts.artist(artistId)` returns; it changes only through a staged identity change, with
 its delay ([change kinds](identity-and-recovery.md#change-kinds)), and it is an
 unverified claim (LIM-ID-13). The catalogue can list works on any chain and works off chain; for
 a 6529 Stream work its `entry` names the CATALOGUE_ENTRY entry hash, and where the two differ the
@@ -522,7 +522,7 @@ Anvil test account 0, digest
 **DCL-25. A cold wallet through a consolidated wallet.** A collector keeps the work in a cold
 `holder` and signs with a hot `signer` consolidated with it in the 6529 delegation contract (use
 case 999, all collections). The verifier reads the consolidation source the artist registry
-uses, `ArtistRegistry.consolidationSource()`, at `B`: `isConsolidated(holder, signer)` is true
+uses, `Accounts.consolidationSource()`, at `B`: `isConsolidated(holder, signer)` is true
 when each has a live registration of the other, with no minimum age
 ([the consolidation adapter](identity-and-recovery.md#the-consolidation-adapter)); the same rule
 decides which wallets act for an artist's account. A venue accepts such a pair and refuses any
@@ -556,13 +556,13 @@ off chain, from reads at one block, and carries no warnings, ratings or scores.
 
 | Read | Contract | Gives |
 | --- | --- | --- |
-| `ownerOf`, `coreOf`, `primarySale`, `editionOf`, `rendererOf` | Stream | Owner; item hash, artist ID, collection and kind; the sale outcome and price; the edition link; the renderer in force |
+| `ownerOf`, `workOf`, `rendererOf` | Stream | Owner; item hash, artist ID, collection, kind, outcome and seed; the renderer in force |
 | The `WorkMinted` event | Stream | The content hash (`contentHash`): no view returns it, since Stream stores only the item hash; and the package root, where the floor result is published (DCL-33) |
-| `isOpen`, `record`, `mediaOf`, `licenseOf`, `workStateHash`, `preferredLocator`, `pinnedRenderer`; `locators` on its delivery contract | WorkRecords | Record status, version, finalized, on-chain complete, state hash, whether a renderer is pinned; media, roles and hashes; license; how many copies each file has and the served copy's kind |
-| `renouncedPowers` | WorkRecords, as `IWorkPowers` (ERC-165) | Renounced and retained powers (DCL-8) |
+| `factsOf`; `workStateHash`, `delivery` and its `locators`, `preferredLocator` | WorkFacts, WorkRules | Record opened, finalized, on-chain complete, pinned renderer, locks; media, roles and hashes; license; state hash; how many copies each file has and the served copy's kind |
+| `renouncedPowers` | WorkRules, as `IWorkPowers` (ERC-165) | Renounced and retained powers (DCL-8) |
 | `fileInfo`, `isComplete`, `read` | ContentStore | Each media file's MIME type and completeness; whether the license text is on chain; the declarations bytes |
 | `latestDisputeOutcome`, `disputeOutcomeOf`, `chainOf`, `artistResolver` | StatementLog | Dispute status and its scope (token or item); the chain's count and head; the resolver |
-| `activeAuthorityOf`, `artist`, `pendingChange` | ArtistRegistry | The account's root while it can act (zero while frozen or while a replacement is pending), the freeze end, and a pending identity change |
+| `activeAuthorityOf`, `artist`, `pendingChange` | Accounts | The account's root while it can act (zero while frozen or while a replacement is pending), the freeze end, and a pending identity change |
 | `saleIdOf`, `clearing` | UniformEditionAuction | The edition's copies and price per copy, for a master with an edition |
 | Documents | The declarations document; the published floor result (DCL-33); custody attestations; the winning display change (DCL-12) | Declarations, floor, custody, display change |
 
@@ -578,15 +578,15 @@ phase:
 
 | What | Paths | Until |
 | --- | --- | --- |
-| `record` | `WorkRecords.setRecord`, `finalize`: the artist, no governed delay ([WS-7](works-and-storage.md#rules-and-invariants)) | finalize |
-| `license` | `WorkRecords.relicense` ([roles](../audit/roles.md#workrecords)); never for CC0 (WS-12) | permanent |
-| `royalty_rate` | `WorkRecords.setRoyaltyRate` ([roles](../audit/roles.md#workrecords)) | permanent |
-| `renderer` | Before finalize `Stream.setDefaultRenderer` ([roles](../audit/roles.md#stream)); after, `WorkRecords.repinRenderer` ([roles](../audit/roles.md#workrecords)) | permanent |
-| `served_copy` | The delivery contract (`WorkDelivery.addLocator`, the artist before finalize; `setFilePreference`, `setCollectionPreferredKind`, `setPreferredKind`), and `WorkRecords.setDelivery`, which replaces it ([roles](../audit/roles.md#workrecords)) | permanent |
+| `record` | `WorkRules.setRecord`, `finalize`: the artist, no governed delay ([WS-7](works-and-storage.md#rules-and-invariants)) | finalize |
+| `license` | `WorkRules.relicense` ([roles](../audit/roles.md#workrules)); never for CC0 (WS-12) | permanent |
+| `royalty_rate` | `WorkRules.setRoyaltyRate` ([roles](../audit/roles.md#workrules)) | permanent |
+| `renderer` | Before finalize the token's RENDERER module (`proposeModule`, after `moduleDelay`); after, `WorkRules.repinRenderer` | permanent |
+| `served_copy` | The delivery contract (`WorkDelivery.addLocator`, the artist before finalize; `setFilePreference`, `setCollectionPreferredKind`, `setPreferredKind`), and `WorkRules.setDelivery`, which replaces it ([roles](../audit/roles.md#workrules)) | permanent |
 | `dispute_statement` | `StatementLog.appendPlatform` ([roles](../audit/roles.md#statementlog)) | permanent |
-| `artist_authority` | `ArtistRegistry.stageChange` (a wallet of the account), `stageReplacement` ([roles](../audit/roles.md#artistregistry); [change kinds](identity-and-recovery.md#change-kinds)) | permanent |
+| `artist_authority` | `Accounts.stageChange` (a wallet of the account), `stageReplacement` ([roles](../audit/roles.md#accounts); [change kinds](identity-and-recovery.md#change-kinds)) | permanent |
 | `artist_resolver` | `StatementLog.setArtistResolver` ([roles](../audit/roles.md#statementlog)) | permanent |
-| `burn_and_release` | `EnglishAuction.cancel` and `Stream.releaseContent` after an upheld dispute ([roles](../audit/roles.md#englishauction)) | settlement ([DSP-20, DSP-22](disputes-and-statements.md#rules-and-invariants)) |
+| `burn_and_release` | `EnglishAuction.cancel` and `PackageRegistry.releaseContent` after an upheld dispute ([roles](../audit/roles.md#englishauction)) | settlement ([DSP-20, DSP-22](disputes-and-statements.md#rules-and-invariants)) |
 
 The generator then applies these rules to the rows, as the reference tool does:
 
@@ -603,14 +603,14 @@ The generator then applies these rules to the rows, as the reference tool does:
 
 **DCL-28. States the sheet distinguishes.** Record not open, open or finalized; on-chain complete
 or not; disputed (an outcome about the token, or only about its item) or not; the primary sale
-NONE, SOLD, UNBID, FROZEN_OUT or RESCUED (moved by the network to the museum); each power
+NONE, SOLD, UNSOLD or RESCUED (moved by the network after its sale contract was removed); each power
 renounced or retained, or `available: false` without `IWorkPowers`; declarations absent, valid,
 invalid, ambiguous or unreadable; each floor fact met, waived, unmet or not applicable (DCL-33);
 display changed or not, and by the current owner or not; each custody attestation recognized or
 not, fresh or stale, and each named custodian with no attestation (`NONE`, no date). A burned
 token has no fact sheet. A dispute outcome's document is read to say what it decided: the log records
-only that an outcome exists. While the record is not open, `mediaOf` and `licenseOf` revert: the
-sheet shows the license of the approved package item (the one `openRecord` will store), no media
+only that an outcome exists. While the record is not open, `factsOf` returns an empty record: the
+sheet shows the license of the approved package item (the one `WorkFacts.open` will store), no media
 files, declarations `unreadable` and every floor fact `unmet`.
 
 ## Primary price history
@@ -619,7 +619,7 @@ files, declarations `unreadable` and every floor fact `unmet`.
 
 | Sale | Read | Events |
 | --- | --- | --- |
-| A 6529 Stream 1/1 | `Stream.primarySale(tokenId)`: outcome, currency and price, the price held in 96 bits (`type(uint96).max` means at least that) ([AUC-8](stream-and-auctions.md#rules-and-invariants)) | `Stream.PrimarySaleSettled`, with the exact price; `EnglishAuction.SaleSettled`, with the seller's proceeds and the fee ([events](../integrators/events-and-indexing.md#stream), [auction events](../integrators/events-and-indexing.md#englishauction)) |
+| A 6529 Stream 1/1 | `Stream.workOf(tokenId).outcome`; the price is only in the log ([AUC-8](stream-and-auctions.md#rules-and-invariants)) | `Stream.PrimarySale` (outcome, buyer, price); `EnglishAuction.SaleSettled`, with the seller's proceeds and the fee ([events](../integrators/events-and-indexing.md#stream), [auction events](../integrators/events-and-indexing.md#englishauction)) |
 | A 6529 Stream Editions edition | `UniformEditionAuction.clearing(saleIdOf(editions, editionId))`: copies sold and the one price every winner paid ([EA-11](editions-and-sales.md#rules-and-invariants)) | `AuctionCleared` (count, price, revenue) and `SaleSettled` (quantity and revenue) ([events](../integrators/events-and-indexing.md#uniformeditionauction)) |
 
 An edition's ID is its master's token ID. Secondary sales are not recorded by the protocol.
@@ -645,7 +645,7 @@ applies it; "Supported on chain by" names the contract rule it builds on.
 | DCL-12 | The latest valid acceptance decides the display; withdrawal undoes it; `tokenURI` never changes. | Readers | WS-6 |
 | DCL-13 | An acceptance survives a transfer, labelled by who accepted it. | Readers | none |
 | DCL-14 | Burns and dispute outcomes prevail over the display. | Readers | DSP-12 |
-| DCL-15 | Editions never take a content change; proposed bytes minted as another work are flagged. | Readers | DSP-11 subject rules; `consumedItemOf` |
+| DCL-15 | Editions never take a content change; proposed bytes minted as another work are flagged. | Readers | DSP-11 subject rules; `tokenOfContent` |
 | DCL-16 | A catalogue entry counts only as ARTIST; the latest per work wins; duplicate numbers within one artist's works are flagged. | Readers | ID-11 |
 | DCL-17 | The artist-wide catalogue is named from the profile document. | Artists; readers | ID-5, ID-6, ID-11 |
 | DCL-18 | A citation counts only as ARTIST about the citing work, only when well formed (schema-valid, non-zero chain ID, not the work itself), and is shown as the citing artist's claim. | Readers | ID-11 |
@@ -674,7 +674,7 @@ event: a reader that shows a display change, a catalogue entry or custody refres
 | Failure | Effect | Recovery |
 | --- | --- | --- |
 | A declarations document breaks DCL-3, or two are listed | `invalid` or `ambiguous`; every floor fact `unmet` | None for that work: the media cannot change. Later facts go in statements. |
-| The declarations file is not registered | `openRecord` reverts | Anyone registers the committed manifest. |
+| The declarations file is not registered | `WorkFacts.open` reverts | Anyone registers the committed manifest. |
 | The declarations file is not complete on chain (possible only under a wave that does not check the floor: DCL-3, DCL-5) | The work cannot become on-chain complete; readers fetch the document by locator | Anyone uploads the missing chunks. |
 | A storage receipt goes dark after approval | The floor stays `met` (it is about approval) | `STORAGE_COPY` and `FIXITY_CHECK` statements; new locators. |
 | Every wallet of an artist's account is lost, or the account is frozen or being replaced | No ARTIST statements | [Identity and recovery](identity-and-recovery.md); earlier entries keep their resolver. |
@@ -712,7 +712,7 @@ accepted ADR is departed from. The work powers this page refers to are
 
 - Code: [`StatementKinds.sol`](../../src/interfaces/types/StatementKinds.sol),
   [`StatementLog.sol`](../../src/records/StatementLog.sol),
-  [`WorkRecords.sol`](../../src/stream/WorkRecords.sol),
+  [`WorkFacts.sol`](../../src/core/WorkFacts.sol),
   [`IWorkPowers.sol`](../../src/interfaces/IWorkPowers.sol),
   [`DependencyRegistry.sol`](../../src/content/DependencyRegistry.sol),
   [`Renderer.sol`](../../src/content/Renderer.sol), [`JsonScan.sol`](../../src/content/JsonScan.sol),

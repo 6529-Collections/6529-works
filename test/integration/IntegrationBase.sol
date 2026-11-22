@@ -46,8 +46,11 @@ abstract contract IntegrationBase is WorksDeployment {
 
     /// @dev EIP-7825 (Fusaka): no transaction may carry more than 2^24 gas.
     uint256 internal constant TX_GAS_CAP = 1 << 24;
-    /// @dev ADR 0003 and ADR 0004: a steady-state start, as a whole transaction in Prague gas.
-    uint256 internal constant START_BUDGET = 350_000;
+    /// @dev ADR 0010 (replacing ADR 0004's 350,000): every start row, as a whole transaction in
+    ///      Prague gas, is at most this. The slot gate (8 new slots, with or without a bid) is
+    ///      `CoreIntegrationBase.START_MAX_SLOTS`; GasReport's own slot constants move to it at
+    ///      integration.
+    uint256 internal constant START_BUDGET = 370_000;
     /// @dev EIP-2929: the first access to an account costs 2,600, a warm one 100.
     uint256 internal constant COLD_ACCOUNT_SURCHARGE = 2500;
     uint256 internal constant TOKEN_URI_BUDGET = 8_000_000;

@@ -54,4 +54,4 @@ in the [specification](../../docs/spec/README.md); the users of each library are
 [ADR 0001](../../docs/adr/0001-v1-scope.md) §11 ("Hardening": one shared signature library),
 §8 (content storage and the renderer's bounded read) and §17 (reuse plan);
 [trust assumptions](../../docs/audit/trust-assumptions.md),
-[threat model](../../docs/audit/threat-model.md).
+[trust assumptions](../../docs/audit/trust-assumptions.md).

@@ -13,7 +13,7 @@ Nothing in the file is written by hand. Every value is read from the source that
     table's preface gives its columns;
   - collection names and symbols: the token contracts' sources;
   - status, release and links: the README's status table, the newest release notes under
-    docs/releases/ and the CHANGELOG.
+    the CHANGELOG.
 
 The site fetches the file at a pinned commit, so a fact that changes here reaches it on the
 next sync. A source that no longer has the shape this script reads fails generation, rather
@@ -42,7 +42,6 @@ SCHEMA = "6529-works/facts/1"
 
 README = "README.md"
 CHANGELOG = "CHANGELOG.md"
-RELEASES = "docs/releases"
 DEPLOYMENTS = "deployments"
 DEPLOY_SCRIPT = "script/Deploy.s.sol"
 ADR_0004 = "docs/adr/0004-gas-budgets-under-glamsterdam.md"
@@ -85,7 +84,6 @@ DOC_PATHS = {
     "architecture": "docs/architecture.md",
     "adrs": "docs/adr/README.md",
     "gasTable": ADR_0004,
-    "internalReview": "docs/security/internal-review-2026-10.md",
     "security": "SECURITY.md",
     "changelog": CHANGELOG,
 }
@@ -247,17 +245,21 @@ def status(root: Path) -> dict:
 
 
 def release(root: Path, repo: str) -> dict:
-    notes = sorted((root / RELEASES).glob("v*.md"), key=lambda p: _version_key(p.stem))
-    if not notes:
-        raise FactError(f"{RELEASES}: no release notes")
-    tag = notes[-1].stem
-    m = re.search(r"^## " + re.escape(tag[1:]) + r" \((\d{4}-\d{2}-\d{2})\)$", read(root, CHANGELOG), re.MULTILINE)
-    if not m:
-        raise FactError(f"{CHANGELOG}: no `## {tag[1:]} (date)` section for {notes[-1].name}")
+    """The latest tagged release, from the CHANGELOG's `## x.y.z[-pre.n] (date)` sections."""
+    sections = re.findall(
+        r"^## (\d+\.\d+\.\d+(?:-[a-z]+\.\d+)?) \((\d{4}-\d{2}-\d{2})\)$",
+        read(root, CHANGELOG),
+        re.MULTILINE,
+    )
+    if not sections:
+        raise FactError(f"{CHANGELOG}: no `## x.y.z (date)` release section")
+    version, date = max(sections, key=lambda s: _version_key("v" + s[0]))
+    tag = "v" + version
+    anchor = re.sub(r"[^a-z0-9 -]", "", f"{version} ({date})".lower()).replace(" ", "-")
     return {
         "tag": tag,
-        "date": m.group(1),
-        "notes": notes[-1].relative_to(root).as_posix(),
+        "date": date,
+        "notes": f"{CHANGELOG}#{anchor}",
         "url": f"{repo}/releases/tag/{tag}",
     }
 
@@ -265,7 +267,7 @@ def release(root: Path, repo: str) -> dict:
 def _version_key(stem: str) -> tuple:
     m = re.fullmatch(r"v(\d+)\.(\d+)\.(\d+)(?:-([a-z]+)\.(\d+))?", stem)
     if not m:
-        raise FactError(f"{RELEASES}/{stem}.md: not a version")
+        raise FactError(f"{stem}: not a version")
     major, minor, patch, pre, num = m.groups()
     # A final release sorts after its prereleases.
     return (int(major), int(minor), int(patch), pre is None, pre or "", int(num or 0))

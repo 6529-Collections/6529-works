@@ -1,1007 +1,120 @@
 # Buying, bidding, settling and claiming
 
 For marketplace and wallet engineers, relayers and keepers: how to start, bid on and settle a
-6529 Stream auction, bid on 6529 Stream Editions copies in the edition auction, claim what is
-owed, and read royalties. Rules are in [Stream and auctions](../spec/stream-and-auctions.md#rules-and-invariants) (`AUC-n`),
-[Editions and sales](../spec/editions-and-sales.md#rules-and-invariants) (`ED-n`, `EA-n`) and
-[Economics and payouts](../spec/economics-and-payouts.md#rules-and-invariants) (`ECO-n`); event
-signatures in [Events and indexing](events-and-indexing.md); addresses in [Addresses](addresses.md).
+6529 Stream auction, bid on edition copies, claim what is owed, and read royalties. Sales are in
+ETH only. Rules are in [Stream and auctions](../spec/stream-and-auctions.md#rules-and-invariants)
+(`AUC-n`), [Editions and sales](../spec/editions-and-sales.md#rules-and-invariants) (`ED-n`,
+`EA-n`) and [Economics and payouts](../spec/economics-and-payouts.md#rules-and-invariants)
+(`ECO-n`); events in [Events and indexing](events-and-indexing.md).
 
 > Pre-audit. See the [project status](../../README.md#status).
 
-Sepolia r5 ([Addresses](addresses.md#sepolia-r5)) runs `main` at `ca02473`: the 1/1 auction,
-`SaleStarter`, the uniform edition auction and the claims as this page describes them, with
-1-hour 1/1 auctions (a testnet setting). The superseded r4 runs `1e7022b` (`v1.0.0-rc.2`), from
-before the second permanence pass. The superseded r3 runs `v1.0.0-rc.1`, with the edition terms
-and the fixed-price and Dutch edition adapters that ADR 0005 replaced. The superseded r2 predates the October 2026 review fixes: it
-has no `claimFor`, ERC-20 payout frame, `scheduleDelay`, currency freeze,
-`SHORTFALL_REVERT_CEILING` or identity restraint
-([Addresses](addresses.md#sepolia-r2-superseded)). Sepolia gas figures here are r2's; r3's
-and r4's (with every edition-auction step) are in
-[the flows file](../../deployments/11155111/flows.md#r4-the-rc2-candidate-1-november-2026).
+The sale contracts are replaceable modules. Their exact function signatures and errors are in
+the exported ABIs ([`abi/`](../../abi)); this page describes the flow, which the restructuring
+keeps.
 
-## Before you start
+## Contracts you call
 
-### Contracts you call
+| Contract | You call it to |
+| --- | --- |
+| `EnglishAuction` | start, bid, settle, claim credits, claim a pending delivery |
+| `UniformEditionAuction` | open an edition's sale, bid, raise, settle, abandon, claim |
+| `SaleStarter` | start a 1/1 with its payout vaults and record in one transaction (the network's keeper uses it) |
+| `Stream` ([`IStream`](../../src/interfaces/core/IStream.sol)) | read works (`workOf`, `ownerOf`), `royaltyInfo`, check minters (`isMinter`) |
+| `Editions` ([`IEditions`](../../src/interfaces/core/IEditions.sol)) | read editions (`editionOf`), `royaltyInfo` |
+| `PackageRegistry` ([`IMintPolicy`](../../src/interfaces/core/IMintPolicy.sol)) | check approvals, acceptances and move nonces; `preview` a start; get the move digest |
+| `VrfEntropyModule` | request a VRF seed |
+| `RevenueEscrow` | flush refused payouts |
+| `SplitLedger`, `ClaimRouter` | release split-vault shares, singly or in batches |
 
-| Contract | Interface | You call it to |
-| --- | --- | --- |
-| `EnglishAuction` | [IEnglishAuction](../../src/interfaces/IEnglishAuction.sol) | start, bid, withdraw, settle, claim |
-| `UniformEditionAuction` | [IUniformEditionAuction](../../src/interfaces/IUniformEditionAuction.sol) | open an edition's sale, bid, raise, settle, abandon, claim |
-| `SaleStarter` | [SaleStarter.sol](../../src/sales/SaleStarter.sol) | start a 1/1 with its payout vaults and record in one transaction (the network's keeper uses it) |
-| `Stream` | [IStream](../../src/interfaces/IStream.sol), [IMintTarget](../../src/interfaces/IMintTarget.sol) | preview a start, read works, `royaltyInfo` |
-| `Editions` | [IEditions](../../src/interfaces/IEditions.sol) | read editions, `royaltyInfo` |
-| `PackageRegistry` | [IPackageRegistry](../../src/interfaces/IPackageRegistry.sol) | check approvals, acceptances and move nonces; relay acceptances; get the move digest |
-| `VrfEntropyModule` | [IEntropyModule](../../src/interfaces/IEntropyModule.sol) | request a VRF seed |
-| `AssetAllowlist` | [IAssetAllowlist](../../src/economics/interfaces/IAssetAllowlist.sol) | read a currency's status and increment floor |
-| `RevenueEscrow` | [IRevenueEscrow](../../src/economics/interfaces/IRevenueEscrow.sol) | flush refused payouts |
-| `SplitLedger` (deployment name `SplitFactory`) | [ISplitLedger](../../src/economics/interfaces/ISplitLedger.sol) (with [ISplitFactory](../../src/economics/interfaces/ISplitFactory.sol), [ISplitWallet](../../src/economics/interfaces/ISplitWallet.sol) and [IReleaseVerifier](../../src/economics/interfaces/IReleaseVerifier.sol)) | deploy a wallet, release a share, build and revoke signed releases |
-| `FeeRecipientVault`, `MuseumVault` | [IGovernedVault](../../src/economics/interfaces/IGovernedVault.sol) | forward what the fee recipient or the museum holds to its destination |
-| `ClaimRouter` | [IClaimRouter](../../src/economics/interfaces/IClaimRouter.sol) | batch releases |
-
-The sale adapters share [`ISaleAdapter`](../../src/interfaces/ISaleAdapter.sol): `SaleStarted`,
-`SaleSettled`, `Credited`, `Claimed`, `claim`, `claimable`, `expireCredit`, `paused` and the shared
-errors.
-
-### Conventions
-
-- **Currencies.** `CURRENCY_ETH` is `address(0)`. `CURRENCY_DEFAULT` is
-  `address(type(uint160).max)`; in a package it means "the product's default currency when the sale
-  starts" ([EconomicsTypes.sol](../../src/interfaces/types/EconomicsTypes.sol)). Every sale locks
-  its resolved currency when it starts or opens (AUC-15). Edition auctions take ETH only (EA-4).
-- **Shares and rates** are out of 100,000 (`Splits.DENOMINATOR`, ECO-1): 6.529% is 6,529.
-- **Errors** are custom errors. A nested contract's error (Stream, the package registry, the
-  allowlist, Permit2, a token) bubbles up unchanged: decode against every ABI on the path
-  ([ABIs and interface IDs](abis-and-interface-ids.md)).
-- **Simulate first.** Run every write with `eth_call`, and take the gas limit from
-  `eth_estimateGas` on the target chain ([Prague gas and Glamsterdam gas](#prague-gas-and-glamsterdam-gas)).
-
-### The `Payment` struct
-
-Every English-auction bid carries one `Payment`
-([SaleTypes.sol](../../src/interfaces/types/SaleTypes.sol)):
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `method` | `PaymentMethod` | `DIRECT` (0) or `PERMIT2` (2); `PERMIT` (1, EIP-2612) is refused |
-| `payer` | `address` | The bidder or buyer of record. Refunds and credits go to it. For `DIRECT` it must be `msg.sender`; for `PERMIT2` it is the signer, and anyone may submit. |
-| `amount` | `uint256` | The exact bid |
-| `deadline` | `uint256` | The Permit2 deadline; ignored for `DIRECT` |
-| `nonce` | `uint256` | The Permit2 nonce; zero otherwise |
-| `signature` | `bytes` | `PERMIT2`: the Permit2 signature. `DIRECT`: empty |
-
-The auction collects it in `_collect`
-([EnglishAuction.sol](../../src/sales/EnglishAuction.sol)):
-
-- **ETH** takes `DIRECT` only, with `payer == msg.sender` and `msg.value == amount`; anything else
-  reverts with `InvalidPayment()`.
-- **An ERC-20** takes `msg.value == 0`. For `DIRECT`, the payer approved the adapter beforehand.
-  For `PERMIT2`, the payer approved the canonical Permit2 once and signs a witness transfer
-  (below).
-- **`PERMIT` (EIP-2612) is refused** with `InvalidPayment()`, and the token's `permit` is never
-  called.
-- An expired `PERMIT2` deadline reverts with `PaymentExpired(deadline)`, even where an allowance
-  would cover the pull.
-
-**Which ERC-20s work** ([TokenTransfer.sol](../../src/economics/TokenTransfer.sol)):
-
-- **Balance deltas, on every path.** A fee-on-transfer or rebasing token reverts with
-  `TokenBalanceMismatch(asset)`.
-- **Return values, except under `PERMIT2`.** Every other movement also requires exactly one
-  `true` word back (`TokenCallFailed(asset, selector)`;
-  `test_NoReturnAndFalseReturningTokensFailClosed` in
-  [EnglishAuctionHostile.t.sol](../../test/sales/auction/EnglishAuctionHostile.t.sol)). Around a
-  `PERMIT2` pull the adapter checks only balances, and Permit2 accepts a token that returns
-  nothing (`test_Bid_APermit2PullMustMoveBothBalancesByExactlyTheAmount` in
-  [EnglishAuctionHostile.t.sol](../../test/sales/auction/EnglishAuctionHostile.t.sol)).
-- **Admission is the guard.** A currency is usable only once `AssetAllowlist.admitAsset`
-  (FUNDS_SETTER, 3 days) admits it, and the network admits standard ERC-20s only; the admission
-  probe is not a behavior check (ECO-32).
-
-### Signing a Permit2 payment
-
-A `PERMIT2` payment is a Permit2 `permitWitnessTransferFrom`, signed in Permit2's own EIP-712
-domain. The witness binds the action, so a relayer can submit it and cannot change it
-(AUC-19).
-
-- The signed type is `PermitWitnessTransferFrom(TokenPermissions permitted,address spender,uint256 nonce,uint256 deadline,`
-  followed by the action's witness type string.
-- `permitted` is `(currency, payment.amount)`, `spender` is the adapter, and `nonce` and `deadline`
-  are `payment.nonce` and `payment.deadline`.
-- The witness is `keccak256(abi.encode(WITNESS_TYPEHASH, field1, field2, ...))`, with the fields
-  below in order. The type strings and typehashes are in
-  [ABIs and interface IDs](abis-and-interface-ids.md#permit2-witnesses).
-
-| Action | Witness typehash | Witness fields |
-| --- | --- | --- |
-| `bid` | `BID_WITNESS` | `saleId`, the recipient **resolved** (the payer when zero), `payment.amount`, `payment.deadline` |
-| `startWithBid` | `START_BID_WITNESS` | `token`, `keccak256(mintData)`, the recipient **resolved**, `payment.amount`, `payment.deadline` |
-
-When the auction's `permit2()` is zero, a `PERMIT2` payment reverts with `InvalidPayment()`.
+Simulate every write with `eth_call` and take the gas limit from `eth_estimateGas`.
 
 ## Starting an auction
 
-Starting is permissionless: one transaction mints the work into the auction's custody and starts
-its clock. Whoever submits it pays the gas
-([ADR 0001 §5](../adr/0001-v1-scope.md#5-sales-and-auctions)). The network's keeper starts its
-sales through [`SaleStarter`](#starting-through-salestarter), which also deploys the payout vaults
-and opens the record in the same transaction.
+Starting is permissionless. One transaction asks the mint policy, mints the work into the
+auction's custody and starts the clock:
 
 ```solidity
 function start(address token, bytes calldata mintData) external returns (uint256 saleId);
-
-function startWithBid(
-    address token,
-    bytes calldata mintData,
-    address recipient,
-    Payment calldata payment
-) external payable returns (uint256 saleId);
-
+function startWithBid(address token, bytes calldata mintData, address recipient)
+    external payable returns (uint256 saleId);
 function saleIdOf(address token, uint256 tokenId) external pure returns (uint256);
 ```
 
-- `token` is the 6529 Stream address; `mintData` is `abi.encode(StreamMintRequest)` (below).
-- The sale ID is `uint256(keccak256(abi.encode(token, tokenId)))`. Take it from the return value or
-  from `SaleStarted`; the token ID is assigned at mint.
-- `startWithBid` also places the first bid, with the bid's payer as the bidder of record; a
-  relayer can submit it with a `PERMIT2` bid.
+- `mintData` is the request the mint policy reads: the approved package root, the item exactly
+  as published, its Merkle proof (at most 32 nodes), and the lead artist's move signature
+  (nonce, deadline, `abi.encodePacked(wallet, signature)`).
+- The sale ID is `uint256(keccak256(abi.encode(token, tokenId)))`.
+- `startWithBid` also places the first bid; `msg.value` is the bid.
 
-### Building the `StreamMintRequest`
+**Check before you submit:** the root is `APPROVED`; every party accepted the root; the move is
+unexpired and its nonce unused; no live token holds the content (`Stream.tokenOfContent`), or
+the content was released for this artist; for a VRF item, the seed is delivered; the lead
+artist's account is not frozen or changing; the auction is not paused. `PackageRegistry.preview`
+answers the mint facts and terms a start would get.
 
-[PackageTypes.sol](../../src/interfaces/types/PackageTypes.sol) defines the request:
-
-| Field | Type | Where it comes from |
-| --- | --- | --- |
-| `packageRoot` | `bytes32` | The approved package root, from the published package document |
-| `item` | `PackageItem` | The item, exactly as published in the package document |
-| `proof` | `bytes32[]` | The Merkle proof that places the item's leaf under the root, at most 32 nodes (`Limits.MAX_PROOF_DEPTH`) |
-| `move.nonce` | `uint256` | The lead artist's move nonce |
-| `move.deadline` | `uint64` | When the move signature expires |
-| `move.signature` | `bytes` | The lead artist's `MoveToStream` proof: `abi.encodePacked(wallet, signature)` ([below](#the-move-signature)) |
-
-The item hash, leaf and tree are OpenZeppelin's `StandardMerkleTree` over
-`[PACKAGE_ITEM_DOMAIN, item]` ([Curation](../spec/curation.md#identifiers-and-hashes)), so the
-package tooling's proofs verify directly.
-
-**Check before you submit:**
-
-1. `PackageRegistry.packageOf(root)` returns `APPROVED`.
-2. `Stream.consumedItemOf(item.contentHash)` is zero and `Stream.releasedTo(item.contentHash)` is
-   zero or the item's lead artist (the registry's views of the same names answer from Stream).
-3. `PackageRegistry.acceptedAs(root, party.account)` is nonzero for every `item.parties[i]`.
-4. `Stream.collection(item.collectionId)` does not revert.
-5. The move is unexpired and `PackageRegistry.isMoveNonceUsed(artistId, nonce)` is false.
-6. For a VRF item, `IEntropyModule.isDeliveredContent(item.contentHash)` is true (the check
-   `Stream.mint` makes; `isDelivered(itemHash)` answers the same for an item `requestSeed` linked).
-7. The currency is usable ([The currency](#the-currency)).
-8. `Stream.primaryTerms(0, mintData).creator` is nonzero, so the lead artist's account is not
-   frozen or under a pending replacement ([restraint](../glossary.md#restraint)). This preview
-   does not check the proof, acceptances or move.
-9. The package is still live: not revoked, and its curation signer's approvals not killed
-   (`PackageRegistry.packageOf(root)` reports REVOKED for either, C32).
-10. `EnglishAuction.paused()` is false.
-
-### The move signature
-
-The lead artist signs the [move](../glossary.md#move) off-chain, in the package registry's EIP-712
-domain (name `6529 Works Package Registry`, version `1`, the chain ID, the registry's address), over
-`MoveToStream(bytes32 packageRoot,bytes32 itemHash,uint256 nonce,uint64 deadline)`
-(`Typehashes.MOVE_TO_STREAM`). `PackageRegistry.moveDigest(packageRoot, itemHash, nonce, deadline)`
-returns the digest to sign.
-
-- **Signer.** Any wallet of the lead artist's 6529 consolidated account: its root, or a wallet
-  the consolidation source says is consolidated with it (`IArtistRegistry.isWallet(artistId,
-  wallet)`), where the artist ID is `PackageRegistry.acceptedAs(root, item.parties[0].account)`.
-  A frozen account, or one under a pending replacement, cannot sign.
-- **Proof.** `move.signature` is `abi.encodePacked(wallet, signature)`: the signing wallet, then
-  its signature. A move the root signs is the cheapest; one a non-root wallet signs reads the
-  delegation contract and costs about 47,000 gas more (LIM-ID-21).
-- **Signature forms.** 65-byte ECDSA, 64-byte ERC-2098, ERC-1271 (at most 65,536 bytes) and
-  EIP-7702 accounts ([SignatureVerifier.sol](../../src/libraries/SignatureVerifier.sol)).
-- **Nonce.** Any unused `uint256`, single use per artist ID. Use them in order from 0: the first
-  255 share an existing storage word, which keeps the start within its gas budget. Any wallet
-  of the account revokes an unused one with `revokeMove(artistId, nonce)`. A move signed by a
-  wallet that is no longer the account's is void.
-
-### Encoding `mintData`
-
-Encode the request as one tuple. Stream reads it in place and reverts with
-`IMintTarget.InvalidMintRequest()` unless the first word is `0x20` (`_request` in
-[Stream.sol](../../src/stream/Stream.sol)). In Solidity, as the Sepolia driver
-[Flows.s.sol](../../script/sepolia/Flows.s.sol) does:
-
-```solidity
-bytes memory mintData = abi.encode(
-    StreamMintRequest(packageRoot, item, proof, MoveAuthorization(nonce, deadline, signature))
-);
-```
-
-Off-chain, encode a single parameter of this type (for example with ethers'
-`AbiCoder.encode([REQUEST], [request])`):
-
-```text
-tuple(
-  bytes32 packageRoot,
-  tuple(
-    uint8 kind, uint256 collectionId, bytes32 contentHash, bytes32 mediaHash, bytes32 recordFileId,
-    tuple(address account, uint8 role)[] parties,
-    tuple(uint256 artistId, address account, uint32 share)[] payees,
-    tuple(string spdxId, bytes32 textFileId) license,
-    uint8 seedPolicy, bytes32 seed,
-    tuple(bytes32 saleKind, address currency, bytes params) sale,
-    tuple(uint32 maxCount, address currency, bytes32 saleKind, bytes params) edition
-  ) item,
-  bytes32[] proof,
-  tuple(uint256 nonce, uint64 deadline, bytes signature) move
-)
-```
-
-Do not encode the four members as four separate parameters: that drops the leading offset word.
-
-### VRF works
-
-A work whose item has `seedPolicy == VRF` starts only after its seed is delivered (AUC-4):
-
-1. Anyone calls `requestSeed(item, packageRoot, proof)` on the entropy module.
-2. Wait for `SeedDelivered(contentHash, requestId, seed)`; on Sepolia it arrived five blocks after
-   the request ([flows §6](../../deployments/11155111/flows.md#6-vrf)).
-3. Check `isDeliveredContent(item.contentHash)`, then start.
-
-If no seed arrives, anyone may request again once the content's backoff wait has passed:
-`retryDelay()` (at least 3 days, `VrfEntropyModule.MIN_RETRY_DELAY`) before the first repeat,
-doubling with each repeat up to 30 days, and with no wait for the first request after a
-coordinator change ([ENT-5](../spec/entropy.md#rules-and-invariants));
-earlier calls revert with `RequestPending(itemHash, retryAt)`, whose `retryAt` is the next
-moment a repeat is accepted.
-
-### The currency
-
-The currency locks at start (AUC-15). `CURRENCY_DEFAULT` resolves to
-`AssetAllowlist.defaultCurrency(PRODUCT_STREAM)`, ETH at launch; an explicit currency must be
-active. An unusable currency reverts with `CurrencyNotConfigured(product)` or
-`AssetNotActive(asset)`. Read the locked currency from `SaleStarted.currency` or
-`auction(saleId).currency`, never from the current default.
-
-The start also locks the currency's opening bid, the least first bid, which the asset allowlist
-holds with the currency's status (`AssetAllowlist.openingBid(asset)`, also answered by the
-auction's `openingBid(currency)`; 0.05 ETH at genesis, owner decision 19). The network changes
-it with `AssetAllowlist.setOpeningBid(asset, expectedRevision, bid)` (PARAMETER_SETTER, 24 hours,
-compare-and-set on the asset's revision; any value that fits 96 bits, no price cap, R19); a
-change reaches only auctions started afterwards.
-
-```mermaid
-sequenceDiagram
-    participant Artist as Lead artist
-    participant Starter as Starter, anyone
-    participant Entropy as VrfEntropyModule
-    participant Auction as EnglishAuction
-    participant Stream
-    participant Registry as PackageRegistry
-    Artist->>Starter: MoveToStream signature, off-chain
-    opt VRF work
-        Starter->>Entropy: requestSeed(item, packageRoot, proof)
-        Entropy-->>Starter: SeedDelivered, a few blocks later
-    end
-    Starter->>Auction: start(stream, mintData)
-    Auction->>Stream: mint(auction, 0, 1, mintData)
-    Stream->>Registry: authorize(context, mintData)
-    Note over Registry: consent, item rules, VRF seed, consumes the item, quotes the terms
-    Registry-->>Stream: the work's record
-    Note over Stream: checks the record, interns the terms, assigns the token ID and serial
-    Stream-->>Auction: tokenId, PrimaryTerms
-    Note over Auction: locks currency, opening bid, increment share, window
-    Auction-->>Starter: saleId, SaleStarted
-```
-
-**Events.** `TermsInterned` and `FeeRecipientRegistered` when the terms are new, the mint's
-`Transfer` and `WorkMinted` ([Stream](events-and-indexing.md#stream); the package registry, as
-the mint policy, emits nothing), and `SaleStarted`, whose
-`price` is the locked opening bid and `endTime` the initial end, plus `BidPlaced` for
-`startWithBid` ([EnglishAuction](events-and-indexing.md#englishauction)).
-
-### Errors
-
-Errors come from `EnglishAuction` (`SalePaused`, `TargetNotAllowed`, `InvalidSaleTerms`), `Stream`
-(`InvalidMintRequest`, the item-rule errors below, `SeedNotDelivered`), `AssetAllowlist`
-(currency), `PackageRegistry`, or the shared `SignatureVerifier` and `Dependency` errors.
-
-| Error | Cause | What to do |
-| --- | --- | --- |
-| `SalePaused()` | The emergency pause stops starts only (AUC-13). | Wait for the network's `unpause`. |
-| `TargetNotAllowed(token)` | `token` is not a served token contract. | Use the Stream address. |
-| `InvalidMintRequest()`, `InvalidItemSale()`, `InvalidLeadArtist()`, `UnknownCollection(collectionId)`, `InvalidSeedPolicy()`, `InvalidLicenseId()`, `InvalidWorkTerms()`, `TermsCapacityExceeded()` | Malformed `mintData`, a missing collection, or item terms Stream refuses (AUC-2). | Fix the request. |
-| `PackageNotApproved(packageRoot)`, `ContentUsed(product, contentHash, claimedBy)`, `ContentReserved(contentHash, beneficiary)` | The root is unknown, revoked, or registered before its signer's approvals were killed; the item already started, or its content is claimed by or reserved for another item. | Nothing to start. |
-| `ItemNotInPackage(packageRoot, itemHash)` | The proof does not place the item, or has more than 32 nodes. | Rebuild the proof. |
-| `PartyNotAccepted(packageRoot, account)` | A party has not accepted the root. | Relay its signed acceptance with `acceptPackage(packageRoot, acceptance, proof)`, the proof `abi.encodePacked(wallet, signature)` from any wallet of the party's account. |
-| `InvalidItem(itemHash)` | Parties, payees, seed or edition fields are inconsistent. | Report it to curation. |
-| `SignatureExpired(deadline)`, `InvalidSignature(signer)` | The move expired, was signed by a wallet that is not the account's, or the account is frozen or under a pending replacement. | Get a fresh move, or wait for the freeze or the replacement to end. |
-| `MoveNonceUsed(artistId, nonce)` | The nonce was spent or revoked. | Ask for a move with a new nonce. |
-| `SeedNotDelivered(itemHash)` | A VRF work's seed has not arrived. | Request the seed and wait. |
-| `AssetNotActive(asset)`, `CurrencyNotConfigured(product)` | The item's currency, or the product default, is not usable. | Wait for the network to admit or configure it. |
-| `InvalidSaleTerms(token, id)` | The token returned unusable terms (AUC-14). | Report it. |
-
-`startWithBid` can also revert with any bidding error below.
-
-### Starting through `SaleStarter`
-
-```solidity
-function start(IEnglishAuction auction, address stream, bytes calldata mintData, MediaFile[] calldata media)
-    external returns (uint256 saleId);
-function startWithBid(
-    IEnglishAuction auction,
-    address stream,
-    bytes calldata mintData,
-    MediaFile[] calldata media,
-    address recipient,
-    Payment calldata payment
-) external payable returns (uint256 saleId);
-```
-
-[`SaleStarter`](../../src/sales/SaleStarter.sol) starts the auction, deploys the work's seller
-vault (`createWallet(item.payees, 0)`, checked against the seller the work's terms name) and,
-with a nonzero fee share, its royalty vault, and opens the record (`WorkRecords.openRecord`), all
-in one transaction: if any step fails, nothing happens. It is stateless, holds nothing and has no
-role; `startWithBid` takes `PERMIT2` payments only and refuses the helper itself as the payer
-(`HelperAsPayer`). A direct start with the same mint data makes `SaleStarter.start` revert; the
-vaults and the record are then created by the permissionless calls. The network's keeper starts every 1/1 this
-way. It is the keeper's rule, not the chain's: `EnglishAuction.start` stays permissionless, and a
-direct start leaves the vaults and the record to later permissionless calls (LIM-CNT-19,
-LIM-ECO-7).
-
-### Gas
-
-A steady-state `start`'s Prague gas and new slots are in the
-[ADR 0004 table](../adr/0004-gas-budgets-under-glamsterdam.md#the-table) (AUC-32), with the
-costlier first-time cases (an artist's first start, with and without a bid, which on a
-collision of its terms' position writes one slot more; LIM-GAS-10) and the ERC-20 Permit2
-`startWithBid`.
+**The move signature.** Any wallet of the lead artist's account signs, in the package registry's
+EIP-712 domain, `MoveToStream(bytes32 packageRoot,bytes32 itemHash,uint256 nonce,uint64 deadline)`;
+`PackageRegistry.moveDigest` returns the digest. Use nonces in order from 0. Any wallet of the
+account revokes an unused nonce.
 
 ## Bidding
 
-```solidity
-function bid(uint256 saleId, address recipient, Payment calldata payment) external payable;
-function minimumBid(uint256 saleId) external view returns (uint256);
-function auction(uint256 saleId) external view returns (Auction memory);
-```
-
-`recipient` receives the token if the bid wins; zero means the payer. It cannot be the auction
-itself (`InvalidRecipient(recipient)`).
-
-- **The amount.** The bid is `payment.amount` exactly; there is no "bid up to" form. Read
-  `minimumBid(saleId)` just before you submit (the rule is AUC-16): the first bid is at least the
-  opening bid the sale locked. Live parameters are in `config()`,
-  `AssetAllowlist.incrementFloor(currency)` and `AssetAllowlist.openingBid(currency)`; launch defaults are in the
-  [script README](../../script/README.md#environment-reference). A bid above `type(uint96).max`
-  reverts with OpenZeppelin's `SafeCastOverflowedUintDowncast`.
-- **[Anti-snipe](../glossary.md#anti-snipe).** A bid in the last `extensionWindow` moves the end
-  (AUC-17); `BidPlaced.endTime` carries the end after the bid. A bid at or after the end reverts
-  with `InvalidAuctionState(saleId, ENDED)` (`test_Bid_AntiSnipeExtends` in
-  [EnglishAuction.t.sol](../../test/sales/auction/EnglishAuction.t.sol)).
-- **Outbid [credits](../glossary.md#credit).** An outbid bid, even by the same bidder, is credited
-  to its payer, never pushed (AUC-18), and claimed with `claim(currency, to)`.
-
-### Paying
-
-Pay as in [The `Payment` struct](#the-payment-struct). With `PERMIT2`, anyone may submit the
-bidder's signed bid:
-
-```mermaid
-sequenceDiagram
-    participant Bidder as Bidder, the payer
-    participant Relayer
-    participant Auction as EnglishAuction
-    participant Permit2
-    Bidder->>Bidder: sign PermitWitnessTransferFrom with the Bid witness
-    Bidder->>Relayer: Payment with method PERMIT2
-    Relayer->>Auction: bid(saleId, recipient, payment)
-    Note over Auction: checks minimumBid, credits the previous bidder, may extend the clock
-    Note over Auction: emits BidPlaced, then collects the payment
-    Auction->>Permit2: permitWitnessTransferFrom
-    Permit2-->>Auction: amount moved from the payer
-    Note over Auction: checks both balance deltas, or reverts the whole bid
-```
-
-### Withdrawing, and when bids stop
-
-```solidity
-function withdrawBid(uint256 saleId) external;
-```
-
-Only the high bidder (the payer) may withdraw from an English auction, and only while it is paused
-for a dispute or its locked currency is deprecated and the sale has not settled (MARKET-2). The bid is credited
-back (`BidWithdrawn`), and its amount stays as a reserve the next bid must reach.
-
-| Halt | Bids revert with | Rule |
-| --- | --- | --- |
-| [Dispute pause](../glossary.md#dispute-pause) by a pauser key, ending by itself after 3 days; the network may resume or cancel at any moment of it | `InvalidAuctionState(saleId, PAUSED)` | AUC-26, AUC-27 |
-| The locked currency is deprecated | `AssetNotActive(currency)` | AUC-25 |
-| Emergency `pause()` on the auction | Nothing: it stops only `start` and `startWithBid` | AUC-13 |
-
-A resumed auction emits `AuctionResumed(saleId, endTime)`; an upheld dispute's cancel emits
-`AuctionCancelled`, credits the high bid back and burns the token.
-
-### Errors
-
-| Error | Cause | What to do |
-| --- | --- | --- |
-| `UnknownSale(saleId)` | No such sale. | Check the sale ID. |
-| `InvalidAuctionState(saleId, state)` | The auction is paused, ended, settled or cancelled. | Read `auction(saleId).state`. |
-| `BidTooLow(required, offered)` | Below `minimumBid`. | Re-read and re-sign. |
-| `InvalidPayment()` | Method, amount, `msg.value` or payer mismatch; a `PERMIT` payment; Permit2 disabled. | Fix the payment. |
-| `PaymentExpired(deadline)` | The Permit2 deadline passed. | Sign again. |
-| `InvalidRecipient(recipient)` | The recipient is the auction. | Name another recipient. |
-| `AssetNotActive(currency)` | The locked currency is deprecated (the auction is frozen). | Wait; a standing bidder may withdraw. |
-| `TargetNotAllowed(token)` | A federated token's registry entry was delisted (v1.1). | None. |
-| `TokenBalanceMismatch(asset)`, `TokenCallFailed(asset, selector)` | A non-standard token, a balance below the amount, or a missing allowance. | Fund and approve, or use another currency. |
-
-### Events and gas
-
-`BidPlaced`, and the auction's `Credited` for the previous bidder when the bid outbids
-([EnglishAuction](events-and-indexing.md#englishauction)). A bid that outbids is a row of the
-[ADR 0004 table](../adr/0004-gas-budgets-under-glamsterdam.md#the-table).
+- The first bid is at least the opening bid (0.05 ETH at launch). Each later bid adds at least
+  the larger of 5% of the high bid and 0.001 ETH. Read `minimumBid(saleId)`.
+- A bid in the last 15 minutes moves the end to 15 minutes after the bid.
+- An outbid bid is credited to its payer. Claim it with `claim`. Credits are never pushed.
+- During a dispute pause bids are refused; the high bid stays.
 
 ## Settling
 
-```solidity
-function settle(uint256 saleId) external;
-function settleOrRefund(uint256 saleId) external; // IEnglishAuctionRefusal
-function refusableAt(uint256 saleId) external view returns (uint256);
-function claimDelivery(uint256 saleId, address to) external;
-function claimFor(address account, address currency) external returns (uint256 amount);
-function pendingDelivery(uint256 saleId) external view returns (address);
-```
-
-Settlement is permissionless once `auction(saleId).state == ENDED` (derived from the clock; no
-transaction ends an auction), and never depends on the winner accepting the token (AUC-21).
-
-```mermaid
-stateDiagram-v2
-    [*] --> Active : start or startWithBid
-    Active --> Active : bid, may extend the clock
-    Active --> Paused : dispute pause by a pauser key
-    Paused --> Active : the network resumes, or 3 days pass
-    Paused --> Cancelled : the network cancels after an upheld dispute
-    Active --> Ended : the clock runs out
-    Ended --> Active : settle after a late currency re-admission
-    Ended --> Settled : settle
-    Ended --> Settled : settleOrRefund, sold or refused
-    Settled --> [*]
-    Cancelled --> [*]
-```
-
-```mermaid
-sequenceDiagram
-    participant Keeper
-    participant Auction as EnglishAuction
-    participant Seller as Seller wallet
-    participant Fee as Fee recipient
-    participant Escrow as RevenueEscrow
-    participant Stream
-    Keeper->>Auction: settle(saleId)
-    Auction->>Stream: settlePrimary(tokenId, SOLD, bidder, currency, price)
-    Stream-->>Auction: seller and fee terms (Stream records the sale)
-    Auction->>Seller: price minus fee
-    Auction->>Fee: fee, to the recipient the resolver names now
-    alt a wallet or the token refuses
-        Auction->>Escrow: credit for that wallet
-    end
-    Auction->>Stream: safeTransferFrom to the recipient, 300,000 gas
-    alt delivery fails
-        Note over Auction: DeliveryPending, the token stays in custody
-    end
-    Auction-->>Keeper: SaleSettled
-```
-
-The seller receives `floor(price × (100,000 − feeShare) / 100,000)` and the network the rest, so
-the leftover wei is the network's. The fee goes to the network fee recipient the economics
-resolver names at settlement, or the token's recorded recipient when it names none (R18,
-AUC-48). The [seller wallet](../glossary.md#seller-wallet) is a predicted split-wallet address
-and may not be deployed yet.
+Anyone settles after the end. With a bid, the work goes to the winner (or waits as a pending
+delivery the winner claims with `claimDelivery`), and the seller and the network are paid; a
+refused payment goes to the escrow. With no bid, a 6529 Stream work goes to the museum; an
+unsold federated work stays in the auction and can be started again. Forward the gas
+`eth_estimateGas` reports: a settler that starves the delivery or payouts is refused.
 
 ### Gas the caller must forward
 
-`settle` refuses to run unless it can give each external call its allowance, plus EIP-150's
-1/63, plus a reserve, so a starved call cannot force the escrow or pending route (AUC-22):
+Take the limit from `eth_estimateGas`; the auction refuses a settler that does not forward the
+delivery gas (300,000) and the payout gas (100,000 per wallet).
 
-| Call | Allowance | Reserve | Revert when short |
-| --- | ---: | ---: | --- |
-| ETH payout to each wallet | 100,000 (`PAYOUT_GAS`) | 40,000 (`ETH_CALL_RESERVE`) | `PaymentInsufficientGas(100000)` |
-| ERC-20 payout frame, per payout | 1,000,000 (`_ERC20_PAYOUT_GAS`), of which the token's `transfer` gets 300,000 (`ERC20_TRANSFER_GAS`) | 50,000 (`DELIVERY_RESERVE`) | `PaymentInsufficientGas(1000000)` |
-| Delivery (`safeTransferFrom`) | 300,000 (`DELIVERY_GAS`) | 50,000 (`DELIVERY_RESERVE`) | `DeliveryInsufficientGas()` |
+A federated token that refuses to settle can be closed with `settleOrRefund(saleId)` from 2 days
+after the end: the bid is credited back.
 
-So an ERC-20 `settle` needs a gas limit of about 1.11M although it uses about 140K, and an ETH
-`settle` about 460K ([ADR 0004, Security impact](../adr/0004-gas-budgets-under-glamsterdam.md#security-impact);
-`test_Settle_SettlerGasLimitVersusGasUsed` in
-[EnglishAuction.t.sol](../../test/sales/auction/EnglishAuction.t.sol)).
-`eth_estimateGas` returns these; never reuse the gas a past settlement used. The first payout to
-a new seller wallet creates its account, at the settler's cost.
+**Keeper checklist:** settle every ended sale; flush escrow credits to their wallets; deploy
+vaults before they are named (the policy does this at start); expire only credits that have
+waited the unclaimed period in force.
 
-### Outcomes and what to do
+## Edition auctions
 
-| Outcome | How you see it | What to do |
-| --- | --- | --- |
-| Delivered | `Transfer` to the recipient, `SaleSettled` | Nothing. |
-| Delivery failed (rejected, or the hook needed more than 300,000 gas) | `DeliveryPending(saleId, recipient)`; `pendingDelivery(saleId)` nonzero | The winning bidder calls `claimDelivery(saleId, to)` at any time, `to` neither zero nor the auction; the recipient calls it with `to` itself at any time, or with another address from 14 days after the auction's end (AUC-21). An unsold 6529 Stream work is never pending: Stream moves it to the museum itself (owner decision 17). With no bids on any other token (federated, or listed later), the artist's authority may claim too (AUC-33). |
-| A payout refused by the wallet (ETH: reverted or needed over 100,000 gas) or by the token | The escrow's `Credited` | Anyone calls `RevenueEscrow.flush(wallet, asset)`, for a token once it allows it. |
-| An ERC-20 payout that failed even through the escrow (MONEY-1, AUC-23) | The auction's `Credited(wallet, token, saleId, amount)` | Anyone calls `claimFor(wallet, token)`; the funds only go to `wallet`. |
-| No bid (D140, AUC-24, owner decision 17) | The auction reports UNBID to the token (`settlePrimary`); 6529 Stream moves the work from the auction's custody to the 6529 Network Museum, `IEconomicsResolver.museum()` read then, even while the artist is [restrained](../glossary.md#restraint), and emits `PrimarySaleSettled` with the outcome. `SaleSettled` has `buyer == address(0)`, `price == 0` and the museum as recipient. Any other token's work (federated, or listed later by the network) goes to the creator the token reports. | Nothing. Its edition sale still sells and settles, by anyone's `settle` call after its close ([EA-11](../spec/editions-and-sales.md#rules-and-invariants)). |
-| No bid on another token's work while its artist's account is frozen or under a pending replacement (AUC-24) | Reverts with `InvalidRecipient(address(0))`: the creator from `IMintTarget.primaryTerms(tokenId, "")` is zero | Retry once the freeze or the replacement ends. |
-| Locked currency deprecated under 14 days | Reverts with `AssetNotActive(currency)` | Wait; the high bidder may `withdrawBid`. |
-| Locked currency deprecated 14 days | The high bid is credited back; the auction reports FROZEN_OUT and 6529 Stream moves the work to the museum; any other token's goes to its artist | The bidder claims its credit. |
-| Currency re-admitted in the last window or after the end | `AuctionResumed(saleId, endTime)`, no `SaleSettled` | Bid again; settle after the new end. |
-| Paused for a dispute | Reverts with `InvalidAuctionState(saleId, PAUSED)` | Wait for the resume, the cancel, or the end of the 3 days. |
-| A federated token will not let the sale settle (it reverts, burns gas or answers malformed or unpayable values) | `settle` reverts with the token's error, out of gas, or a payout's `InvalidWallet` | From `refusableAt(saleId)`, call `settleOrRefund(saleId)` (below). A listed token's sale (6529 Stream's included) has no exit: retry `settle`. |
-
-A 6529 Stream sale settles normally while its artist's account is frozen or under a pending
-replacement, with a bid to its winner and without one to the museum: settlement reads no artist
-identity; a new start is refused instead (`test_AFrozenAccountCannotStart`,
-`test_AReplacedAccountCannotStartUntilItEnds` in
-[IdentityRecovery.t.sol](../../test/integration/IdentityRecovery.t.sol)). For the currency freeze
-(MARKET-2, AUC-25), read when the deprecation began from `AssetAllowlist.statusClock(currency)`,
-which returns `(status, since, inactiveTotal)`, on the auction's `allowlist()`; re-admission comes
-no earlier than 3 days after it (ECO-33).
-
-### A token that will not settle
-
-`settleOrRefund(saleId)` ends a federated sale whose token keeps `settle` from completing
-(AUC-45); for a listed token's sale, 6529 Stream's included, it reverts with
-`SaleNotRefusable`. From `refusableAt(saleId)` (the end plus 2 days, `REFUSAL_DELAY`, fixed;
-AUC-46), anyone may call it. It
-attempts `settle` with exactly the refusal gas (4,000,000 at launch, `config().refusalGas`): if
-the token cooperates, the sale settles exactly as `settle` settles it, with the same events. If
-not, `SettlementRefused(saleId)`: the high bid is credited back to its bidder (`claim`), nothing is
-paid, and the work stays in the auction for the artist the token reports to take with
-`claimDelivery(saleId, to)`. Send a gas limit above the refusal gas plus 1/63 of it and the close,
-about 4.2M at launch and never more than 2^24; with less it reverts
-(`BoundedCallInsufficientGas`) and nothing changes. It refuses to run inside a call of the
-auction's or the escrow's that holds their reentrancy guard (`ReentrancyGuardReentrantCall`), and
-while the currency is frozen short of its 14-day exit (`AssetNotActive`). Try `settle` first:
-for a cooperating token whose settlement needs more gas than the refusal gas leaves it, only
-`settle` with a larger limit completes the sale.
-
-### Keeper checklist
-
-1. Track ends from `SaleStarted.endTime`, every `BidPlaced.endTime`, `AuctionPaused` and
-   `AuctionResumed`.
-2. At `ENDED`, simulate `settle(saleId)`. A revert with `AssetNotActive`,
-   `InvalidRecipient(address(0))` or `InvalidAuctionState(..., PAUSED)` means the sale is waiting:
-   retry later. For a federated sale any other revert is the token's: from
-   `refusableAt(saleId)`, call `settleOrRefund(saleId)`.
-3. Send with the limit from `eth_estimateGas`.
-4. In the receipt, `SaleSettled` means settled; `AuctionResumed` alone means reopened. Follow up
-   `DeliveryPending` and both kinds of `Credited` ([Claiming](#claiming)).
-
-### Settlement errors
-
-Besides the reverts in the two tables above:
-
-| Error | Cause |
-| --- | --- |
-| `UnknownSale(saleId)`, `InvalidAuctionState(saleId, state)` | No such sale, or not `ENDED`. |
-| `NoPendingDelivery(saleId)` | `claimDelivery` with nothing pending, or by a caller that may not claim. |
-| `InvalidRecipient(to)` | `claimDelivery` to zero or to the auction, or by the recipient to another address within 14 days of the auction's end. |
-| `IRevenueEscrow.InvalidAsset(address(0))` | `claimFor` on an ETH credit, which only its bidder claims. |
-
-## Bidding in an edition auction
-
-Copies of a 6529 Stream Editions edition are sold only by the edition auction,
-`UniformEditionAuction`, which runs beside the master's 1/1 English auction and closes after it.
-Anyone bids a quantity at a price step; at the close the clearing picks how many copies sell and
-the one price every winner pays; winners claim their copies and everyone claims the rest of their
-escrow. The rules, the clearing and a worked example are in
-[Editions and sales](../spec/editions-and-sales.md#the-clearing) (`EA-n`).
-
-An edition's copies are minted only by an adapter the network admitted on 6529 Stream Editions
-whose sale kind the edition's terms name
-([Editions and sales](../spec/editions-and-sales.md#mint-copies), ED-5). For any edition:
-
-- An edition's ID is its master's Stream token ID. `Editions.edition(editionId)` gives the terms
-  (the creator's cap `maxCount`, the currency, sale kind and params), the copies minted so far
-  and the bound adapter (`minter`).
-- An edition is bound to one adapter, the only one that may mint it (ED-5): the one whose sale
-  opened it (`bindMinter`, possibly before the edition exists), or else the first to mint it.
-  `EditionMinterBound` names it ([Editions](events-and-indexing.md#editions)).
-- A mint's `data` is exactly `abi.encode(address currency, uint256 unitPrice)`, the currency and
-  price paid per copy; Editions logs it as `EditionPrimaryMint` (ED-26).
-- When the bound adapter's sale settles, it seals the supply at the count sold
-  (`sealSupply`, `EditionSupplySealed`, ED-25): no copy past it can be minted.
-- `EditionUnavailable(editionId)` from a mint means the creator's cap, or the sealed supply, is
-  reached (ED-6).
-
-The fixed-price and Dutch adapters of `v1.0.0-rc.1` were removed by ADR 0005.
-
-### Finding the sale
-
-- The sale ID is `saleIdOf(editions, editionId)`, `uint256(keccak256(abi.encode(editions,
-  editionId)))`, where the edition ID is the master's 6529 Stream token ID. `auction(saleId)`
-  reverts with `UnknownAuction` until someone opens it.
-- `auction(saleId)` returns the locked terms (`terms`: base price, steps per decade, step count,
-  margin, soft-close window, maximum extension), the creator's cap (`maxCount`, zero for
-  none), the seller and fee terms, the status and the book's extent.
-- `endTimes(saleId)` returns every clock, read live: the 1/1's end and state, `closeAt` (the 1/1's
-  end plus 15 minutes), `softEnd`, `endTime`, the backstop, and `biddingOpen`. Show `endTime` as
-  the close; it moves with the 1/1's anti-snipe and with late edition bids.
-- **Every sale closes 15 minutes after its 1/1** (`CLOSE_OFFSET`, fixed, R20, EA-17). **Bids are
-  firm**: no bid can be withdrawn, also while the 1/1 is paused for a dispute; if the dispute is
-  upheld and the 1/1 cancelled, every bid is refunded in full (R21, EA-5). Copies mint only after
-  the close and settlement.
-
-### Opening
-
-```solidity
-function open(address token, uint256 id, bytes calldata data) external returns (uint256 saleId);
-```
-
-Anyone may open the sale from the 1/1's start until the edition close; the network's keeper
-batches it with the 1/1's `start`. `data` is `abi.encode(item, packageRoot, proof)`: the master's
-package item exactly as approved (its hash must equal the item hash Stream stored,
-`IStream.coreOf`), the root it was approved in and its Merkle proof. The package must still be
-live (`IItemApprovals.isApprovedItem`): a revoked package, or one whose signer's approvals were
-killed, opens no sale (C23). A sale nobody opens before the close never sells copies by this
-adapter (LIM-EA-11).
-
-`open` first deploys the seller's and the royalty receiver's split wallets if they have no code
-(`createWallet` on the split ledger), so no payment from the sale, and no royalty on its copies,
-reaches an undeployed wallet (EA-20); the first sale of a payee configuration therefore costs more
-(about 434K Prague gas with both wallets new). It then binds the edition to the adapter
-(`Editions.bindMinter`, `EditionMinterBound`) before it records the sale: a second adapter of the same kind cannot open it (`MinterMismatch`), and only
-the bound adapter ever mints it, even after the network removes it. If the edition does not exist
-yet, the binding records the sale's `PRODUCT_EDITIONS` economics in Editions; if it does, the
-sale pays the economics it recorded. A sale once opened, voided ones included, is never opened
-again (`AuctionExists`).
-
-### The ladder
-
-Bids name a step, not a price. `stepPrice(saleId, step)` and `ladder(saleId)` return the prices
-under the sale's locked terms (under `config()` before it opens). The prices are exact wei
-amounts from a fixed table, so clients can also compute them, and must match the golden vectors
-in [`test/fixtures/edition-auction/`](../../test/fixtures/edition-auction/) (the reference model
-is [`tools/edition_auction_ref.py`](../../tools/edition_auction_ref.py)). Snap a typed price to a
-step.
-
-### Bidding and raising
-
-```solidity
-function bid(uint256 saleId, uint256 step, uint256 quantity) external payable returns (uint256 bidId);
-function raise(uint256 saleId, uint256 bidId, uint256 newStep) external payable;
-```
-
-- **Pay exactly.** `msg.value` must be `quantity × stepPrice(saleId, step)` for a bid and
-  `quantity × (stepPrice(newStep) − stepPrice(step))` for a raise (`IncorrectPayment`).
-- **Bids are firm.** A bid can be raised but never lowered, and never withdrawn (R21). More
-  copies means another bid. Tell the bidder before they sign.
-- **The bid ID** runs from 1 in each sale. `bidOf(saleId, bidId)` returns the bidder, step,
-  quantity and queue position.
-- **Timing.** Bids are accepted while `endTimes(saleId).biddingOpen`. A bid or raise less than
-  `softWindow` before `endTime` extends it to `softWindow` after the bid, up to the backstop.
-  While the 1/1 is paused for a dispute, bids are accepted at any time and move no clock.
-- **A cap.** When the creator capped the edition, the step where the cap binds fills in arrival
-  order, and a raise rejoins at the back of its new step.
-
-### What to show before and after a bid
-
-Every figure comes from the views, so no two clients disagree:
-
-| View | Returns | Show it as |
-| --- | --- | --- |
-| `clearing(saleId)` | The result if the sale closed now: count, step, price, revenue, network fee, best revenue, whether the cut step is rationed | "Right now: 80 editions at 0.0511 ETH each" |
-| `bidOutcome(saleId, bidId)` | Copies won, price, escrow, refund, units ahead in the queue; final once settled | "In: 3 at 0.0511 (0.0828 ETH comes back)", "Partly in: 2 of 5" |
-| `quote(saleId, step, quantity)` | What a new bid would win, and how many existing units it would push out or pull in. It prices a new bid: for a raise it counts the bid at its old step and its new one, so compute a raise's effect client-side | "→ 81 at 0.0464 · you'd be in · 0 pushed out" |
-| `lowestWinningStep(saleId, quantity)` | The lowest step at which a new bid would win at least one unit (not necessarily all `quantity`) | "A bid of 1 gets in from 0.0464" |
-| `stepTotals(saleId)` | Live units per step from the lowest used step | The demand ladder |
-
-The lowest winning step can sit below the current price, because of the breadth margin: such a
-bid lowers everyone's price. Say so. Both views enforce the sale-wide live-unit limit below
-2^32, but neither enforces a capped sale's per-step position capacity (live plus departed units)
-or the bid-ID limit, which `bid` enforces.
-
-### During a dispute
-
-Bids stay in while the 1/1 is paused for a dispute (R21). If the dispute is upheld and the 1/1
-cancelled, the sale is void and every bid is refunded in full at its claim; otherwise the sale
-closes as usual.
-
-### Settling
-
-```solidity
-function settle(uint256 saleId, uint256[] calldata order) external returns (bool settled);
-// IUniformEditionAuctionLens, answered by the adapter's address too:
-function settlementOrderFor(uint256 saleId, address settler) external view returns (uint256[] memory);
-function sweepOf(uint256 saleId, address settler)
-    external view returns (uint256 swept, uint256 nextPosition, uint256 cutoff);
-```
-
-Permissionless once the end has passed and the 1/1 is settled, or at any time once the 1/1 is
-cancelled, which voids the sale (`SettlementNotReady` otherwise). When copies sold, the edition
-must exist first: call `Editions.createEdition` (permissionless once the master's sale settled;
-`EditionNotCreated` otherwise). The call that clears seals the edition at the count sold
-(`Editions.sealSupply`, `EditionSupplySealed`).
-
-**Abandonment** (EA-19, R16). From 21 days after the sale's close (`ABANDON_DELAY`, fixed),
-anyone may call `abandon(saleId, abi.encode(item))` on a sale that has paid nothing (still open,
-or settling with its scan unfinished) whose 1/1 is not still active, paused or ended unsettled.
-When the master's primary sale settled, it creates the edition (an edition nobody created) and the
-sale then settles as usual. Otherwise it voids the sale: every bid's claim refunds its whole
-escrow, and the edition is sealed at zero copies (`AuctionVoided`, then Editions'
-`EditionSupplySealed(id, 0)`). `abandonable(saleId)` tells whether it may be called now
-(`NotAbandonable` otherwise).
-
-Settlement runs in calls of bounded gas, each of which advances it, so no book is too large to
-settle. A call scans at most 24 words of the book (eight steps each); the call that finishes the
-scan pays the revenue; when a cap binds inside a step that lost bids to raises,
-that call and the next ones sweep up to 16, then 96, of its departures. `settle` returns true once
-the sale is SETTLED (or VOID) and claims open, false while there is more to do; on a settled sale
-it returns true and changes nothing.
-
-**Each settler sweeps on its own.** The sweep's progress belongs to `msg.sender`: pass
-`settlementOrderFor(saleId, you)`, the rest of your own sweep in position order (empty unless a
-cap binds inside such a step), and call `settle(saleId, order)` from the same address until it
-returns true. The first settler to sweep every departure settles the sale. A reordered order
-reverts (`InvalidSettlementOrder`); an order that skips a departure is accepted but can never
-finish your sweep, and changes nobody else's: settle from another address. `sweepOf(saleId,
-you)` shows your progress, and `DeparturesSwept` reports it, so interleaved settlers' events can
-show `swept` going down.
-
-**Never settle through a shared public relayer** such as Multicall3: every caller of the relayer
-is one `msg.sender`, so they share one sweep, which one caller's wrong order strands for all of
-them. Settle directly, or through a contract of your own.
-
-Keeper checklist ([runbook](../../script/README.md#the-edition-auction-keeper)): open the edition
-sale with the 1/1's `start`; after the 1/1 settles, call `createEdition` (or, if it was missed,
-`abandon` from 21 days after the close, which creates it); once `endTime` has passed,
-`settle(saleId, settlementOrderFor(saleId, keeper))` from the keeper's own address until it
-returns true; push claims with `claimBidFor` for bidders who do not claim.
-
-### Claiming copies and refunds
-
-```solidity
-function claimBid(uint256 saleId, uint256 bidId, address to) external returns (uint256 unitsWon, uint256 refund);
-function claimBidFor(uint256 saleId, uint256 bidId) external returns (uint256 unitsWon, uint256 refund);
-```
-
-- `claimBid` is the bidder's: it mints the copies won to `to` and sends the refund,
-  `escrow − unitsWon × price`, to `to`. A loser's refund is its whole escrow.
-- `claimBidFor` is anyone's: the copies go to the bidder and the refund is credited to its
-  `claimable` ETH, which it takes with `claim(address(0), to)` ([below](#credits-on-a-sale-adapter)).
-- **The recipient must accept ERC-1155.** A recipient whose hook rejects the copies reverts the
-  claim; claim to another address.
-- Copies exist only once claimed: the edition's supply reaches the clearing count when every
-  winning bid is claimed.
-
-### Events
-
-`AuctionOpened`, `BidPlaced`, `BidRaised`, `AuctionCleared`, `DeparturesSwept`,
-`AuctionSettled`, `AuctionVoided` (also from `abandon`), `BidClaimed` and `LimitsSet`, with
-`ISaleAdapter`'s `SaleStarted`,
-`SaleSettled` (one per sale: the count as the quantity, a zero buyer), `Credited` and `Claimed`,
-and Editions' `TransferSingle` per claim
-([UniformEditionAuction](events-and-indexing.md#uniformeditionauction),
-[Editions](events-and-indexing.md#editions)).
-
-### Errors
-
-| Error | Cause |
-| --- | --- |
-| `UnknownAuction(saleId)`, `AuctionExists(saleId)` | No sale with this ID; or a second `open`. |
-| `NoOneOfOneAuction(master, id)` | The 1/1 auction does not exist, or was cancelled. |
-| `BiddingClosed(saleId, endTime)` | The end passed, or the 1/1 was cancelled (seen by a bid within `softWindow` of the close; earlier bids are refunded at the void); for `open`, the edition close passed. |
-| `InvalidStep(step)`, `InvalidQuantity(quantity)` | A step past the ladder or a raise that does not move up; a zero quantity, units past 2^32 − 1, or a bid ID past 2^32 − 1. |
-| `IncorrectPayment(expected, paid)` | `msg.value` is not exactly the escrow or the top-up. |
-| `UnknownBid(saleId, bidId)`, `NotBidder(caller)` | No live bid with this ID; the caller is not its bidder. |
-| `SettlementNotReady(saleId)`, `EditionNotCreated(token, id)` | Too early to settle; create the edition first. |
-| `NotAbandonable(saleId)` | `abandon` before 21 days after the close, for a sale that paid, or while its 1/1 is active, paused or ended unsettled. |
-| `ClockOverflow(time)` | A stored time would pass 2^32 seconds (7 February 2106): no sale opens from then, and a bid whose soft end would pass it reverts (LIM-EA-15). |
-| `InvalidSettlementOrder(index)` | The order is out of range or not in increasing position. |
-| `InvalidAuctionState(saleId, status)` | The sale is not in a state that allows the call, such as a claim before settlement. |
-| `SalePaused()`, `TargetNotAllowed(token)`, `InvalidSaleTerms(token, id)` | `open` while paused, for a token not served, or with terms that are not this kind's, or a deployed wallet that is not at the locked address. |
-| `InvalidRecipient(to)`, `NothingToClaim(account, currency)` | `claimBid` or `claim` to zero, or `claimBid` to the adapter; `claim` with no credit. |
-| `ClaimFailed(to)` | `to` refused the ETH; the bid stays claimable. |
-
-### Gas
-
-The budgets for `bid`, `claimBid` and `settle` are in
-[ADR 0005 §5](../adr/0005-stream-editions-auction.md#5-gas-budgets-adr-0004), and the measured
-Prague gas and new slots in the [ADR 0004 table](../adr/0004-gas-budgets-under-glamsterdam.md#the-table).
-A losing bidder pays for its bid and its refund claim.
+- **Open** (anyone) from the 1/1's start until its close; the keeper batches it with the start.
+  Opening creates the edition.
+- **Bid** on a step of the price ladder with a quantity; pay exactly `quantity × stepPrice`.
+  `quote` and `lowestWinningStep` say what a new bid would win. **Raise** moves a whole bid up for
+  the difference. Bids cannot be lowered or withdrawn.
+- **Close** 15 minutes after the 1/1's final end, plus any soft-close extension.
+- **Settle** after the 1/1 settles or is cancelled. A capped sale with holes may take several
+  calls: pass the departure order `settlementOrderFor` returns.
+- **Claim** each bid with `claimBid` (or anyone with `claimBidFor`): it mints the copies won and
+  refunds the rest.
+- A cancelled 1/1 voids its edition sale and refunds every bid.
 
 ## Claiming
 
-Refunds are never pushed; every amount owed has a pull function:
+| What | How |
+| --- | --- |
+| Auction credits | `claim(...)` by the account |
+| Escrow credits | anyone flushes a credit to its own wallet |
+| A fixed payee's vault share | anyone calls `release` for it; it pays only that payee |
+| An artist's vault share | the artist's current payout address calls `release`, `releaseTo`, or signs a release someone else submits |
+| Batches | `ClaimRouter` |
 
-| What is owed | Where | Who calls | Function |
-| --- | --- | --- | --- |
-| An outbid, withdrawn or refunded bid | `EnglishAuction` | The bidder (payer) | `claim(currency, to)` |
-| An edition bid's copies and refund | `UniformEditionAuction` | The bidder; anyone with `claimBidFor` | `claimBid(saleId, bidId, to)`, `claimBidFor(saleId, bidId)` |
-| A refund `claimBidFor` credited | `UniformEditionAuction` | The bidder | `claim(address(0), to)` |
-| An ERC-20 auction payout that failed (MONEY-1) | `EnglishAuction` | Anyone, for the wallet | `claimFor(wallet, token)` |
-| A token whose delivery failed | `EnglishAuction` | The winning bidder, to any address, or the recipient, to itself (to any address from 14 days after the end); with no bids on a token other than 6529 Stream, also its artist | `claimDelivery(saleId, to)` |
-| A payout a wallet or token refused | `RevenueEscrow` | Anyone | `flush(wallet, asset)` |
-| A payee's share of sales or royalties | the `SplitLedger`, for the wallet | Depends on the payee (below) | `release`, `releaseTo`, `releaseWithAuthorization` |
-
-### Credits on a sale adapter
-
-```solidity
-function claimable(address account, address currency) external view returns (uint256);
-function claim(address currency, address to) external returns (uint256 amount);
-```
-
-`claim` sends all of the caller's credits in `currency` to `to` and emits `Claimed`. It reverts with
-`InvalidRecipient(address(0))` for a zero `to`, `NothingToClaim(account, currency)` for no credit,
-and `ClaimFailed(to)` when `to` refuses ETH, keeping the credit.
-
-**Unclaimed credits go to the network.** A credit not added to for 180 days may be sent by anyone
-to the network fee recipient with `expireCredit(account, currency)` on either auction
-(`CreditNotExpired(account, expiresAt)` before; `creditExpiresAt(account, currency)` tells when;
-the transfer emits `Claimed` naming that recipient; R12). Claim credits within 180 days. On Sepolia, a bidder's `claim` of
-an outbid credit used 32,580 gas ([flows §2](../../deployments/11155111/flows.md#2-the-curated-stream-sale)).
-
-### The escrow
-
-```solidity
-function owed(address wallet, address asset) external view returns (uint256);
-function flush(address wallet, address asset) external returns (uint256 amount);
-```
-
-Anyone may flush; the funds only go to `wallet` (ECO-27). `flush` reverts with
-`NothingOwed(wallet, asset)` when nothing is owed, and with `ETHTransferFailed(wallet, amount)` when
-the wallet refuses ETH again. A credit for a wallet a token has blocked moves to an equivalent
-replacement only by the network's `recover` (FUNDS_SETTER, 3 days; ECO-28,
-[recovery flows](../spec/economics-and-payouts.md#escrow-recovery-for-a-blocked-split-wallet)).
-A credit unclaimed for 180 days may be moved by anyone to the network fee vault with
-`expire(wallet, asset)` (R12).
-
-### Split wallets
-
-Sale proceeds go to the [seller wallet](../glossary.md#seller-wallet) (`seller` in
-`Stream.work(tokenId)` or `Editions.edition(editionId)`, and in `WorkMinted` or
-`EditionTermsLocked`; for a work, `SplitLedger.walletFor(item.payees, bytes32(0))`), royalties to
-the [royalty wallet](../glossary.md#royalty-wallet) (`royaltyReceiver` in the same records). Both
-are predicted CREATE2 addresses of 66-byte vaults the split ledger deploys and commands (ECO-9,
-ECO-39); the ledger keeps every wallet's accounting and emits its events.
-
-- **Deploy before you release.** Funds sent to a predicted address wait there (ECO-11). Anyone
-  deploys the wallet with `SplitLedger.createWallet(payees, salt)`, with the payees and salt (zero)
-  the address was predicted from. Its cost is in the
-  [ADR 0004 table](../adr/0004-gas-budgets-under-glamsterdam.md#the-table): 66 bytes of code and
-  one storage word (LIM-ECO-7).
-- **Name the wallet by its payees.** Every release call names the wallet by its payee list and
-  salt, which the ledger hashes to the address; read them from `WalletCreated` or the work's
-  terms. A release from an undeployed wallet reverts (`WalletNotDeployed`).
-- **Releasable amount.** `releasable(payees, salt, asset, index)`; ETH is `address(0)` (ECO-13).
-
-| Function | Who may call | Pays to |
-| --- | --- | --- |
-| `release(payees, salt, asset, index)` | Anyone, for a [fixed payee](../glossary.md#fixed-payee); only the current payout address, for an [artist-resolved payee](../glossary.md#artist-resolved-payee) | The payee's account or payout address |
-| `releaseTo(payees, salt, asset, index, recipient)` | Only the payee's current payout address | `recipient` |
-| `releaseWithAuthorization(payees, salt, authorization, signature)` | Anyone, with the payee's signature (`WrongWallet` unless `authorization.wallet` is the wallet the payees and salt name) | The signed `recipient` |
-
-A royalty wallet's two payees (the seller wallet and the fee recipient) are fixed, so anyone may
-push royalties on to them; a seller wallet's artist-resolved payees are pull-only (ECO-15, ECO-16).
-Every release from a wallet that names the network fee vault also pays the vault its due share of
-the same asset in the same call (R11).
-
-The errors (`NotPayoutAddress`, `NothingToRelease`, `PayoutUnresolved` and others) are declared
-in [ISplitWallet.sol](../../src/economics/interfaces/ISplitWallet.sol) and
-[ISplitLedger.sol](../../src/economics/interfaces/ISplitLedger.sol). Every unit in a wallet is
-some payee's. A share a payee leaves unclaimed can be marked by anyone (`mark`); unless the payee
-releases up to the marked level within 180 days, anyone may then send the rest to the network
-(`forfeit`; R12).
-
-### Signed releases
-
-A payee signs an EIP-712 authorization in the split ledger's domain (name
-`6529 Works Release Verifier`, version `1`, the chain ID, the ledger's address), with the type
-string exactly as in `SplitLedger.RELEASE_TYPEHASH`
-([SplitLedger.sol](../../src/economics/SplitLedger.sol)):
-
-```text
-ReleaseAuthorization(address wallet,address asset,uint256 payee,address account,address recipient,uint256 amount,uint256 nonce,uint256 deadline)
-```
-
-- `account` is the signer and must be the payee's payout address when the release runs (ECO-20).
-- `amount` is released exactly; `type(uint256).max` releases everything due. Prefer it for a fixed
-  payee: anyone may push that payee's balance first, and an exact-amount release then reverts
-  without spending its nonce (ECO-22).
-- Nonces are any `uint256`, single use per account across every wallet (ECO-21). Revoke one with
-  `revokeNonce(nonce)`; check one with `nonceUsed(account, nonce)`. `releaseDigest(authorization)`
-  returns the digest to sign.
-- Moving the payout address away does not revoke its signatures: if the payout returns to that key,
-  its unexpired authorizations work again. Sign short deadlines or revoke.
-
-### The claim router (keepers)
-
-```solidity
-function claim(IClaimRouter.Claim[] calldata claims, bool continueOnFailure)
-    external returns (uint256[] memory amounts);
-function claimSigned(IClaimRouter.SignedClaim[] calldata claims, bool continueOnFailure)
-    external returns (uint256[] memory amounts);
-```
-
-The router is stateless: it calls the ledger's `release` for each
-`Claim(payees, salt, asset, payee)` and `releaseWithAuthorization` for each
-`SignedClaim(authorization, signature, payees, salt)`, and never holds or
-redirects funds (ECO-29). Plain items pay fixed payees only; a plain item for an artist-resolved
-payee fails. A batch holds at most 50 plain items (`MAX_CLAIMS`) or 20 signed ones
-(`MAX_SIGNED_CLAIMS`), and more revert with `TooManyClaims(count)`
-([ClaimRouter.sol](../../src/economics/ClaimRouter.sol), ECO-30).
-In a batch, leave out the network's own index for any wallet and asset whose payee is also
-released in the batch: the R11 push already paid the network, so that item releases zero and
-fails (atomic mode reverts the batch; `test_ClaimRouterWithAWalletThatPaysTheNetwork`).
-
-- **Atomic mode** (`continueOnFailure == false`): any failed item reverts the batch with
-  `ClaimCallFailed(index, wallet, size, reason)`.
-- **Continue mode**: a failed item emits `ClaimFailed(wallet, asset, payee, index, size, reason)`,
-  releases 0, and the batch goes on. A dependency that ran short of gas inside the ledger
-  (`BoundedCallShortfall`) is treated as a shortfall, not as a failed item. The batch reverts with `ClaimInsufficientGas(index, available)`
-  when an item's even share of the gas left is below `MIN_ITEM_GAS` (`MIN_SIGNED_ITEM_GAS`), or when
-  an item offered less than `SHORTFALL_REVERT_CEILING` runs dry, so gas estimation raises the limit
-  instead of silently skipping it.
-
-Keeper guidance ([LIM-GAS-6](../audit/known-limitations.md#gas-and-glamsterdam)):
-- Estimate every batch; a full batch of first releases may not fit one transaction, and then
-  reverts whole, so split it. Each item carries its wallet's payee list, so a batch of long
-  payee lists is large calldata: split it below common node transaction-size limits.
-- A party to an item (a gas-burning co-payee, a signed release's recipient, a token issuer) can
-  make it look short of gas after you estimated. Simulate privately, isolate contract payees and
-  unfamiliar tokens, and drop an item whose revert names its index.
-- An artist's first signed release through the router is a row of the
-  [ADR 0004 table](../adr/0004-gas-budgets-under-glamsterdam.md#the-table).
+Money that waits unclaimed longer than the unclaimed period in force (180 days at launch) may be
+sent to the network by anyone: only the part that has itself waited that long.
 
 ## Royalties for marketplaces
 
-Both tokens implement ERC-2981 and report it through `supportsInterface(0x2a55205a)`:
-
-```solidity
-function royaltyInfo(uint256 tokenId, uint256 salePrice)
-    external view returns (address receiver, uint256 royaltyAmount);
-```
-
-| | 6529 Stream | 6529 Stream Editions |
-| --- | --- | --- |
-| Receiver | Derived on each call: the seller wallet at a zero fee share, otherwise the royalty split wallet (AUC-7, ECO-7) | Stored when the edition was created, and derived again when the network lowers its fee share (ED-7, ED-29) |
-| Amount | `floor(salePrice × rate / 100,000)`, without overflow for any price | `Math.mulDiv(salePrice, rate, 100,000)`, rounded down |
-| Rate | Set at mint from the product default, 6,529 (6.529%) at launch ([launch terms](../spec/economics-and-payouts.md#products-and-launch-terms)); changes up or down with every party's consent and the network (R10) | Starts at the master's current rate and follows its re-rates |
-| Fee share | The network may lower it, never raise it (`lowerFeeShare`, R9); the receiver then follows | The same, on the edition (`lowerFeeShare`) |
-| Unknown token | `UnknownWork(tokenId)` | `UnknownEdition(editionId)` |
-| Rate change event | `RoyaltyRateChanged` ([Stream](events-and-indexing.md#stream)) | `RoyaltyRateChanged` and `MetadataUpdate` ([Editions](events-and-indexing.md#editions)) |
-
-- **Gas.** Stream's `royaltyInfo` makes one view call to the split ledger; its gas as a whole
-  call is in the [ADR 0004 table](../adr/0004-gas-budgets-under-glamsterdam.md#the-table).
-  Short of gas it reverts, never returning a zero royalty; supply comfortably more.
-- **Advisory.** Stream and Editions transfer as plain ERC-721 and ERC-1155 tokens and do not enforce
-  payment ([ADR 0001 §16](../adr/0001-v1-scope.md#16-6529-stream-federated)).
-- **A predicted receiver.** The royalty wallet may not be deployed yet: ETH sent to it creates the
-  account once, and splits once anyone deploys the wallet.
-
-## Prague gas and Glamsterdam gas
-
-Every Prague figure here is [Prague gas](../glossary.md#prague-gas), what Foundry measures
-([ADR 0004 decision 1](../adr/0004-gas-budgets-under-glamsterdam.md#decision)). Sepolia has run
-Glamsterdam, which reprices state creation, since 6 October 2026
-([ADR 0004, Problem](../adr/0004-gas-budgets-under-glamsterdam.md#problem)).
-
-- **Rule of thumb on Sepolia's parameters:** Prague gas, plus about 89,000 per new slot, plus about
-  184,000 per new account ([ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#the-table),
-  after the table). Reads are not repriced.
-- **Estimate on the target chain** with `eth_estimateGas`, never from the Prague figures or a
-  Foundry simulation: Foundry 1.7.1 has no Amsterdam EVM (ADR 0004).
-- **Mainnet may differ.** Its Glamsterdam parameters are not final (ADR 0004 decision 3).
-
-## References
-
-- **Code.** [src/sales](../../src/sales/) and [src/economics](../../src/economics/), with their
-  [sales](../../src/sales/README.md) and [economics](../../src/economics/README.md) READMEs; the
-  interfaces are linked under [Contracts you call](#contracts-you-call).
-- **ADRs.** [ADR 0001 §5](../adr/0001-v1-scope.md#5-sales-and-auctions) (sales and auctions),
-  [§7](../adr/0001-v1-scope.md#7-economics) (economics),
-  [ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md) (gas budgets under Glamsterdam),
-  [ADR 0005](../adr/0005-stream-editions-auction.md) (the edition auction).
-- **Tests.** Linked where cited; Prague gas rows from
-  [GasReport.t.sol](../../test/integration/GasReport.t.sol).
-- **Measurements.** [Sepolia flows](../../deployments/11155111/flows.md).
-- **Related pages.** [Stream and auctions](../spec/stream-and-auctions.md),
-  [Editions and sales](../spec/editions-and-sales.md),
-  [Economics and payouts](../spec/economics-and-payouts.md),
-  [Identity and recovery](../spec/identity-and-recovery.md),
-  [Events and indexing](events-and-indexing.md), [ABIs and interface IDs](abis-and-interface-ids.md),
-  [Addresses](addresses.md).
+`royaltyInfo(tokenId, price)` on Stream and Editions returns the stored receiver and exactly
+`floor(price × rate / 100,000)`. It asks no other contract. The receiver is a split vault: pay it
+ETH directly, or ERC-20s by transfer. The rate is 6.529% at launch.

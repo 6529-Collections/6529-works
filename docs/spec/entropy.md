@@ -3,11 +3,10 @@
 A seeded 1/1 on 6529 Stream gets its seed from the artist, in the package, or from a Chainlink
 VRF v2.5 draw delivered before the work's auction can start. This page covers the draw:
 `VrfEntropyModule` requests one random word per content hash, keeps the first delivery for good,
-and answers `isDelivered` and `seedOf` by item hash. The module is optional per deployment: 6529
-Stream is deployed with one, or with zero and refuses VRF items; governance can install or
-replace it later (`setDependency`, owner decision 16), and every work keeps the module it
-minted under (`entropyModuleOf`). For auditors, integrators and the operators of the VRF
-subscription.
+and answers `isDelivered` and `seedOf` by item hash. The module is replaceable: the mint policy
+names it and reads the delivered seed at mint, and the seed is then stored in the token
+(`Work.seed`) for good. Replacing the module changes no existing work's seed. For auditors,
+integrators and the operators of the VRF subscription.
 
 > Pre-audit. See the [project status](../../README.md#status).
 
@@ -17,9 +16,8 @@ subscription.
 | --- | --- | --- | --- |
 | `VrfEntropyModule` | [`src/entropy/VrfEntropyModule.sol`](../../src/entropy/VrfEntropyModule.sol) | [`IEntropyModule`](../../src/interfaces/IEntropyModule.sol) | Gated seed requests, item links, deliveries, `isDelivered`, `seedOf`, `requestOf`; governed configuration and coordinator. |
 | `IVRFCoordinatorV2Plus` | [`src/entropy/IVRFCoordinatorV2Plus.sol`](../../src/entropy/IVRFCoordinatorV2Plus.sol) | none | The one coordinator function the module calls (`requestRandomWords`), declared locally: the repository has no Chainlink dependency. |
-| `Stream` | [`src/stream/Stream.sol`](../../src/stream/Stream.sol) | [`IStream`](../../src/interfaces/IStream.sol) | Holds the module's address (`entropyModule`), replaceable by governance in the 7-day class (`setDependency`, owner decision 16), and answers the module each work minted under (`entropyModuleOf`); `mint` refuses a VRF item without a delivered seed. |
-| `WorkRecords` | [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol) | [`IWorkRecords`](../../src/interfaces/IWorkRecords.sol) | `seedOf(tokenId)` returns the work's seed, stored when its record opens: the item's ARTIST seed, or by item hash the seed of the module the work minted under (`IStream.entropyModuleOf`), so a replacement of the module never changes a work's seed. |
-| `PackageRegistry` | [`src/curation/PackageRegistry.sol`](../../src/curation/PackageRegistry.sol) | [`IPackageRegistry`](../../src/interfaces/IPackageRegistry.sol) | Answers the request gate: is the root approved, is the content consumed. See [curation.md](curation.md). |
+| `Stream` | [`src/core/Stream.sol`](../../src/core/Stream.sol) | [`IStream`](../../src/interfaces/core/IStream.sol) | Stores each work's seed at mint (`workOf(id).seed`); never asks the module. |
+| `PackageRegistry` | [`src/curation/PackageRegistry.sol`](../../src/curation/PackageRegistry.sol) | [`IMintPolicy`](../../src/interfaces/core/IMintPolicy.sol) | Answers the request gate (is the root approved, is the content consumed) and, at mint, refuses a VRF item whose seed is not delivered and states the delivered seed in the mint facts. See [curation.md](curation.md). |
 
 ## Concepts
 
@@ -34,9 +32,9 @@ is part of the approved item, so it cannot change without a new approval.
 
 | Policy | `seed` in the package | Source of the seed | Readable |
 | --- | --- | --- | --- |
-| `NONE` | zero | No seed. | `WorkRecords.seedOf` returns zero. |
-| `ARTIST` (the default for seeded works) | nonzero, chosen by the artist | The package; `WorkRecords` stores it when the record opens. | After `openRecord` (`test_ArtistSeedAppearsOnceTheRecordOpens`). |
-| `VRF` | zero | `VrfEntropyModule`, drawn before the start. | From delivery, by item hash, before and after the record opens. |
+| `NONE` | zero | No seed. | `workOf(id).seed` is zero. |
+| `ARTIST` (the default for seeded works) | nonzero, chosen by the artist | The package; the mint policy states it and the token stores it at mint. | From mint. |
+| `VRF` | zero | `VrfEntropyModule`, drawn before the start. | From mint (stored in the token). |
 
 A nonzero seed is required exactly under `ARTIST` (CUR-9); Stream refuses a `VRF` item when its
 current `entropyModule` is zero (`InvalidSeedPolicy`). Copies never get their own seeds.
@@ -158,24 +156,13 @@ never fill a federated seed, and each setter refuses the other provider's addres
 
 ### How the seed is read
 
-- **Start gate.** `Stream.mint` asks the module `isDeliveredContent(item.contentHash)`, one
-  storage word, and reverts with `SeedNotDelivered(itemHash)` after `consume`, which the revert
-  undoes. A seed belongs to its content, whichever package lists the item, and `consume` lets a
-  content hash be consumed by one item only (CUR-12), so an item of another package with the
-  same content starts on that content's seed without a link of its own. The auction does not
-  check the seed itself.
-- **Reads.** Stream never stores a VRF seed; it records which module each work minted under
-  (`IStream.entropyModuleOf(tokenId)`: the module current at the mint, whose delivery `mint`
-  checked). `openRecord` stores that module's `seedOfContent(item.contentHash)`, which
-  `WorkRecords.seedOf(tokenId)` then returns; before the record opens the renderer reads the
-  same module's `seedOf(itemHash)`, with a bounded gas allowance
-  ([`Renderer.sol`](../../src/content/Renderer.sol), `_seed`). A replaced module therefore
-  changes no existing work's seed, and stays readable for the works minted under it. A work
-  whose item never had a request of its own (it shares a seeded content with another package's
-  item) has no item link, so `seedOf(itemHash)` reverts and its `tokenURI` reverts until anyone
-  links its item (`requestSeed` on the module `entropyModuleOf` names, the consumption
-  exception, ENT-19) or opens its record, which stores the content's seed; it never shows
-  another seed.
+- **Start gate.** At start the mint policy asks the module `isDeliveredContent(item.contentHash)`,
+  one storage word, and refuses an undelivered VRF item. A seed belongs to its content, whichever
+  package lists the item, and a content hash is consumed by one item only (CUR-12). The auction
+  does not check the seed itself.
+- **Reads.** The policy states the delivered seed (`seedOfContent(item.contentHash)`) in the mint
+  facts and the token stores it (`Work.seed`). Readers and the renderer read `workOf(id).seed`;
+  nobody asks the module after mint.
 - **`requestOf(itemHash)`** returns the content's latest request ID (zero once delivered) and
   when it was made.
 
@@ -231,7 +218,7 @@ continue to work (`test_Gate_ConsumptionAfterDeliveryBlocksNothingRead`).
 | Coordinator replaced | `SUCCESSOR_SETTER` | 7 days |
 | Wrapper for federated requests set or turned off | `SUCCESSOR_SETTER` | 7 days | `VrfEntropyModule.setWrapper` | `VrfEntropyModule.setCoordinator` |
 
-Role mappings are from [`config/genesis.example.json`](../../config/genesis.example.json); the
+Role mappings are from [`config/genesis.core.example.json`](../../config/genesis.core.example.json); the
 selector matrix is [roles.md](../audit/roles.md). The network or the scheduler may cancel a
 scheduled operation during its delay, and the brake may delay it once.
 
@@ -368,13 +355,13 @@ the 7-day class (ENT-11; `InvalidConfig`).
 | ENT-9 | `setCoordinator` is `SUCCESSOR_SETTER` (7 days), compare-and-set, never a no-op, and refuses a codeless or delegated coordinator. | `VrfEntropyModule.setCoordinator`; genesis role map | [`VrfEntropyGovernance.t.sol`](../../test/entropy/VrfEntropyGovernance.t.sol): `test_SetCoordinator_NeedsTheSuccessorClassRole`, `test_SetCoordinator_RejectsStaleAndCodelessValues`, `test_SetCoordinator_ASwapToTheCurrentCoordinatorIsRefused`; [`VrfEntropyManaged.t.sol`](../../test/entropy/VrfEntropyManaged.t.sol): `test_SetCoordinatorIsInTheSuccessorClass`, `test_TheNetworkCancelsAPendingCoordinatorSwap` |
 | ENT-10 | `setConfig` is `PARAMETER_SETTER` (24 hours), compare-and-set on the whole configuration, within bounds; the callback gas limit only rises, at most doubling per step, never above 2,500,000. | `VrfEntropyModule.setConfig`, `_validate`; `BoundedParameter.raise` | [`VrfEntropyGovernance.t.sol`](../../test/entropy/VrfEntropyGovernance.t.sol): `test_SetConfig_NeedsTheStandardClassRole`, `test_SetConfig_StaleExpectedValueReverts`, `test_SetConfig_GasLimitCanOnlyBeRaised`, `test_SetConfig_GasLimitAtMostDoublesPerStep`, `testFuzz_SetConfig_GasLimitRule`, `test_SetConfig_ScheduledThroughTheManagerAndStaleOperationsRevert`; [`VrfEntropyManaged.t.sol`](../../test/entropy/VrfEntropyManaged.t.sol): `test_SetConfigIsInTheStandardClass` |
 | ENT-11 | `lowerCallbackGasLimit` is `SUCCESSOR_SETTER` (7 days), compare-and-set, strictly lower, never below 100,000. | `VrfEntropyModule.lowerCallbackGasLimit` | [`VrfEntropyManaged.t.sol`](../../test/entropy/VrfEntropyManaged.t.sol): `test_ALoweredCoordinatorMaximumIsFollowedInTheSuccessorClass`, `test_ALoweringStaysAboveTheFloorAndBelowTheCurrentLimit`, `test_OnlyTheSettersCanCallTheGovernedFunctions` |
-| ENT-12 | A `VRF` work starts only once the seed of its item's content is delivered (`isDeliveredContent(item.contentHash)`, one word: a seed belongs to its content and a content hash is consumed by one item only, CUR-12), and only while Stream has an entropy module (deployed with one, or installed later by `setDependency`). | `Stream.mint`, `Stream._checkItem` | [`Stream.t.sol`](../../test/stream/Stream.t.sol): `test_mint_vrfNeedsDeliveredSeed`, `test_mint_vrfRejectedWithoutEntropyModule`; [`VrfWork.t.sol`](../../test/integration/VrfWork.t.sol): `test_SeedRequestedDeliveredThenStartedAndRendered`; [`StreamDependencies.t.sol`](../../test/integration/StreamDependencies.t.sol): `test_AVrfStartChecksTheItemsContentAndContentIsMintedOnce`; [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_ContentReads_AnswerOnlyTheSeededContent` |
+| ENT-12 | A `VRF` work starts only once the seed of its item's content is delivered; the mint policy checks it and states the seed in the mint facts. | `test_mint_vrfNeedsDeliveredSeed`, `test_SeedRequestedDeliveredThenStartedAndRendered` |
 | ENT-13 | The callback creates no storage slot and its cost stays at most half the 100,000 floor under Glamsterdam pricing. | `VrfEntropyModule.rawFulfillRandomWords` | [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Callback_CreatesNoStorageSlot`, `test_Callback_UsesUnderHalfTheFloorUnderGlamsterdam`, `test_Callback_GasStaysUnderTheConfiguredLimit` |
 | ENT-14 | A reentrant call during a request cannot deliver the new request or overwrite a seed delivered meanwhile. | `VrfEntropyModule.requestSeed` | [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Request_ReentrancyFromTheCoordinatorFindsNothingToUse`, `test_Repeat_AnEarlierRequestDeliveredDuringTheRepeatIsNotOverwritten` |
 | ENT-15 | A coordinator's request ID must be nonzero and unused; a failing coordinator leaves no state. | `VrfEntropyModule.requestSeed` | [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Request_RejectsAZeroRequestId`, `test_Request_RejectsADuplicateRequestId`, `test_Request_CoordinatorFailureLeavesNoState` |
 | ENT-16 | Installation checks: `retryDelay` within 3 to 30 days; a valid configuration; the registry has code, is not delegated, answers ERC-165 for `IPackageRegistry` and has its pinned code hash. | `VrfEntropyModule` constructor | [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Constructor_RejectsBadRetryDelay`, `test_Constructor_TheMinimumRetryDelayIsThreeDays`, `test_Constructor_RejectsARegistryWithoutErc165Support`, `test_Constructor_PinsTheRegistryCodeHash`, `test_Constructor_RejectsADelegatedRegistry` |
 | ENT-17 | Anyone may request a curated seed, under the real AccessManager; `requestSeed` is not payable (only `requestFederatedSeed` takes a payment, all forwarded to the wrapper). | `VrfEntropyModule` | [`VrfEntropyManaged.t.sol`](../../test/entropy/VrfEntropyManaged.t.sol): `test_AnyoneMayRequestASeedUnderTheRealManager`, `test_NothingIsPayable`; [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Request_NoRoleIsNeeded`, `test_Request_IsNonPayable` |
-| ENT-18 | A work's VRF seed always comes from the entropy module that was current at its mint (`IStream.entropyModuleOf`), before and after its record opens: replacing the module (owner decision 16) changes no existing work's seed or metadata, and only later works use the new module. | `Stream.setDependency`, `Stream.entropyModuleOf`, `WorkRecords.openRecord`, `Renderer._seed` | [`Stream.t.sol`](../../test/stream/Stream.t.sol): `test_entropyModuleOf_answersTheModuleCurrentAtMint`; [`StreamDependencies.t.sol`](../../test/integration/StreamDependencies.t.sol): `test_ReplacingTheEntropyModuleNeverChangesAnExistingWorksSeed`, `test_TwoEntropyReplacementsLeaveEachErasWorksUnchanged`, `test_AVrfRequestInFlightAcrossAReplacement`, `test_ReplacingEachDependencyLeavesExistingTokensUnchanged` |
+| ENT-18 | A work's seed is stored in the token at mint and never changes; replacing the entropy module changes no existing work's seed. | `test_Mint_StoresFactsAndCountsSerial`, `test_SeedRequestedDeliveredThenStartedAndRendered` |
 | ENT-19 | After its content is consumed, the item `consumedItemOf(contentHash)` names, a `VRF` item not yet linked, links to the content's already delivered seed with no proof or package check, no request and no coordinator call; every other call for a consumed content reverts with `NotRequestable`, so consumption never starts a draw and never links an item to another content. | `VrfEntropyModule.requestSeed`, `_isConsumedBy` | [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Content_TheConsumingItemLinksToTheDeliveredSeedAfterConsumption`, `test_Gate_AfterConsumptionNoDrawIsRequested`, `test_Gate_AfterConsumptionOnlyTheConsumingItemLinksToItsOwnContent`, `test_Gate_RejectsAConsumedItem` |
 | ENT-20 | `requestFederatedSeed` accepts only a `VRF` item with a nonzero content hash, for a contract the artist registry lists ACTIVE, from a wallet of its artist (`IAccounts.isWallet`), with a wrapper set (`NotRequestable`), and a payment of at least the wrapper's quote (`InsufficientPayment`); all of `msg.value` goes to the wrapper with the request. The draw key is `keccak256(abi.encode(token, contentHash))`; the backoff and the first-delivery rule are a curated draw's | `VrfEntropyModule.requestFederatedSeed` | [`FederationSecondPass.t.sol`](../../test/federated/FederationSecondPass.t.sol): `test_Vrf_OnlyAnArtistWalletOfAListedContractRequestsAndPays`, `test_Vrf_AWorkMintsOnlyAfterDeliveryAndKeepsItsSeed` |
 | ENT-21 | A federated request never touches the network's subscription; only the wrapper that issued it delivers it (the coordinator cannot) | `requestFederatedSeed`, `rawFulfillRandomWords` | `test_Vrf_AWorkMintsOnlyAfterDeliveryAndKeepsItsSeed`, `test_Vrf_TheWrapperAloneDeliversItsRequests` |

@@ -564,3 +564,13 @@ the network lowers fee shares and repairs renderers; every split release pays th
 unclaimed shares and credits go to it after 180 days. The governance machinery this record
 added (bounded veto, recovery, succession, seats) is removed; the artist registry's timers are
 compiled; leaving the federation is removed.
+
+## Amendment note (22 November 2026, [ADR 0010](0010-plain-permanent-core.md))
+
+What is permanent is narrowed to token ownership and the collection address, the facts of a
+finished work, and money already owed. The token contracts, `WorkFacts` and `Directory` are plain
+OpenZeppelin-style code with no assembly, no gas numbers and no `try`/`catch`; a call that runs
+out of gas reverts the whole call. The rules this ADR kept in permanent code (museum routing at
+settlement, the mint policy call, interned terms, dependency replacement, the records' rules)
+move to modules. Every wait it compiled into permanent contracts (the rescue wait, the unclaimed
+period, the wait before a new minter) is now a setting of the network with a launch value.

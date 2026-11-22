@@ -6,6 +6,58 @@ assertion, not the test's name; [Gaps](#gaps) lists what no campaign covers.
 
 > Pre-audit. See the [project status](../../README.md#status).
 
+**The plain core.** [ADR 0010](../adr/0010-plain-permanent-core.md) replaces `Stream`, `Editions`,
+`WorkRecords` and the federated templates with a small permanent core. The invariants it must
+hold are listed first, under [The permanent core](#the-permanent-core); their campaigns land with
+the core lanes and become table rows, with their test names, at integration. The tables after it
+name today's tests; rows for replaced contracts are re-pointed to the ported suites at
+integration.
+
+## The permanent core
+
+Invariant campaigns at 256 runs, depth 128, `fail_on_revert`. Proposed IDs; each becomes a table
+row once its test exists.
+
+**Stream** (and each federated 1/1 token, on the same code):
+
+- INV-CORE-1: at most one live token per content hash.
+- INV-CORE-2: a token's outcome leaves `NONE` once and never changes after.
+- INV-CORE-3: token IDs follow `totalMinted`, never reused; `totalSupply == totalMinted - totalBurned`.
+- INV-CORE-4: no call by any module or minter changes the owner of a token whose outcome is `SOLD`.
+- INV-CORE-5: `itemHash`, `artistId`, `collectionId`, `serial`, `kind`, `seedPolicy` and `seed`
+  never change after mint.
+- INV-CORE-6: a locked royalty rate never changes.
+- INV-CORE-7: Stream's state is rebuilt exactly from its logs (log replay).
+
+**Editions** (and each federated editions token):
+
+- INV-CORE-8: `minted <= maxSupply` always; a sealed `maxSupply` never changes.
+- INV-CORE-9: `minter` changes only by `rebind`, only with `minted == 0`, unsealed, once the
+  `rebindDelay` in force has passed since the removal.
+- INV-CORE-10: the sum of balances plus burned copies equals `minted`.
+
+**WorkFacts:**
+
+- INV-CORE-11: media never change after open; `recordFileId` never changes after `finalized`.
+- INV-CORE-12: `finalized`, `licenseLocked`, `repinLocked` and `onChainComplete` never go back to
+  false; a CC0 work stays CC0.
+- INV-CORE-13: `renderer` changes only by `repin`, and only while the pin is not locked.
+
+**Settings** (Stream, Editions, Directory):
+
+- INV-CORE-14: only the network changes `moduleDelay`, `rescueDelay`, `rebindDelay` and
+  `unclaimedPeriod`; each change emits the old and new values; an action is refused before the
+  period in force has elapsed; zero is allowed; an addition already announced keeps its time.
+
+**Money** (ledger, escrow, both auctions):
+
+- INV-CORE-15: expiry or forfeit never takes money that has waited less than the unclaimed period
+  in force, and never money that arrived after a mark or after a credit aged.
+
+**Hostile modules:** in every seam position (minter, TERMS, RENDERER, RECORDS, accounts,
+federation gate), a module that lies, reverts, burns all its gas or re-enters moves no token,
+changes no fact and moves no balance; `ownerOf` and transfers still work.
+
 ## Campaign settings
 
 Every campaign runs with `[profile.default.invariant]` in [`foundry.toml`](../../foundry.toml):
@@ -41,7 +93,7 @@ actions still checks its own effects.
 - **Traceability.** Every row's Test cell must name a function that exists under `test/`;
   [`tools/check_rules.py`](../../tools/check_rules.py) checks it in CI.
 - **Running them.** `forge test --match-contract Invariant`; commands and CI jobs are on
-  [Build, test and budgets](build-and-test.md).
+  Build, test and budgets.
 
 ## Stream and work records
 
@@ -183,7 +235,7 @@ adapter of another kind. INV-ED-3, the OPEN window, left with the edition format
 | INV-ED-1 | A mint succeeds only within the creator's cap, from an adapter of the edition's sale kind (else `SaleKindMismatch`) that is the edition's bound adapter, even after its removal, or else an admitted adapter that becomes bound by minting (else `NotAdmittedMinter` or `MinterMismatch`). | `invariant_MintsFollowEditionTerms` | `buy`, `buyWithWrongKind`, `mintAsOutsider`, `warp` |
 | INV-ED-2 | `edition(id).minted` counts every copy ever minted and never exceeds a nonzero cap, and balances sum to minted minus burned. | `invariant_SupplyAccounting` | `buy`, `burnFromCustody`, `transfer` |
 | INV-ED-4 | Through repeated `createEdition` calls and resales of the master, neither the link (`masterOf`: Stream, master ID, content hash; `Stream.editionOf`: Editions, edition ID) nor `royaltyInfo`'s receiver and amount change. | `invariant_LinkAndRoyaltyFixed` | `recreate`, `moveMaster` |
-| INV-ED-5 | An edition is bound to the adapter that bound it (`bindMinter`, when its sale opens) or first minted it, and never rebinds; an edition neither bound nor minted has no bound adapter. | `invariant_BoundToTheFirstMinter` | `buy` |
+| INV-ED-5 | An edition's minter is the sale contract that created it, and changes only by the network's `rebind`, with no copies and no seal, after `rebindDelay`. | `invariant_BoundToTheFirstMinter` | `buy` |
 | INV-ED-6 | A sealed edition ([ED-25](../spec/editions-and-sales.md#rules-and-invariants)) never mints past its sealed count, a removed adapter mints only an edition it sealed, and a seal is never reopened. | `invariant_SealedSupplyNeverExceedsTheSealedCount` | `seal`, `toggleAdmission`, `buy` |
 
 ## Curation
@@ -230,7 +282,7 @@ state, never `releasable`, and measures releases by balance deltas.
 | INV-ECO-7 | The claim router holds nothing, and the payer holds no ETH, no allowance to the escrow, and only the tokens of payments the model expected to revert. | `invariant_IntermediariesHoldNothing` | `claimBatch`, `pay` |
 | INV-ECO-8 | Every release, signed release, batch item, payment, deposit, flush and recovery reverts with exactly the predicted error data or moves exactly the predicted amount. | handler check: every action (`release`, `releaseTo`, `releaseSigned`, `claimBatch`, `pay`, `deposit`, `flush`, `recover`) | all |
 | INV-ECO-9 | A replayed signed release fails with `NonceAlreadyUsed`, or with `NotPayoutAddress` once the artist's payout changed. | handler check: `replaySigned` | `releaseSigned`, `revokeNonce`, `setArtistPayout` |
-| INV-ECO-10 | Governed recovery moves a split wallet's credit only to its equivalent replacement (same payees, another salt), another account's only to the replacement that account consented to, consuming the consent, and the network's own credits without consent (C19). | handler check: `recover`, `consentToggle` | as named |
+| INV-ECO-10 | Governed recovery moves a split wallet's credit only to its equivalent replacement (same payees, another salt), another account's only to the replacement that account consented to, consuming the consent, and the network's own credits without consent. | handler check: `recover`, `consentToggle` | as named |
 | INV-ECO-11 | A claim batch pays each item its predicted amount, and the recipients' balances rise by exactly the batch total. | handler check: `claimBatch` | as named |
 | INV-ECO-12 | Per wallet and asset, what was released plus what is still releasable equals what the wallet received (the ledger's accounting matches the vault's balances). | `invariant_ReleasedPlusReleasableMatchesReceived` | release actions, `pay`, `receiveDirect` |
 | INV-ECO-13 | The escrow's excess over `totalOwed` is exactly what `sweepExcess` may move, and for every asset the handler uses (ETH and single-address, non-rebasing tokens) a sweep never reduces a credit's backing ([ECO-40](../spec/economics-and-payouts.md#rules-and-invariants); two-address and rebasing tokens: LIM-ECO-8). | `invariant_EscrowExcessIsExactlyTheUnowed` | `pay`, `deposit`, `flush`, `recover`, `sweep` |
@@ -273,12 +325,12 @@ suite's `afterInvariant` drives every sale to an end after each run.
 | INV-AUC-4 | Each sale keeps its locked currency, token, token ID and first-bid increment floor (even after a withdrawal), a live sale names its high bid's recipient, and `minimumBid` is `max(openingBid, the withdrawn bid kept as reserve, 1)` with no bidder, else the bid plus `max(ceil(bid × share / 100,000), floor)`. | `invariant_LockedTermsAndRecipients` | `bid`, `withdrawBid`, `govern` |
 | INV-AUC-5 | Every sale, ended or not, keeps in storage the opening bid, increment share and anti-snipe window locked at start and its first bid's floor, whatever governance changed (read from storage, layout cross-checked against the view). | `invariant_StoredTermsMatchWhatEachSaleLocked` | `govern` |
 | INV-AUC-6 | After 30 days, settling every sale and claiming every delivery and credit leaves no funds and no token, with every deposit accounted for. | after-campaign: `AuctionInvariantBase.afterInvariant` | all |
-| INV-AUC-7 | Once the token stops blocking and the currency is re-admitted, every sale ends settled or cancelled, leaving no funds and no token. | after-campaign: `AuctionHaltsInvariantBase.afterInvariant` | `drain` |
-| INV-AUC-8 | A bid extends the end to at least `now + the locked window`; settlement delivers the token (or leaves it pending) to the high bid's recipient, or the museum if none (D140); a second dispute pause reverts (`PauseExhausted`); a withdrawal leaves the sale paused; the network's `resume` lands at any moment of the pause (C30). | handler check: `bid`, `settle`, `pause`, `pauseAndWithdraw`, `resume`, `toggleStartPause` | as named |
-| INV-AUC-9 | An unended sale refuses `settle`; a deprecated currency blocks settlement for 14 days, then `settle` credits the standing bid back to its bidder and gives the work to the museum (owner decision 10); re-admission in the last window or after the end reopens the sale for the longer of the governed duration and the locked window, keeping the bid. | handler check: `AuctionHaltsHandler.settle`, `_freezeExit` | `settle`, `toggleCurrency` |
+| INV-AUC-7 | Once the token stops blocking, every sale ends settled or cancelled, leaving no funds and no token. | after-campaign: `AuctionHaltsInvariantBase.afterInvariant` | `drain` |
+| INV-AUC-8 | A bid extends the end to at least `now + the locked window`; settlement delivers the token (or leaves it pending) to the high bid's recipient, or the museum if none; a second dispute pause reverts (`PauseExhausted`); a withdrawal leaves the sale paused; the network's `resume` lands at any moment of the pause. | handler check: `bid`, `settle`, `pause`, `pauseAndWithdraw`, `resume`, `toggleStartPause` | as named |
+| INV-AUC-9 | An unended sale refuses `settle`; settlement after the end delivers or leaves a pending delivery. | handler check: `AuctionHaltsHandler.settle` | `settle` |
 | INV-AUC-10 | With hostile tokens, the auction's balance equals the actors' credits plus the live high bids, and every deposited bid is held, claimed, or paid to the seller, the network or the escrow for them. | `invariant_HeldEqualsCreditsPlusLiveBids`, `invariant_ValueIsConserved` (refusal suite) | all |
 | INV-AUC-11 | The network receives exactly the fee on every sold sale (the listed terms, or for a federated sale the registry's share locked at start), paid to the recipient current at settlement, and nothing on a refused, rescued or unsold one. | `invariant_TheNetworkIsPaidOnEverySoldSale` | all |
-| INV-AUC-12 | From any state the campaign reaches, once 2 days have passed after each sale's end and its currency is back or frozen out, `settleOrRefund` brings every unsettled federated sale to SETTLED whatever its token does, and `settle` the stand-in's, leaving no standing bid, with INV-AUC-10, INV-AUC-11 and INV-AUC-13 still holding. | after-campaign: `AuctionRefusalFixture.afterInvariant` | all |
+| INV-AUC-12 | From any state the campaign reaches, once 2 days have passed after each sale's end, `settleOrRefund` brings every unsettled federated sale to SETTLED whatever its token does, and `settle` the stand-in's, leaving no standing bid, with INV-AUC-10, INV-AUC-11 and INV-AUC-13 still holding. | after-campaign: `AuctionRefusalFixture.afterInvariant` | all |
 | INV-AUC-13 | A bidder holds a sale's work, by the token's own ledger, only if that sale is SETTLED with it as the winning bidder, so it paid, and the network's fee on it is counted in INV-AUC-11. | `invariant_TheBuyerHoldsTheWorkOnlyIfItPaid` | all |
 
 ## Edition sales
@@ -312,7 +364,7 @@ are on [Editions and sales][ed] (EA-n).
 | INV-EA-7 | The clocks: `endTimes` reads the 1/1's end live, `closeAt` is that end plus 15 minutes, `endTime = max(closeAt, softEnd)` never before `closeAt` and never past the backstop, the soft end is the handler's model (a bid or raise in the window, none while the 1/1 is paused), and bidding is open exactly when the rules say. | `invariant_editionAuction` | `bid` (a quarter in the window), `raise`, `bidOneOfOne` (half in its anti-snipe window), `disputePause`, `resolveDispute`, `warp` |
 | INV-EA-8 | No settlement before the end, before the 1/1 settles, or before the edition exists when copies sold; a cancelled 1/1's sale refuses a bid once the adapter reads the cancellation (LIM-EA-16 has the rest) and settles VOID; `abandon` from 21 days after the close creates the edition when the master settled, else voids. | handler check: `settle`, `abandon` | `settle`, `resolveDispute`, `createEdition`, `abandon` |
 | INV-EA-9 | A void sale refunds every bid in full and mints nothing. | handler check: `claim`; `invariant_editionAuction` (INV-EA-2) | `resolveDispute` (cancel), `settle`, `claim` |
-| INV-EA-10 | Firm bids and single claims: a withdrawal at any time (also during a 1/1 dispute pause, R21), a stranger's raise, a payment one wei off, a second open, a second claim, all revert. | handler check: `withdraw`, `raise`, `bid`, `open`, `claim` | as named |
+| INV-EA-10 | Firm bids and single claims: a withdrawal at any time (also during a 1/1 dispute pause), a stranger's raise, a payment one wei off, a second open, a second claim, all revert. | handler check: `withdraw`, `raise`, `bid`, `open`, `claim` | as named |
 | INV-EA-11 | Beside the 1/1: a 1/1 bid in its anti-snipe window extends the 1/1 and never moves the edition end earlier; an unbid 1/1 settles to the museum. | handler check: `bidOneOfOne`, `settleOneOfOne` | as named |
 | INV-EA-12 | Per-settler sweeps and completability: a settler's call moves only its own progress (`sweepOf`); an order that skips a departure is accepted but never finishes its sender's sweep; a reordered one reverts with `InvalidSettlementOrder`; after any of these, a keeper settling from its own address completes settlement within a bounded number of calls, and a later call by another settler returns true and changes nothing. | handler check: `settle` (one keeper, a handoff, a stranded sweep, a refused reorder, interleaved keepers) | `settle` |
 | INV-EA-13 | No claim while SETTLING: while a sale's scan or sweep is unfinished, its bidder's claim and a pushed claim both revert with `InvalidAuctionState`. A book wider than one call's scan (24 words) settles over calls: the first stores scan progress and no result; an early call may advance the scan before the edition exists, and the call that would finish it waits for the edition. | handler check: `settle` | `wideBook`, `settle` |
@@ -321,20 +373,6 @@ are on [Editions and sales][ed] (EA-n).
 action and path ran, among them the soft close, a rationed cut step with a swept hole, a settler
 handoff, a stranded sweep, interleaved settlers, a void sale's refunds, a part-filled claim and
 an unbid 1/1 going to the museum.
-
-## Stream's interned terms
-
-[`StreamTermsInvariant.t.sol`](../../test/stream/StreamTermsInvariant.t.sol), handler
-`TermsHandler` in the same file. Real `Stream` and `SplitLedger`; mocks as above, two admitted
-adapters and two fee recipients. The handler mints under 36 terms that share six 23-bit
-positions (real collisions, found offline), re-rates tokens toward colliding rates, and squats
-empty positions with foreign words so that terms must overflow.
-
-| ID | Invariant | Test | Handler actions |
-| --- | --- | --- | --- |
-| INV-STR-9 | Every token's terms ID names exactly the terms it locked, at their hashed position or through the overflow index, and every view of the last token touched (`work`, `artistOf`, `royaltyInfo`, `primaryTerms`) returns those terms. | `invariant_EveryViewMatchesTheLockedTerms` | `mint`, `reRate`, `squat`, `settle` |
-| INV-STR-10 | Terms and terms IDs map one-to-one: the same terms always get the same ID, and an ID never names two terms. | handler check: `mint`, `reRate` | as named |
-| INV-STR-11 | Only the minting adapter can mark a token settled. | handler check: `settle` | as named |
 
 ## Identity and recovery
 
@@ -439,7 +477,7 @@ federated contracts' own state has its own campaign ([Federated template state](
 
 Non-vacuity: `FederationInvariantTest.test_HandlerPathsReachState`.
 
-## Invariants removed or changed in the second permanence pass
+## Invariants removed or changed
 
 The behaviour these checked was removed or changed by the owner's decisions of 16 November 2026
 (ADR 0009); the IDs are not reused.
@@ -448,9 +486,10 @@ The behaviour these checked was removed or changed by the owner's decisions of 1
 | --- | --- | --- |
 | INV-ID-1 (old) to INV-ID-13 | The single authority, the restraint flag, activity and dormancy, reservations, the standing snapshot, governed timers, the directory's LEFT state, and a source acting only for dormant artists | Removed; INV-ID-1 now checks the consolidated account ([Identity and recovery](#identity-and-recovery)) |
 | INV-GV-2 to INV-GV-8; PROP-GV-1, PROP-GV-4 to PROP-GV-7 | Guardian cancel rules, suspensions, escalation, dead-admin recovery, seat caps | Removed with guardians, seats, suspension and recovery; INV-GV-1 and PROP-GV-8 check the single network |
-| INV-STR-14 (old) | A royalty rate never rises | Changed: a rate stays within 100,000 and is fixed once renounced (R10) |
-| INV-EA-10 (old) | Withdrawals of bids placed before a 1/1 dispute pause | Changed: no edition bid is ever withdrawn (R21) |
-| INV-EA-7 (old) | A per-sale close offset | Changed: every sale closes 15 minutes after its 1/1 (R20) |
+| INV-STR-9 to INV-STR-11 | Stream's interned terms and their hashed positions; only the minting adapter marks a sale settled | Removed: one plain struct per token ([ADR 0010](../adr/0010-plain-permanent-core.md)); the settlement rule is INV-CORE-2 |
+| INV-STR-14 (old) | A royalty rate never rises | Changed: a rate stays within 100,000 and is fixed once renounced |
+| INV-EA-10 (old) | Withdrawals of bids placed before a 1/1 dispute pause | Changed: no edition bid is ever withdrawn |
+| INV-EA-7 (old) | A per-sale close offset | Changed: every sale closes 15 minutes after its 1/1 |
 
 ## Properties tested by fuzz and unit tests
 
@@ -490,8 +529,8 @@ Properties with no campaign of their own, or tested more directly outside one: b
 | PROP-ID-1 | The second pass's value rules hold for any input: a royalty rate up to 100,000 rises or falls with agreement; a fee share only ever falls; a federated share in force never exceeds the deployed share; every release path pays the network its share; a mark never takes money that arrived after it; every edition sale closes 15 minutes after its 1/1. | [`WorkPowers.t.sol`](../../test/stream/WorkPowers.t.sol) `testFuzz_setRoyaltyRate_anyRateUpToTheCeiling`; [`Stream.t.sol`](../../test/stream/Stream.t.sol) `testFuzz_lowerFeeShare_onlyEverFalls`; [`FederationSecondPass.t.sol`](../../test/federated/FederationSecondPass.t.sol) `testFuzz_FeeShare_NeverAboveTheDeployedShare`; [`NetworkShare.t.sol`](../../test/economics/NetworkShare.t.sol) `testFuzz_EveryReleasePathPaysTheNetwork`, `testFuzz_AMarkNeverTakesLaterMoney`; [`UniformEditionAuctionWindow.t.sol`](../../test/sales/edition/UniformEditionAuctionWindow.t.sol) `testFuzz_Window_TheCloseIsTheOneOfOneEndPlusFifteenMinutes` |
 | PROP-DSP-1 | Any append sequence matches the model, relays round-trip and never replay, and the nonce bitmap tracks exactly the spent nonces. | [`StatementLog.t.sol`](../../test/records/StatementLog.t.sol) `testFuzz_SequenceMatchesModel`, `testFuzz_RelayRoundTripAndReplay`, `testFuzz_NonceBitmapTracksExactlyTheSpentNonces` |
 | PROP-HASH-1 | The item hash binds the collection and the shares and does not depend on the chain. | [`WorksHashing.t.sol`](../../test/interfaces/WorksHashing.t.sol) `testFuzz_itemHash_bindsCollection`, `testFuzz_itemHash_bindsShares`, `testFuzz_itemHash_independentOfChain` |
-| PROP-STR-2 | The artist registry is fixed in Stream: `setDependency("ARTIST_REGISTRY")` reverts and a replacement mint policy naming another registry is refused ([AUC-39](../spec/stream-and-auctions.md#rules-and-invariants)). | [`Stream.t.sol`](../../test/stream/Stream.t.sol) `test_setDependency_refusesAPolicyWithAnotherArtistRegistry` |
-| PROP-STR-3 | `rendererOf` never falls back to the default renderer on a records fault or a shortfall: only "no pin" and `RecordNotOpen` serve it ([AUC-42](../spec/stream-and-auctions.md#rules-and-invariants)). | `Stream.t.sol` `test_rendererOf_failsClosedOnARecordsFault`, `test_GasRule_rendererOf` |
+| PROP-STR-2 | Retired: Stream holds no dependencies and no artist registry. | none |
+| PROP-STR-3 | `tokenURI` never falls back to another renderer: a finalized work uses its pin, an unfinalized one the RENDERER module, and a fault or shortfall reverts ([AUC-42](../spec/stream-and-auctions.md#rules-and-invariants)). | `test_rendererOf_failsClosedOnARecordsFault`, `test_GasRule_rendererOf` |
 | PROP-ECO-10 | A governed vault forwards what it holds only to its destination, which only a compare-and-set FUNDS_SETTER action changes ([ECO-41](../spec/economics-and-payouts.md#rules-and-invariants)). | [`GovernedVault.t.sol`](../../test/economics/GovernedVault.t.sol) `test_AnyoneForwardsETHToTheDestinationOnly`, `test_SetDestinationIsCompareAndSet`, `test_SetDestinationIsGovernedInTheFundsClass` |
 
 ### Content and rendering
@@ -505,12 +544,12 @@ Properties with no campaign of their own, or tested more directly outside one: b
 ### Gas, state growth and the transaction cap
 
 Figures: [ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#the-table). Rules:
-[Build, test and budgets](build-and-test.md#gas-and-state-growth-rules).
+Build, test and budgets.
 
 | ID | Property | Test |
 | --- | --- | --- |
-| PROP-GAS-1 | A steady-state ETH `start` and `startWithBid`, for one and two parties, a VRF work and an edition master, cost at most 350K Prague gas (`START_BUDGET` in [`IntegrationBase.sol`](../../test/integration/IntegrationBase.sol)). | [`GasReport.t.sol`](../../test/integration/GasReport.t.sol) `test_Gas_Start_SteadyState`, `test_Gas_StartWithBid_SteadyState`, `test_Gas_Start_TwoPartyWork`, `test_Gas_StartWithBid_TwoPartyWork`, `test_Gas_Start_VrfWork`, `test_Gas_Start_EditionMaster` |
-| PROP-GAS-2 | Every measured operation creates exactly its stated number of new storage slots and accounts, at most 6 slots for a steady-state `start` and 7 for `startWithBid` (`START_MAX_SLOTS`, `START_WITH_BID_MAX_SLOTS`), the same for an artist's first start; on a collision of its terms' hashed position, a first start writes one slot more (LIM-GAS-10). | every `test_Gas_*` in `GasReport.t.sol`; [`StreamTermsGrind.t.sol`](../../test/stream/StreamTermsGrind.t.sol) `test_GroundCollisionAddsOneSlotToTheFirstStart` |
+| PROP-GAS-1 | Every start row, with and without a bid (one and two parties, a VRF work, an edition master, an artist's first work), costs at most 370,000 Prague gas (`START_BUDGET` in [`IntegrationBase.sol`](../../test/integration/IntegrationBase.sol)). | `test_Gas_Start_SteadyState`, `test_Gas_StartWithBid_SteadyState`, `test_Gas_Start_TwoPartyWork`, `test_Gas_StartWithBid_TwoPartyWork`, `test_Gas_Start_VrfWork`, `test_Gas_Start_EditionMaster` |
+| PROP-GAS-2 | Every measured operation creates exactly its stated number of new storage slots and accounts; every start row writes at most 8 new slots, with or without a bid (`START_MAX_SLOTS`). | every `test_Gas_*` in `GasReport.t.sol` |
 | PROP-GAS-3 | Every other measured operation stays under its Prague test ceiling or regression ceiling. | every `test_Gas_*` in `GasReport.t.sol` |
 | PROP-GAS-4 | The harness's cold-account correction is exact (a `start` from a fully cold state equals the corrected figure after warming every account), adds nothing for accounts already cold, and refuses storage it does not cool. | [`GasHarness.t.sol`](../../test/integration/GasHarness.t.sol) `test_TheColdAccountCorrectionIsExact`, `test_NothingIsAddedForAccountsAlreadyCold`, `test_RequireCooledRefusesStorageItDoesNotCool` |
 | PROP-GAS-5 | The state-growth counter counts a slot once, ignores overwrites, zero-to-zero, reverted writes, out-of-gas and `INVALID` frames and transient storage, and counts `CREATE` and ETH sent to a fresh account or an empty precompile as new accounts. | [`StateGrowth.t.sol`](../../test/helpers/StateGrowth.t.sol) (24 tests, among them `test_OneNewSlot`, `test_ZeroToZeroIsNotNew`, `test_WriteInARevertedCallIsNotNew`, `test_WriteInAFrameThatRanOutOfGasIsNotNew`, `test_WriteInAFrameThatHitInvalidIsNotNew`, `test_TransientStorageIsNeverASlot`, `test_CreateIsANewAccountWithItsSlots`, `test_EthToAnEmptyPrecompileIsANewAccount`) |
@@ -570,6 +609,6 @@ See the [register](../spec/README.md#differences-from-the-adrs).
 - ADRs: [ADR 0001](../adr/0001-v1-scope.md#test-plan), [ADR 0002](../adr/0002-access-manager-hardening.md#test-plan),
   [ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#consequences)
 - Tests: every file linked above; [`test/integration/README.md`](../../test/integration/README.md)
-- Related pages: [Build, test and budgets](build-and-test.md),
-  [Known limitations and accepted risks](known-limitations.md), [Threat model](threat-model.md),
+- Related pages: Build, test and budgets,
+  [Known limitations and accepted risks](known-limitations.md), Threat model,
   [Scope](scope.md), the [spec](../spec/README.md)

@@ -1,98 +1,52 @@
 # Auditor pack
 
-Everything an audit team needs to start on 6529 Works: what is in scope, what each role and
-dependency is trusted with, every governed selector, the threat model, the invariants the
-tests prove, the risks already accepted, and how to build, test and measure.
+What a reviewer needs to start on 6529 Works. No external audit has started; the code has been
+reviewed only by AI agents.
 
 > Pre-audit. See the [project status](../../README.md#status).
-
-AI agents carried out an internal adversarial review on 14 October 2026; its report, with every
-finding, decision and residual risk, is
-[docs/security/internal-review-2026-10.md](../security/internal-review-2026-10.md). The fixes
-merged in PRs #51 to #57 and are cited by finding ID. No external audit has started.
 
 ## The pack
 
 | Page | Read it for |
 | --- | --- |
-| [Scope](scope.md) | Every contract in `src/` with its nSLOC and bytecode size, the inherited OpenZeppelin code, and what is out of scope |
-| [Trust assumptions](trust-assumptions.md) | What each role and each external dependency is trusted to do, what it could do if compromised, and how the system recovers |
-| [Role and permission matrix](roles.md) | Every restricted selector, its role, delay class and delay. Generated from the genesis configuration and checked in CI |
-| [Threat model](threat-model.md) | Assets, actors, attack surfaces and their mitigations, with the enforcing code and the tests |
-| [Invariants](invariants.md) | Every stateful invariant and the key fuzz and unit properties, linked to their tests |
-| [Known limitations and accepted risks](known-limitations.md) | Every limitation collected from the ADRs, READMEs and decisions, with its source |
-| [Build, test and budgets](build-and-test.md) | Toolchain, commands, CI gates, and the gas and state-growth rules |
+| [Overview](../overview.md) | The system in three pages: the permanent core, its promise, the modules, a sale |
+| [Scope](scope.md) | Every contract in `src/` with its size, and what is out of scope |
+| [Trust assumptions](trust-assumptions.md) | What the network, each key and each dependency can do, to whom and how fast |
+| [Role and permission matrix](roles.md) | Every restricted selector with its role and delay, generated from the genesis configuration |
+| [Invariants](invariants.md) | The stateful invariants and key properties, linked to their tests |
+| [Known limitations](known-limitations.md) | Limits already accepted, so they are not re-reported |
 
-## Suggested reading order
+How to build and run the tests: the [quickstart](../quickstart.md) and
+[Testing](../testing/README.md).
 
-1. The root [README](../../README.md) and the [architecture overview](../architecture.md), for
-   the shape of the system.
-2. [Scope](scope.md) and [trust assumptions](trust-assumptions.md).
-3. The [specification](../spec/README.md) pages for the areas in focus. Each lists its rules
-   with the tests that prove them.
-4. The [threat model](threat-model.md) and the [role matrix](roles.md).
-5. [Invariants](invariants.md) and [known limitations](known-limitations.md), to avoid
-   re-reporting accepted risks and to find untested properties.
-6. The ADRs ([0001](../adr/0001-v1-scope.md) to [0004](../adr/0004-gas-budgets-under-glamsterdam.md))
-   for why the design is what it is.
+## Where to start
 
-## Where the code is tightest
+The permanent contracts are small and are the part that can never be fixed after launch:
+[`src/core/`](../../src/core/) (`Stream`, `Editions`, `WorkFacts`, `Directory`, `Modules`), the
+split ledger and vaults, the escrow and the content store. The most useful review tries to
+break one sentence of the promise in [ADR 0010](../adr/0010-plain-permanent-core.md):
 
-Areas where a small change has large effects, or where the review concentrated:
+1. no module or authority moves, freezes or burns a held token, and a transfer depends on no
+   other contract;
+2. a minted work's facts and media, a finalized record and a CC0 license never change;
+3. money owed in a vault or the escrow is paid out by permanent code.
 
-- **Contract size.** `EnglishAuction` has the smallest EIP-170 margin (just over the 512-byte
-  floor), then `UniformEditionAuction` and `Renderer`; no contract is exempt. Both auctions' views are
-  answered by their lenses through a read-only `staticcall` fallback
-  ([scope](scope.md#contracts-in-scope)).
-- **The auction start path.** `EnglishAuction.start` → `Stream.mint` → the mint policy's
-  `PackageRegistry.authorize` carries a 350K Prague-gas budget and a cap of 6 new storage
-  slots, asserted exactly in `test/integration/GasReport.t.sol`
-  ([ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md)).
-- **Settlement under hostile counterparties.** Receivers that refuse NFTs or ETH, tokens that
-  block addresses, and the fixed gas allowances that absorb them in the replaceable sale
-  adapters ([ADR 0004, Security impact](../adr/0004-gas-budgets-under-glamsterdam.md#security-impact)).
-- **The permanence boundary and the gas rule** ([ADR 0007](../adr/0007-permanence.md)). The
-  permanent contracts take no instruction from replaceable code (Stream's mint policy, the
-  federation registry, the governed vaults), and forward all gas on every call out, reverting
-  with `BoundedCallShortfall` on a shortfall ([trust assumptions](trust-assumptions.md#the-model-in-brief)).
-- **The split ledger.** One permanent `SplitLedger` keeps every wallet's accounting, verifies
-  signed releases and moves funds through 66-byte vaults, proving each move by balances
-  ([economics spec](../spec/economics-and-payouts.md#payee-lists-wallets-and-the-split-ledger)).
-- **Consolidated accounts.** Every wallet of a 6529 consolidated account acts for it, read live
-  from a replaceable consolidation source (the root never reads it); 2-day own changes, the
-  network's 14-day replacement notice with a contest that lapses at 90 days, and its 14-day
-  freeze ([identity spec](../spec/identity-and-recovery.md)).
-- **The single network and the brake.** `WorksAccessManager` overrides OpenZeppelin's
-  membership check (`hasRole`) so that only `network()` holds the network roles, each with its
-  class delay (24 hours, 3 days, 7 days), refuses granting them, adds a two-step handover
-  (`transferNetwork`, `acceptNetwork`) and a brake that can delay a scheduled operation once by
-  7 days (GV-1 to GV-9) ([governance spec](../spec/governance.md)).
-- **The deployment and readback guards.** The trust model assumes a bare network Safe and
-  canonical dependencies, which only `Deploy.s.sol` and `Verify.s.sol` check, off chain
-  ([trust assumptions](trust-assumptions.md#the-network-safe-and-the-brake)).
-- **`tokenURI` within 8M gas** for any record within bounds; the worst measured case is about
-  2.5% under the budget ([rendering spec](../spec/rendering-and-tokenuri.md)).
+Then the modules against the seam: for each module, the worst it can do to an existing token,
+fact or balance if it is hostile. The busiest module is `EnglishAuction` (start path: at most
+370,000 Prague gas and 8 new storage slots, asserted in the gas report).
 
 ## Existing evidence
 
-- **Tests.** Unit, fuzz, stateful invariant, integration and review-regression suites in
-  [`test/`](../../test/), organised by contract and function ([the map](../../test/README.md)).
-  A regression test for a review finding carries the finding ID in a `/// Regression:` NatSpec
-  line, so `grep -rn "Regression: MARKET-2" test/` finds every test for MARKET-2. Coverage,
-  mutation testing and Halmos proofs are in [Testing](../testing/README.md).
-- **The internal review.** Findings, fixes, decisions, residual risks and how to reproduce
-  them: [internal-review-2026-10.md](../security/internal-review-2026-10.md).
+- **Tests.** Unit, fuzz, invariant, integration, symbolic, log-replay and fork suites in
+  [`test/`](../../test/) ([map](../../test/README.md)); coverage and mutation floors in
+  [Testing](../testing/README.md).
 - **Static analysis.** Slither runs in CI; every High or Medium finding has a reviewed row in
   the [triage record](../security/slither-triage.md).
-- **Sepolia.** Four testnet rehearsals with the mainnet Safe structure and throwaway signers,
-  their flows measured under Glamsterdam pricing ([flows](../../deployments/11155111/flows.md)).
-  r4 (1 November 2026) runs the code of `v1.0.0-rc.2`, verified on Sourcify; its live Verify
-  passed on 6 November 2026, at block 12,076,640. r3 runs `v1.0.0-rc.1`. Flows not yet run on
-  Sepolia are listed there.
+- **Sepolia.** Earlier rehearsals ran the code before this restructuring
+  ([flows](../../deployments/11155111/flows.md)); round r6 will deploy the plain core.
 
 ## Reporting
 
 Report findings privately through
 [GitHub private vulnerability reporting](https://github.com/6529-Collections/6529-works/security/advisories/new)
-([SECURITY.md](../../SECURITY.md)). Name the commit, the contract and function, the impact
-and preconditions, and a proof of concept where safe.
+([SECURITY.md](../../SECURITY.md)).

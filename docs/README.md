@@ -2,72 +2,38 @@
 
 > Pre-audit. See the [project status](../README.md#status).
 
-## By audience
+Start with the [three-page overview](overview.md).
 
 | You want to | Read |
 | --- | --- |
-| Build, test and run the system locally for the first time | The [quickstart](quickstart.md) |
-| Learn how the protocol works now | The [specification](spec/README.md) and the [glossary](glossary.md) |
-| See how the contracts fit together | The [architecture overview](architecture.md) |
-| Integrate a marketplace, wallet or indexer | The [integrator guide](integrators/README.md) |
-| Audit or review the code | The [auditor pack](audit/README.md) |
-| Know why a decision was made | The [ADRs](adr/README.md) |
-| Deploy or operate | The [runbook](../script/README.md) and the [genesis configuration](../config/README.md); a local deployment with one work sold end to end: [`script/local/`](../script/local/README.md) |
-| Contribute | [CONTRIBUTING.md](../CONTRIBUTING.md); automated agents also read [AGENTS.md](../AGENTS.md) |
-| Run or extend the tests, or see how strong they are | [Testing](testing/README.md): the layers of the suite, coverage, mutation testing and the symbolic proofs |
+| Know what the system is and what is permanent | [Overview](overview.md) |
+| See the contracts and how they call each other | [Architecture](architecture.md) |
+| Look up a rule | The [specification](spec/README.md), by rule ID; terms in the [glossary](glossary.md) |
+| Build, test and run locally | [Quickstart](quickstart.md) and [Testing](testing/README.md) |
+| Integrate a marketplace, wallet or indexer | [Integrator guide](integrators/README.md) |
+| Review or audit | [Auditor pack](audit/README.md) |
+| Know why a decision was made | [ADRs](adr/README.md) |
+| Deploy or operate | The [runbook](../script/README.md) and the [genesis configuration](../config/README.md) |
 | Report a vulnerability | [SECURITY.md](../SECURITY.md) |
-| Read the internal review | [Internal review, October 2026](security/internal-review-2026-10.md): by AI agents, not an external audit |
-| See what a release contains | The release notes of [v1.0.0-rc.2](releases/v1.0.0-rc.2.md), the current release candidate (pre-audit), and of [v1.0.0-rc.1](releases/v1.0.0-rc.1.md), the first; and the [changelog](../CHANGELOG.md) |
 
 ## Where each fact lives
 
-Each fact has one owner; other pages link to it.
-
 | Fact | Owner |
 | --- | --- |
-| Rules, state machines and parameters | The [specification](spec/README.md) page of the area, by rule ID |
-| Where the code departs from an ADR | The [register](spec/README.md#differences-from-the-adrs) in the specification index |
+| Rules and parameters | The [specification](spec/README.md) page of the area, by rule ID |
 | Event signatures and topic0 values | [Events and indexing](integrators/events-and-indexing.md) |
-| Selector, role and delay | The generated [role and permission matrix](audit/roles.md) |
-| Gas budgets and measured gas | [ADR 0004](adr/0004-gas-budgets-under-glamsterdam.md#the-table); Sepolia receipts in [flows](../deployments/11155111/flows.md) |
+| Selector, role and delay | The generated [role matrix](audit/roles.md) |
+| Gas budgets and measured gas | [ADR 0004](adr/0004-gas-budgets-under-glamsterdam.md#the-table) |
 | Accepted risks and known gaps | [Known limitations](audit/known-limitations.md) |
 | Deployed addresses | [Addresses](integrators/addresses.md) and [`deployments/`](../deployments/11155111/README.md) |
 
-[`facts.json`](facts.json) owns no fact: it is generated from the owners above by
-[`tools/gen_facts.py`](../tools/gen_facts.py), for the 6529.io site, and CI fails when it is stale.
-
-## Module READMEs
-
-Each folder under `src/` has a README that maps its code (files, entry points with rule IDs,
-storage and bytecode notes, the tests to run) and links to the owners above:
-[stream](../src/stream/README.md), [editions](../src/editions/README.md),
-[curation](../src/curation/README.md), [sales](../src/sales/README.md),
-[economics](../src/economics/README.md), [identity](../src/identity/README.md),
-[content](../src/content/README.md), [records](../src/records/README.md),
-[entropy](../src/entropy/README.md), [governance](../src/governance/README.md),
-[libraries](../src/libraries/README.md), [interfaces](../src/interfaces/README.md) and
-[federated](../src/federated/README.md) (v1.1, only if needed). Where a README and the
-specification differ, the specification follows the code. How to run and measure the tests is
-in [Testing](testing/README.md).
+[`facts.json`](facts.json) is generated from these owners by
+[`tools/gen_facts.py`](../tools/gen_facts.py) for the 6529.io site.
 
 ## Checks that keep the docs honest
 
-| Tool | Checks |
-| --- | --- |
-| [`tools/check_markdown_links.py`](../tools/check_markdown_links.py) | Every relative link and anchor resolves |
-| [`tools/gen_role_matrix.py`](../tools/gen_role_matrix.py) `--check` | The role matrix matches `config/genesis.example.json` |
-| [`tools/check_docs_facts.py`](../tools/check_docs_facts.py) | Cited test names, interface IDs, event topic0 values, nSLOC and bytecode sizes match the code |
-| [`tools/gen_facts.py`](../tools/gen_facts.py) `--check` | [`facts.json`](facts.json), the machine-readable facts the 6529.io site syncs (addresses, governed parameters and their launch defaults, gas with its labels, collection names, links), is generated from their owners |
-| [`tools/check_genesis.py`](../tools/check_genesis.py) | The genesis configuration matches the compiled selectors |
-| [`tools/check_natspec.py`](../tools/check_natspec.py) | Every external or public function, getter, event and error in `src/` has complete NatSpec |
-| [`tools/check_budgets.py`](../tools/check_budgets.py), [`tools/check_slither.py`](../tools/check_slither.py) | The engineering budgets; reviewed Slither findings ([triage](security/slither-triage.md)) |
-
-All tools use only the Python standard library; CI runs them ([`ci.yml`](../.github/workflows/ci.yml);
-coverage and the Halmos proofs on `main` in [`strength.yml`](../.github/workflows/strength.yml),
-and the scheduled runs in [`nightly.yml`](../.github/workflows/nightly.yml) and
-[`mutation.yml`](../.github/workflows/mutation.yml)).
-The tools that measure the tests ([`tools/check_coverage.py`](../tools/check_coverage.py),
-[`tools/mutation.py`](../tools/mutation.py)) and the Halmos setup are described in
-[Testing](testing/README.md); Slither's and Halmos's versions are hash-locked in
-[`requirements-tools.lock`](../requirements-tools.lock). The [changelog](../CHANGELOG.md)
-records what changed.
+`tools/check_markdown_links.py` (links and anchors), `tools/gen_role_matrix.py --check` (the role
+matrix matches the genesis configuration), `tools/check_docs_facts.py` (test names, interface
+IDs, topic0 values and sizes match the code), `tools/check_rules.py` (every rule names tests),
+`tools/check_natspec.py` and `tools/check_comment_codes.py` (NatSpec is complete and cites only
+what a reader can look up).

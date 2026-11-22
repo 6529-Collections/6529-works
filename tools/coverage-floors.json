@@ -36,6 +36,34 @@
       "lines": 99.0,
       "branches": 98.0
     },
+    "src/core/Directory.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/core/Editions.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/core/EditionsBase.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/core/Modules.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/core/Stream.sol": {
+      "lines": 99.0,
+      "branches": 95.6
+    },
+    "src/core/StreamBase.sol": {
+      "lines": 99.0,
+      "branches": 95.6
+    },
+    "src/core/WorkFacts.sol": {
+      "lines": 99.0,
+      "branches": 95.7
+    },
     "src/curation/Eip712CurationVerifier.sol": {
       "lines": 99.0,
       "branches": 98.0
@@ -140,6 +168,10 @@
       "lines": 99.0,
       "branches": 98.0
     },
+    "src/identity/Accounts.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
     "src/identity/ArtistRegistry.sol": {
       "lines": 99.0,
       "branches": 98.0
@@ -192,6 +224,10 @@
       "lines": 99.0,
       "branches": 98.0
     },
+    "src/records/WorkRules.sol": {
+      "lines": 99.0,
+      "branches": 95.7
+    },
     "src/sales/EnglishAuction.sol": {
       "lines": 99.0,
       "branches": 96.0
@@ -239,6 +275,10 @@
     "src/stream/WorkRecords.sol": {
       "lines": 99.0,
       "branches": 95.7
+    },
+    "src/terms/StreamTerms.sol": {
+      "lines": 99.0,
+      "branches": 98.0
     }
   }
 }

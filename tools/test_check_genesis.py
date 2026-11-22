@@ -105,8 +105,8 @@ class TempRepo:
 
     def run(self, policy: dict | None = None) -> tuple[int, str]:
         """`main` on this repository's configuration, against `policy` as the committed
-        config/genesis.example.json (by default the configuration itself)."""
-        committed = self.root / "config" / "genesis.example.json"
+        policy, `cg.CONFIG` (by default the configuration itself)."""
+        committed = self.root / cg.CONFIG
         committed.parent.mkdir(parents=True, exist_ok=True)
         committed.write_text(
             json.dumps(self.config if policy is None else policy), encoding="utf-8"
@@ -246,6 +246,40 @@ class CheckGenesisTest(unittest.TestCase):
         code, out = self.repo.run()
         self.assertEqual(code, 1, out)
         self.assertIn("restricted other() in src/later/Later.sol:Later is not mapped", out)
+
+    def test_a_contract_marked_pending_is_not_checked_against_its_old_source(self) -> None:
+        # Another lane rewrites Foo in place: the source present is the old one.
+        self.foo["status"] = "pending: lane 3"
+        self.foo["functions"][0]["signature"] = "setFee(uint256,uint256)"
+        self.foo["functions"][0]["selector"] = "0x00000000"  # not compiled yet: not compared
+        present = cg.source_present(self.repo.root)
+        problems = cg.check(
+            self.repo.config, cg.artifact_ids(self.repo.root / "out"),
+            cg.scan_sources(self.repo.root / "src"), present,
+        )
+        self.assertFalse(any("not a method" in p or "not mapped" in p for p in problems), problems)
+        self.assertFalse(any("no contract in the configuration" in p for p in problems), problems)
+        self.assertEqual(cg.pending(self.repo.config, present), ["Foo"])
+
+    def test_a_retiring_source_needs_no_configuration(self) -> None:
+        self.repo.source("old/Old.sol", "contract Old { function x() external restricted {} }")
+        sources = cg.scan_sources(self.repo.root / "src")
+        out = cg.artifact_ids(self.repo.root / "out")
+        problems = cg.check(self.repo.config, out, sources)
+        self.assertTrue(any("src/old/Old.sol:Old has restricted" in p for p in problems), problems)
+        self.assertEqual(cg.check(self.repo.config, out, sources, exempt_sources={"src/old/Old.sol"}), [])
+
+    def test_retiring_reads_the_tools_list(self) -> None:
+        path = self.repo.root / "tools" / "retiring.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"files": ["src/old/Old.sol"]}), encoding="utf-8")
+        self.assertEqual(cg.retiring(self.repo.root), {"src/old/Old.sol"})
+
+    def test_wiring_given_as_arguments_only_skips_the_calldata_checks(self) -> None:
+        del self.repo.config["wiring"][0]["calldata"]
+        self.assertEqual(self.repo.problems(), [])
+        self.repo.config["wiring"][0]["args"] = ["Nobody"]
+        self.assertProblem("Nobody")
 
     def test_pending_contract_still_needs_valid_roles_and_wiring(self) -> None:
         pending = self._pending_contract()

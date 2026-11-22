@@ -17,9 +17,9 @@ outcomes.
 | --- | --- | --- | --- |
 | `StatementLog` | [`src/records/StatementLog.sol`](../../src/records/StatementLog.sol) | [`IStatementLog`](../../src/interfaces/IStatementLog.sol) | Append paths per role, EIP-712 relay and nonces, per-subject hash chain, the latest dispute outcome per subject and the display rule. Holds no value; has no pause and no edit or delete path. |
 | `HashRef`, `StatementKinds` | [`HashRef.sol`](../../src/interfaces/types/HashRef.sol), [`StatementKinds.sol`](../../src/interfaces/types/StatementKinds.sol) | n/a | The content hash type and its three accepted algorithm IDs; the well-known kind labels, three of them reserved, and the convention kinds of [Declarations and conventions](declarations-and-conventions.md) ([registry](#statement-kind-registry)). |
-| `ArtistRegistry` | [`src/identity/ArtistRegistry.sol`](../../src/identity/ArtistRegistry.sol) | [`IArtistRoleResolver`](../../src/interfaces/IArtistRoleResolver.sol), [`IArtistRegistry`](../../src/interfaces/IArtistRegistry.sol) | The v1 artist resolver (`isArtist`) the log asks for ARTIST statements; `resolveContested`, which cites a dispute outcome. |
+| `Accounts` (the accounts module) | replaceable module behind `Directory.ACCOUNTS` | [`IArtistRoleResolver`](../../src/interfaces/IArtistRoleResolver.sol), [`IArtistRegistry`](../../src/interfaces/IArtistRegistry.sol) | The v1 artist resolver (`isArtist`) the log asks for ARTIST statements; `resolveContested`, which cites a dispute outcome. |
 | `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) | [`IEnglishAuction`](../../src/interfaces/IEnglishAuction.sol) | The dispute pause, `withdrawBid`, `resume`, the self-ending pause, and `cancel`, which must cite a recorded outcome. |
-| `Stream`, `PackageRegistry` | [`Stream.sol`](../../src/stream/Stream.sol), [`PackageRegistry.sol`](../../src/curation/PackageRegistry.sol) | [`IStream`](../../src/interfaces/IStream.sol), [`IPackageRegistry`](../../src/interfaces/IPackageRegistry.sol) | `burn`; the governed `releaseContent`; `revokePackage`. |
+| `Stream`, `PackageRegistry` | [`Stream.sol`](../../src/core/Stream.sol), [`PackageRegistry.sol`](../../src/curation/PackageRegistry.sol) | [`IStream`](../../src/interfaces/core/IStream.sol), [`IMintPolicy`](../../src/interfaces/core/IMintPolicy.sol) | `burn` (by the sale contract); the network's `releaseContent` in the mint policy; `revokePackage`. |
 | `Renderer`, `WorksAccessManager` | [`Renderer.sol`](../../src/content/Renderer.sol), [`WorksAccessManager.sol`](../../src/governance/WorksAccessManager.sol) | [`IRenderer`](../../src/interfaces/IRenderer.sol), OpenZeppelin `IAccessManager` | The `Dispute statement` trait of a work and its edition; scheduling of the delayed actions, which any guardian may cancel. |
 
 ## Concepts
@@ -49,11 +49,11 @@ the official contract addresses.
 | A minted 6529 Stream work | the Stream address | the token ID | Artist and owner statements, fixity, dispute outcomes |
 | An approved item before its mint | `address(0)` | `uint256(itemHash)` | Curator or platform statements, pre-mint dispute outcomes |
 | A 6529 Stream Editions edition | the Editions address | the edition ID | Owner statements by any holder, artist statements; never dispute outcomes (those go on the master) |
-| An artist | the `ArtistRegistry` address | the artist ID | Dispute outcomes of an identity contest vote |
+| An artist | the accounts module's address | the artist ID | Dispute outcomes of an identity contest vote |
 | The governance chain | the AccessManager address | `0` | `GOVERNANCE_MANIFEST` entries only ([Governance](governance.md)) |
 
 The log never links an item subject to the token it becomes; Stream holds that link
-(`IStream.coreOf(tokenId)` returns the item hash), and the display rule reads it. A kind is any
+(`IStream.itemHashOf(tokenId)` returns the item hash), and the display rule reads it. A kind is any
 non-zero `bytes32`. Three are reserved to one role or path (DSP-4). The other well-known labels in
 `StatementKinds` (`ARTIST_STATEMENT`, `FIXITY_CHECK` and so on, each `keccak256` of its name)
 may be written under any role, so readers read `kind` with `role`.
@@ -113,7 +113,7 @@ never passes.
 
 | Role | Entry points | Who qualifies |
 | --- | --- | --- |
-| ARTIST | `append(Role.ARTIST, s)`, `appendSigned` | `isArtist(token, id, signer)` on the installed resolver, its code hash checked at every use. In v1 the resolver is `ArtistRegistry`: for a Stream work, any wallet of the lead artist's account (`isWallet`); for an edition, the same through its master; every other subject answers false. A zero resolver disables ARTIST statements. |
+| ARTIST | `append(Role.ARTIST, s)`, `appendSigned` | `isArtist(token, id, signer)` on the installed resolver, its code hash checked at every use. In v1 the resolver is the accounts module: for a Stream work, any wallet of the lead artist's account (`isWallet`); for an edition, the same through its master; every other subject answers false. A zero resolver disables ARTIST statements. |
 | OWNER | `append(Role.OWNER, s)`, `appendSigned` | ERC-721 `ownerOf(id) == signer`, otherwise ERC-1155 `balanceOf(signer, id) > 0` (any edition holder). Each read forwards all the gas EIP-150 allows and copies at most 32 bytes; a read that runs short reverts with `BoundedCallShortfall` (DSP-26), and any other failure means "not the owner". |
 | CURATOR | `appendCurator(s)` (restricted), `appendSigned` | A holder of the role mapped to `appendCurator` (`CURATOR` at genesis, zero delay). |
 | PLATFORM | `appendPlatform(s)` (restricted), `appendSigned` | A holder of the role mapped to `appendPlatform` (`PLATFORM` at genesis, zero delay). |
@@ -171,7 +171,7 @@ stateDiagram-v2
     Cancelled --> [*]
     note right of Paused
         No bids and no settlement.
-        Resume and cancel take no wait (C30).
+        Resume and cancel take no wait.
     end note
 ```
 
@@ -222,7 +222,7 @@ subject the entry count, chain head and latest outcome; two views read it:
 
 | View | Answers | Read by |
 | --- | --- | --- |
-| `latestDisputeOutcome(token, id)` | The subject's own latest outcome; if none and `token` is not zero, a token that declares `IStream` by ERC-165 (checked first, in full: a contract that answers `0xffffffff` true, as an always-true fallback does, declares nothing) gets one bounded read of `IStream.coreOf(id)`, which gives the latest outcome about the item the token was minted from. A token that does not declare `IStream` is never read, so it reads zero whatever its `coreOf` would answer; a Stream's `UnknownWork` (a burned or unminted token) also leaves zero; any other failure of a token that declares `IStream` reverts with `BoundedCallFailed` (fail closed), so the renderer's `tokenURI` reverts rather than show no outcome. | The renderer and `ArtistRegistry.resolveContested` |
+| `latestDisputeOutcome(token, id)` | The subject's own latest outcome; if none and `token` is not zero, a token that declares `IStream` by ERC-165 (checked first, in full: a contract that answers `0xffffffff` true, as an always-true fallback does, declares nothing) gets one bounded read of `IStream.coreOf(id)`, which gives the latest outcome about the item the token was minted from. A token that does not declare `IStream` is never read, so it reads zero whatever its `coreOf` would answer; a Stream's `UnknownWork` (a burned or unminted token) also leaves zero; any other failure of a token that declares `IStream` reverts with `BoundedCallFailed` (fail closed), so the renderer's `tokenURI` reverts rather than show no outcome. | The renderer and `Accounts.resolveContested` |
 | `disputeOutcomeOf(token, id)` | The subject's own latest outcome (no item fallback) and its zero-based index in the subject's chain. | The auction's `pause` and `cancel` |
 
 - **Precedence.** Once the token has an outcome of its own, item outcomes are no longer shown,
@@ -246,7 +246,7 @@ subject the entry count, chain head and latest outcome; two views read it:
 | After `T` | Record the upheld outcome about the token. | Platform key (`PLATFORM`, zero delay) | The token exists; the outcome's chain index is at least `outcomeFrom`. |
 | By `T + 3 days` inclusive | Cancel the sale (`cancel(saleId, outcomeRef)`). | The network (`NETWORK`, no delay) | DSP-16, DSP-18, DSP-19. |
 | Any time | Revoke every other approved root listing the copier's items. | The network (`NETWORK`, no delay) | `revokePackage`, per root (LIM-GV-3). |
-| After the cancel | Schedule and execute `releaseContent(tokenId, contentHash, beneficiary)`, once the beneficiary has an artist ID. | The network (`PARAMETER_SETTER`, 24 hours) | DSP-21; the operation expires 14 days after it matures. |
+| After the cancel | Call `PackageRegistry.releaseContent(token, contentHash, beneficiary)`, once the beneficiary has an artist ID. | The network (role map) | DSP-21. |
 
 **Part 1: pause and vote.**
 
@@ -296,26 +296,25 @@ sequenceDiagram
 sequenceDiagram
     participant S as Network Safe
     participant M as WorksAccessManager
+    participant P as PackageRegistry
     participant T as Stream
-    participant AR as ArtistRegistry
-    S->>M: schedule releaseContent (PARAMETER_SETTER, 24 hours), then execute it after the cancel
-    M->>T: releaseContent(tokenId, contentHash, beneficiary)
-    Note over T: token must be burned, else NotBurned
-    Note over T: the burned token must hold contentHash, else ClaimNotAllowed
-    T->>AR: authorityOf(beneficiary)
-    Note over T: an unregistered beneficiary reverts with UnknownArtist
-    Note over T: content reserved for the beneficiary, item tombstoned, ContentReleased
+    S->>M: execute releaseContent after the cancel
+    M->>P: releaseContent(token, contentHash, beneficiary)
+    P->>T: tokenOfContent(contentHash), ownerOf
+    Note over P: the token it names must be burned and not released yet
+    Note over P: an unregistered beneficiary reverts
+    Note over P: content reserved for the beneficiary, item barred, ContentReleased
 ```
 
 - **The outcome** must still be the token's latest when the cancel executes, so a later outcome
   invalidates a scheduled cancel (DSP-18, LIFECYCLE-4).
 - **`cancel`** sets `pausedTotal` to the time since the pause and credits the high bid. A
   cancelled sale keeps the last amount in `Auction.bid`; its `bidder` is zero.
-- **`releaseContent`** (DSP-21) is 6529 Stream's alone, since Stream holds content uniqueness
-  (AUC-44; the package registry keeps no content record). It reserves the content for the beneficiary's items
+- **`releaseContent`** (DSP-21) is the mint policy's: Stream keeps only one live token per
+  content (AUC-44). It reserves the content for the beneficiary's items
   (`ContentReserved` for anyone else) and tombstones the burned item (`ContentUsed`). The
   beneficiary comes from the outcome document, unchecked on chain, so the network checks it
-  during the delay and can cancel the operation. A VRF item of the rightful artist joins the content's delivered seed
+  before calling it. A VRF item of the rightful artist joins the content's delivered seed
   ([Entropy](entropy.md)). Roots are revoked one by one
   ([architecture](../architecture.md#dispute-pause)).
 - `test_UpheldDisputeCancelsBurnsReleasesAndTheRightfulArtistMints` in
@@ -378,7 +377,7 @@ sequenceDiagram
     participant K as Artist key
     participant X as Relayer
     participant L as StatementLog
-    participant AR as ArtistRegistry
+    participant AR as Accounts
     participant T as Stream
     K->>L: authorizationDigest(ARTIST, statement, signer, nonce, deadline)
     K->>K: sign the EIP-712 digest
@@ -448,7 +447,7 @@ within 90 days lapses (`expireContest`).
 ```mermaid
 sequenceDiagram
     participant C as A wallet of the account
-    participant AR as ArtistRegistry
+    participant AR as Accounts
     participant L as StatementLog
     participant P as Platform key
     participant S as Network Safe
@@ -489,21 +488,21 @@ Test files: `SL` is [`StatementLog.t.sol`](../../test/records/StatementLog.t.sol
 | DSP-9 | A relayed entry needs an unexpired deadline (inclusive), an unused nonce of the signer, a valid signature over the full authorization under this log and chain, and the signer's role; a nonce is spent once, a failed append spends none. | `StatementLog.appendSigned`, `_spendNonce`, `revokeNonce` | SL `test_Relay_ReplayIsRejected`, `test_Relay_DeadlineIsInclusive`, `test_Relay_RevokeBeforeUse`, `test_Relay_WrongChainIsRejected`, `test_Relay_WrongContractIsRejected`, `test_Relay_AnyTamperedFieldIsRejected`, `test_Relay_FailedAppendDoesNotSpendTheNonce`; SLI `invariant_SpentNoncesStaySpent`; `check_relay_deadlineNonceAndSigner`, `test_SafeArtistRelaysASignedStatement` |
 | DSP-10 | Type hashes, the domain, the entry hash and the head follow the formulas on this page. | `StatementLog._statementHash`, `_authorizationHash`, `_write` | [`StatementLogGolden.t.sol`](../../test/records/StatementLogGolden.t.sol) `test_Golden_TypeHashesAndDomainTags`, `test_Golden_DigestMatchesForgeTypedDataEncoder`, `test_Golden_EntryHashAndHead`; `check_head_followsTheFormula` |
 | DSP-11 | A `DISPUTE_OUTCOME` about an ERC-721 token needs the token to exist; any ERC-1155 subject is refused. | `StatementLog._checkDisputeSubject` | SLP `test_DisputeOutcome_SubjectRules`; DI `test_ADisputeOutcomeNamesAnExistingToken` |
-| DSP-12 | `latestDisputeOutcome` returns the subject's own latest outcome, else, only for a token that declares `IStream`, its item's (a token that does not declare it reads zero, whatever its `coreOf` answers); a failed item read of a token that declares `IStream` reverts, except its `UnknownWork`, and a read that runs short reverts with `BoundedCallShortfall` (DSP-26); `disputeOutcomeOf` returns the own latest outcome and its index, with no fallback. | `StatementLog.latestDisputeOutcome`, `disputeOutcomeOf` | SLP `test_LatestDisputeOutcome_TracksOnlyDisputeEntries`, `test_DisputeOutcomeOf_IsTheOwnLatestOutcomeAndItsPosition`, `test_LatestDisputeOutcome_AStreamWhoseCoreReadFailsReverts`, `test_LatestDisputeOutcome_ANonStreamTokenStillReadsZero`, `test_LatestDisputeOutcome_AnUndeclaredTokensAnswerNamesNoItem`, `test_LatestDisputeOutcome_FollowsOnlyAFullCoreOfAnswer`; DI `test_APreMintOutcomeShowsOnTheWorkAndItsEdition`; SLI `invariant_LatestDisputeOutcomeMatchesEvents` |
+| DSP-12 | `latestDisputeOutcome` returns the subject's own latest outcome, else, only for a token that declares `IStream`, its item's (a token that does not declare it reads zero, whatever its `itemHashOf` answers); a failed item read of a token that declares `IStream` reverts, except its `UnknownWork`, and a read that runs short reverts with `BoundedCallShortfall` (DSP-26); `disputeOutcomeOf` returns the own latest outcome and its index, with no fallback. | `StatementLog.latestDisputeOutcome`, `disputeOutcomeOf` | SLP `test_LatestDisputeOutcome_TracksOnlyDisputeEntries`, `test_DisputeOutcomeOf_IsTheOwnLatestOutcomeAndItsPosition`, `test_LatestDisputeOutcome_AStreamWhoseCoreReadFailsReverts`, `test_LatestDisputeOutcome_ANonStreamTokenStillReadsZero`, `test_LatestDisputeOutcome_AnUndeclaredTokensAnswerNamesNoItem`, `test_LatestDisputeOutcome_FollowsOnlyAFullCoreOfAnswer`; DI `test_APreMintOutcomeShowsOnTheWorkAndItsEdition`; SLI `invariant_LatestDisputeOutcomeMatchesEvents` |
 | DSP-13 | Only a pauser key pauses, only a live auction, and only once. | `EnglishAuction.pause` | EAD `test_Pause_OnlyTheGuardian`, `test_Pause_OnlyALiveAuctionOnce` |
-| DSP-14 | A pause is live through `pausedAt + 3 days` inclusive and then ends by itself (`MAX_PAUSE`, compiled; C30). | `EnglishAuction._state`, `_require`, `_endPause` | EAD `test_Pause_EndsByItselfAfterSevenDays`, `test_Pause_ExpiredPauseSettlesWithoutAResumeCall`; `AuctionSecondPass.t.sol` `test_C30_APauseEndsByItselfAtThreeDays` |
+| DSP-14 | A pause is live through `pausedAt + 3 days` inclusive and then ends by itself (`MAX_PAUSE`, compiled). | `EnglishAuction._state`, `_require`, `_endPause` | EAD `test_Pause_EndsByItselfAfterSevenDays`, `test_Pause_ExpiredPauseSettlesWithoutAResumeCall`; `AuctionSecondPass.t.sol` `test_C30_APauseEndsByItselfAtThreeDays` |
 | DSP-15 | While paused, nobody bids or settles; only the high bidder may withdraw, and the withdrawn amount stays as the reserve the next bid must reach. | `EnglishAuction._bid`, `settle`, `withdrawBid`, `_minimumBid`, `_refundHighBid` | EAD `test_Pause_FreezesTheAuction`, `test_WithdrawBid_WhilePaused`; [`AuctionDisputePause.t.sol`](../../test/sales/auction/AuctionDisputePause.t.sol) `test_WithdrawBid_StaysAsTheReserveThroughALapse` |
-| DSP-16 | `resume` and `cancel` are the network's, with no wait of their own: either may land at any moment of the live pause (C30). | `EnglishAuction.resume`, `cancel` | EAD `test_Resume_OnlyTheUnpauserAndOnlyWhilePaused`, `test_Cancel_NeedsTheRecordedOutcome`; [`AuctionSecondPass.t.sol`](../../test/sales/auction/AuctionSecondPass.t.sol) `test_C30_TheNetworkCancelsInsideThePauseWithNoWait`, `test_C30_TheNetworkResumesWithNoWait` |
+| DSP-16 | `resume` and `cancel` are the network's, with no wait of their own: either may land at any moment of the live pause. | `EnglishAuction.resume`, `cancel` | EAD `test_Resume_OnlyTheUnpauserAndOnlyWhilePaused`, `test_Cancel_NeedsTheRecordedOutcome`; [`AuctionSecondPass.t.sol`](../../test/sales/auction/AuctionSecondPass.t.sol) `test_C30_TheNetworkCancelsInsideThePauseWithNoWait`, `test_C30_TheNetworkResumesWithNoWait` |
 | DSP-17 | A resumed or lapsed auction runs for at least the longer of the governed duration and its anti-snipe window, or its remaining time if longer. | `EnglishAuction._resumedEnd`, `_reopening` | EAD `test_Resume_GivesAtLeastTheDuration`, `test_Resume_LeavesAtLeastTheWindow`; `AuctionDisputePause.t.sol` `test_Resume_ARejectedDisputeResumesWithTheReserveAndTheDuration`, `test_Pause_WithAStandingBidAlsoReopensForTheDuration` |
 | DSP-18 | `cancel` cites the token's own latest outcome, recorded after the pause; an earlier outcome, a superseded one or an item outcome cannot cancel. | `EnglishAuction.pause` (`outcomeFrom`), `cancel`, `_ownOutcome` | EAD `test_Cancel_NeedsTheRecordedOutcome`; [`AuctionDisputeCancel.t.sol`](../../test/sales/auction/AuctionDisputeCancel.t.sol) `test_Cancel_RefusesAnOutcomeRecordedBeforeThePause`, `test_Cancel_RefusesAnItemOutcomeRecordedBeforeTheMint`, `test_Cancel_OnlyTheLatestOutcomeCancels` |
 | DSP-19 | `cancel` runs only while the pause is live, credits the high bid and burns the token. | `EnglishAuction.cancel`, `Stream.burn` | EAD `test_Cancel_UpheldDisputeRefundsAndBurns`, `test_Cancel_WithNoBids`, `test_Cancel_OnlyWhileThePauseIsLive`, `test_Cancel_PauseWindowBoundary`, `test_Cancel_ThroughTheStandardDelay`; DI `test_CancelIsRefusedOnceThePauseHasLapsed` |
 | DSP-20 | Only the adapter that minted a token burns it, while holding it and before its primary sale settled, even after the adapter's removal. | `Stream.burn` | [`Stream.t.sol`](../../test/stream/Stream.t.sol) `test_burn_onlyByMintingAdapter`, `test_burn_byRemovedMintingAdapter`, `test_burn_neverAfterSettlement`, `test_burn_refusedAfterSettlement`; `check_burn_onlyTheMintingAdapterBeforeSettlement` |
-| DSP-21 | `releaseContent` is governed, needs a burned token, the item that held the content and a registered beneficiary, happens once per burned item, reserves the content for the beneficiary's items and tombstones the burned item. | `Stream.releaseContent`, `Stream._claimContent` (6529 Stream holds content uniqueness and releases, AUC-44) | DI `test_ReleaseIsGovernedNamesAnArtistAndHappensOnce`, `test_ReleasedContentIsReservedForTheNamedArtist`, `test_TheNetworkCancelsAPendingRelease`; `Stream.t.sol` `test_releaseContent_afterBurnLetsTheRealArtistMint`, `test_releaseContent_reverts` |
+| DSP-21 | `releaseContent` is the network's, needs the token `tokenOfContent` names to be burned and a registered beneficiary, happens once per burned item, reserves the content for the beneficiary's items and bars the burned item. | `PackageRegistry.releaseContent` | DI `test_ReleaseIsGovernedNamesAnArtistAndHappensOnce`, `test_ReleasedContentIsReservedForTheNamedArtist`; `test_releaseContent_afterBurnLetsTheRealArtistMint` |
 | DSP-22 | After a sale, a dispute moves nothing: no path burns or transfers a settled work. | `Stream.burn` (`SaleAlreadySettled`) | DI `test_DisputeAfterASaleIsAStatementOnly`; `Stream.t.sol` `test_burn_neverAfterSettlement` |
 | DSP-23 | Through pauses, withdrawals, resumptions and cancels, the auction's balance covers every live bid and credit, value is conserved, and custody is exact. | `EnglishAuction` | [`AuctionHaltsInvariant.t.sol`](../../test/sales/auction/invariant/AuctionHaltsInvariant.t.sol) `invariant_BalanceCoversOwed`, `invariant_ValueIsConserved`, `invariant_ExactCustody` |
 | DSP-24 | Metadata shows the display rule's answer for a work, and the master's for an edition, and fails closed when the log cannot be read. | `Renderer._chainTraits` | [`Renderer.t.sol`](../../test/content/renderer/Renderer.t.sol) `test_Dispute_ShownWhenTheLogHasAnOutcome`, `test_Dispute_ReadsTheMastersSubjectForAnEdition`, `test_Dispute_ABrokenLogFailsClosed` |
-| DSP-25 | A contest resolves only with the artist's latest outcome, recorded after the contest began. | `ArtistRegistry.resolveContested`, `cancelChange` | [`ArtistRegistry.t.sol`](../../test/identity/ArtistRegistry.t.sol) `test_Contest_UpheldByAVoteRecordedAfterIt`, `test_Contest_VoidedByAVote` |
-| DSP-26 | The log compiles in no gas number. Every call out (the ERC-165 probes, `ownerOf`, `balanceOf`, `coreOf` and the ERC-1271 check) forwards all the gas EIP-150 allows, and one that fails while leaving at most 1/8 of the gas held before it reverts with `BoundedCallShortfall(target)`: running short never yields "no outcome", an unchecked dispute subject, "not the owner" or "invalid signature". The answer does not depend on what a dependency costs. | `StatementLog.latestDisputeOutcome`, `_checkDisputeSubject`, `_owns`; `BoundedCall` forward-all family; `SignatureVerifier.isValidERC1271` | [`StatementLogGasRule.t.sol`](../../test/records/StatementLogGasRule.t.sol) `test_GasRule_LatestDisputeOutcome_ItemOutcomeAtEveryCostNeverZeroWhenShort`, `test_GasRule_LatestDisputeOutcome_UnknownWorkAtEveryCost`, `test_GasRule_DisputeSubject_NonexistentTokenRefusedAtEveryCostNeverAccepted`, `test_GasRule_Owner_Erc721OwnerAuthorisedAtEveryCostNeverRefusedWhenShort`, `test_GasRule_Owner_Erc1155HolderAuthorisedAtEveryCostNeverRefusedWhenShort`, `test_GasRule_Relay_Erc1271SignerAcceptedAtEveryCostNeverInvalidWhenShort`; SL `test_Owner_HostileTokensRevertWithTheShortfallError` |
+| DSP-25 | A contest resolves only with the artist's latest outcome, recorded after the contest began. | `Accounts.resolveContested`, `cancelChange` | [`ArtistRegistry.t.sol`](../../test/identity/ArtistRegistry.t.sol) `test_Contest_UpheldByAVoteRecordedAfterIt`, `test_Contest_VoidedByAVote` |
+| DSP-26 | The log compiles in no gas number. Every call out (the ERC-165 probes, `ownerOf`, `balanceOf`, `itemHashOf` and the ERC-1271 check) forwards all the gas EIP-150 allows, and one that fails while leaving at most 1/8 of the gas held before it reverts with `BoundedCallShortfall(target)`: running short never yields "no outcome", an unchecked dispute subject, "not the owner" or "invalid signature". The answer does not depend on what a dependency costs. | `StatementLog.latestDisputeOutcome`, `_checkDisputeSubject`, `_owns`; `BoundedCall` forward-all family; `SignatureVerifier.isValidERC1271` | [`StatementLogGasRule.t.sol`](../../test/records/StatementLogGasRule.t.sol) `test_GasRule_LatestDisputeOutcome_ItemOutcomeAtEveryCostNeverZeroWhenShort`, `test_GasRule_LatestDisputeOutcome_UnknownWorkAtEveryCost`, `test_GasRule_DisputeSubject_NonexistentTokenRefusedAtEveryCostNeverAccepted`, `test_GasRule_Owner_Erc721OwnerAuthorisedAtEveryCostNeverRefusedWhenShort`, `test_GasRule_Owner_Erc1155HolderAuthorisedAtEveryCostNeverRefusedWhenShort`, `test_GasRule_Relay_Erc1271SignerAcceptedAtEveryCostNeverInvalidWhenShort`; SL `test_Owner_HostileTokensRevertWithTheShortfallError` |
 
 ## Events
 
@@ -537,7 +536,7 @@ outcome emits no ERC-4906 event, so an indexer refreshes a work's metadata on
 
 | Parameter | Value | Source |
 | --- | --- | --- |
-| Dispute pause | at most 3 days (compiled, C30), one per auction, live through `pausedAt + 3 days` inclusive | `EnglishAuction.MAX_PAUSE`; `_PAUSE_USED` |
+| Dispute pause | at most 3 days (compiled in the auction), one per auction, live through `pausedAt + 3 days` inclusive | `EnglishAuction.MAX_PAUSE`; `_PAUSE_USED` |
 | Earliest and latest `resume` or `cancel` | any moment of the live pause, through `pausedAt + 3 days` | Role map (NETWORK, no delay); `test_C30_TheNetworkCancelsInsideThePauseWithNoWait` |
 | URI length | 8,192 bytes, a safety bound on the UTF-8 check and the event (a longer document goes in the content store) | `StatementLog.MAX_URI_BYTES` |
 | Owner, dispute-subject and item-fallback reads | all the gas EIP-150 allows; a shortfall is a failure leaving at most 1/8 of the gas held before the call; at most 32 bytes copied (ERC-165, `ownerOf`, `balanceOf`) or 192 (`coreOf`) | `BoundedCall.SHORTFALL_DIVISOR`, `StatementLog.latestDisputeOutcome`, `_checkDisputeSubject`, `_owns` |
@@ -563,7 +562,7 @@ See the [register](README.md#differences-from-the-adrs).
   [`PackageRegistry.sol`](../../src/curation/PackageRegistry.sol),
   [`ArtistRegistry.sol`](../../src/identity/ArtistRegistry.sol),
   [`Renderer.sol`](../../src/content/Renderer.sol), [`Roles.sol`](../../src/governance/Roles.sol),
-  [`config/genesis.example.json`](../../config/genesis.example.json).
+  [`config/genesis.core.example.json`](../../config/genesis.core.example.json).
 - ADRs: [ADR 0001 §12](../adr/0001-v1-scope.md#12-disputes),
   [ADR 0002 decisions 6 and 7](../adr/0002-access-manager-hardening.md#decision),
   [ADR 0003 "Disputes and statements"](../adr/0003-build-time-decisions.md#disputes-and-statements-amends-adr-0001-12),

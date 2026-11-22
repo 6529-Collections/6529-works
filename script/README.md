@@ -1,5 +1,12 @@
 # script
 
+> **The plain core.** The new stack ([ADR 0010](../docs/adr/0010-plain-permanent-core.md)) is
+> deployed by [`DeployCore.sol`](DeployCore.sol) (the library), [`DeployCore.s.sol`](DeployCore.s.sol)
+> (the broadcast script; anvil or Sepolia only) and read back by [`VerifyCore.sol`](VerifyCore.sol),
+> from [`config/genesis.core.example.json`](../config/genesis.core.example.json). The runbook
+> below still describes `DeployV1` and Sepolia r5; it is rewritten for round r6 (Sepolia only)
+> when the restructuring is integrated and `DeployV1` is deleted.
+
 Deployment and verification for 6529 Works v1, plus the Sepolia runbook. These scripts
 implement the deploy assembly and the configuration readback from the
 [§17 reuse plan](../docs/adr/0001-v1-scope.md#17-reuse-plan-from-rc1-and-pr-744) and the

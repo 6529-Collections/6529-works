@@ -75,6 +75,7 @@ from pathlib import Path
 # glob). The re-check of a survivor runs every test.
 MODULE_TESTS: dict[str, str] = {
     "content": "test/content/**",
+    "core": "test/core/**",
     "curation": "test/curation/**",
     "economics": "test/economics/**",
     "editions": "test/editions/**",
@@ -87,6 +88,7 @@ MODULE_TESTS: dict[str, str] = {
     "records": "test/records/**",
     "sales": "test/sales/**",
     "stream": "test/stream/**",
+    "terms": "test/terms/**",
 }
 RECHECK_TESTS = "test/**"
 

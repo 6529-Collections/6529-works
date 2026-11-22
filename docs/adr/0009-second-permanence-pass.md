@@ -210,3 +210,13 @@ consent has no expiry (LIM-ID-24); declarations carry no intended renunciations.
 
 - Whether `abandon` should also settle in the same call.
 - The interim authority against D67/D98, for the owner.
+
+## Amendment note (22 November 2026, [ADR 0010](0010-plain-permanent-core.md))
+
+The waits this ADR compiled into permanent contracts (the wait before an added minter or module
+takes effect, the rescue wait after a minter's removal, the unclaimed period of the escrow and
+the split ledger) are now settings of the network: stored values with launch values (7, 14 and
+180 days; 14 days also for the new edition rebind), changed by the network at once with no
+floor, zero allowed. Durations inside replaceable modules (the accounts module's 2, 14, 90 and 14
+days, the 14-day finalize notice, the auctions' timers) stay compiled in those modules. No
+period, and no role delay, is a guarantee.

@@ -8,6 +8,12 @@ test suite and run in CI with every `forge test`, so they cannot drift from the 
 
 > Pre-audit. Interfaces may still change before the audit; these examples change with them.
 
+> The plain permanent core (ADR 0010) is being built. `ReadAWork` and `IndexFromEvents` already
+> read the new core (`Stream`, `WorkFacts`, the network's settings), deployed with pass-through
+> modules ([`test/mocks/core/CoreFixture.sol`](../test/mocks/core/CoreFixture.sol)). The other
+> six still run on the previous stack through the integration fixture, and move to the new
+> stack when it is integrated.
+
 ```bash
 forge test --match-path "examples/*"                 # all of them, in about a second
 forge test --match-path examples/BidInEth.t.sol -vvvv  # one, with a full call trace
@@ -18,13 +24,13 @@ exactly what a transaction does.
 
 | Example | What it shows |
 | --- | --- |
-| [`ReadAWork.t.sol`](ReadAWork.t.sol) | Everything a marketplace or wallet shows for one work: owner, what Stream stores (`work`, through Stream's views extension), the record, the license, the media list and the preferred copy of a file, `tokenURI`, `royaltyInfo` and how the primary sale ended |
+| [`ReadAWork.t.sol`](ReadAWork.t.sol) | Everything a marketplace or wallet shows for one work: owner, what Stream stores (`workOf`, one plain struct), its collection, how the first sale ended (and the price, from the `PrimarySale` log), the permanent record in `WorkFacts`, the renderer, `tokenURI` and `royaltyInfo`; and the network's settings (`moduleDelay`, `rescueDelay`, `rebindDelay`, `unclaimedPeriod`) and the modules in force |
 | [`BidInEth.t.sol`](BidInEth.t.sol) | Watching a 1/1 sale and bidding in ETH: the minimum bid, the increment, the anti-snipe extension, being outbid (a credit, never pushed back) and claiming the credit |
 | [`StartASale.t.sol`](StartASale.t.sol) | Starting a sale from the artist's signed move, with the wallet-prefixed proof `abi.encodePacked(wallet, signature)`: through `SaleStarter` (vaults and record in the same transaction), and what to do when someone started it directly first |
 | [`SettleASale.t.sol`](SettleASale.t.sol) | Settling a 1/1 and what each party receives: the winner the token, the seller split wallet the price less the fee, the network fee recipient the fee; `SaleSettled` decoded; with no bid, the work going to the museum |
 | [`EditionSale.t.sol`](EditionSale.t.sol) | Bidding in an edition sale: steps and escrow, `quote`, `clearing` and `bidOutcome`, the close following the 1/1, settlement with the settler's own order, claiming copies and the refund, and pushing a claim for a bidder |
 | [`ReleaseFromASplit.t.sol`](ReleaseFromASplit.t.sol) | Releasing from split wallets: the artist pulls sale proceeds; a royalty release that pays the network its share in the same call; a ClaimRouter batch that leaves the network's own index out |
-| [`IndexFromEvents.t.sol`](IndexFromEvents.t.sol) | Rebuilding one work's life (mint, record, auction, bids, credits, settlement, owner) from its logs alone, then checking it against the views |
+| [`IndexFromEvents.t.sol`](IndexFromEvents.t.sol) | Rebuilding Stream's state (owners, the facts of each work, outcomes and prices, royalties, the content index, the supply) from its logs alone, through a mint, a sale, a burn, a re-mint of the burned content and a royalty change, then checking it against the views |
 | [`FederationDirectory.t.sol`](FederationDirectory.t.sol) | Discovering federated contracts from `FederatedContractListed`, then reading each one's listing and status, its federation registry entry, and the network share in force |
 
 The examples use the integration fixture's helpers for setup (publishing a package, signing as
@@ -43,7 +49,8 @@ With `RPC_URL` and the addresses from a deployment record (`STREAM`, `RECORDS`, 
 cast call "$STREAM" "ownerOf(uint256)(address)" 1 --rpc-url "$RPC_URL"
 cast call "$STREAM" "tokenURI(uint256)(string)" 1 --rpc-url "$RPC_URL"
 cast call "$STREAM" "royaltyInfo(uint256,uint256)(address,uint256)" 1 1000000000000000000 --rpc-url "$RPC_URL"
-cast call "$STREAM" "work(uint256)((bytes32,uint256,uint256,uint64,uint8,uint8,address,address,uint32))" 1 --rpc-url "$RPC_URL"
+cast call "$STREAM" "workOf(uint256)((bytes32,uint160,uint32,uint32,uint8,uint8,uint8,address,uint24,bool,bytes32))" 1 --rpc-url "$RPC_URL"
+cast call "$STREAM" "rescueDelay()(uint48)" --rpc-url "$RPC_URL"   # a network setting, read it
 cast call "$RECORDS" "licenseOf(uint256)((string,bytes32))" 1 --rpc-url "$RPC_URL"
 cast call "$RECORDS" "mediaOf(uint256)((bytes32,bytes32,uint8)[])" 1 --rpc-url "$RPC_URL"
 
