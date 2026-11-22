@@ -27,7 +27,9 @@ exits non-zero at the first failed step, so CI runs it after the build.
    (git-ignored).
 2. **Read back.** [`VerifyCore.s.sol`](../VerifyCore.s.sol) reads every contract of the record
    back (wiring, genesis modules and minters, the four settings at their launch values, the
-   genesis wiring calls and the governance configuration), then deploys the same build again in
+   genesis wiring calls, the governance configuration, the auctions' stored configuration,
+   the ETH increment floor, and the tokens' `MinterAdded` logs, which must name the two genesis
+   minters and nothing else), then deploys the same build again in
    memory from the block before the deployment and compares every contract's runtime code.
 3. **`curate()`.** PLATFORM creates a collection; the artist stores a small SVG and a JSON
    record in the content store; curation signer 1 signs the package root, which the keeper
