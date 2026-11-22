@@ -1,17 +1,19 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { IMintPolicy } from "src/interfaces/IMintPolicy.sol";
+import { IMintPolicy } from "src/interfaces/core/IMintPolicy.sol";
+import { IModules } from "src/interfaces/core/IModules.sol";
+import { MintFacts, MintTerms } from "src/interfaces/core/CoreTypes.sol";
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { Eip712CurationVerifier } from "src/curation/Eip712CurationVerifier.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { PackageRegistry } from "src/curation/PackageRegistry.sol";
 import { ICurationVerifier } from "src/interfaces/ICurationVerifier.sol";
+import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
-import { PRODUCT_EDITIONS, PRODUCT_STREAM } from "src/interfaces/types/EconomicsTypes.sol";
-import { CURRENCY_DEFAULT } from "src/interfaces/types/EconomicsTypes.sol";
+import { CURRENCY_DEFAULT, CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import {
     ItemKind,
@@ -24,10 +26,8 @@ import {
     StreamMintRequest
 } from "src/interfaces/types/PackageTypes.sol";
 import { ProductEconomics } from "src/interfaces/types/EconomicsTypes.sol";
-import { PrimaryTerms } from "src/interfaces/types/SaleTypes.sol";
 import { ArtistIdentity } from "src/interfaces/types/IdentityTypes.sol";
-import { IEditions } from "src/interfaces/IEditions.sol";
-import { IStream } from "src/interfaces/IStream.sol";
+import { IStream } from "src/interfaces/core/IStream.sol";
 import { MockBoundCaller } from "test/mocks/curation/MockBoundCaller.sol";
 import {
     MisnumberingArtistRegistry,
@@ -42,7 +42,7 @@ import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { ERC1271WalletMock } from "test/mocks/libraries/AdversarialTargets.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
 import { SignatureReverts } from "test/helpers/SignatureReverts.sol";
-import { CurationBase } from "./CurationBase.sol";
+import { CurationBase, CurationPolicyStub, EntropyStub, PolicyMinter } from "./CurationBase.sol";
 
 /// @dev A verifier that approves every root: code that could take the place of the pinned one.
 contract ApproveEverythingVerifier {
@@ -52,25 +52,6 @@ contract ApproveEverythingVerifier {
 
     function supportsInterface(bytes4) external pure returns (bool) {
         return true;
-    }
-}
-
-/// @dev An economics resolver and split factory whose answers a test sets, for the policy's
-///      quote (`_quote`) under terms the stub in `CurationBase` never returns.
-contract SettablePolicyStub {
-    ProductEconomics internal _e;
-    address internal _wallet = address(0x5E11E7);
-
-    function set(ProductEconomics memory e) external {
-        _e = e;
-    }
-
-    function economics(bytes32) external view returns (ProductEconomics memory) {
-        return _e;
-    }
-
-    function walletFor(ISplitWallet.Payee[] calldata, bytes32) external view returns (address) {
-        return _wallet;
     }
 }
 
@@ -147,24 +128,64 @@ contract PackageRegistryTest is CurationBase {
         bytes32 vh = address(verifier).codehash;
         bytes32 ah = address(artists).codehash;
         vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
-        new PackageRegistry(address(manager), v, vh, eoa, eoa.codehash);
+        new PackageRegistry(
+            address(manager),
+            v,
+            vh,
+            eoa,
+            eoa.codehash,
+            IEconomicsResolver(address(_policyStub)),
+            address(0)
+        );
         // A contract without the artist registry's ERC-165 interface.
         bytes32 wrongHash = address(verifier).codehash;
         vm.expectRevert(
             abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(verifier))
         );
-        new PackageRegistry(address(manager), v, vh, address(verifier), wrongHash);
+        new PackageRegistry(
+            address(manager),
+            v,
+            vh,
+            address(verifier),
+            wrongHash,
+            IEconomicsResolver(address(_policyStub)),
+            address(0)
+        );
         // Code hashes are pinned: the artist registry's and the verifier's.
         vm.expectRevert(
             abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(artists))
         );
-        new PackageRegistry(address(manager), v, vh, address(artists), keccak256("other"));
+        new PackageRegistry(
+            address(manager),
+            v,
+            vh,
+            address(artists),
+            keccak256("other"),
+            IEconomicsResolver(address(_policyStub)),
+            address(0)
+        );
         vm.expectRevert(
             abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(verifier))
         );
-        new PackageRegistry(address(manager), v, keccak256("other"), address(artists), ah);
+        new PackageRegistry(
+            address(manager),
+            v,
+            keccak256("other"),
+            address(artists),
+            ah,
+            IEconomicsResolver(address(_policyStub)),
+            address(0)
+        );
         vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
-        new PackageRegistry(address(manager), ICurationVerifier(eoa), vh, address(artists), ah);
+        new PackageRegistry(
+            address(manager),
+            ICurationVerifier(eoa),
+            vh,
+            address(artists),
+            ah,
+            IEconomicsResolver(address(_policyStub)),
+            address(0)
+        );
     }
 
     function test_constructor_rejectsDelegatedVerifier() public {
@@ -173,13 +194,20 @@ contract PackageRegistryTest is CurationBase {
         bytes32 h = delegated.codehash;
         bytes32 ah = address(artists).codehash;
         vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, delegated));
-        new PackageRegistry(address(manager), ICurationVerifier(delegated), h, address(artists), ah);
+        new PackageRegistry(
+            address(manager),
+            ICurationVerifier(delegated),
+            h,
+            address(artists),
+            ah,
+            IEconomicsResolver(address(_policyStub)),
+            address(0)
+        );
     }
 
     // -------------------------------------------------------------------- caller binding
 
     bytes32 internal constant STREAM_NAME = "STREAM";
-    bytes32 internal constant EDITIONS_NAME = "EDITIONS";
 
     function test_bindStream_once() public {
         assertEq(registry.stream(), stream);
@@ -190,7 +218,6 @@ contract PackageRegistryTest is CurationBase {
         vm.prank(admin);
         fresh.bindStream(s2);
         assertEq(fresh.stream(), s2);
-        assertEq(fresh.editions(), address(0)); // bound independently
         vm.prank(admin);
         vm.expectRevert(abi.encodeWithSelector(IPackageRegistry.AlreadyBound.selector, STREAM_NAME));
         fresh.bindStream(stream);
@@ -199,30 +226,11 @@ contract PackageRegistryTest is CurationBase {
         registry.bindStream(s2);
     }
 
-    function test_bindEditions_onceAndLater() public {
-        assertEq(registry.editions(), editions);
-        PackageRegistry fresh = _newRegistry();
-        vm.prank(admin);
-        fresh.bindStream(stream);
-        // Editions deploys later and is bound on its own.
-        address e2 = address(new MockBoundCaller(type(IEditions).interfaceId));
-        vm.expectEmit(address(fresh));
-        emit IPackageRegistry.Bound(EDITIONS_NAME, e2);
-        vm.prank(admin);
-        fresh.bindEditions(e2);
-        assertEq(fresh.editions(), e2);
-        vm.prank(admin);
-        vm.expectRevert(
-            abi.encodeWithSelector(IPackageRegistry.AlreadyBound.selector, EDITIONS_NAME)
-        );
-        fresh.bindEditions(editions);
-    }
-
-    /// @dev Review PoC 4, inverted: a binding must answer ERC-165 for the bound role, so a wrong
-    ///      address cannot be bound forever by mistake.
+    /// @dev A binding must answer ERC-165 for the core `IStream`, so a wrong address cannot be
+    ///      bound forever by mistake.
     function test_bind_rejectsContractsWithoutTheInterface() public {
         PackageRegistry fresh = _newRegistry();
-        address[3] memory notStreams = [address(verifier), editions, address(artists)];
+        address[3] memory notStreams = [address(verifier), address(_policyStub), address(artists)];
         for (uint256 i; i < notStreams.length; ++i) {
             vm.prank(admin);
             vm.expectRevert(
@@ -230,11 +238,7 @@ contract PackageRegistryTest is CurationBase {
             );
             fresh.bindStream(notStreams[i]);
         }
-        vm.prank(admin);
-        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, stream));
-        fresh.bindEditions(stream);
         assertEq(fresh.stream(), address(0));
-        assertEq(fresh.editions(), address(0));
     }
 
     function test_bind_governedAndContractsOnly() public {
@@ -244,16 +248,10 @@ contract PackageRegistryTest is CurationBase {
         vm.prank(guardian);
         vm.expectRevert(unauthorized);
         fresh.bindStream(stream);
-        vm.prank(guardian);
-        vm.expectRevert(unauthorized);
-        fresh.bindEditions(editions);
         address eoa = makeAddr("eoa");
         vm.prank(admin);
         vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
         fresh.bindStream(eoa);
-        vm.prank(admin);
-        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
-        fresh.bindEditions(eoa);
         address delegated = makeAddr("7702 account");
         vm.etch(delegated, abi.encodePacked(hex"ef0100", stream));
         vm.prank(admin);
@@ -261,15 +259,16 @@ contract PackageRegistryTest is CurationBase {
         fresh.bindStream(delegated);
     }
 
+    /// @dev An unbound registry admits nothing, even for an active minter of a real Stream.
     function test_unboundRegistryRefusesEveryone() public {
         PackageRegistry fresh = _newRegistry();
         PackageItem memory item;
         MoveAuthorization memory move;
-        vm.prank(stream);
-        vm.expectRevert(abi.encodeWithSelector(IPackageRegistry.UnboundCaller.selector, stream));
+        vm.expectRevert(
+            abi.encodeWithSelector(IMintPolicy.NotSaleContract.selector, stream, address(minter))
+        );
         _policyCall(fresh, bytes32(0), item, new bytes32[](0), move);
     }
-
     // ------------------------------------------------------------------ registerPackage
 
     function test_registerPackage() public {
@@ -344,7 +343,7 @@ contract PackageRegistryTest is CurationBase {
         registry.revokePackage(root, keccak256("reason"));
         (IPackageRegistry.PackageStatus status,,) = registry.packageOf(root);
         assertEq(uint8(status), uint8(IPackageRegistry.PackageStatus.REVOKED));
-        vm.prank(stream);
+        vm.prank(address(minter));
         vm.expectRevert(abi.encodeWithSelector(IPackageRegistry.PackageNotApproved.selector, root));
         _policyCall(registry, root, item, new bytes32[](0), move);
         PartyAcceptance memory a = _acceptance(collab);
@@ -620,8 +619,10 @@ contract PackageRegistryTest is CurationBase {
     function test_consume() public {
         (bytes32 root, PackageItem memory item, MoveAuthorization memory move) = _ready(SHA_A);
         bytes32 itemHash = _hash(item);
-        IMintPolicy.MintRecord memory rec = _authorize(root, item, new bytes32[](0), move);
-        (bytes32 h, uint256 artistId, address authority) = (rec.itemHash, rec.artistId, rec.creator);
+        (MintFacts memory rec, MintTerms memory terms) =
+            _authorize(root, item, new bytes32[](0), move);
+        (bytes32 h, uint256 artistId, address authority) =
+            (rec.itemHash, rec.artistId, terms.creator);
         assertEq(h, itemHash);
         assertEq(artistId, _id(lead));
         assertEq(authority, lead, "the active authority that signed the move");
@@ -630,30 +631,29 @@ contract PackageRegistryTest is CurationBase {
         assertFalse(registry.isMoveNonceUsed(_id(lead), 1));
     }
 
-    /// @dev The quote and the mint record carry the item's own sale terms, root, media hash and
-    ///      record file, whatever they hold (the registry does not check a currency: the
-    ///      adapter does).
+    /// @dev The quote and the mint facts carry the item's own sale terms, root, media hash and
+    ///      record file, whatever they hold (the auction checks the sale kind and the params).
     function test_previewAndAuthorize_carryTheItemsOwnFields() public {
         PackageItem memory item = _item(lead, SHA_A);
-        item.sale.currency = makeAddr("someToken");
         item.sale.params = hex"0102";
         bytes32 root = WorksHashing.leaf(_hash(item));
         _register(root);
         _accept(root, leadKey);
         MoveAuthorization memory move = _move(leadKey, root, _hash(item), 0);
-        PrimaryTerms memory t = registry.preview(
-            _context(address(_policyStub)),
-            abi.encode(StreamMintRequest(root, item, new bytes32[](0), move))
-        );
-        assertEq(t.currency, item.sale.currency);
+        (MintFacts memory pf, MintTerms memory t) =
+            registry.preview(stream, _request(root, item, new bytes32[](0), move));
         assertEq(t.params, item.sale.params);
-        IMintPolicy.MintRecord memory rec = _authorize(root, item, new bytes32[](0), move);
+        assertEq(t.saleKind, item.sale.saleKind);
+        assertEq(pf.itemHash, _hash(item));
+        (MintFacts memory rec, MintTerms memory rt) = _authorize(root, item, new bytes32[](0), move);
         assertEq(rec.packageRoot, root);
         assertEq(rec.mediaHash, item.mediaHash);
         assertEq(rec.recordFileId, item.recordFileId);
-        assertEq(rec.currency, item.sale.currency);
-        assertEq(rec.params, item.sale.params);
+        assertEq(rt.params, item.sale.params);
         assertEq(rec.contentHash, SHA_A);
+        assertEq(rec.collectionId, item.collectionId);
+        assertEq(rec.kind, item.kind);
+        assertEq(abi.encode(pf), abi.encode(rec), "the preview answers the same facts");
     }
 
     /// @dev The registry hashes the item from calldata (`WorksHashing.itemHashCalldata`);
@@ -675,8 +675,13 @@ contract PackageRegistryTest is CurationBase {
         bytes32 root = WorksHashing.leaf(_hash(item));
         _register(root);
         _accept(root, leadKey);
-        (bytes32 h,) = _consume(root, item, new bytes32[](0), _move(leadKey, root, _hash(item), 0));
-        assertEq(h, WorksHashing.itemHash(item));
+        (MintFacts memory f,) = minter.authorizeOnly(
+            address(registry),
+            stream,
+            _request(root, item, new bytes32[](0), _move(leadKey, root, _hash(item), 0))
+        );
+        assertEq(f.itemHash, WorksHashing.itemHash(item));
+        assertEq(f.seed, seed);
     }
 
     function test_consume_masterWithCollaborator() public {
@@ -696,41 +701,68 @@ contract PackageRegistryTest is CurationBase {
         _register(root);
         _accept(root, leadKey);
         MoveAuthorization memory move = _move(leadKey, root, _hash(item), 0);
-        vm.prank(stream);
+        vm.prank(address(minter));
         vm.expectRevert(
             abi.encodeWithSelector(IPackageRegistry.PartyNotAccepted.selector, root, collab)
         );
         _policyCall(registry, root, item, new bytes32[](0), move);
         // The collaborator accepted a different package: still not this one.
         _accept(keccak256("unrelated"), collabKey, true);
-        vm.prank(stream);
+        vm.prank(address(minter));
         vm.expectRevert(
             abi.encodeWithSelector(IPackageRegistry.PartyNotAccepted.selector, root, collab)
         );
         _policyCall(registry, root, item, new bytes32[](0), move);
     }
 
-    function test_consume_onlyBoundStream() public {
+    /// @dev Only an active minter of the bound Stream is served: the network, artists, a
+    ///      minter not yet active or removed, and a minter naming another token are refused.
+    function test_consume_onlyAnActiveMinterOfTheBoundStream() public {
         (bytes32 root, PackageItem memory item, MoveAuthorization memory move) = _ready(SHA_A);
-        address[4] memory callers = [admin, guardian, lead, editions];
+        bytes memory request = _request(root, item, new bytes32[](0), move);
+        address[3] memory callers = [admin, guardian, lead];
         for (uint256 i; i < callers.length; ++i) {
             vm.prank(callers[i]);
             vm.expectRevert(
-                abi.encodeWithSelector(IPackageRegistry.UnboundCaller.selector, callers[i])
+                abi.encodeWithSelector(IMintPolicy.NotSaleContract.selector, stream, callers[i])
             );
-            _policyCall(registry, root, item, new bytes32[](0), move);
+            registry.authorize(stream, request);
         }
+        // An active minter naming another token.
+        address other = address(new MockBoundCaller(type(IStream).interfaceId));
+        vm.prank(address(minter));
+        vm.expectRevert(
+            abi.encodeWithSelector(IMintPolicy.NotSaleContract.selector, other, address(minter))
+        );
+        registry.authorize(other, request);
+        // A minter added but still waiting, then active, then removed.
+        PolicyMinter pending = new PolicyMinter();
+        vm.prank(admin);
+        IModules(stream).addMinter(address(pending));
+        vm.expectRevert(
+            abi.encodeWithSelector(IMintPolicy.NotSaleContract.selector, stream, address(pending))
+        );
+        pending.mint(address(registry), stream, request);
+        vm.warp(block.timestamp + IModules(stream).moduleDelay());
+        deadline = uint64(block.timestamp + 1 days);
+        move = _move(leadKey, root, _hash(item), 0);
+        request = _request(root, item, new bytes32[](0), move);
+        vm.prank(admin);
+        IModules(stream).removeMinter(address(pending));
+        vm.expectRevert(
+            abi.encodeWithSelector(IMintPolicy.NotSaleContract.selector, stream, address(pending))
+        );
+        pending.mint(address(registry), stream, request);
+        assertFalse(registry.isMoveNonceUsed(_id(lead), 0), "nothing spent");
+        // The genesis minter is served.
+        _authorize(root, item, new bytes32[](0), move);
     }
 
     function test_consume_revertsDoubleConsume() public {
         (bytes32 root, PackageItem memory item, MoveAuthorization memory move) = _ready(SHA_A);
         _consume(root, item, new bytes32[](0), move);
         MoveAuthorization memory fresh = _move(leadKey, root, _hash(item), 1);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IPackageRegistry.ContentUsed.selector, PRODUCT_STREAM, SHA_A, _hash(item)
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(IMintPolicy.ContentUsed.selector, SHA_A, uint256(1)));
         _authorize(root, item, new bytes32[](0), fresh);
     }
 
@@ -749,11 +781,7 @@ contract PackageRegistryTest is CurationBase {
         _consume(rootA, item, new bytes32[](0), _move(leadKey, rootA, _hash(item), 0));
         MoveAuthorization memory move = _move(leadKey, rootB, _hash(item), 1);
         bytes32[] memory proof = _proof(leaves, 0);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IPackageRegistry.ContentUsed.selector, PRODUCT_STREAM, SHA_A, _hash(item)
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(IMintPolicy.ContentUsed.selector, SHA_A, uint256(1)));
         _authorize(rootB, item, proof, move);
     }
 
@@ -771,11 +799,7 @@ contract PackageRegistryTest is CurationBase {
         _accept(root, collabKey);
         _consume(root, items[0], proofs[0], _move(leadKey, root, _hash(items[0]), 0));
         MoveAuthorization memory move = _move(collabKey, root, _hash(items[1]), 0);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IPackageRegistry.ContentUsed.selector, PRODUCT_STREAM, SHA_A, _hash(items[0])
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(IMintPolicy.ContentUsed.selector, SHA_A, uint256(1)));
         _authorize(root, items[1], proofs[1], move);
         assertEq(registry.consumedItemOf(SHA_A), _hash(items[0]));
     }
@@ -783,7 +807,7 @@ contract PackageRegistryTest is CurationBase {
     function test_consume_revertsItemNotInPackage() public {
         (bytes32 root, PackageItem memory item, MoveAuthorization memory move) = _ready(SHA_A);
         item.collectionId = 2; // any field change is another item
-        vm.prank(stream);
+        vm.prank(address(minter));
         vm.expectRevert(
             abi.encodeWithSelector(IPackageRegistry.ItemNotInPackage.selector, root, _hash(item))
         );
@@ -799,7 +823,7 @@ contract PackageRegistryTest is CurationBase {
         _accept(deepRoot, leadKey);
         MoveAuthorization memory move = _move(leadKey, deepRoot, _hash(item), 0);
         assertTrue(MerkleProof.verify(deep, deepRoot, WorksHashing.leaf(_hash(item))));
-        vm.prank(stream);
+        vm.prank(address(minter));
         vm.expectRevert(
             abi.encodeWithSelector(
                 IPackageRegistry.ItemNotInPackage.selector, deepRoot, _hash(item)
@@ -833,7 +857,7 @@ contract PackageRegistryTest is CurationBase {
     function test_move_revertsExpired() public {
         (bytes32 root, PackageItem memory item, MoveAuthorization memory move) = _ready(SHA_A);
         vm.warp(uint256(move.deadline) + 1);
-        vm.prank(stream);
+        vm.prank(address(minter));
         vm.expectRevert(SignatureReverts.expired(move.deadline));
         _policyCall(registry, root, item, new bytes32[](0), move);
     }
@@ -847,7 +871,7 @@ contract PackageRegistryTest is CurationBase {
     function test_move_revertsWrongSigner() public {
         (bytes32 root, PackageItem memory item,) = _ready(SHA_A);
         MoveAuthorization memory move = _move(collabKey, root, _hash(item), 0);
-        vm.prank(stream);
+        vm.prank(address(minter));
         vm.expectRevert(SignatureReverts.invalid(collab));
         _policyCall(registry, root, item, new bytes32[](0), move);
     }
@@ -856,7 +880,7 @@ contract PackageRegistryTest is CurationBase {
         (bytes32 root, PackageItem memory item, MoveAuthorization memory move) = _ready(SHA_A);
         move.signature =
             _pf(leadKey, _highS(leadKey, registry.moveDigest(root, _hash(item), 0, deadline)));
-        vm.prank(stream);
+        vm.prank(address(minter));
         vm.expectRevert(SignatureReverts.invalid(lead));
         _policyCall(registry, root, item, new bytes32[](0), move);
     }
@@ -864,7 +888,7 @@ contract PackageRegistryTest is CurationBase {
     function test_move_revertsWrongChain() public {
         (bytes32 root, PackageItem memory item, MoveAuthorization memory move) = _ready(SHA_A);
         vm.chainId(block.chainid + 1);
-        vm.prank(stream);
+        vm.prank(address(minter));
         vm.expectRevert(SignatureReverts.invalid(lead));
         _policyCall(registry, root, item, new bytes32[](0), move);
     }
@@ -874,7 +898,7 @@ contract PackageRegistryTest is CurationBase {
         PackageRegistry other = _newRegistry();
         bytes memory foreign =
             _pf(leadKey, _sig(leadKey, other.moveDigest(root, _hash(item), 0, deadline)));
-        vm.prank(stream);
+        vm.prank(address(minter));
         vm.expectRevert(SignatureReverts.invalid(lead));
         _policyCall(registry, root, item, new bytes32[](0), MoveAuthorization(0, deadline, foreign));
     }
@@ -887,7 +911,7 @@ contract PackageRegistryTest is CurationBase {
         _register(root);
         _accept(root, leadKey);
         MoveAuthorization memory moveFor0 = _move(leadKey, root, _hash(items[0]), 0);
-        vm.prank(stream);
+        vm.prank(address(minter));
         vm.expectRevert(SignatureReverts.invalid(lead));
         _policyCall(registry, root, items[1], proofs[1], moveFor0);
     }
@@ -896,7 +920,7 @@ contract PackageRegistryTest is CurationBase {
         (bytes32 root, PackageItem memory item, MoveAuthorization memory oldMove) = _ready(SHA_A);
         uint256 newKey = 0xA9;
         artists.recover(_id(lead), vm.addr(newKey));
-        vm.prank(stream);
+        vm.prank(address(minter));
         vm.expectRevert(SignatureReverts.invalid(lead));
         _policyCall(registry, root, item, new bytes32[](0), oldMove);
         _consume(root, item, new bytes32[](0), _move(newKey, root, _hash(item), 0));
@@ -941,7 +965,7 @@ contract PackageRegistryTest is CurationBase {
         );
         MoveAuthorization memory second =
             MoveAuthorization(5, deadline, _pf(leadKey, _sig(leadKey, d1)));
-        vm.prank(stream);
+        vm.prank(address(minter));
         vm.expectRevert(
             abi.encodeWithSelector(IPackageRegistry.MoveNonceUsed.selector, _id(lead), 5)
         );
@@ -961,12 +985,12 @@ contract PackageRegistryTest is CurationBase {
         bytes32 digest = registry.moveDigest(root, _hash(item), 0, deadline);
         MoveAuthorization memory compact =
             MoveAuthorization(0, deadline, _pf(leadKey, _compact(leadKey, digest)));
-        vm.prank(stream);
+        vm.prank(address(minter));
         vm.expectRevert(
             abi.encodeWithSelector(IPackageRegistry.MoveNonceUsed.selector, _id(lead), 0)
         );
         _policyCall(registry, root, item, new bytes32[](0), move);
-        vm.prank(stream);
+        vm.prank(address(minter));
         vm.expectRevert(
             abi.encodeWithSelector(IPackageRegistry.MoveNonceUsed.selector, _id(lead), 0)
         );
@@ -1040,7 +1064,7 @@ contract PackageRegistryTest is CurationBase {
 
     /// @dev The policy's item rules (`InvalidSeedPolicy`) run before the consume.
     function test_invalidItem_seedPolicy() public {
-        bytes memory reason = abi.encodeWithSelector(IMintPolicy.InvalidSeedPolicy.selector);
+        bytes memory reason = abi.encodeWithSelector(IPackageRegistry.InvalidSeedPolicy.selector);
         PackageItem memory item = _item(lead, SHA_A);
         item.seed = keccak256("seed"); // seed without SeedPolicy.ARTIST
         _expectInvalidWith(item, _keys(leadKey), reason);
@@ -1061,18 +1085,16 @@ contract PackageRegistryTest is CurationBase {
         bytes32 root = WorksHashing.leaf(_hash(item));
         _register(root);
         _accept(root, leadKey);
-        IMintPolicy.MintContext memory c = IMintPolicy.MintContext(
-            stream, address(_policyStub), makeAddr("entropyModule"), address(_policyStub)
-        );
-        PrimaryTerms memory t = registry.preview(
-            c,
-            abi.encode(
-                StreamMintRequest(
-                    root, item, new bytes32[](0), _move(leadKey, root, _hash(item), 0)
-                )
-            )
+        (MintFacts memory f, MintTerms memory t) = registry.preview(
+            stream, _request(root, item, new bytes32[](0), _move(leadKey, root, _hash(item), 0))
         );
         assertEq(t.creator, lead);
+        assertEq(f.seed, bytes32(0), "not delivered yet");
+        entropy.deliver(SHA_A, keccak256("vrf"));
+        (f,) = registry.preview(
+            stream, _request(root, item, new bytes32[](0), _move(leadKey, root, _hash(item), 0))
+        );
+        assertEq(f.seed, keccak256("vrf"));
     }
 
     /// @dev Kinds, seed policies and party roles are open `uint8`s in the package types; the
@@ -1082,7 +1104,9 @@ contract PackageRegistryTest is CurationBase {
         PackageItem memory item = _item(lead, SHA_A);
         item.seedPolicy = uint8(SeedPolicy.VRF) + 1;
         _expectInvalidWith(
-            item, _keys(leadKey), abi.encodeWithSelector(IMintPolicy.InvalidSeedPolicy.selector)
+            item,
+            _keys(leadKey),
+            abi.encodeWithSelector(IPackageRegistry.InvalidSeedPolicy.selector)
         );
         item = _item(lead, SHA_A);
         item.kind = uint8(ItemKind.EDITION_MASTER) + 1;
@@ -1141,7 +1165,9 @@ contract PackageRegistryTest is CurationBase {
         PackageItem memory item = _item(lead, SHA_A);
         item.parties = new Party[](0);
         _expectInvalidWith(
-            item, _keys(leadKey), abi.encodeWithSelector(IMintPolicy.InvalidLeadArtist.selector)
+            item,
+            _keys(leadKey),
+            abi.encodeWithSelector(IPackageRegistry.InvalidLeadArtist.selector)
         );
         item = _masterItem(item.contentHash);
         item.parties[0].role = uint8(PartyRole.COLLABORATOR); // the lead must be an ARTIST
@@ -1281,14 +1307,14 @@ contract PackageRegistryTest is CurationBase {
         PackageItem memory item = _item(lead, SHA_A);
         item.sale.saleKind = 0;
         _expectInvalidWith(
-            item, _keys(leadKey), abi.encodeWithSelector(IMintPolicy.InvalidItemSale.selector)
+            item, _keys(leadKey), abi.encodeWithSelector(IPackageRegistry.InvalidItemSale.selector)
         );
     }
 
     /// @dev A license ID outside the `SpdxId` rule (empty, a character it does not allow, longer
     ///      than the limit) is refused, as `WorkRecords` refuses it at relicense.
     function test_invalidItem_licenseId() public {
-        bytes memory reason = abi.encodeWithSelector(IMintPolicy.InvalidLicenseId.selector);
+        bytes memory reason = abi.encodeWithSelector(IPackageRegistry.InvalidLicenseId.selector);
         PackageItem memory item = _item(lead, SHA_A);
         item.license.spdxId = "";
         _expectInvalidWith(item, _keys(leadKey), reason);
@@ -1306,30 +1332,29 @@ contract PackageRegistryTest is CurationBase {
     /// @dev A request that is not `abi.encode(StreamMintRequest)` (too short, or a head that
     ///      does not point at offset 32) is refused before anything is read from it.
     function test_authorize_revertsMalformedRequest() public {
-        IMintPolicy.MintContext memory c = _context(address(_policyStub));
         bytes memory reason = abi.encodeWithSelector(IPackageRegistry.InvalidMintRequest.selector);
-        vm.prank(stream);
+        vm.prank(address(minter));
         vm.expectRevert(reason);
-        registry.authorize(c, new bytes(159));
+        registry.authorize(stream, new bytes(159));
         (bytes32 root, PackageItem memory item,) = _ready(SHA_A);
         bytes memory request = abi.encode(
             StreamMintRequest(root, item, new bytes32[](0), _move(leadKey, root, _hash(item), 0))
         );
         request[31] = bytes1(uint8(64)); // the head no longer points at offset 32
-        vm.prank(stream);
+        vm.prank(address(minter));
         vm.expectRevert(reason);
-        registry.authorize(c, request);
+        registry.authorize(stream, request);
         request[31] = bytes1(uint8(0)); // nor below it
-        vm.prank(stream);
+        vm.prank(address(minter));
         vm.expectRevert(reason);
-        registry.authorize(c, request);
+        registry.authorize(stream, request);
     }
 
     /// @dev The quote refuses product terms that cannot yield a valid royalty payee list: a
     ///      royalty rate above the denominator, a fee share at it, or a fee share whose recipient
     ///      is zero or the seller wallet itself. Valid fee terms pass and are quoted as they are.
     function test_authorize_revertsInvalidWorkTerms() public {
-        SettablePolicyStub stub = new SettablePolicyStub();
+        CurationPolicyStub stub = _policyStub;
         address seller = address(0x5E11E7);
         address fee = makeAddr("feeRecipient");
         ProductEconomics[5] memory bad = [
@@ -1345,17 +1370,19 @@ contract PackageRegistryTest is CurationBase {
         );
         for (uint256 i; i < bad.length; ++i) {
             stub.set(bad[i]);
-            vm.prank(stream);
-            vm.expectRevert(IMintPolicy.InvalidWorkTerms.selector);
-            registry.authorize(_context(address(stub)), request);
+            vm.prank(address(minter));
+            vm.expectRevert(IPackageRegistry.InvalidWorkTerms.selector);
+            registry.authorize(stream, request);
         }
         stub.set(ProductEconomics(fee, 99_999, 100_000));
-        vm.prank(stream);
-        IMintPolicy.MintRecord memory r = registry.authorize(_context(address(stub)), request);
+        vm.prank(address(minter));
+        (MintFacts memory f, MintTerms memory r) = registry.authorize(stream, request);
         assertEq(r.seller, seller);
+        assertEq(f.seller, seller);
         assertEq(r.feeRecipient, fee);
         assertEq(r.feeShare, 99_999);
-        assertEq(r.royaltyRate, 100_000);
+        assertEq(f.royaltyRate, 100_000);
+        assertEq(f.royaltyReceiver, stub.royaltyWallet(), "the royalty wallet, not the seller");
     }
 
     // -------------------------------------------------------------------------- preview
@@ -1364,7 +1391,7 @@ contract PackageRegistryTest is CurationBase {
     ///      seller wallet, the product's fee terms, the item's sale terms, and the lead's active
     ///      authority as creator (zero while the account is frozen). Anyone may call it.
     function test_preview_quotesWithoutConsuming() public {
-        SettablePolicyStub stub = new SettablePolicyStub();
+        CurationPolicyStub stub = _policyStub;
         address fee = makeAddr("feeRecipient");
         stub.set(ProductEconomics(fee, 10_000, 7500));
         (bytes32 root, PackageItem memory item,) = _ready(SHA_A);
@@ -1372,18 +1399,20 @@ contract PackageRegistryTest is CurationBase {
             StreamMintRequest(root, item, new bytes32[](0), _move(leadKey, root, _hash(item), 0))
         );
         vm.prank(makeAddr("anyone"));
-        PrimaryTerms memory t = registry.preview(_context(address(stub)), request);
+        (MintFacts memory f, MintTerms memory t) = registry.preview(stream, request);
         assertEq(t.seller, address(0x5E11E7));
+        assertEq(f.royaltyRate, 7500);
+        assertEq(f.royaltyReceiver, stub.royaltyWallet());
         assertEq(t.feeRecipient, fee);
         assertEq(t.feeShare, 10_000);
         assertEq(t.saleKind, item.sale.saleKind);
-        assertEq(t.currency, item.sale.currency);
         assertEq(t.params, item.sale.params);
-        assertEq(t.price, 0);
         assertEq(t.creator, lead);
+        assertFalse(registry.isMoveNonceUsed(_id(lead), 0), "nonce unspent");
         assertEq(registry.consumedItemOf(SHA_A), bytes32(0), "nothing consumed");
         artists.setFrozen(_id(lead), true);
-        assertEq(registry.preview(_context(address(stub)), request).creator, address(0));
+        (, t) = registry.preview(stream, request);
+        assertEq(t.creator, address(0));
         // The quote is still consumable afterwards.
         artists.setFrozen(_id(lead), false);
         _consume(root, item, new bytes32[](0), _move(leadKey, root, _hash(item), 0));
@@ -1393,28 +1422,25 @@ contract PackageRegistryTest is CurationBase {
     /// @dev `preview` refuses what `authorize` would: a malformed request, the item rules, a
     ///      lead artist with no identity, and invalid product terms.
     function test_preview_reverts() public {
-        IMintPolicy.MintContext memory c = _context(address(_policyStub));
+        address c = stream;
         vm.expectRevert(IPackageRegistry.InvalidMintRequest.selector);
         registry.preview(c, new bytes(159));
         PackageItem memory item = _item(lead, SHA_A);
         bytes32 root = WorksHashing.leaf(_hash(item));
         MoveAuthorization memory none;
         // The lead has no identity yet: nobody has accepted a package for this account.
-        vm.expectRevert(IMintPolicy.InvalidLeadArtist.selector);
+        vm.expectRevert(IPackageRegistry.InvalidLeadArtist.selector);
         registry.preview(c, abi.encode(StreamMintRequest(root, item, new bytes32[](0), none)));
         item.sale.saleKind = 0;
-        vm.expectRevert(IMintPolicy.InvalidItemSale.selector);
+        vm.expectRevert(IPackageRegistry.InvalidItemSale.selector);
         registry.preview(c, abi.encode(StreamMintRequest(root, item, new bytes32[](0), none)));
         item = _item(lead, SHA_A);
         _register(root);
         _accept(root, leadKey);
-        SettablePolicyStub stub = new SettablePolicyStub();
+        CurationPolicyStub stub = _policyStub;
         stub.set(ProductEconomics(address(0), 1, 5000));
-        vm.expectRevert(IMintPolicy.InvalidWorkTerms.selector);
-        registry.preview(
-            _context(address(stub)),
-            abi.encode(StreamMintRequest(root, item, new bytes32[](0), none))
-        );
+        vm.expectRevert(IPackageRegistry.InvalidWorkTerms.selector);
+        registry.preview(stream, abi.encode(StreamMintRequest(root, item, new bytes32[](0), none)));
     }
 
     // ------------------------------------------------------- acceptPackage: registry answer
@@ -1430,7 +1456,9 @@ contract PackageRegistryTest is CurationBase {
             ICurationVerifier(address(verifier)),
             address(verifier).codehash,
             address(odd),
-            address(odd).codehash
+            address(odd).codehash,
+            IEconomicsResolver(address(_policyStub)),
+            address(0)
         );
         bytes32 root = keccak256("misnumbered");
         reg.registerPackage(root, EVIDENCE, _attestation(signerKey1, root, EVIDENCE));
@@ -1448,7 +1476,9 @@ contract PackageRegistryTest is CurationBase {
             ICurationVerifier(address(verifier)),
             address(verifier).codehash,
             address(odd),
-            address(odd).codehash
+            address(odd).codehash,
+            IEconomicsResolver(address(_policyStub)),
+            address(0)
         );
         bytes32 root = keccak256("undernumbered");
         reg.registerPackage(root, EVIDENCE, _attestation(signerKey1, root, EVIDENCE));
@@ -1476,8 +1506,261 @@ contract PackageRegistryTest is CurationBase {
 
     // ------------------------------------------------------------------- releaseContent
 
-    // Content uniqueness and the post-dispute release are Stream's (AUC-44): see
-    // `test/stream/StreamContent.t.sol` and `test/integration/Dispute.t.sol`.
+    /// @dev Burns `lead`'s item for `SHA_A` in the minter's custody; returns its root, item and
+    ///      the burned token.
+    function _burned() internal returns (bytes32 root, PackageItem memory item, uint256 tokenId) {
+        MoveAuthorization memory move;
+        (root, item, move) = _ready(SHA_A);
+        tokenId = _mintAndBurn(root, item, new bytes32[](0), move);
+    }
+
+    /// @dev A second item for the same content by `artistKey`, ready to move at nonce 0.
+    function _rival(uint256 artistKey)
+        internal
+        returns (bytes32 root, PackageItem memory item, MoveAuthorization memory move)
+    {
+        item = _item(vm.addr(artistKey), SHA_A);
+        item.mediaHash = keccak256("the rival's media list");
+        root = WorksHashing.leaf(_hash(item));
+        _register(root);
+        _accept(root, artistKey);
+        move = _move(artistKey, root, _hash(item), 0);
+    }
+
+    function test_burnedContent_refusedWithoutARelease() public {
+        (bytes32 root, PackageItem memory item, uint256 tokenId) = _burned();
+        assertEq(core.tokenOfContent(SHA_A), tokenId);
+        assertEq(registry.consumedItemOf(SHA_A), _hash(item), "still the burned item's");
+        // Neither the burned item again (a fresh nonce) nor another item of the same content.
+        MoveAuthorization memory again = _move(leadKey, root, _hash(item), 1);
+        vm.expectRevert(abi.encodeWithSelector(IMintPolicy.ContentUsed.selector, SHA_A, tokenId));
+        _authorize(root, item, new bytes32[](0), again);
+        (bytes32 r2, PackageItem memory i2, MoveAuthorization memory m2) = _rival(collabKey);
+        vm.expectRevert(abi.encodeWithSelector(IMintPolicy.ContentUsed.selector, SHA_A, tokenId));
+        _authorize(r2, i2, new bytes32[](0), m2);
+    }
+
+    function test_releaseContent_recordsTheReleaseAndBarsTheItem() public {
+        (, PackageItem memory item, uint256 tokenId) = _burned();
+        _accept(keccak256("collab registers"), collabKey, true);
+        vm.expectEmit(address(registry));
+        emit IMintPolicy.ContentReleased(stream, tokenId, SHA_A, _id(collab));
+        vm.prank(guardian);
+        registry.releaseContent(stream, tokenId, SHA_A, _id(collab));
+        assertEq(registry.releasedTo(stream, SHA_A), _id(collab));
+        assertTrue(registry.isBarred(_hash(item)));
+        assertEq(registry.consumedItemOf(SHA_A), bytes32(0), "released");
+    }
+
+    function test_releaseContent_onlyTheNetwork() public {
+        (,, uint256 tokenId) = _burned();
+        address[3] memory callers = [admin, successor, lead];
+        for (uint256 i; i < callers.length; ++i) {
+            vm.prank(callers[i]);
+            vm.expectRevert(
+                abi.encodeWithSelector(
+                    IAccessManaged.AccessManagedUnauthorized.selector, callers[i]
+                )
+            );
+            registry.releaseContent(stream, tokenId, SHA_A, _id(lead));
+        }
+    }
+
+    /// @dev Only a burned token of the bound Stream, with the content `tokenOfContent` names
+    ///      for it, and only for a registered artist.
+    function test_releaseContent_refusesAnythingButABurnedTokensOwnContent() public {
+        (bytes32 root, PackageItem memory item, MoveAuthorization memory move) = _ready(SHA_A);
+        (,, uint256 live) =
+            minter.mint(address(registry), stream, _request(root, item, new bytes32[](0), move));
+        vm.startPrank(guardian);
+        vm.expectRevert(abi.encodeWithSelector(IMintPolicy.ContentUsed.selector, SHA_A, live));
+        registry.releaseContent(stream, live, SHA_A, _id(lead));
+        vm.stopPrank();
+        minter.burn(stream, live);
+        vm.startPrank(guardian);
+        // Another content hash than the token's.
+        vm.expectRevert(abi.encodeWithSelector(IMintPolicy.ContentUsed.selector, SHA_B, live));
+        registry.releaseContent(stream, live, SHA_B, _id(lead));
+        // A token ID that never existed, or zero.
+        vm.expectRevert(abi.encodeWithSelector(IMintPolicy.ContentUsed.selector, SHA_A, uint256(9)));
+        registry.releaseContent(stream, 9, SHA_A, _id(lead));
+        vm.expectRevert(abi.encodeWithSelector(IMintPolicy.ContentUsed.selector, SHA_A, uint256(0)));
+        registry.releaseContent(stream, 0, SHA_A, _id(lead));
+        // Another token contract.
+        address other = address(new MockBoundCaller(type(IStream).interfaceId));
+        vm.expectRevert(abi.encodeWithSelector(IMintPolicy.ContentUsed.selector, SHA_A, live));
+        registry.releaseContent(other, live, SHA_A, _id(lead));
+        // An unknown beneficiary.
+        uint256 unknown = _id(makeAddr("nobody"));
+        vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.UnknownArtist.selector, unknown));
+        registry.releaseContent(stream, live, SHA_A, unknown);
+        vm.expectRevert(
+            abi.encodeWithSelector(IArtistRegistry.UnknownArtist.selector, uint256(1) << 160)
+        );
+        registry.releaseContent(stream, live, SHA_A, uint256(1) << 160);
+        vm.stopPrank();
+        assertEq(registry.releasedTo(stream, SHA_A), 0);
+    }
+
+    function test_releasedContent_mintsOnlyForTheBeneficiary() public {
+        (,, uint256 tokenId) = _burned();
+        (bytes32 r2, PackageItem memory i2, MoveAuthorization memory m2) = _rival(collabKey);
+        vm.prank(guardian);
+        registry.releaseContent(stream, tokenId, SHA_A, _id(lead));
+        vm.expectRevert(
+            abi.encodeWithSelector(IMintPolicy.ContentReserved.selector, SHA_A, _id(lead))
+        );
+        _authorize(r2, i2, new bytes32[](0), m2);
+        assertFalse(registry.isMoveNonceUsed(_id(collab), 0));
+        // The beneficiary's own other item of that content mints.
+        PackageItem memory mine = _item(lead, SHA_A);
+        mine.recordFileId = keccak256("the rightful record");
+        bytes32 root = WorksHashing.leaf(_hash(mine));
+        _register(root);
+        _accept(root, leadKey);
+        (bytes32 h,) = _consume(root, mine, new bytes32[](0), _move(leadKey, root, _hash(mine), 5));
+        assertEq(registry.consumedItemOf(SHA_A), h);
+    }
+
+    function test_releasedContent_neverByTheBarredItem() public {
+        (bytes32 root, PackageItem memory item, uint256 tokenId) = _burned();
+        vm.prank(guardian);
+        registry.releaseContent(stream, tokenId, SHA_A, _id(lead));
+        MoveAuthorization memory again = _move(leadKey, root, _hash(item), 1);
+        vm.expectRevert(abi.encodeWithSelector(IMintPolicy.ContentUsed.selector, SHA_A, tokenId));
+        _authorize(root, item, new bytes32[](0), again);
+    }
+
+    /// @dev A release names the burned token: once its content minted again it is used up, and
+    ///      a second burn needs a new release.
+    function test_release_isUsedUpByTheNextMint() public {
+        (,, uint256 first) = _burned();
+        (bytes32 r2, PackageItem memory i2, MoveAuthorization memory m2) = _rival(collabKey);
+        vm.prank(guardian);
+        registry.releaseContent(stream, first, SHA_A, _id(collab));
+        (,, uint256 second) =
+            minter.mint(address(registry), stream, _request(r2, i2, new bytes32[](0), m2));
+        assertEq(registry.releasedTo(stream, SHA_A), 0, "used up");
+        assertEq(registry.consumedItemOf(SHA_A), _hash(i2));
+        minter.burn(stream, second);
+        PackageItem memory third = _item(collab, SHA_A);
+        third.recordFileId = keccak256("third");
+        bytes32 r3 = WorksHashing.leaf(_hash(third));
+        _register(r3);
+        _accept(r3, collabKey);
+        MoveAuthorization memory m3 = _move(collabKey, r3, _hash(third), 1);
+        vm.expectRevert(abi.encodeWithSelector(IMintPolicy.ContentUsed.selector, SHA_A, second));
+        _authorize(r3, third, new bytes32[](0), m3);
+        vm.prank(guardian);
+        registry.releaseContent(stream, second, SHA_A, _id(collab));
+        _authorize(r3, third, new bytes32[](0), m3);
+    }
+
+    /// @dev A release can be replaced while the token's content is still unminted.
+    function test_release_canBeReplacedBeforeUse() public {
+        (,, uint256 tokenId) = _burned();
+        _accept(keccak256("collab registers"), collabKey, true);
+        vm.startPrank(guardian);
+        registry.releaseContent(stream, tokenId, SHA_A, _id(lead));
+        registry.releaseContent(stream, tokenId, SHA_A, _id(collab));
+        vm.stopPrank();
+        assertEq(registry.releasedTo(stream, SHA_A), _id(collab));
+    }
+
+    // -------------------------------------------------------------------- facts and terms
+
+    /// @dev With no network share the royalty receiver is the seller; the rate is the
+    ///      economics' rate.
+    function test_facts_royaltyReceiverIsTheSellerAtZeroShare() public {
+        (bytes32 root, PackageItem memory item, MoveAuthorization memory move) = _ready(SHA_A);
+        (MintFacts memory f, MintTerms memory t) = _authorize(root, item, new bytes32[](0), move);
+        assertEq(f.royaltyReceiver, _policyStub.seller());
+        assertEq(f.seller, _policyStub.seller());
+        assertEq(t.feeShare, 0);
+        assertEq(f.royaltyRate, 5000);
+        assertEq(core.workOf(1).royaltyReceiver, _policyStub.seller());
+        assertEq(core.workOf(1).royaltyRate, 5000);
+    }
+
+    function test_facts_artistSeed() public {
+        PackageItem memory item = _item(lead, SHA_A);
+        item.seedPolicy = uint8(SeedPolicy.ARTIST);
+        item.seed = keccak256("artist seed");
+        bytes32 root = WorksHashing.leaf(_hash(item));
+        _register(root);
+        _accept(root, leadKey);
+        (MintFacts memory f,) =
+            _authorize(root, item, new bytes32[](0), _move(leadKey, root, _hash(item), 0));
+        assertEq(f.seed, keccak256("artist seed"));
+        assertEq(core.workOf(1).seed, keccak256("artist seed"));
+    }
+
+    function test_facts_vrfSeedOnlyOnceDelivered() public {
+        PackageItem memory item = _item(lead, SHA_A);
+        item.seedPolicy = uint8(SeedPolicy.VRF);
+        bytes32 root = WorksHashing.leaf(_hash(item));
+        _register(root);
+        _accept(root, leadKey);
+        MoveAuthorization memory move = _move(leadKey, root, _hash(item), 0);
+        vm.expectRevert(
+            abi.encodeWithSelector(IPackageRegistry.SeedNotDelivered.selector, _hash(item))
+        );
+        _authorize(root, item, new bytes32[](0), move);
+        entropy.deliver(SHA_A, keccak256("vrf seed"));
+        (MintFacts memory f,) = _authorize(root, item, new bytes32[](0), move);
+        assertEq(f.seed, keccak256("vrf seed"));
+        assertEq(core.workOf(1).seed, keccak256("vrf seed"));
+    }
+
+    /// @dev With no entropy module a VRF item is refused by the item rules.
+    function test_facts_vrfRefusedWithoutAnEntropyModule() public {
+        vm.prank(guardian);
+        registry.setEntropyModule(address(entropy), address(0));
+        PackageItem memory item = _item(lead, SHA_A);
+        item.seedPolicy = uint8(SeedPolicy.VRF);
+        _expectInvalidWith(
+            item,
+            _keys(leadKey),
+            abi.encodeWithSelector(IPackageRegistry.InvalidSeedPolicy.selector)
+        );
+    }
+
+    function test_setEntropyModule() public {
+        EntropyStub next = new EntropyStub();
+        assertEq(registry.entropyModule(), address(entropy));
+        vm.prank(admin);
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, admin)
+        );
+        registry.setEntropyModule(address(entropy), address(next));
+        vm.prank(guardian);
+        vm.expectRevert(IPackageRegistry.ExpectedValueMismatch.selector);
+        registry.setEntropyModule(address(next), address(next));
+        vm.prank(guardian);
+        vm.expectRevert(
+            abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(verifier))
+        );
+        registry.setEntropyModule(address(entropy), address(verifier));
+        vm.expectEmit(address(registry));
+        emit IPackageRegistry.EntropyModuleSet(address(entropy), address(next));
+        vm.prank(guardian);
+        registry.setEntropyModule(address(entropy), address(next));
+        assertEq(registry.entropyModule(), address(next));
+    }
+
+    /// @dev The sale is in ETH: `CURRENCY_ETH` or `CURRENCY_DEFAULT` pass, any other refused.
+    function test_item_saleCurrencyIsEth() public {
+        PackageItem memory item = _item(lead, SHA_A);
+        item.sale.currency = makeAddr("someToken");
+        _expectInvalidWith(
+            item, _keys(leadKey), abi.encodeWithSelector(IPackageRegistry.InvalidItemSale.selector)
+        );
+        item.sale.currency = CURRENCY_DEFAULT;
+        _expectValid(item, _keys(leadKey));
+        item = _item(collab, SHA_B);
+        item.sale.currency = CURRENCY_ETH;
+        _expectValid(item, _keys(collabKey));
+    }
 
     // ---------------------------------------------------------------------- setVerifier
 
@@ -1655,7 +1938,7 @@ contract PackageRegistryTest is CurationBase {
             }
             uint256 bitIndex = bound(flip, 0, proof.length * 256 - 1);
             bad[bitIndex / 256] = bad[bitIndex / 256] ^ bytes32(uint256(1) << (bitIndex % 256));
-            vm.prank(stream);
+            vm.prank(address(minter));
             vm.expectRevert(
                 abi.encodeWithSelector(
                     IPackageRegistry.ItemNotInPackage.selector, root, _hash(item)
@@ -1667,7 +1950,7 @@ contract PackageRegistryTest is CurationBase {
             for (uint256 i; i < shorter.length; ++i) {
                 shorter[i] = proof[i];
             }
-            vm.prank(stream);
+            vm.prank(address(minter));
             vm.expectRevert(
                 abi.encodeWithSelector(
                     IPackageRegistry.ItemNotInPackage.selector, root, _hash(item)
@@ -1688,7 +1971,7 @@ contract PackageRegistryTest is CurationBase {
         _register(root);
         _accept(root, leadKey);
         MoveAuthorization memory move = _move(leadKey, root, _hash(outsider), 0);
-        vm.prank(stream);
+        vm.prank(address(minter));
         vm.expectRevert(
             abi.encodeWithSelector(
                 IPackageRegistry.ItemNotInPackage.selector, root, _hash(outsider)
@@ -1737,12 +2020,6 @@ contract PackageRegistryTest is CurationBase {
         }
     }
 
-    /// @dev The mint context the bound Stream passes, with `quote` as both the economics
-    ///      resolver and the split factory, and no entropy module.
-    function _context(address quote) internal view returns (IMintPolicy.MintContext memory) {
-        return IMintPolicy.MintContext(stream, quote, address(0), quote);
-    }
-
     function _expectInvalid(PackageItem memory item, uint256[] memory keys) internal {
         bytes32 root = _prepare(item, keys);
         _consumeExpectInvalid(root, item, keys[0]);
@@ -1752,7 +2029,7 @@ contract PackageRegistryTest is CurationBase {
         internal
     {
         MoveAuthorization memory move = _move(leadKey_, root, _hash(item), 0);
-        vm.prank(stream);
+        vm.prank(address(minter));
         vm.expectRevert(abi.encodeWithSelector(IPackageRegistry.InvalidItem.selector, _hash(item)));
         _policyCall(registry, root, item, new bytes32[](0), move);
     }
@@ -1762,7 +2039,7 @@ contract PackageRegistryTest is CurationBase {
     {
         bytes32 root = _prepare(item, keys);
         MoveAuthorization memory move = _move(keys[0], root, _hash(item), 0);
-        vm.prank(stream);
+        vm.prank(address(minter));
         vm.expectRevert(reason);
         _policyCall(registry, root, item, new bytes32[](0), move);
     }

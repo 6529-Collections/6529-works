@@ -465,6 +465,7 @@ contract EconomicsResolverTest is EconomicsBase {
 
     // ------------------------------------------------------------------ currency
 
+    /// @dev The resolver resolves `CURRENCY_DEFAULT` through the ETH-only allowlist.
     function test_ResolveCurrencyThroughTheAllowlist() public {
         MockERC20 usdc = new MockERC20("USD Coin", "USDC");
         assertEq(econ.resolveCurrency(PRODUCT_STREAM, ETH), ETH);
@@ -479,15 +480,11 @@ contract EconomicsResolverTest is EconomicsBase {
 
         allowlist.setDefaultCurrency(PRODUCT_STREAM, 0, ETH);
         assertEq(econ.resolveCurrency(PRODUCT_STREAM, CURRENCY_DEFAULT), ETH);
-        allowlist.admitAsset(address(usdc), 0, 1e6);
-        allowlist.setDefaultCurrency(PRODUCT_EDITIONS, 0, address(usdc));
-        assertEq(econ.resolveCurrency(PRODUCT_EDITIONS, CURRENCY_DEFAULT), address(usdc));
-        assertEq(econ.resolveCurrency(PRODUCT_EDITIONS, address(usdc)), address(usdc));
-        allowlist.deprecateAsset(address(usdc));
+        // ETH only: no other asset can be admitted, so a product's default is ETH or unset.
         vm.expectRevert(
             abi.encodeWithSelector(IEconomicsResolver.CurrencyNotAllowed.selector, address(usdc))
         );
-        econ.resolveCurrency(PRODUCT_EDITIONS, CURRENCY_DEFAULT);
+        econ.resolveCurrency(PRODUCT_STREAM, address(usdc));
     }
 
     // ------------------------------------------------------------------ new work terms

@@ -54,9 +54,6 @@ interface IAssetAllowlist {
     /// @param revision The asset's revision after the change.
     event OpeningBidSet(address indexed asset, uint256 previous, uint256 current, uint64 revision);
 
-    /// @notice `asset` has no code, is an EIP-7702 delegated account, or reports a balance above
-    ///         its total supply. Unreadable balances or supply revert with the token-read error.
-    error AssetNotAdmissible(address asset);
     /// @notice Compare-and-set failed: the state is at revision `actual`, not `expected`.
     error RevisionMismatch(uint64 expected, uint64 actual);
     /// @notice The requested change does not apply to an asset in status `current`.
@@ -67,9 +64,6 @@ interface IAssetAllowlist {
     ///         freeze every ETH sale and, after the freeze exit, end each one unsold (MONEY-M1,
     ///         G-2 in the rc.2 review).
     error EthNotDeprecable();
-    /// @notice A deprecated `asset` may be re-admitted only from `allowedAt`, one
-    ///         `Roles.DELAY_3D` (3 days) after its deprecation.
-    error ReadmissionTooEarly(address asset, uint256 allowedAt);
     /// @notice An increment floor must be non-zero.
     error InvalidIncrementFloor();
     /// @notice The product identifier is zero.
@@ -157,15 +151,6 @@ interface IAssetAllowlist {
         view
         returns (bool configured, address asset, uint64 revision);
 
-    /// @notice Admits `asset`, or re-admits a deprecated one, with increment floor `floor`, if the
-    ///         asset is at `expectedRevision` (0 for a never-admitted asset). Re-admission is the
-    ///         only way back from deprecation, and is refused until `Roles.DELAY_3D` (3 days) after it
-    ///         (`ReadmissionTooEarly`), even when scheduled before the deprecation.
-    /// @param asset The asset to admit: ETH (`address(0)`) or a token contract that passes the
-    ///        {AssetNotAdmissible} checks; must not be active already.
-    /// @param expectedRevision The revision the asset must be at.
-    /// @param floor The increment floor, in the asset's base units; must be non-zero.
-    function admitAsset(address asset, uint64 expectedRevision, uint256 floor) external;
 
     /// @notice Stops new sales from using active `asset`. Immediate; bumps the asset's revision,
     ///         so every operation queued against the earlier state reverts. ETH is refused
