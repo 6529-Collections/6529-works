@@ -2234,6 +2234,6 @@ survivors were run against the final federated module tests rather than the whol
   equivalents, 1 defensive: `verify` re-runs `validate` on a configuration `apply` already
   validated); relations and conditions were not run. Both keep their first-campaign floors.
 - **Over the weekly budget.** `FederatedStream`'s relations shard took about 10 hours here (352
-  mutants against the federated module tests), and `FederationRegistry`'s about 5. Both exceed
-  the weekly job's 335 minutes on a hosted runner unless it is faster than one scratch checkout
-  here; if they time out, those rows fail as unfinished, and the shard needs splitting further.
+  mutants against the federated module tests), and `FederationRegistry`'s about 5, both over
+  the weekly job's 335 minutes. The tool now runs them in parts (`RELATION_PARTS`: four and
+  three shards, every n-th comparison each), which together make the same mutants.

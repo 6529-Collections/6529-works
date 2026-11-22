@@ -381,7 +381,11 @@ python tools/mutation.py report mutation --markdown mutation/report.md
   (`RevenueEscrow`, `SplitLedger`, `FederatedEditions`, `FederatedMembership`, `FederatedStream`,
   `FederationRegistry`, `WorkDelivery`; `FULL_SPLIT_FILES`): they run as five shards, the four
   groups plus the eight operators the others skip, so their mutants are exactly a single
-  shard's and their floors were measured on the same mutants. Each mutant runs the tests of its
+  shard's and their floors were measured on the same mutants. The relational shard of two of
+  them runs in parts (`RELATION_PARTS`: `FederatedStream` in four, `FederationRegistry` in
+  three; on the second campaign it took about 10 and 5 hours): part k of n mutates every n-th
+  comparison from the k-th, in the order the operator visits them, with every replacement, so
+  the parts together make the whole shard's mutants. Each mutant runs the tests of its
   module first, under the `lite` profile with `--fail-fast`; every survivor then runs against
   the whole suite, so a mutant an integration test kills counts as killed. A mutant whose
   tests time out (20 minutes) counts as killed, as slither-mutate counts it; the report
@@ -451,7 +455,7 @@ their floors; its tables and the triage of every survivor are in
 of its survivors was a defect in a contract; three were access checks no test pinned
 (`ArtistRegistry.resolveContested`, `FederationRegistry.setStatus`, and `FederatedStream`'s
 `setLocator` and `setDefaultRenderer`), now pinned. It did not reach every stale floor, and two
-of its shards ran longer than the weekly job allows: see
+of its shards ran longer than the weekly job allows (now split in parts): see
 [what it did not reach](mutation-baseline.md#not-reached).
 
 ## Symbolic proofs (Halmos)
