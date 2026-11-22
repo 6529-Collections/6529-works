@@ -119,5 +119,24 @@ class MergeSafes(unittest.TestCase):
         self.assertEqual(make_manifest.safes_from_genesis(g, merged), r5["safes"])
 
 
+class R6Manifest(unittest.TestCase):
+    """The r6 manifest (the plain core, ADR 0010): every contract DeployCore.s.sol prints, the core
+    policy, the four settings' launch values, and no Permit2 dependency."""
+
+    def setUp(self):
+        self.m = json.loads((REPO / "config/sepolia-r6/manifest-epoch0.json").read_text(encoding="utf-8"))
+
+    def test_names_every_contract_of_the_deployment(self):
+        self.assertEqual(list(self.m["contracts"]), make_manifest.CONTRACTS)
+        self.assertEqual(len(set(make_manifest.CONTRACTS)), len(make_manifest.CONTRACTS))
+
+    def test_policy_settings_and_dependencies(self):
+        self.assertEqual(self.m["policy"]["path"], make_manifest.POLICY)
+        g = json.loads((REPO / "config/sepolia-r6/genesis.json").read_text(encoding="utf-8"))
+        self.assertEqual(self.m["settings"], g["settings"])
+        self.assertNotIn("permit2", self.m["dependencies"])
+        self.assertEqual(self.m["safes"]["network"]["address"], g["network"])
+
+
 if __name__ == "__main__":
     unittest.main()

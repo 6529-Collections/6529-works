@@ -1,13 +1,16 @@
 """Per-transaction gas of a Sepolia deploy: forge's Prague estimate, the gas limit sent, and the receipt.
 
-Usage: python script/sepolia/deploy_gas.py <out.json> [rpc]
+Usage: python script/sepolia/deploy_gas.py <out.json> <record.json> [rpc]
 
-Reads forge's broadcast cache of the last `script/Deploy.s.sol` run on Sepolia (not committed):
-`broadcast/Deploy.s.sol/11155111/run-latest.json` (the receipts) and `dry-run/run-latest.json`
+Reads forge's broadcast cache of the last `script/DeployCore.s.sol` run on Sepolia (not
+committed): `broadcast/DeployCore.s.sol/11155111/run-latest.json` (the receipts) and
+`dry-run/run-latest.json`
 (the simulation without --broadcast, whose gas is Foundry's Prague estimate times its 1.3
 multiplier). The gas limit each transaction was sent with is read from the chain: with --slow
 and --skip-simulation forge takes it from the node's eth_estimateGas (Glamsterdam costs) just
-before sending, times the same multiplier.
+before sending, times the same multiplier. Every contract is created inside a transaction to
+its one-use CREATE3 proxy; the deployment record (`<name>: <address>`) names the contract each
+transaction created.
 """
 import json
 import sys
@@ -15,7 +18,7 @@ import urllib.request
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-B = REPO / "broadcast/Deploy.s.sol/11155111"
+B = REPO / "broadcast/DeployCore.s.sol/11155111"
 MULTIPLIER = 1.3
 
 
@@ -28,14 +31,25 @@ def rpc(url, method, params):
     return out["result"]
 
 
-def main(out, url="https://ethereum-sepolia-rpc.publicnode.com"):
+def label(t, names):
+    """The contract a transaction created (through its proxy), else forge's contract name."""
+    for c in t.get("additionalContracts") or []:
+        name = names.get(c["address"].lower())
+        if name:
+            return name
+    return t.get("contractName") or names.get((t.get("contractAddress") or "").lower()) or "?"
+
+
+def main(out, record, url="https://ethereum-sepolia-rpc.publicnode.com"):
+    names = {a.lower(): n for n, a in json.loads(Path(record).read_text(encoding="utf-8")).items()}
     run = json.loads((B / "run-latest.json").read_text(encoding="utf-8"))
     dry = json.loads((B / "dry-run/run-latest.json").read_text(encoding="utf-8"))
     assert len(run["transactions"]) == len(dry["transactions"]) == len(run["receipts"])
     receipts = {r["transactionHash"]: r for r in run["receipts"]}
     rows, cost = [], 0
     for i, (t, d) in enumerate(zip(run["transactions"], dry["transactions"])):
-        assert t["contractName"] == d["contractName"], (i, t["contractName"], d["contractName"])
+        assert label(t, names) == label(d, names), (i, label(t, names), label(d, names))
+        name = label(t, names)
         r = receipts[t["hash"]]
         limit = int(rpc(url, "eth_getTransactionByHash", [t["hash"]])["gas"], 16)
         used = int(r["gasUsed"], 16)
@@ -43,7 +57,7 @@ def main(out, url="https://ethereum-sepolia-rpc.publicnode.com"):
         fn = "create" if t["transactionType"] == "CREATE2" else (t.get("function") or "").split("(")[0]
         rows.append({
             "index": i,
-            "contract": t["contractName"],
+            "contract": name,
             "function": fn,
             "address": t.get("contractAddress"),
             "pragueEstimate": round(int(d["transaction"]["gas"], 16) / MULTIPLIER),
@@ -54,7 +68,7 @@ def main(out, url="https://ethereum-sepolia-rpc.publicnode.com"):
             "block": int(r["blockNumber"], 16),
             "hash": t["hash"],
         })
-        print(f"{i:2} {t['contractName']:26} {fn:18} {rows[-1]['pragueEstimate']:>12,} "
+        print(f"{i:2} {name:28} {fn:18} {rows[-1]['pragueEstimate']:>12,} "
               f"{rows[-1]['nodeEstimate']:>12,} {used:>12,} {r['status']}")
     total = sum(r["gasUsed"] for r in rows)
     print(f"total {total:,} gas, {cost / 1e18:.6f} ETH, blocks {rows[0]['block']} to {rows[-1]['block']}")
@@ -63,4 +77,4 @@ def main(out, url="https://ethereum-sepolia-rpc.publicnode.com"):
 
 
 if __name__ == "__main__":
-    main(*sys.argv[1:3])
+    main(*sys.argv[1:4])

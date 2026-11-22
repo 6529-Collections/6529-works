@@ -17,8 +17,9 @@ import { VerifyCore } from "./VerifyCore.sol";
 /// @dev `forge script script/DeployCore.s.sol --rpc-url <rpc> --sender <deployer> --broadcast`.
 ///      Environment: `GENESIS_CONFIG` (default on anvil: `config/genesis.core.example.json`),
 ///      `DEPLOY_NAMESPACE`, `NETWORK_FEE_RECIPIENT`, `MUSEUM`, `MARKETPLACE_OWNER`,
-///      `MANIFEST_DIGEST`, `MANIFEST_URI`, `ACCEPT_NETWORK` (1 on anvil to accept as the
-///      network). Off anvil the genesis file's network must be a deployed Safe and its holders
+///      `MANIFEST_PATH` (a file under `config/`, hashed with SHA-256) or `MANIFEST_DIGEST`,
+///      `MANIFEST_URI`, `AUCTION_DURATION` (seconds; a testnet round only), `ACCEPT_NETWORK`
+///      (1 on anvil to accept as the network). Off anvil the genesis file's network must be a deployed Safe and its holders
 ///      real keys (`DeployGuards.checkHolders`), and no brake is installed.
 ///      Off anvil it also checks, before `configure`, that the genesis policy is the committed
 ///      one (`DeployGuards.checkPolicy`) and that no holder is a contract of the deployment
@@ -47,6 +48,8 @@ contract DeployCoreScript is ScriptIO {
             _envBytes32("MANIFEST_DIGEST", local ? keccak256("local manifest") : bytes32(0)),
             _envString("MANIFEST_URI", local ? "ar://local-manifest" : "")
         );
+        string memory manifestPath = _envString("MANIFEST_PATH", "");
+        if (bytes(manifestPath).length != 0) manifest.digest = sha256(_readBinary(manifestPath));
         if (manifest.digest == 0) revert MissingParameter("MANIFEST_DIGEST");
 
         vm.startBroadcast(msg.sender);
@@ -72,12 +75,21 @@ contract DeployCoreScript is ScriptIO {
         }
         VerifyCore.verify(p, d, cfg, accepted);
 
-        console2.log("manager  ", address(d.manager));
-        console2.log("Stream   ", address(d.stream));
-        console2.log("Editions ", address(d.editions));
-        console2.log("Directory", address(d.directory));
-        console2.log("WorkFacts", address(d.workFacts));
+        log(p, d);
         if (vm.isContext(VmSafe.ForgeContext.ScriptBroadcast)) record(p, d);
+    }
+
+    /// @notice Prints every address as `<name>: <address>` (the Sepolia manifest writer reads
+    ///         these lines), the manager and the CC0 file ID.
+    function log(DeployCore.Params memory p, DeployCore.Deployment memory d) internal pure {
+        console2.log(string.concat("WorksAccessManager: ", vm.toString(address(d.manager))));
+        string[] memory list = DeployCore.order(p);
+        for (uint256 i; i < list.length; ++i) {
+            console2.log(
+                string.concat(list[i], ": ", vm.toString(DeployCore.addressOf(d, list[i])))
+            );
+        }
+        console2.log(string.concat("cc0TextFileId: ", vm.toString(d.cc0TextFileId)));
     }
 
     /// @notice Writes every deployed address to `deployments/<chain>/core-<time>.json`.

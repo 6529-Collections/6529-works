@@ -4,6 +4,7 @@ pragma solidity 0.8.37;
 import { Script } from "forge-std/Script.sol";
 import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import { VrfEntropyModule } from "src/entropy/VrfEntropyModule.sol";
+import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { DeployGuards } from "./DeployGuards.sol";
 import { DeployCore } from "./DeployCore.sol";
 
@@ -110,7 +111,16 @@ abstract contract ScriptIO is Script {
         p.cc0Text = _readBinary(CC0_FIXTURE);
         if (sha256(p.cc0Text) != cc0Digest()) revert Cc0TextMismatch(sha256(p.cc0Text));
         p.ethIncrementFloor = 0.001 ether;
+        // AUCTION_DURATION: a testnet round may shorten the 1/1 auction (at least 1 hour, the
+        // auction's own minimum); every other genesis value is the launch default.
         p.auctionConfig = DeployCore.auctionConfig();
+        uint256 duration = _envUint("AUCTION_DURATION", 0);
+        if (duration != 0) {
+            IEnglishAuction.AuctionConfig memory c =
+                abi.decode(p.auctionConfig, (IEnglishAuction.AuctionConfig));
+            c.duration = SafeCast.toUint32(duration);
+            p.auctionConfig = abi.encode(c);
+        }
         p.editionAuctionConfig = DeployCore.editionAuctionConfig();
         p.vrfCoordinator = _envAddress("VRF_COORDINATOR", address(0));
         if (p.vrfCoordinator != address(0)) {
