@@ -61,6 +61,20 @@ contract LedgerMedusaTest is Test {
         (target,) = harness.ledger().markOf(w0, address(harness.token()), alice);
         assertEq(target, 0);
 
+        // A period of zero: a new mark matures at once; the escrow's credits age at once.
+        harness.pay(0, false, 5e18 - 1);
+        harness.setPeriod(0, false); // a stranger: refused
+        harness.setPeriod(0, true);
+        assertEq(harness.directory().unclaimedPeriod(), 0);
+        harness.mark(0, false, alice);
+        harness.forfeit(0, false, alice);
+        (target,) = harness.ledger().markOf(w0, address(harness.token()), alice);
+        assertEq(target, 0);
+        harness.deposit(0, true, 1e18 - 1); // W0's credit, expirable at once
+        harness.expire(0, true);
+        assertEq(harness.escrow().owed(w0, address(0)), 0);
+        harness.setPeriod(3, true); // back to 180 days
+
         harness.setPayout(1);
         harness.toggleRefuse(false);
         assertTrue(harness.alice().refuseETH());

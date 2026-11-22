@@ -11,8 +11,8 @@ import { MockPinnedFacts } from "../mocks/core/StreamCoreMocks.sol";
 
 /// @notice Halmos proofs on the permanent ERC-721 (`src/core/Stream.sol`): what `mint` accepts,
 ///         the royalty rules, and the rescue predicate. Run with
-///         `FOUNDRY_PROFILE=symbolic halmos --contract StreamCoreSymbolic`.
-contract StreamCoreSymbolic is Test {
+///         `FOUNDRY_PROFILE=symbolic halmos --contract StreamCoreSymbolicTest`.
+contract StreamCoreSymbolicTest is Test {
     AccessManager internal manager;
     Stream internal stream;
     MockSale internal sale;
@@ -50,16 +50,19 @@ contract StreamCoreSymbolic is Test {
 
     /// @notice `mint` succeeds exactly when the caller is an active minter and the facts pass
     ///         every check (nonzero hashes and artist, the artist within 160 bits, the rate at
-    ///         most 100,000, an existing collection, no live token with the content); a success
+    ///         most 100,000, a receiver whenever the rate is not zero, an existing collection, no
+    ///         live token with the content); a success
     ///         stores the facts under the next ID; a refusal changes no counter.
-    /// @dev Bounds: any caller, item hash, content hash, artist ID, collection ID, rate.
+    /// @dev Bounds: any caller, item hash, content hash, artist ID, collection ID, rate,
+    ///      royalty receiver.
     function check_mint_acceptsExactlyValidFacts(
         address caller,
         bytes32 itemHash,
         bytes32 contentHash,
         uint256 artistId,
         uint256 collectionId,
-        uint24 rate
+        uint24 rate,
+        address receiver
     ) public {
         MintFacts memory f;
         f.itemHash = itemHash;
@@ -67,11 +70,12 @@ contract StreamCoreSymbolic is Test {
         f.artistId = artistId;
         f.collectionId = collectionId;
         f.royaltyRate = rate;
+        f.royaltyReceiver = receiver;
         vm.prank(caller);
         (bool ok,) = address(stream).call(abi.encodeCall(IStream.mint, (TO, f)));
         bool valid = caller == address(sale) && itemHash != 0 && contentHash != 0 && artistId != 0
-            && artistId <= type(uint160).max && rate <= Core.DENOMINATOR && collectionId == 1
-            && contentHash != CONTENT;
+            && artistId <= type(uint160).max && rate <= Core.DENOMINATOR
+            && (receiver != address(0) || rate == 0) && collectionId == 1 && contentHash != CONTENT;
         assert(ok == valid);
         if (ok) {
             assert(stream.totalMinted() == 2);
@@ -89,7 +93,8 @@ contract StreamCoreSymbolic is Test {
         }
     }
 
-    /// @notice The royalty rules: only the TERMS module sets a rate, never above 100,000; once
+    /// @notice The royalty rules: only the TERMS module sets a rate, never above 100,000 and
+    ///         never a nonzero rate without a receiver; once
     ///         locked, a rate never changes (the receiver still may); a refused call changes
     ///         nothing. The amount `royaltyInfo` answers is proved by fuzzing
     ///         (`testFuzz_RoyaltyInfo_ExactForAnyPrice`, every price and rate against the
@@ -106,11 +111,12 @@ contract StreamCoreSymbolic is Test {
         vm.prank(caller);
         (bool direct,) =
             address(stream).call(abi.encodeCall(IStream.setRoyalty, (1, receiver, first)));
-        assert(direct == (caller == address(terms) && first <= Core.DENOMINATOR));
+        bool valid = first <= Core.DENOMINATOR && (receiver != address(0) || first == 0);
+        assert(direct == (caller == address(terms) && valid));
         if (direct) return;
         (bool ok,) = address(terms)
             .call(abi.encodeCall(MockTerms.setRoyalty, (address(stream), 1, receiver, first)));
-        assert(ok == (first <= Core.DENOMINATOR));
+        assert(ok == valid);
         Work memory w = stream.workOf(1);
         uint24 rateNow = w.royaltyRate;
         assert(rateNow == (ok ? first : 0));

@@ -102,6 +102,8 @@ contract FederatedStreamHandler is CommonBase, StdCheats, StdUtils {
         f.seed = seed % 4 == 0 ? bytes32(0) : keccak256(abi.encode(seed));
         f.royaltyReceiver = address(uint160(seed));
         f.royaltyRate = uint24(seed % (Core.DENOMINATOR + 1));
+        // A nonzero rate needs a receiver (`InvalidMint`): a zero receiver mints at rate 0.
+        if (f.royaltyReceiver == address(0)) f.royaltyRate = 0;
         address to = toCollector ? collectors[seed % 3] : address(s);
         if (!gate.canMint(address(token), address(s)) || _live(c) != 0) {
             (bool ok,) = address(s).call(abi.encodeCall(MockSale.mintTo, (address(token), to, f)));
@@ -229,8 +231,9 @@ contract FederatedStreamHandler is CommonBase, StdCheats, StdUtils {
         uint256 id = _token(tokenSeed);
         if (id == 0) return;
         rate = uint24(bound(rate, 0, Core.DENOMINATOR + 10));
+        // A nonzero rate needs a receiver (`InvalidRoyalty`).
         bool allowed = holder[id] != address(0) && rate <= Core.DENOMINATOR
-            && (!rateLocked[id] || rate == lockedRate[id]);
+            && (receiver != address(0) || rate == 0) && (!rateLocked[id] || rate == lockedRate[id]);
         if (!allowed) {
             (bool ok,) = address(terms)
                 .call(abi.encodeCall(MockTerms.setRoyalty, (address(token), id, receiver, rate)));
