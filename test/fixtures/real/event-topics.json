@@ -139,6 +139,8 @@
       "Base64Progress(bytes32,uint256)",
       "ChunkLinked(bytes32,bytes32[],uint256)",
       "ChunkWritten(bytes32,address,uint256)",
+      "CompletenessAttested(bytes32)",
+      "CompletenessProgress(bytes32,uint256)",
       "ManifestRegistered(bytes32,uint256,uint8,uint8,bytes32,string,bytes32[])"
     ],
     "topics": [
@@ -146,6 +148,8 @@
       "0x02b839e82d6e5c2ec40d13754cce314a887150d421bd3eeb478b03567c686971",
       "0x056e8d2d0e279c919bc0abf134aa1cbaa238e1c82e00b6a5824a9cbd4b045425",
       "0xa720bfe8fb78f1436f460c61e8c1a02410fc148201c63e8e07a8f54a82e5627a",
+      "0x2e1a6e20709fd29e201d8bbca654dc8e2798b38dae8856a0996ea1413a0ee461",
+      "0x53b3afaf7bbb300e84a01a90b3649d20b3de9b3f9119e660ca910abe94e62aec",
       "0x9d2280aa98b792abae06fab8602782374ae1ba5da821d3bf33469828424a6fea"
     ]
   },
