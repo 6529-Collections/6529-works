@@ -18,7 +18,7 @@ import { DeployCore } from "./DeployCore.sol";
 ///      current values instead.
 library VerifyCore {
     /// @notice A value read from the chain is not the expected one.
-    error Mismatch(string what, address at);
+    error Mismatch(string what, address account);
 
     /// @notice Checks every part of `d` after `DeployCore.deploy` and `install`.
     /// @param p The deployment's parameters.
