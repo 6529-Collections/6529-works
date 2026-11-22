@@ -403,6 +403,7 @@ contract FederationRegistryPolicyTest is FederationFixture {
     function test_Authorize_FirstPartyIsTheArtist() public {
         (PackageItem memory item, MediaFile[] memory media) = _item(1);
         item.parties[0] = Party(collab, 0);
+        item.payees[0] = ISplitWallet.Payee(0, collab, 100_000); // only the party rule bites
         _refused(item, media);
         (PackageItem memory two, MediaFile[] memory m2) = _item(2);
         two.parties = new Party[](0);
@@ -663,6 +664,41 @@ contract FederationRegistryPolicyTest is FederationFixture {
         vm.prank(artist);
         vm.expectRevert(_notApproved(burnedHash));
         registry.approveItem(address(fStream), burnedHash, RATE);
+    }
+
+    /// @dev The bar is by item hash, for every contract: another contract of the same artist
+    ///      can neither approve the burned item nor mint it if it approved it before the release.
+    function test_Content_TheBurnedItemIsBarredInEveryContract() public {
+        FederatedStream second = _deployStream(fArtistId, keccak256("second"));
+        _join(address(second), artistKey, artistKey, address(streamDeployer));
+        (uint256 burned, PackageItem memory again,, bytes32 burnedHash) = _burnedContent();
+        vm.prank(artist);
+        registry.approveItem(address(second), burnedHash, RATE); // before the release
+        registry.releaseContent(address(fStream), burned, again.contentHash, fArtistId);
+        vm.prank(artist);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IFederationRegistry.ItemNotApproved.selector, address(second), burnedHash
+            )
+        );
+        registry.approveItem(address(second), burnedHash, RATE);
+        assertTrue(registry.itemOf(address(second), burnedHash).approved);
+    }
+
+    function test_Content_ABarredItemApprovedBeforeTheReleaseCannotMint() public {
+        FederatedStream second = _deployStream(fArtistId, keccak256("second"));
+        _join(address(second), artistKey, artistKey, address(streamDeployer));
+        (PackageItem memory item, MediaFile[] memory media) = _item(1);
+        _approve(address(fStream), item, RATE);
+        _approve(address(second), item, RATE);
+        (uint256 burned,,) = _start(item, media, new bytes[](0));
+        fedSale.burn(address(fStream), burned);
+        registry.releaseContent(address(fStream), burned, item.contentHash, fArtistId);
+        bytes32 h = WorksHashing.itemHash(item);
+        vm.expectRevert(
+            abi.encodeWithSelector(IFederationRegistry.ItemNotApproved.selector, address(second), h)
+        );
+        fedSale.start(address(registry), address(second), _request(item, media, new bytes[](0)));
     }
 
     function test_Content_ATwinApprovedBeforeTheReleaseMintsAfterIt() public {

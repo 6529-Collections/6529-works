@@ -206,8 +206,10 @@ contract FederationRegistryListingTest is FederationFixture {
     }
 
     function test_Register_RefusesEditionsOfAnotherArtistsStream() public {
-        _otherStream();
-        FederatedEditions e = _deployEditions(address(fStream), otherId, keccak256("e"));
+        _otherStream(); // other has an identity
+        FederatedStream unpaired = _deployStream(fArtistId, keccak256("unpaired"));
+        _join(address(unpaired), artistKey, artistKey, address(streamDeployer));
+        FederatedEditions e = _deployEditions(address(unpaired), otherId, keccak256("e"));
         IFederationRegistry.Join memory j =
             _joinData(address(e), otherKey, otherKey, address(editionsDeployer));
         vm.expectRevert(_notListable(address(e)));
