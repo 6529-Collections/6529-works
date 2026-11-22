@@ -1,1619 +1,296 @@
 # Glossary
 
-Every protocol term a reader meets in this repository, in alphabetical order, as the code on
-`main` defines it. Each entry links the page that specifies the rules. Link a term as
-`glossary.md#<term>` from `docs/` and `../glossary.md#<term>` from `docs/spec/`.
+The terms a reader meets in this repository, in plain English, as the plain-core stack defines
+them ([ADR 0010](adr/0010-plain-permanent-core.md)). Start with the
+[three-page overview](overview.md). Each entry links the page that owns its rules. Shares and
+rates are out of 100,000.
 
 > Pre-audit. See the [project status](../README.md#status).
 
-Governed delays are named by [delay class](#delay-class), and shares and rates are out of
-100,000 ([denominator](#denominator)).
-
-[0-9](#0-9) · [A](#a) · [B](#b) · [C](#c) · [D](#d) · [E](#e) · [F](#f) · [G](#g) · [H](#h) ·
-[I](#i) · [K](#k) · [L](#l) · [M](#m) · [N](#n) · [O](#o) · [P](#p) · [R](#r) · [S](#s) ·
-[T](#t) · [U](#u) · [V](#v) · [W](#w)
-
-## 0-9
-
-### 6529 Network Museum
-
-The account that receives a 6529 Stream 1/1 whose sale ends unsold, unbid or frozen out
-(`EconomicsResolver.museum`, set by FUNDS_SETTER): 6529 Stream itself moves the work there when
-the adapter reports the outcome (`settlePrimary`, owner decision 17). Another token's unsold work
-goes to its creator.
-
-See: [stream and auctions](spec/stream-and-auctions.md).
+## Products and contracts
 
 ### 6529 Stream
 
-The one shared, network-curated ERC-721 of 1/1 works (`Stream`), sold by English auction, with
-each work's record in [WorkRecords](#workrecords).
-
-See: [stream and auctions](spec/stream-and-auctions.md).
+The one shared, network-curated ERC-721 of 1/1 works (`Stream`). Permanent. See
+[stream and auctions](spec/stream-and-auctions.md).
 
 ### 6529 Stream Editions
 
-The one shared ERC-1155 for editions (`Editions`, symbol `STREAMEDITIONS`), each anchored by a
-6529 Stream [edition master](#edition-master) and sold by the [edition auction](#edition-auction).
-Named 6529 Editions before ADR 0005 (D139).
-
-See: [editions and sales](spec/editions-and-sales.md).
+The one shared ERC-1155 (`Editions`). Each edition is anchored by a Stream master and sold by an
+edition auction. Permanent. See [editions and sales](spec/editions-and-sales.md).
 
 ### 6529 Stream Federated
 
-Artist-run token contracts, full copies of the network's templates (Federated Stream, the
-ERC-721; Federated Stream Editions, the pair's ERC-1155), listed in the artist registry's
-directory without curation, selling through the shared [sale adapters](#sale-adapter) at a
-10% network share that the network may only lower, earning no TDH. A listed contract stays
-listed; the network can delist an artist's account ([Federation](spec/federation.md),
-[ADR 0008](adr/0008-federation.md)).
+A federated artist's own token pair, built from the same plain token code as Stream and
+Editions, listed by the network without the curation vote. See [federation](spec/federation.md).
 
-See: [federated README](../src/federated/README.md).
+### permanent contract
 
-## A
+A contract deployed once and never replaced: `Stream`, `Editions`, `WorkFacts`, `Directory`,
+`SplitLedger` and its vaults, `RevenueEscrow`, `ContentStore`, and each federated token. It holds
+only ownership, the facts of a finished work and money already owed.
 
-### abandonment
+### module
 
-The edition auction's exit for a sale that cannot settle: from 21 days after its close
-(`ABANDON_DELAY`), anyone calls `abandon`. If the master's primary sale settled, it creates the
-edition and the sale settles as usual; otherwise every bid is refunded and the edition sealed at
-zero (EA-19, R16).
+A replaceable contract that a permanent contract takes instructions or answers from. The network
+adds and removes modules.
 
-See: [editions and sales](spec/editions-and-sales.md).
+### seam
 
-### acceptance
+The four things a permanent token accepts from modules: a minter mints and records an outcome;
+the TERMS module sets royalties; the RENDERER module draws an unfinalized work; the RECORDS
+module edits a record within what `WorkFacts` allows. Nothing else. See the
+[overview](overview.md#2-the-permanent-core-and-its-promise).
 
-A party's EIP-712 `PackageAcceptance` signature over a package root, given as a
-[wallet proof](#wallet-proof) by any wallet of its [account](#account). An address with no
-[artist ID](#artist-id) signs it itself, creating the account.
+### module slot
 
-See: [curation](spec/curation.md).
+A named place in a permanent contract that holds one module (`TERMS`, `RENDERER`, `RECORDS` in a
+token; `ACCOUNTS`, `FEDERATION`, `FEDERATED_TERMS`, `FEDERATED_RECORDS` in `Directory`).
 
-### AccessManager
+### minter
 
-OpenZeppelin's `AccessManager`, the one governance contract: each `restricted` selector maps to a
-[role](#role). Deployments use [WorksAccessManager](#worksaccessmanager).
+A sale contract a token contract lists as allowed to mint. It may record the outcome of a token
+it still holds unsold, once, or burn it. A federated token's minters are the federation module's
+answer.
 
-See: [governance](spec/governance.md).
+### WorkFacts
 
-### account
+The permanent record of every work, keyed by token and token ID: media files (fixed when the
+record opens), descriptive record (fixed at finalize), license, pinned renderer and one-way
+locks. Unowned. See [works and storage](spec/works-and-storage.md).
 
-A 6529 consolidated account: an artist or a collaborator. Its wallets are its [root](#root)
-and every wallet with a live two-way [consolidation](#consolidation) with the root; all are
-equal, and any of them signs, cancels or contests (`isWallet`).
+### WorkRules
 
-See: [identity and recovery](spec/identity-and-recovery.md).
+The RECORDS module: who may edit a record and when, finalize timing, consent to relicense or
+change the royalty rate, repin, renunciations. Replaceable. See
+[works and storage](spec/works-and-storage.md).
 
-### active authority
+### StreamTerms
 
-The address that acts as an artist where one address is needed, such as a sale's creator
-(`activeAuthorityOf`): the account's [root](#root), or zero while the account is
-[frozen](#freeze) or a [replacement](#replacement) is pending.
+The TERMS module: sets royalty receiver and rate, locks the rate, and lowers the network's fee
+share (only down). Replaceable. See [economics and payouts](spec/economics-and-payouts.md).
 
-See: [identity and recovery](spec/identity-and-recovery.md).
+### Directory
 
-### admin
+The permanent address of the network's shared modules (accounts, federation, the federated
+tokens' terms and records). The split ledger asks it for payout addresses; it holds the
+[unclaimed period](#unclaimed-period).
 
-`Roles.ADMIN`, held by the [network](#network) alone, with a 7-day delay: the manager's own
-settings (selector maps, `transferNetwork`, `setBrake`) and the genesis bindings.
+### Accounts
 
-See: [governance](spec/governance.md).
+The replaceable accounts module behind `Directory`: artist accounts, wallets, payout addresses,
+replacement, freeze and contest. See [identity and recovery](spec/identity-and-recovery.md).
 
-### admitted minter
+### federation gate
 
-A sale adapter a token allows to call `mint` (`isAdmittedMinter`). A removed adapter can still
-settle and [burn](#burn) what it minted.
+The federation module's answer to a federated token: which sale contracts may mint for it, and
+which were removed. Found through `Directory`. See [federation](spec/federation.md).
 
-See: [stream and auctions](spec/stream-and-auctions.md).
+### mint policy
 
-### amendment
-
-A change to a minted work by signed consent plus a governed action: a [relicense](#relicense),
-a royalty-rate change or an [errata repin](#errata-repin).
-
-See: [works and storage](spec/works-and-storage.md).
-
-### anti-snipe
-
-The English auction's rule that a bid in the last `extensionWindow` seconds extends the end to
-that long after the bid.
-
-See: [stream and auctions](spec/stream-and-auctions.md).
-
-### artist
-
-A [party](#party) with `PartyRole.ARTIST` in a package item, or an [account](#account) in the
-artist registry: an [artist ID](#artist-id), [root](#root),
-[payout address](#payout-address) and [profile](#profile).
-
-See: [identity and recovery](spec/identity-and-recovery.md).
-
-### artist ID
-
-The permanent number of an [account](#account), `uint256(uint160(first root))`. It never
-changes when the root does.
-
-See: [identity and recovery](spec/identity-and-recovery.md).
-
-### artist resolver
-
-The contract the [statement log](#statement-log) asks who may speak as ARTIST for a subject; in
-v1, the artist registry.
-
-See: [disputes and statements](spec/disputes-and-statements.md).
-
-### artist-resolved payee
-
-A split-wallet payee named by `artistId`, paid at the artist's current
-[payout address](#payout-address), which alone may release it.
-
-See: [economics and payouts](spec/economics-and-payouts.md).
-
-### asset allowlist
-
-The governed list of payment currencies (`AssetAllowlist`). A deprecation (the network, at
-once) halts sales and freezes auctions in that currency. An opening bid is bounded only by its
-96-bit field.
-
-See: [economics and payouts](spec/economics-and-payouts.md).
-
-### attestation
-
-Either a [curation attestation](#curation-attestation) or a
-[base64 attestation](#base64-attestation). Say which.
-
-### authority
-
-The registry's name for an account's [root](#root) (`authorityOf`). It is never zero, and a
-past root maps to its artist forever.
-
-See: [identity and recovery](spec/identity-and-recovery.md).
-
-## B
-
-### base64 attestation
-
-The content store's permanent record that a file's stored bytes are strict base64
-(`attestBase64`). The renderer inlines a `Base64` file only once attested.
-
-See: [works and storage](spec/works-and-storage.md).
-
-### binding
-
-A one-shot contract-to-contract caller link set at genesis, such as `Stream.bindWorkRecords`.
-Bound calls use no [role](#role).
-
-See: [governance](spec/governance.md).
-
-### brake
-
-An optional address that can delay one scheduled network action by 7 days, once
-(`brakeOnce`, `BRAKE_DELAY`). None is installed at launch; the network sets it (`setBrake`,
-7 days).
-
-See: [governance](spec/governance.md).
-
-### breadth margin
-
-The share of the best revenue the edition auction's clearing may give up to sell more copies:
-the count is the largest whose revenue is within the margin of the best (governed).
-
-See: [editions and sales](spec/editions-and-sales.md#the-clearing).
-
-### burn
-
-Destroying a token (`IMintTarget.burn`). A 6529 Stream token burns only when an upheld dispute
-cancels its auction; burned edition copies still count toward the size.
-
-See: [stream and auctions](spec/stream-and-auctions.md).
-
-## C
-
-### canonical payee list
-
-A split wallet's payee list in its one valid order: 1 to 64 payees (`Splits.MAX_PAYEES`) whose
-shares sum to 100,000, strictly ascending.
-
-See: [economics and payouts](spec/economics-and-payouts.md).
-
-### CC0 text
-
-The CC0 1.0 legal code each deployment stores at genesis (`cc0TextFileId`). Every CC0 license
-must name this file.
-
-See: [works and storage](spec/works-and-storage.md).
-
-### chain head
-
-The rolling hash of one statement-log subject's entries (`chainOf`), which lets an indexer prove
-a rebuilt chain complete.
-
-See: [disputes and statements](spec/disputes-and-statements.md).
-
-### chunk
-
-A piece of a content-store file, at most 24,575 bytes (`IContentStore.CHUNK_SIZE`), stored as
-contract code by [SSTORE2](#sstore2).
-
-See: [works and storage](spec/works-and-storage.md).
-
-### claim
-
-Taking what an account is owed, by pull: [credits](#credit), a
-[pending delivery](#pending-delivery) or split-wallet releases.
-
-See: [buying, bidding and settling](integrators/buying-bidding-settling.md).
-
-### claim router
-
-A stateless contract that batches split-wallet releases (`ClaimRouter`). It never holds or
-redirects funds.
-
-See: [economics and payouts](spec/economics-and-payouts.md).
-
-### clearing price
-
-The one price every winner of an [edition auction](#edition-auction) pays per copy: the price of
-the lowest winning step.
-
-See: [editions and sales](spec/editions-and-sales.md#the-clearing).
-
-### collaborator
-
-A [party](#party) with `PartyRole.COLLABORATOR`, a credited contributor, paid only if also
-listed as a payee.
-
-See: [curation](spec/curation.md).
-
-### collection
-
-A named grouping of 6529 Stream works, created by PLATFORM. Each work has a per-collection
-[serial](#serial).
-
-See: [stream and auctions](spec/stream-and-auctions.md).
-
-### compare-and-set
-
-The rule that a governed setter names the value it expects to replace and reverts if it is
-stale, so a queued operation never applies to a state it did not target.
-
-See: [governance](spec/governance.md).
-
-### configuration epoch
-
-One governance configuration: genesis, then each later set of role, selector or delay changes,
-each with its [governance manifest](#governance-manifest).
-
-See: [governance](spec/governance.md).
-
-### consent
-
-An account's signed agreement, given as a [wallet proof](#wallet-proof): an
-[acceptance](#acceptance), an [amendment](#amendment) consent, a collaborator's consent to a
-federated work, or a replacement acceptance.
-
-See: [`Typehashes.sol`](../src/interfaces/types/Typehashes.sol).
-
-### conservation floor
-
-The minimum preservation facts a work's [declarations document](#declarations-document) states
-(storage, format, license, display, and generative facts for a generative work), which the
-curation signer checks before attesting and publishes in the curation evidence. A convention: no
-contract checks it.
-
-See: [declarations and conventions](spec/declarations-and-conventions.md#the-conservation-floor).
-
-### consolidation
-
-A two-way link between two wallets in the 6529 [delegation contract](#delegation-contract)
-(use case 999, all collections). A wallet with a live two-way consolidation with an
-[account](#account)'s [root](#root) acts for the account, with no minimum age
-(`ConsolidationAdapter.isConsolidated`).
-
-See: [identity and recovery](spec/identity-and-recovery.md).
-
-### consume
-
-The check a Stream mint makes that an item may mint once: the [mint policy](#mint-policy)
-(`PackageRegistry.authorize`) verifies the item and the [move](#move), and Stream records the
-content hash as used, whatever policy is installed (`Stream.consumedItemOf`, AUC-44).
-
-See: [curation](spec/curation.md).
-
-### content hash
-
-The decoded SHA-256 of a work's primary media, the [uniqueness](#uniqueness) key. The contracts
-cannot recompute it, so the curation signer checks it off-chain.
-
-See: [curation](spec/curation.md).
-
-### content manifest
-
-A content-store file's declaration (`registerManifest`): chunk hashes, length,
-[encoding](#encoding), MIME type and decoded SHA-256. Its hash is the [file ID](#file-id).
-
-See: [storage](integrators/storage.md).
-
-### content release
-
-The governed step after an upheld dispute burned a work (`Stream.releaseContent`): it
-[tombstones](#tombstone) the item and frees its content hash for the rightful artist.
-
-See: [disputes and statements](spec/disputes-and-statements.md).
-
-### content store
-
-The permissionless, content-addressed file store all contracts share (`ContentStore`). It has no
-owner, and on-chain bytes are permanent.
-
-See: [works and storage](spec/works-and-storage.md).
-
-### contest
-
-A wallet's cancel of a pending [replacement](#replacement) during its notice. The replacement
-then runs only if the network upholds it (`resolveContested`, citing a DISPUTE_OUTCOME recorded
-after the contest) within 90 days (`CONTEST_LAPSE`); otherwise it lapses.
-
-See: [identity and recovery](spec/identity-and-recovery.md).
-
-### convention kind
-
-A statement kind whose writer and document schema are set by a convention, not by the statement
-log: content-change proposals and acceptances, catalogue entries, citations and custody
-attestations. The log accepts them under every role; readers count each only under the role the
-kind registry names.
-
-See: [disputes and statements](spec/disputes-and-statements.md#statement-kind-registry).
-
-### copy
-
-One unit of an edition's ERC-1155 supply, minted when a winning
-[edition auction](#edition-auction) bid is claimed.
-
-See: [editions and sales](spec/editions-and-sales.md).
-
-### core
-
-6529 Stream's ERC-721 contract (`Stream.sol`), as distinct from its records
-[satellite](#satellite).
-
-See: [stream and auctions](spec/stream-and-auctions.md).
-
-### core-only metadata
-
-What the renderer returns, without reverting, when a work's record is not usable, with a
-[record status](#record-status).
-
-See: [rendering and tokenURI](spec/rendering-and-tokenuri.md).
-
-### creator
-
-The lead artist's [active authority](#active-authority) in a token's
-[PrimaryTerms](#primaryterms). It receives an unsold federated auction token.
-
-See: [stream and auctions](spec/stream-and-auctions.md).
-
-### credit
-
-An amount owed and claimable by pull: refunds and failed payouts on an adapter (`claimable`), or
-failed payments in the [escrow](#escrow) (`owed`). An adapter credit unclaimed for 180 days may
-be sent to the network (`expireCredit`).
-
-See: [buying, bidding and settling](integrators/buying-bidding-settling.md).
-
-### curation attestation
-
-A curation signer's EIP-712 `PackageApproval` of a package root and
-[evidence hash](#evidence-hash), valid only in its current [signer epoch](#signer-epoch).
-
-See: [curation](spec/curation.md).
-
-### curation evidence
-
-The published record behind an approval: its [evidence hash](#evidence-hash) is signed with the
-root, and CURATOR publishes it as a `CURATION_EVIDENCE` statement.
-
-See: [curation](spec/curation.md).
-
-### curation signer
-
-A `Roles.CURATION_SIGNER` key whose package approvals the curation verifier accepts. It only
-signs; the network's `disableSigner` (at once) and `killSignerApprovals` (at once, in the same batch) stop it.
-
-See: [curation](spec/curation.md).
-
-### curator
-
-The holder of `Roles.CURATOR`, a zero-delay key that appends curator statements. It does not
-approve packages; the network grants and revokes it at once.
-
-See: [disputes and statements](spec/disputes-and-statements.md).
-
-### currency
-
-The asset a sale is paid in: ETH (`address(0)`) or an ERC-20 active on the
-[asset allowlist](#asset-allowlist), locked when the sale starts.
-
-See: [economics and payouts](spec/economics-and-payouts.md).
-
-### currency freeze
-
-An English auction whose locked currency is deprecated: nothing settles, bids revert and the high bidder may withdraw; after 14 days anyone may end it unsold.
-
-See: [stream and auctions](spec/stream-and-auctions.md#rules-and-invariants) (AUC-25).
-
-### CURRENCY_DEFAULT
-
-The package-terms currency `address(type(uint160).max)`: the product's default currency when the
-sale starts. It requires a zero price.
-
-See: [economics and payouts](spec/economics-and-payouts.md).
-
-### cut step
-
-The step at which a creator's cap stops the clearing inside the step, so only some of its units
-win; they fill in queue [position](#position) order.
-
-See: [editions and sales](spec/editions-and-sales.md#the-cut-step).
-
-## D
-
-### declarations document
-
-A work's statements that the contracts do not record (its conservation floor, custodians,
-citations, a time capsule, a living-work note), carried as one AUXILIARY media file, so the
-approved media hash fixes it.
-
-See: [declarations and conventions](spec/declarations-and-conventions.md#the-declarations-document).
-
-### delay class
-
-How long a network action waits: at once (NETWORK), 24 hours (PARAMETER_SETTER), 3 days
-(FUNDS_SETTER) or 7 days (ADMIN, SUCCESSOR_SETTER) (`Roles.DELAY_24H`, `DELAY_3D`, `DELAY_7D`).
-The [brake](#brake), when set, can add 7 days once to a scheduled action.
-
-See: [governance](spec/governance.md).
-
-### delivery contract
-
-The replaceable contract behind `WorkRecords.delivery()` that holds locators, kinds, preferences,
-dead marks and the URI grammar (`WorkDelivery` at genesis; replaced by `setDelivery`,
-SUCCESSOR_SETTER, 7 days). `WorkRecords` forwards `preferredLocator` to it and serves only a
-well-formed answer; it can change no fact.
-
-See: [works and storage](spec/works-and-storage.md).
-
-### delegation contract
-
-The 6529 delegation contract, whose use case 999 registrations are the
-[consolidations](#consolidation) the artist registry reads.
-
-See: [addresses](integrators/addresses.md).
-
-### denominator
-
-The 100,000 parts every share and rate is out of (`Splits.DENOMINATOR`), so the 6.529% royalty
-is 6,529.
-
-See: [economics and payouts](spec/economics-and-payouts.md).
-
-### departure hint
-
-The order, by [position](#position), of a [cut step](#cut-step)'s raises and withdrawals, which
-a settler supplies so settlement can close the holes they left. Each settler sweeps on its own:
-`settlementOrderFor(saleId, settler)` computes the rest of its sweep.
-
-See: [editions and sales](spec/editions-and-sales.md#the-cut-step).
-
-### dependency registry
-
-The governed, append-only map from `(name, version)` to on-chain content-store files for shared
-libraries such as p5.js (`DependencyRegistry`).
-
-See: [works and storage](spec/works-and-storage.md).
-
-### display rule
-
-The statement log's answer for a 6529 Stream token with no dispute outcome of its own: the latest outcome about the package item it was minted from (`latestDisputeOutcome`).
-
-See: [disputes and statements](spec/disputes-and-statements.md).
-
-### dispute
-
-A claim against a work, decided by TDH vote off-chain. Upheld during an auction, it cancels the
-sale and burns the token; afterwards it only produces a statement.
-
-See: [disputes and statements](spec/disputes-and-statements.md).
-
-### dispute outcome
-
-A `DISPUTE_OUTCOME` statement recording a dispute vote's result, which an auction `cancel` and
-`resolveContested` must cite. PLATFORM is its only writer, through `appendPlatform` or a relayed
-`appendSigned` signed by a PLATFORM holder.
-
-See: [disputes and statements](spec/disputes-and-statements.md).
-
-### dispute pause
-
-A pauser's one pause of a live English auction, at most 3 days (`EnglishAuction.MAX_PAUSE`),
-during which the high bidder may withdraw. The network resumes or cancels at any moment of it,
-with no wait.
-
-See: [stream and auctions](spec/stream-and-auctions.md).
-
-## E
-
-### economics resolver
-
-The governed source of each [product](#product)'s fee terms, royalty rate, license and currency
-(`EconomicsResolver`). Changes apply only to later mints and sales.
-
-See: [economics and payouts](spec/economics-and-payouts.md).
-
-### edition
-
-A 6529 Stream Editions token ID, equal to its [edition master](#edition-master)'s Stream token
-ID. Anyone creates it once the master's primary sale has settled.
-
-See: [editions and sales](spec/editions-and-sales.md).
-
-### edition auction
-
-The uniform-price auction that sells an edition's copies (`UniformEditionAuction`): public,
-firm bids of a quantity at a [step](#step-ladder), one [clearing price](#clearing-price), and
-exactly as many copies as it sells. It runs beside the master's 1/1 and closes exactly 15 minutes
-after it (`CLOSE_OFFSET`), or later under its [soft close](#soft-close).
-
-See: [editions and sales](spec/editions-and-sales.md).
-
-### edition master
-
-A 6529 Stream work of kind `EDITION_MASTER`: a 1/1 that also anchors one [edition](#edition).
-Also called the master.
-
-See: [editions and sales](spec/editions-and-sales.md).
-
-### EIP-170
-
-Ethereum's 24,576-byte limit on deployed code, which sets the content-store [chunk](#chunk)
-size.
-
-See: [`SSTORE2.sol`](../src/libraries/SSTORE2.sol).
-
-### EIP-712
-
-The standard for signing typed structured data, used by every protocol signature.
-
-See: [ABIs and interface IDs](integrators/abis-and-interface-ids.md).
-
-### EIP-2612
-
-ERC-20 `permit`, an approval signed off-chain. The auctions refuse it as a payment method
-(`InvalidPayment`); ERC-20 bids use DIRECT or [Permit2](#permit2).
-
-See: [buying, bidding and settling](integrators/buying-bidding-settling.md).
-
-### EIP-7702
-
-Code delegation for EOAs. Installs and bindings reject delegated accounts
-(`DelegatedEOA.isDelegated`).
-
-See: [`DelegatedEOA.sol`](../src/libraries/DelegatedEOA.sol).
-
-### EIP-7825
-
-The per-transaction gas cap of 16,777,216. Every worst-case transaction is tested under it in
-[Prague gas](#prague-gas).
-
-See: [ADR 0004](adr/0004-gas-budgets-under-glamsterdam.md#decision).
-
-### encoding
-
-How a content-store file's bytes relate to its media (`Encoding`): `Identity`, `Gzip`, `Base64`
-or `GzipBase64`.
-
-See: [storage](integrators/storage.md).
+The module a sale contract asks before minting (`IMintPolicy.authorize`): for Stream the
+`PackageRegistry`, for federated tokens the `FederationRegistry`. It checks the item and answers
+the mint facts and sale terms. See [curation](spec/curation.md).
 
 ### entropy module
 
-The optional contract that draws VRF seeds (`VrfEntropyModule`), one draw per content hash,
-before the auction start.
+The replaceable module that delivers a VRF [seed](#seed) to a work whose seed policy asks for
+one. See [entropy](spec/entropy.md).
 
-See: [entropy](spec/entropy.md).
+### artist resolver
 
-### entry hash
+The contract the statement log asks who may speak as ARTIST for a subject: the accounts module.
+See [disputes and statements](spec/disputes-and-statements.md).
 
-The identity of one statement-log entry, which other entries cite. Its index makes identical
-statements distinct.
+## Network and settings
 
-See: [disputes and statements](spec/disputes-and-statements.md).
+### TDH
 
-### epoch
+The 6529 network's measure of holdings, behind its governance. The network address is a 2-of-n
+Safe until the TDH bridge exists.
 
-Either a [configuration epoch](#configuration-epoch) or a [signer epoch](#signer-epoch). Say
-which.
+### delay class
 
-### ERC-20
+One of the AccessManager's role delays: none, 24 hours, 3 days, 7 days. A class's delay holds
+until a 7-day remap by the network changes it. See [governance](spec/governance.md) and the
+[role matrix](audit/roles.md).
 
-The fungible-token standard. Movements are checked by exact balance delta (`TokenTransfer`), so
-fee-on-transfer and rebasing tokens revert.
+### moduleDelay
 
-See: [economics and payouts](spec/economics-and-payouts.md).
+The wait between announcing a module (or adding a minter) and its first use. A network setting
+in each token contract and `Directory`: 7 days at launch, changed at once, zero allowed. An
+addition already announced keeps the time it was given.
 
-### ERC-165
+### rescue
 
-Interface detection (`supportsInterface`), required of most install and binding targets.
+The network's move of a token that a removed minter still holds unsold, once the
+[rescue delay](#rescuedelay) has passed since the removal. It can never reach a token a
+collector holds.
 
-See: [ABIs and interface IDs](integrators/abis-and-interface-ids.md).
+### rescueDelay
 
-### ERC-721
+The wait before a `rescue`. A network setting of each 1/1 token contract: 14 days at launch, read
+when the rescue is attempted.
 
-The NFT standard 6529 Stream implements; each token is one work.
+### rebind
 
-See: [`Stream.sol`](../src/stream/Stream.sol).
+The network's move of an edition with no copies and no seal to another edition sale contract,
+once the [rebind delay](#rebinddelay) has passed since its own sale contract was removed.
 
-### ERC-1155
+### rebindDelay
 
-The multi-token standard 6529 Stream Editions implements: each ID is an edition, each unit a
-[copy](#copy).
+The wait before a `rebind`. A network setting of `Editions`: 14 days at launch, read when the
+rebind is attempted.
 
-See: [`Editions.sol`](../src/editions/Editions.sol).
+### unclaimed period
 
-### ERC-1271
+How long money must wait unclaimed before it can go to the network: a marked split-vault share
+or an aged escrow or auction credit. A network setting in `Directory`: 180 days at launch, read
+when the forfeit or expiry is attempted. Only money that has itself waited counts.
 
-Signature validation for contract accounts, accepted for every protocol signature, forwarding
-all gas (a check that runs short reverts with `BoundedCallShortfall`).
+### binding
 
-See: [`SignatureVerifier.sol`](../src/libraries/SignatureVerifier.sol).
+Removed in the plain core (ADR 0010): the one-shot contract-to-contract links set at genesis.
+Genesis modules and minters are now constructor arguments.
 
-### ERC-2098
+## Works
 
-The 64-byte compact ECDSA signature, accepted beside the 65-byte form.
+### package
 
-See: [`SignatureVerifier.sol`](../src/libraries/SignatureVerifier.sol).
+A set of approved items, committed to by a [package root](#package-root). See
+[curation](spec/curation.md).
 
-### ERC-2981
+### package root
 
-The NFT royalty standard (`royaltyInfo`), paying the [royalty rate](#royalty-rate) to the
-[royalty wallet](#royalty-wallet).
+The Merkle root of a package's items, signed by a curation signer with an
+[evidence hash](#evidence-hash).
 
-See: [economics and payouts](spec/economics-and-payouts.md).
+### item hash
 
-### ERC-4906
+The hash of one approved item. It commits to the content, media, parties, payees, license and
+sale terms, and is stored in the token at mint.
 
-Metadata update events (`MetadataUpdate`, `BatchMetadataUpdate`), emitted when a work's metadata
-may have changed.
+### acceptance
 
-See: [events and indexing](integrators/events-and-indexing.md).
+A party's EIP-712 signature over a package root, given by any wallet of its account.
 
-### ERC-7572
+### move
 
-Contract-level metadata (`contractURI`) on 6529 Stream and 6529 Stream Editions.
+A revocable EIP-712 signature by a wallet of the lead artist's account, authorizing a Stream
+mint; checked when the item is [consumed](#consume).
 
-See: [reading a work](integrators/reading-a-work.md).
+### consume
 
-### errata repin
+The mint policy's check that an approved item mints once. The token itself keeps one live token
+per content hash.
 
-The only way to change a finalized work's renderer (`WorkRecords.repinRenderer`, the network,
-7 days), until the lead artist renounces it (`RENDERER_REPIN`).
+### content release
 
-See: [rendering and tokenURI](spec/rendering-and-tokenuri.md).
+The mint policy's permission, after an upheld dispute burned a token, to mint that content again
+for the same artist. See [curation](spec/curation.md).
 
-### escrow
+### tombstone
 
-The revenue escrow (`RevenueEscrow`), which credits a wallet whose payment failed; anyone may
-flush the credit to it. Governed recovery moves a credit only to an equivalent or consented
-replacement (the network's own credits need no consent); a credit unclaimed for 180 days
-becomes the network's (`expire`).
+The mint policy's mark that an item may never mint again.
 
-See: [economics and payouts](spec/economics-and-payouts.md).
+### seed policy
+
+Whether a work has no seed, an artist's seed, or a VRF seed. Recorded in the token, not
+interpreted by it.
+
+### seed
+
+The value that decides how a generative work looks. Stored in the token at mint, never changed.
+
+### vrf
+
+Chainlink's verifiable randomness, used by the [entropy module](#entropy-module) for VRF seeds.
+
+### outcome
+
+How a token's first sale ended: none, sold, unsold or rescued. Set once by the holding minter
+(or by `rescue`), never changed. The price is only logged.
+
+### finalize
+
+Freezing a work's descriptive record and pinning the renderer that draws it, in `WorkFacts`.
+Never undone.
+
+### windowworks
+
+`window.works`: the object `{ v: 1, tokenId, seed }` the renderer's page sets before a work's
+JavaScript runs. See [rendering and tokenURI](spec/rendering-and-tokenuri.md).
+
+## Curation, disputes and statements
+
+### curation signer
+
+A key the network grants whose EIP-712 approval of a package root the curation verifier accepts.
+
+### signer epoch
+
+The value a signer's approval must bind. A disable, re-enable or new grant starts a new one, so
+older approvals stop counting.
 
 ### evidence hash
 
 The hash a curation signer signs with a package root, committing to the published vote and
-rules. A [replacement](#replacement) carries one too.
+rules.
 
-See: [curation](spec/curation.md).
+### curation evidence
 
-### execution delay
-
-The delay the network waits between scheduling a governed call and executing it: its role's
-[delay class](#delay-class).
-
-See: [role and permission matrix](audit/roles.md).
-
-## F
-
-### fact sheet
-
-A client-generated statement of the facts about one work at one block: what is recorded, and who
-can change what after what delay. Never written on chain; it carries no warnings or ratings.
-
-See: [declarations and conventions](spec/declarations-and-conventions.md#fact-sheet).
-
-### file ID
-
-A content-store file's name, the hash of its [content manifest](#content-manifest). It does not
-depend on the chain.
-
-See: [storage](integrators/storage.md).
-
-### file role
-
-A media file's role (named by `FileRole`, an open `uint8`): PRIMARY (the artwork, first), PREVIEW
-(a small still image) or AUXILIARY; readers treat a role they do not know as auxiliary.
-
-See: [works and storage](spec/works-and-storage.md).
-
-### finalize
-
-`WorkRecords.finalize`, which makes the record immutable and [pins](#pin) the current default
-renderer: by the lead artist at any time, or by anyone from 14 days after a finalize notice
-recorded once the primary sale settled (`FINALIZE_NOTICE`).
-
-See: [works and storage](spec/works-and-storage.md).
-
-### finding ID
-
-An identifier such as MARKET-2 that names a finding of the internal adversarial review.
-
-See: [known limitations](audit/known-limitations.md).
-
-### fixed payee
-
-A split-wallet payee named by `account`. Anyone may release its share to that account.
-
-See: [economics and payouts](spec/economics-and-payouts.md).
-
-### freeze
-
-The network's immediate 14-day stop of an [account](#account) (`freeze`, `FREEZE_PERIOD`): no
-wallet acts and its payouts are held. `unfreeze` ends it early.
-
-See: [identity and recovery](spec/identity-and-recovery.md).
-
-### fullTokenURI
-
-`IRenderer.fullTokenURI`: metadata with media inlined up to 1 MiB (`Renderer.MAX_INLINE_BYTES`),
-for `eth_call`, with no gas promise.
-
-See: [rendering and tokenURI](spec/rendering-and-tokenuri.md).
-
-## G
-
-### genesis
-
-The one-transaction governance setup (`GovernanceConfigurator.configure`): roles, delays,
-selectors and wiring, after which the configurator renounces ADMIN.
-
-See: [governance](spec/governance.md).
-
-### Glamsterdam
-
-The Ethereum upgrade, active on Sepolia since 6 October 2026, that reprices state creation.
-Foundry cannot measure it.
-
-See: [ADR 0004](adr/0004-gas-budgets-under-glamsterdam.md#problem).
-
-### governance manifest
-
-The signed JSON document describing one [configuration epoch](#configuration-epoch). Only its
-hash is on-chain.
-
-See: [governance](spec/governance.md).
-
-### governed vault
-
-A small governed contract (`GovernedVault`) holding what is paid to it and forwarding it only to a
-destination the network sets (compare-and-set). Genesis deploys two: the network fee recipient
-(`FeeRecipientVault`, FUNDS_SETTER, 3 days) and the [6529 Network Museum](#6529-network-museum)
-(`MuseumVault`, SUCCESSOR_SETTER, 7 days).
-
-See: [economics and payouts](spec/economics-and-payouts.md).
-
-### grant delay
-
-How long a newly granted role takes to become active. Every grant is at zero delay: the network
-roles are the network's alone, and the network grants operational keys at once.
-
-See: [role and permission matrix](audit/roles.md).
-
-## H
-
-## I
-
-### increment floor
-
-A currency's absolute minimum bid increment (`incrementFloor`). A bid must beat the high bid by
-the larger of the floor and the increment share.
-
-See: [stream and auctions](spec/stream-and-auctions.md).
-
-### inline threshold
-
-The largest primary file `tokenURI` inlines, in cost-weighted bytes (256 KiB by default,
-`Renderer.DEFAULT_INLINE_THRESHOLD`).
-
-See: [rendering and tokenURI](spec/rendering-and-tokenuri.md).
-
-### item
-
-One entry of a [package](#package) (`PackageItem`): everything voters approve and parties sign
-for one work. It mints at most once.
-
-See: [curation](spec/curation.md).
-
-### item hash
-
-An item's chain-independent identity (`WorksHashing.itemHash`), stored per token by 6529 Stream.
-
-See: [curation](spec/curation.md).
-
-### item kind
-
-What an item mints: ORIGINAL (0) or EDITION_MASTER (1), named by `ItemKind`. The field is an open
-`uint8`, as are the seed policy and party and media roles, so a value a later mint policy defines
-never makes a permanent contract's decode revert; the genesis policy refuses values it does not
-know for new items.
-
-See: [curation](spec/curation.md).
-
-## K
-
-### keeper
-
-An automated account calling permissionless upkeep: the network's keeper starts sales through
-[SaleStarter](#salestarter) and runs the edition steps. No v1 selector maps to `Roles.KEEPER`.
-
-See: [roles](audit/roles.md).
-
-## L
-
-### lead artist
-
-The first party of every item. Any wallet of its [account](#account) signs the
-[move](#move) and edits the record; its [active authority](#active-authority) is the
-[creator](#creator).
-
-See: [curation](spec/curation.md).
-
-### license
-
-A work's SPDX license identifier plus the file ID of its full text (`License`). The default is
-CC0.
-
-See: [works and storage](spec/works-and-storage.md).
-
-### license key
-
-The `keccak256` of a lowercased SPDX ID (`WorksHashing.licenseKey`), on which licenses are
-compared.
-
-See: [works and storage](spec/works-and-storage.md).
-
-### locator
-
-A registered Arweave or IPFS copy of a media file (`Locator`), append-only, at most 16 per file
-(`Limits.MAX_LOCATORS_PER_FILE`).
-
-See: [storage](integrators/storage.md).
-
-### LockedTerms
-
-The terms the English auction locks for one sale: token, ID, currency, price, seller and fee terms.
-
-See: [stream and auctions](spec/stream-and-auctions.md).
-
-## M
-
-### Main Stage
-
-The 6529 [wave](#wave) whose TDH-weighted vote picks The Memes cards, and since owner decision 25
-the only way into 6529 Stream: a submission carries its Stream package before the vote, and one
-not picked as a Meme card becomes Stream-eligible under the network's routing rule. The contracts
-never read it.
-
-See: [ADR 0001's amendments](adr/0001-v1-scope.md#amendments), [curation](spec/curation.md).
-
-### manifest
-
-Either a [content manifest](#content-manifest) or a [governance manifest](#governance-manifest).
-Say which.
-
-### marketplace owner
-
-The address `owner()` returns on 6529 Stream and 6529 Stream Editions, for marketplace
-settings. It has no on-chain powers.
-
-See: [stream and auctions](spec/stream-and-auctions.md).
-
-### master
-
-See [edition master](#edition-master).
-
-### media hash
-
-The hash of a work's ordered media list (`WorksHashing.mediaHash`), fixed by its package item.
-
-See: [works and storage](spec/works-and-storage.md).
-
-### minSetback
-
-OpenZeppelin AccessManager's 5-day minimum wait (`minSetback()`) before a delay change takes
-effect; Verify runs at least this long after genesis.
-
-See: [governance](spec/governance.md).
-
-### mint policy
-
-The replaceable contract 6529 Stream hands each mint request to, unread (`IMintPolicy`; the
-package registry at genesis). It does consent, item rules, VRF delivery and the terms quote and
-answers a record Stream re-checks; it has no write path into Stream and decides new mints only.
-
-See: [Stream and auctions](spec/stream-and-auctions.md).
-
-### move
-
-A revocable EIP-712 `MoveToStream` signature by a wallet of the lead artist's account,
-authorizing a Stream mint, checked at [consume](#consume).
-
-See: [curation](spec/curation.md).
-
-## N
-
-### network
-
-The one address that holds every network role (`WorksAccessManager.network`): until the TDH
-bridge exists, one 6529 Safe. It hands over with `transferNetwork` (7 days) and the next
-address's `acceptNetwork`, after which the old one holds nothing.
-
-See: [governance](spec/governance.md).
-
-### network fee
-
-The network's share of a primary sale or royalty; 25,000 at launch for 6529 Stream and 6529
-Stream Editions (`EconomicsResolver.DEFAULT_FEE_SHARE`). The network may lower a work's share,
-never raise it (`lowerFeeShare`); a sale pays it to the recipient the economics resolver names at
-settlement, leftover wei included.
-
-See: [economics and payouts](spec/economics-and-payouts.md).
-
-### new account
-
-An account empty before a transaction and not after it, such as a contract creation, counted in
-the gas reports.
-
-See: [ADR 0004](adr/0004-gas-budgets-under-glamsterdam.md#decision).
-
-### new slot
-
-A storage slot zero before a transaction and nonzero after it. CI asserts each operation's exact
-count.
-
-See: [ADR 0004](adr/0004-gas-budgets-under-glamsterdam.md#decision).
-
-### nonce
-
-A single-use number a signature binds, revocable before use. No replay protection keys on
-signature bytes.
-
-See: [`Typehashes.sol`](../src/interfaces/types/Typehashes.sol).
-
-## O
-
-### on-chain complete
-
-A work's one-way state once all its media is in the content store (`WorkRecords.syncOnChain`).
-Only such works inline.
-
-See: [works and storage](spec/works-and-storage.md).
-
-### opening bid
-
-A currency's governed minimum first bid in the English auction, held by the
-[asset allowlist](#asset-allowlist) in the asset's status word (`AssetAllowlist.setOpeningBid`,
-PARAMETER_SETTER), bounded only by its 96-bit field, and locked by each auction at its start
-(`openingBid`).
-
-See: [stream and auctions](spec/stream-and-auctions.md).
-
-### own change
-
-An identity change an [account](#account)'s wallet signs (`stageChange`): it waits 2 days
-(`OWN_CHANGE_DELAY`), and any wallet, or the network, can cancel it.
-
-See: [identity and recovery](spec/identity-and-recovery.md).
-
-## P
-
-### package
-
-The items an artist submits for curation, committed as one [package root](#package-root).
-Approvals never expire, though roots can be [revoked](#revocation).
-
-See: [curation](spec/curation.md).
-
-### package root
-
-The chain-independent Merkle root over a package's [item hashes](#item-hash).
-
-See: [curation](spec/curation.md).
-
-### party
-
-An artist or collaborator an item names, 1 to 16 (`Limits.MAX_PARTIES`). Every party must
-[accept](#acceptance), and every payee must be a party.
-
-See: [curation](spec/curation.md).
-
-### pause
-
-A [dispute pause](#dispute-pause) of one auction, or an adapter pause (PAUSER) of new sales,
-which the network's `unpause` ends at once.
-
-See: [stream and auctions](spec/stream-and-auctions.md).
-
-### payout address
-
-Where an artist's [artist-resolved](#artist-resolved-payee) payments go (`payoutAddress`),
-changed only by an own change or a [replacement](#replacement).
-
-See: [identity and recovery](spec/identity-and-recovery.md).
-
-### payout freeze
-
-`payoutAddress` returning zero while a pending change would move it, or while the account is
-[frozen](#freeze), so split wallets hold the artist's balance.
-
-See: [identity and recovery](spec/identity-and-recovery.md).
-
-### payout resolver
-
-The contract the split ledger asks for an artist's payout address: the artist registry, an
-immutable of the ledger with no code-hash pin.
-
-See: [economics and payouts](spec/economics-and-payouts.md).
-
-### pending claim
-
-See [pending delivery](#pending-delivery).
-
-### pending delivery
-
-An auction token whose delivery failed at settlement, held for a later `claimDelivery`. Also
-called a pending claim.
-
-See: [buying, bidding and settling](integrators/buying-bidding-settling.md).
-
-### Permit2
-
-Uniswap's signature-transfer contract. A `PERMIT2` payment's witness binds the action, so a
-relayer can submit it.
-
-See: [buying, bidding and settling](integrators/buying-bidding-settling.md).
-
-### permanent contract
-
-A contract with authority over existing tokens, existing works' facts or funds already owed. It
-is never redeployed, holds invariants rather than policy numbers, forwards all gas on calls out and
-takes no instruction from replaceable code ([ADR 0007](adr/0007-permanence.md)).
-
-See: [trust assumptions](audit/trust-assumptions.md).
-
-### pin
-
-To record an address with its code hash, so the protocol fails closed if the code changes.
-
-See: [trust assumptions](audit/trust-assumptions.md).
-
-### platform
-
-The holder of `Roles.PLATFORM`, 6529's zero-delay key. It creates collections, adds locators
-and appends platform statements, as the only writer of DISPUTE_OUTCOME; the network grants and
-revokes it at once.
-
-See: [trust assumptions](audit/trust-assumptions.md).
-
-### position
-
-A bid's place in its step's queue in a capped [edition auction](#edition-auction): the units that
-entered the step before it. A raise rejoins at the back of its new step.
-
-See: [editions and sales](spec/editions-and-sales.md#the-cut-step).
-
-### Prague gas
-
-A whole transaction's gas priced with Prague's schedule, cold at the start: the unit of every
-gas budget.
-
-See: [ADR 0004](adr/0004-gas-budgets-under-glamsterdam.md#decision).
-
-### preferred locator
-
-The copy `tokenURI` serves for a file (`preferredLocator`), chosen by the
-[storage operator](#storage-operator)'s most specific setting.
-
-See: [storage](integrators/storage.md).
-
-### primary sale settled
-
-A Stream token's flag, set by its minting adapter at settlement. It gates edition creation and
-ends burnability.
-
-See: [stream and auctions](spec/stream-and-auctions.md).
-
-### PrimaryTerms
-
-What a token tells a sale adapter about its primary sale: sale kind, currency, price, seller, fee
-terms and [creator](#creator).
-
-See: [economics and payouts](spec/economics-and-payouts.md).
-
-### product
-
-A scope for economics and uniqueness: `PRODUCT_STREAM`, `PRODUCT_EDITIONS` or
-`PRODUCT_FEDERATED`.
-
-See: [economics and payouts](spec/economics-and-payouts.md).
-
-### profile
-
-An artist identity's claimed 6529 profile ID and document hash, signed but not verified
-on-chain.
-
-See: [identity and recovery](spec/identity-and-recovery.md).
-
-## R
-
-### raise-only parameter
-
-A gas parameter that may only rise, at most 2× per step, to a code-level ceiling
-(`BoundedParameter`).
-
-See: [entropy](spec/entropy.md).
-
-### record
-
-A work's descriptive JSON file in the content store, one chunk (`WorkRecords` checks only
-that); the renderer shows a record of at most 12,288 bytes (`Limits.MAX_RECORD_BYTES`). The lead
-artist may replace it until [finalize](#finalize).
-
-See: [works and storage](spec/works-and-storage.md).
-
-### record status
-
-Why [core-only metadata](#core-only-metadata) is shown: `not_open`, `incomplete` or `invalid`.
-
-See: [reading a work](integrators/reading-a-work.md).
-
-### regression ceiling
-
-An operation's Prague gas when ADR 0004 was accepted, plus about 2%. A change that crosses it
-says why.
-
-See: [ADR 0004](adr/0004-gas-budgets-under-glamsterdam.md#decision).
-
-### release
-
-Paying a split-wallet payee its share. Anyone may release a fixed payee; only the payout address
-releases an artist-resolved one.
-
-See: [economics and payouts](spec/economics-and-payouts.md).
-
-### relicense
-
-A change of a work's license (`WorkRecords.relicense`, FUNDS_SETTER, 3 days) with every
-party's consent, counted by account. A CC0 work stays CC0 for good.
-
-See: [works and storage](spec/works-and-storage.md).
-
-### renderer
-
-The immutable, stateless contract that builds `tokenURI` (`Renderer`). Works use the default
-renderer until finalize pins one.
-
-See: [rendering and tokenURI](spec/rendering-and-tokenuri.md).
-
-### renounced power
-
-A power over one work (`ROYALTY_RATE`, any further royalty change; `RELICENSE`, any further
-license change) given up for good through `IWorkPowers.renounce`, with the lead artist's
-signature and the network's agreement; the function then always reverts for that work; and,
-after finalize, `RENDERER_REPIN` (the artist alone), the [errata repin](#errata-repin), after
-which the work's renderer pin never moves again.
-
-See: [works and storage](spec/works-and-storage.md#rules-and-invariants).
-
-### replacement
-
-The network's change of an [account](#account)'s [root](#root) for a lost or stolen account
-(`stageReplacement`), with the new root's acceptance and 14 days' notice
-(`REPLACEMENT_NOTICE`). The network can cancel it; a wallet can [contest](#contest) it. While
-it is pending, no wallet acts for the account.
-
-See: [identity and recovery](spec/identity-and-recovery.md).
-
-### reserve
-
-The amount a bid withdrawn during a dispute pause or currency freeze leaves behind: the next bid must reach it.
-
-See: [stream and auctions](spec/stream-and-auctions.md#rules-and-invariants).
-
-### reserved authority
-
-An address a pending identity change would make an account's [root](#root) (`reservedFor`). It
-cannot register or become another account's root meanwhile.
-
-See: [identity and recovery](spec/identity-and-recovery.md).
-
-### resolver
-
-The [economics resolver](#economics-resolver), [artist resolver](#artist-resolver) or
-[payout resolver](#payout-resolver). Say which.
-
-### restraint
-
-The state in which `activeAuthorityOf` is zero: while an [account](#account) is
-[frozen](#freeze) or a [replacement](#replacement) is pending. No wallet acts for the account;
-running sales continue.
-
-See: [identity and recovery](spec/identity-and-recovery.md).
-
-### revocation
-
-The network's immediate withdrawal of a package root's approval (`revokePackage`). A role
-revocation is the AccessManager's `revokeRole`.
-
-See: [curation](spec/curation.md).
-
-### role
-
-An AccessManager role from `Roles.sol`. The network roles (ADMIN, NETWORK and the three
-setters) are held by the [network](#network) alone, each with its [delay class](#delay-class);
-the operational roles are held by keys the network grants. Statement speakers use a separate
-[statement role](#statement-role).
-
-See: [roles](audit/roles.md).
-
-### root
-
-The wallet an [account](#account)'s consolidations are read from (`authorityOf`). It never
-depends on the consolidation source.
-
-See: [identity and recovery](spec/identity-and-recovery.md).
-
-### royalty rate
-
-A work's ERC-2981 rate out of 100,000, 6,529 at launch (`EconomicsResolver.DEFAULT_ROYALTY_RATE`).
-It changes, up or down to at most 100,000, with every party's consent and the network
-(`setRoyaltyRate`, R10), unless renounced.
-
-See: [economics and payouts](spec/economics-and-payouts.md).
-
-### royalty wallet
-
-The split wallet that receives a work's royalties and pays the [seller wallet](#seller-wallet)
-and the network fee.
-
-See: [economics and payouts](spec/economics-and-payouts.md).
-
-## S
-
-### sale adapter
-
-A shared contract that sells tokens through `IMintTarget`: the English auction and the
-[edition auction](#edition-auction). It pays out with the escrow as fallback.
-
-See: [buying, bidding and settling](integrators/buying-bidding-settling.md).
-
-### sale ID
-
-A sale's number in its adapter: a hash of `(token, tokenId)` (`saleIdOf`), on both auctions.
-
-See: [architecture](architecture.md#identifiers-and-hashes).
-
-### sale kind
-
-A `bytes32` label naming a sale method, claimed by its adapter: `ENGLISH_AUCTION` or
-`UNIFORM_AUCTION`. A token mints only for an admitted adapter of its terms' kind; `FIXED_PRICE`
-and `DUTCH` are reserved labels of rc.1's removed adapters.
-
-See: [`SaleTypes.sol`](../src/interfaces/types/SaleTypes.sol).
-
-### SaleStarter
-
-The stateless helper the network's keeper starts every 1/1 through: one transaction starts
-the auction, deploys the work's vaults and opens its record, or does nothing.
-`EnglishAuction.start` stays permissionless.
-
-See: [script README](../script/README.md#the-11-start-keeper).
-
-### satellite
-
-A contract that serves 6529 Stream's core from outside it, chiefly [WorkRecords](#workrecords).
-
-See: [architecture](architecture.md#modules).
-
-### seed
-
-The 32-byte value a seeded work's code reads (`seedOf`), passed to scripts in
-[window.works](#windowworks).
-
-See: [entropy](spec/entropy.md).
-
-### seed policy
-
-Where a work's seed comes from (`SeedPolicy`): NONE, ARTIST or VRF.
-
-See: [entropy](spec/entropy.md).
-
-### seller wallet
-
-The split wallet of an item's payees, a predicted CREATE2 address that receives the seller
-proceeds.
-
-See: [economics and payouts](spec/economics-and-payouts.md).
-
-### serial
-
-A work's number within its [collection](#collection), from 1.
-
-See: [stream and auctions](spec/stream-and-auctions.md).
-
-### settle
-
-`settle` on either auction, permissionless after the end. The English auction delivers the token,
-pays out and marks the primary sale settled; the edition auction stores its clearing and pays
-out, and claims then mint the copies.
-
-See: [stream and auctions](spec/stream-and-auctions.md), [editions and sales](spec/editions-and-sales.md).
-
-### shortfall
-
-A call into another contract that failed leaving at most 1/8 of the gas held before it. A
-permanent contract reverts with `BoundedCallShortfall` on one, and never reads it as a refusal or a
-default answer.
-
-See: [`BoundedCall.sol`](../src/libraries/BoundedCall.sol).
-
-### signed release
-
-A payee's EIP-712 `ReleaseAuthorization` that anyone may submit, with a revocable nonce.
-
-See: [economics and payouts](spec/economics-and-payouts.md).
-
-### signer epoch
-
-The value a curation signer's approval must bind. A disable, a re-enable, or a new grant of the
-role (`WorksAccessManager.grantCount`) starts a new one, so older approvals never count again.
-
-See: [curation](spec/curation.md).
-
-### soft close
-
-The edition auction's anti-snipe: a bid in its last window moves the close to that window after
-the bid, never past a governed backstop.
-
-See: [editions and sales](spec/editions-and-sales.md#timing-alongside-the-11).
-
-### split ledger
-
-The permanent contract (`SplitLedger`, deployed under the name `SplitFactory`) that deploys every
-[split wallet](#split-wallet), keeps each wallet's accounting, verifies signed releases and executes
-every release through the wallet. It replaced the split factory, the per-wallet contract and the
-release verifier ([ADR 0007](adr/0007-permanence.md)).
-
-See: [economics and payouts](spec/economics-and-payouts.md).
-
-### split wallet
-
-A 66-byte pull-payment vault (`SplitVault`) that the [split ledger](#split-ledger) deploys at a
-CREATE2 address committing to its [canonical payee list](#canonical-payee-list) and a salt. It
-executes only its ledger's instructions; the ledger keeps its accounting.
-
-See: [economics and payouts](spec/economics-and-payouts.md).
-
-### SSTORE2
-
-Storing bytes as a contract's runtime code at a CREATE2 address salted by their hash.
-
-See: [`SSTORE2.sol`](../src/libraries/SSTORE2.sol).
-
-### start
-
-The permissionless auction start that mints (`EnglishAuction.start`, `startWithBid`): Stream
-[consumes](#consume) the item and the clock starts.
-
-See: [stream and auctions](spec/stream-and-auctions.md).
-
-### start budget
-
-The gas gate on a steady-state ETH `start`: at most 350,000 Prague gas and 6 new slots (7 with a
-bid).
-
-See: [ADR 0004](adr/0004-gas-budgets-under-glamsterdam.md#the-table).
-
-### state hash
-
-A work's state commitment (`workStateHash`), which every finalize and amendment signature binds.
-
-See: [works and storage](spec/works-and-storage.md).
-
-### statement
-
-One signed, permanent entry in the statement log (`Statement`): a [subject](#subject), a kind and
-a content hash.
-
-See: [disputes and statements](spec/disputes-and-statements.md).
-
-### statement kind
-
-A label of what a statement is (`StatementKinds`). `DISPUTE_OUTCOME`, `CURATION_EVIDENCE` and
-`GOVERNANCE_MANIFEST` are reserved.
-
-See: [disputes and statements](spec/disputes-and-statements.md).
-
-### statement log
-
-The append-only log of signed statements (`StatementLog`), which stores per subject only a
-count, a [chain head](#chain-head) and the latest dispute outcome. A CURATOR or PLATFORM holder
-with an execution delay cannot write at once or by relay, but could schedule the restricted
-`appendCurator` or `appendPlatform` call.
-
-See: [disputes and statements](spec/disputes-and-statements.md).
-
-### statement role
-
-Who a statement speaks as: ARTIST (per the [artist resolver](#artist-resolver)), OWNER, or a
-zero-delay CURATOR or PLATFORM holder.
-
-See: [disputes and statements](spec/disputes-and-statements.md).
-
-### step ladder
-
-The fixed prices an edition bid may name, step by step from a base price, from a table of E192
-mantissas: exact, strictly increasing, and the same in every client.
-
-See: [editions and sales](spec/editions-and-sales.md#the-step-ladder).
-
-### store set
-
-`WorkRecords`' append-only list of content stores a file may sync from: store 0 is the content
-store, and `addStore` (SUCCESSOR_SETTER, 7 days) adds an `IChunkStore` with its code hash
-pinned; `retireStore` (24 hours) stops a store counting anything new. A file's store is final
-once it is complete.
-
-See: [works and storage](spec/works-and-storage.md).
-
-### storage operator
-
-The holder of `Roles.STORAGE_OPERATOR`, a zero-delay key that sets the
-[preferred locator](#preferred-locator) settings.
-
-See: [works and storage](spec/works-and-storage.md).
-
-### subject
-
-What a statement is about: `(token, id)`, or `(address(0), id)` for an item or package before a
-token exists.
-
-See: [disputes and statements](spec/disputes-and-statements.md).
-
-### supersession
-
-A statement naming an earlier [entry hash](#entry-hash) it replaces (`supersedes`), unchecked by
-the log.
-
-See: [disputes and statements](spec/disputes-and-statements.md).
-
-## T
-
-### target
-
-A token contract a sale adapter may sell (`isTarget`), listed by governance (`setTarget`). In
-AccessManager terms, a target is any contract the manager governs.
-
-See: [editions and sales](spec/editions-and-sales.md), [governance](spec/governance.md).
-
-### TDH
-
-Total Days Held, the 6529 network's holding-based voting weight. The contracts never read it.
-
-See: [trust assumptions](audit/trust-assumptions.md).
-
-### The Memes
-
-6529's existing ERC-1155 of Main Stage winners, outside this repository.
-
-See: [ADR 0001 §2](adr/0001-v1-scope.md#2-network-tiers).
-
-### token ID
-
-A 6529 Stream work's ERC-721 ID, from one global sequence starting at 1, assigned when its
-auction starts and never reused.
-
-See: [stream and auctions](spec/stream-and-auctions.md).
-
-### tokenURI
-
-The ERC-721 metadata URI, built by the work's [renderer](#renderer) within an 8M-gas budget
-(ADR 0004).
-
-See: [rendering and tokenURI](spec/rendering-and-tokenuri.md).
-
-### tombstone
-
-The permanent mark on a burned item after a [content release](#content-release): it never
-consumes again.
-
-See: [disputes and statements](spec/disputes-and-statements.md).
-
-## U
-
-### uniqueness
-
-The rule that a content hash belongs to at most one item per product; an edition reuses only its
-master's.
-
-See: [curation](spec/curation.md).
-
-## V
-
-### VRF
-
-Verifiable random function: Chainlink VRF v2.5, through which the
-[entropy module](#entropy-module) draws seeds.
-
-See: [entropy](spec/entropy.md).
-
-## W
-
-### wallet proof
-
-The form of every signature an account gives: `abi.encodePacked(wallet, signature)`, where
-`wallet` is the signing wallet of the account (`requireSigned`).
-
-See: [identity and recovery](spec/identity-and-recovery.md).
+The published record behind an approval, logged as a `CURATION_EVIDENCE` statement.
 
 ### wave
 
 A 6529 network discussion and voting space for curation and disputes. The contracts never read
 one.
 
-See: [ADR 0001 §12](adr/0001-v1-scope.md#12-disputes).
+### dispute pause
 
-### window.works
+The auction's pause of one sale while a dispute is decided: at most 3 days, once per sale, a
+compiled value of the replaceable auction. See [stream and auctions](spec/stream-and-auctions.md).
 
-The object `{ v: 1, tokenId, seed }` the renderer's page sets before a JavaScript primary runs, a
-stable public API.
+### dispute outcome
 
-See: [rendering and tokenURI](spec/rendering-and-tokenuri.md).
+A network statement deciding a dispute; an upheld one lets the network cancel the sale and burn
+the unsold token.
 
-### work
+### statement
 
-A 6529 Stream 1/1: its token and its record in [WorkRecords](#workrecords).
+One entry in the statement log about a [subject](#subject). See
+[disputes and statements](spec/disputes-and-statements.md).
 
-See: [reading a work](integrators/reading-a-work.md).
+### subject
 
-### work ID
+What a statement is about: `(token, id)`, or `(address(0), id)` before a token exists.
 
-A 6529 Stream token ID, as `createEdition` and `masterOf` use it.
+### statement kind
 
-See: [editions and sales](spec/editions-and-sales.md).
+A label of what a statement is. `DISPUTE_OUTCOME`, `CURATION_EVIDENCE` and `GOVERNANCE_MANIFEST`
+are reserved.
 
-### WorkRecords
+### statement role
 
-6529 Stream's records satellite (`WorkRecords`): record, media, license, seed, state hash,
-renderer pin and locators.
+Who a statement speaks as: ARTIST (per the [artist resolver](#artist-resolver)), OWNER, CURATOR
+or PLATFORM.
 
-See: [works and storage](spec/works-and-storage.md).
+### entry hash
 
-### WorksAccessManager
+The identity of one statement-log entry, which other entries cite.
 
-OpenZeppelin's `AccessManager` with one [network](#network) address holding every network
-role, a two-step handover (`transferNetwork`, 7 days, then `acceptNetwork`), an optional
-[brake](#brake), and `grantCount`, which counts the grants that made an account a member of a
-role.
+### supersession
 
-See: [governance](spec/governance.md).
+A statement naming an earlier entry hash it replaces. The log does not check it.
 
+### chain head
+
+The rolling hash of one subject's entries, which lets an indexer prove a rebuilt chain complete.
+
+## Accounts
+
+### restraint
+
+The state in which no wallet may act for an account: while it is frozen or a replacement is
+pending. Running sales continue. A freeze blocks a contest of a replacement, and the network may
+place a freeze again. See [identity and recovery](spec/identity-and-recovery.md).
