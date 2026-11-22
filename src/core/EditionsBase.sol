@@ -33,11 +33,6 @@ import { IStream } from "../interfaces/core/IStream.sol";
 ///      - `royaltyInfo` reads this contract's storage only.
 ///      Every state change emits an event from which the state can be rebuilt.
 abstract contract EditionsBase is ERC1155, IEditions {
-    /// @notice The contract-level metadata URI was set (ERC-7572's `ContractURIUpdated` carries
-    ///         no value, so this event carries it for indexers that rebuild state from logs).
-    /// @param uri The URI now.
-    event ContractURISet(string uri);
-
     /// @inheritdoc IEditions
     uint48 public rebindDelay = 14 days;
 
@@ -55,11 +50,12 @@ abstract contract EditionsBase is ERC1155, IEditions {
         stream = stream_;
         owner = owner_;
         emit OwnershipTransferred(address(0), owner_);
+        emit RebindDelaySet(0, rebindDelay);
     }
 
     /// @inheritdoc IEditions
     /// @dev A cap of zero stores the largest maximum (`type(uint40).max`): no cap until the
-    ///      seal. The royalty receiver may be any address; the rate is at most 100,000.
+    ///      seal. The rate is at most 100,000, and a nonzero rate needs a nonzero receiver.
     function create(
         uint256 editionId,
         uint40 maxSupply,
@@ -71,7 +67,9 @@ abstract contract EditionsBase is ERC1155, IEditions {
         IERC721(stream).ownerOf(editionId);
         Edition storage e = _editions[editionId];
         if (e.minter != address(0)) revert EditionExists(editionId);
-        if (royaltyRate > Core.DENOMINATOR) revert InvalidRoyalty();
+        if (royaltyRate > Core.DENOMINATOR || (royaltyReceiver == address(0) && royaltyRate != 0)) {
+            revert InvalidRoyalty();
+        }
         uint40 max = maxSupply == 0 ? type(uint40).max : maxSupply;
         e.minter = msg.sender;
         e.maxSupply = max;
@@ -147,7 +145,9 @@ abstract contract EditionsBase is ERC1155, IEditions {
         }
         Edition storage e = _editions[editionId];
         if (e.minter == address(0)) revert UnknownEdition(editionId);
-        if (rate > Core.DENOMINATOR) revert InvalidRoyalty();
+        if (rate > Core.DENOMINATOR || (receiver == address(0) && rate != 0)) {
+            revert InvalidRoyalty();
+        }
         e.royaltyReceiver = receiver;
         e.royaltyRate = rate;
         emit RoyaltySet(editionId, receiver, rate);

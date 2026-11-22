@@ -68,6 +68,7 @@ abstract contract StreamBase is ERC721, IStream {
         facts = facts_;
         owner = owner_;
         emit OwnershipTransferred(address(0), owner_);
+        emit RescueDelaySet(0, rescueDelay);
     }
 
     // ------------------------------------------------------------------------------ minters
@@ -81,6 +82,7 @@ abstract contract StreamBase is ERC721, IStream {
         if (
             f.itemHash == 0 || f.contentHash == 0 || f.artistId == 0
                 || f.artistId > type(uint160).max || f.royaltyRate > Core.DENOMINATOR
+                || (f.royaltyReceiver == address(0) && f.royaltyRate != 0)
         ) revert InvalidMint();
         uint256 existing = tokenOfContent[f.contentHash];
         if (existing != 0 && _ownerOf(existing) != address(0)) {
@@ -181,6 +183,7 @@ abstract contract StreamBase is ERC721, IStream {
     function setContractURI(string calldata uri) external {
         _checkAdmin();
         contractURI = uri;
+        emit ContractURISet(uri);
         emit ContractURIUpdated();
     }
 
@@ -192,7 +195,10 @@ abstract contract StreamBase is ERC721, IStream {
         _onlyTerms();
         _requireOwned(tokenId);
         Work storage w = _works[tokenId];
-        if (rate > Core.DENOMINATOR || (w.royaltyRateLocked && rate != w.royaltyRate)) {
+        if (
+            rate > Core.DENOMINATOR || (receiver == address(0) && rate != 0)
+                || (w.royaltyRateLocked && rate != w.royaltyRate)
+        ) {
             revert InvalidRoyalty();
         }
         w.royaltyReceiver = receiver;

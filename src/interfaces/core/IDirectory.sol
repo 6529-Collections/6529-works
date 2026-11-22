@@ -11,7 +11,8 @@ import { IModuleSlots } from "./IModules.sol";
 ///         their gate. It also holds the one waiting period the money contracts share
 ///         (`unclaimedPeriod`), so the unowned split ledger needs no governance of its own. Slots change after the network's waiting period (`IModuleSlots`).
 interface IDirectory is IModuleSlots {
-    /// @notice The network changed the unclaimed period.
+    /// @notice The unclaimed period was set: by the network, or at deployment with its launch
+    ///         value (`previous` zero).
     /// @param previous The period before.
     /// @param next The period now.
     event UnclaimedPeriodSet(uint48 previous, uint48 next);

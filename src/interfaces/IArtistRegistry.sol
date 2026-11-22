@@ -66,13 +66,6 @@ interface IConsolidationSource is IERC165 {
 ///      The 2-day, 14-day, 90-day and 14-day numbers are compiled into this module. The module is
 ///      replaceable, so they are its current rules, not promises of the permanent contracts.
 interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver, IAccounts {
-    /// @notice A federated contract's status, as `federatedListing` answers it.
-    enum FederationStatus {
-        NONE,
-        ACTIVE,
-        DELISTED
-    }
-
     /// @notice An artist account was created.
     /// @param artistId The new artist ID, `uint256(uint160(identity.root))`.
     /// @param identity The new identity: the accepting wallet as root and payout, with the
@@ -293,30 +286,6 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver, IAccoun
     ///         account again at once afterwards.
     /// @param artistId The account to unfreeze.
     function unfreeze(uint256 artistId) external;
-
-    /// @notice Refused always (`UnboundCaller`): this module is deployed with its wiring. Kept
-    ///         so that tools naming the earlier registry's wiring functions still compile.
-    /// @param target Ignored.
-    function bindPackageRegistry(address target) external;
-    /// @notice Refused always (`UnboundCaller`), as `bindPackageRegistry`.
-    /// @param target Ignored.
-    function bindSplitFactory(address target) external;
-    /// @notice Refused always (`UnboundCaller`), as `bindPackageRegistry`.
-    /// @param target Ignored.
-    function bindFederationRegistry(address target) external;
-    /// @notice Refused always (`UnboundCaller`), as `bindPackageRegistry`.
-    /// @param target Ignored.
-    function bindStatementLog(address target) external;
-
-    /// @notice A federated contract's artist and status, as the federation module the directory
-    ///         names answers them now (`IFederationRegistry.entry`); NONE while there is none.
-    /// @param token The federated contract.
-    /// @return artistId The artist it is listed under, or zero.
-    /// @return status Its status (DELISTED also when its account is delisted).
-    function federatedListing(address token)
-        external
-        view
-        returns (uint256 artistId, FederationStatus status);
 
     /// @notice An account's recorded fields and the end of its freeze. Reverts with
     ///         `UnknownArtist`.

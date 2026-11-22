@@ -168,26 +168,6 @@ contract Accounts is IArtistRegistry, AccessManaged, EIP712 {
         emit ConsolidationSourceSet(address(expected), address(next), nextCodeHash);
     }
 
-    /// @inheritdoc IArtistRegistry
-    function bindPackageRegistry(address) external view {
-        revert UnboundCaller(msg.sender);
-    }
-
-    /// @inheritdoc IArtistRegistry
-    function bindSplitFactory(address) external view {
-        revert UnboundCaller(msg.sender);
-    }
-
-    /// @inheritdoc IArtistRegistry
-    function bindFederationRegistry(address) external view {
-        revert UnboundCaller(msg.sender);
-    }
-
-    /// @inheritdoc IArtistRegistry
-    function bindStatementLog(address) external view {
-        revert UnboundCaller(msg.sender);
-    }
-
     // ----- accounts -----
 
     /// @inheritdoc IArtistRegistry
@@ -462,18 +442,6 @@ contract Accounts is IArtistRegistry, AccessManaged, EIP712 {
     /// @inheritdoc IArtistRegistry
     function federationRegistry() public view returns (address) {
         return IModuleSlots(directory).moduleOf(Slots.FEDERATION);
-    }
-
-    /// @inheritdoc IArtistRegistry
-    function federatedListing(address token)
-        external
-        view
-        returns (uint256 artistId, FederationStatus status)
-    {
-        address module = federationRegistry();
-        if (module == address(0)) return (0, FederationStatus.NONE);
-        IFederationRegistry.Entry memory e = IFederationRegistry(module).entry(token);
-        return (e.artistId, FederationStatus(uint8(e.status)));
     }
 
     /// @inheritdoc IArtistRegistry

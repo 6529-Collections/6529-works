@@ -23,6 +23,7 @@ import { IUniformEditionAuctionStorage } from "../interfaces/IUniformEditionAuct
 import { CURRENCY_ETH } from "../interfaces/types/EconomicsTypes.sol";
 import { SaleKind } from "../interfaces/types/SaleTypes.sol";
 import { StepLadder } from "../interfaces/types/StepLadder.sol";
+import { AgedCredits } from "../libraries/AgedCredits.sol";
 import { Dependency } from "../libraries/Dependency.sol";
 import { UniformClearing } from "./UniformClearing.sol";
 
@@ -47,9 +48,9 @@ import { UniformClearing } from "./UniformClearing.sol";
 ///      the settings word. Values of this replaceable adapter: every sale closes {CLOSE_OFFSET}
 ///      after its 1/1 (R20), may be abandoned {ABANDON_DELAY} after that (R16), and an adopted
 ///      sale whose master's sale already ended runs {ADOPTED_RUN} before its close is counted.
-///      Credits (`Credit`): only money that has itself waited the network's unclaimed period
-///      (`IDirectory.unclaimedPeriod()`, read when an expiry is attempted) may be sent to the
-///      network; `IUniformEditionAuction` states the rule.
+///      Credits follow the rule both auctions share (`AgedCredits`): only money that has itself
+///      waited the network's unclaimed period (`IDirectory.unclaimedPeriod()`, read when an
+///      expiry is attempted) may be sent to the network.
 ///
 ///      The 1/1's end only ever moves later, so the sale caches it and reads it live
 ///      (`IEnglishAuctionClock.auctionClock`, the state, end and pause start the English
@@ -151,15 +152,6 @@ abstract contract UniformEditionAuctionBase is
         uint32 payoutGas;
     }
 
-    /// @dev An account's claimable ETH (`IUniformEditionAuction` states the rule): the total,
-    ///      the batch that is waiting (every wei of it arrived no later than `since`), and when
-    ///      that batch started waiting. One storage word.
-    struct Credit {
-        uint104 total;
-        uint104 aged;
-        uint48 since;
-    }
-
     /// @dev The revenue escrow that receives refused payouts.
     address internal immutable _escrow;
     /// @dev The directory whose `unclaimedPeriod` decides when a credit may expire.
@@ -180,7 +172,8 @@ abstract contract UniformEditionAuctionBase is
     mapping(uint256 saleId => mapping(uint256 word => uint256)) private _live;
     mapping(uint256 saleId => mapping(uint256 key => uint256)) private _departures;
     /// @dev Each account's claimable ETH.
-    mapping(address account => Credit) private _credits;
+    /// @dev Each account's claimable ETH under the shared rule (`AgedCredits`).
+    mapping(address account => AgedCredits.Credit) private _credits;
     /// @dev Each settler's own sweep in progress (`Space.SWEEP`), packed `swept | nextPosition
     ///      << 32 | cutoff << 64`: written only by a call that sweeps without finishing, deleted
     ///      when that settler finishes. Per settler, so an order that skips a departure strands only its own
@@ -493,17 +486,9 @@ abstract contract UniformEditionAuctionBase is
         BidWord memory b = _bidOf(saleId, bidId);
         (unitsWon, refund) = _claim(saleId, bidId, b, b.bidder);
         if (refund != 0) {
-            // The refund joins the total. It starts the waiting batch only when the account
-            // had nothing; otherwise it never joins the batch already waiting, so no caller can
-            // put a fresh refund on an older clock, or move that clock.
-            Credit memory c = _credits[b.bidder];
-            uint104 amount = SafeCast.toUint104(refund);
-            if (c.total == 0) {
-                c = Credit(amount, amount, SafeCast.toUint48(block.timestamp));
-            } else {
-                c.total += amount;
-            }
-            _credits[b.bidder] = c;
+            // The shared rule (`AgedCredits`): no caller can put a fresh refund on an older
+            // clock, or move that clock.
+            AgedCredits.add(_credits[b.bidder], refund);
             emit ISaleAdapter.Credited(b.bidder, CURRENCY_ETH, saleId, refund);
         }
     }
@@ -529,19 +514,16 @@ abstract contract UniformEditionAuctionBase is
         nonReentrant
         returns (uint256 amount)
     {
-        Credit memory c = _credits[account];
-        if (currency != CURRENCY_ETH || c.total == 0) {
+        AgedCredits.Credit storage c = _credits[account];
+        uint256 expiresAt = AgedCredits.dueAt(c, IDirectory(_directory).unclaimedPeriod());
+        if (currency != CURRENCY_ETH || expiresAt == 0) {
             revert ISaleAdapter.NothingToClaim(account, currency);
         }
-        uint256 expiresAt = uint256(c.since) + IDirectory(_directory).unclaimedPeriod();
         // forge-lint: disable-next-line(block-timestamp)
         if (block.timestamp < expiresAt) revert ISaleAdapter.CreditNotExpired(account, expiresAt);
         address to = IUniformEditionAuctionLens(lens).feeRecipient(address(0), 0);
         if (to == address(0)) revert ISaleAdapter.InvalidRecipient(to);
-        amount = c.aged;
-        uint104 rest = c.total - c.aged;
-        _credits[account] =
-            rest == 0 ? Credit(0, 0, 0) : Credit(rest, rest, SafeCast.toUint48(block.timestamp));
+        amount = AgedCredits.expireAged(c);
         emit ISaleAdapter.Claimed(account, currency, to, amount);
         if (!TokenTransfer.sendETH(to, amount, gasleft())) revert ISaleAdapter.ClaimFailed(to);
     }
@@ -663,9 +645,8 @@ abstract contract UniformEditionAuctionBase is
         returns (uint256 amount)
     {
         if (to == address(0)) revert ISaleAdapter.InvalidRecipient(to);
-        amount = currency == CURRENCY_ETH ? _credits[account].total : 0;
+        amount = currency == CURRENCY_ETH ? AgedCredits.takeAll(_credits[account]) : 0;
         if (amount == 0) revert ISaleAdapter.NothingToClaim(account, currency);
-        delete _credits[account];
         emit ISaleAdapter.Claimed(account, currency, to, amount);
         if (!TokenTransfer.sendETH(to, amount, gasleft())) revert ISaleAdapter.ClaimFailed(to);
     }

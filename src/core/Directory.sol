@@ -41,6 +41,7 @@ contract Directory is ModuleSlots, IDirectory, IArtistPayoutResolver, IERC165 {
         _setModule(Slots.FEDERATION, federation_);
         _setModule(Slots.FEDERATED_TERMS, federatedTerms_);
         _setModule(Slots.FEDERATED_RECORDS, federatedRecords_);
+        emit UnclaimedPeriodSet(0, unclaimedPeriod);
     }
 
     /// @inheritdoc IDirectory

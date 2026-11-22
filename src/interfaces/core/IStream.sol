@@ -62,13 +62,19 @@ interface IStream is IERC4906, IERC2981 {
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
     /// @notice ERC-7572: the contract-level metadata changed.
     event ContractURIUpdated();
-    /// @notice The network changed the wait before a rescue.
+    /// @notice The contract-level metadata URI was set; carries the value, which ERC-7572's
+    ///         `ContractURIUpdated` does not, so the URI can be rebuilt from logs alone.
+    /// @param uri The URI now.
+    event ContractURISet(string uri);
+    /// @notice The wait before a rescue was set: by the network, or at deployment with its
+    ///         launch value (`previous` zero).
     /// @param previous The wait before.
     /// @param next The wait now.
     event RescueDelaySet(uint48 previous, uint48 next);
 
     /// @notice The mint facts are malformed (a zero item hash, content hash or artist ID, an
-    ///         artist ID over 160 bits, a rate over 100,000).
+    ///         artist ID over 160 bits, a rate over 100,000, a nonzero rate with a zero
+    ///         royalty receiver).
     error InvalidMint();
     /// @notice A live token already has this content hash.
     error ContentAlreadyMinted(bytes32 contentHash, uint256 tokenId);
@@ -78,7 +84,8 @@ interface IStream is IERC4906, IERC2981 {
     error NotInPrimarySale(uint256 tokenId);
     /// @notice The token is not held unsold by a minter removed at least `rescueDelay` ago.
     error NotRescuable(uint256 tokenId);
-    /// @notice The rate is over 100,000, or the rate is locked and would change.
+    /// @notice The rate is over 100,000, the rate is nonzero with a zero receiver, or the rate
+    ///         is locked and would change.
     error InvalidRoyalty();
     /// @notice The caller may not emit metadata updates.
     error NotMetadataSource(address caller);
@@ -102,7 +109,9 @@ interface IStream is IERC4906, IERC2981 {
 
     /// @notice Mints the next token to `to`. An active minter only.
     /// @dev Checks, whatever the minter states: nonzero item hash, content hash and artist ID;
-    ///      artist ID within 160 bits; rate at most 100,000; an existing collection; no live
+    ///      artist ID within 160 bits; rate at most 100,000; a nonzero royalty receiver unless
+    ///      the rate is zero (royalties paid to the zero address would be lost); an existing
+    ///      collection; no live
     ///      token with this content hash (a burned token's content may be minted again).
     /// @param to The first holder (the sale contract itself, while the sale runs).
     /// @param f The work's facts.
@@ -150,7 +159,7 @@ interface IStream is IERC4906, IERC2981 {
     // -------------------------------------------------------------------------- terms module
 
     /// @notice Sets a token's royalty receiver and rate. The TERMS module only. A locked rate
-    ///         cannot change; the receiver still can.
+    ///         cannot change; the receiver still can. A nonzero rate needs a nonzero receiver.
     /// @param tokenId A live token.
     /// @param receiver The receiver.
     /// @param rate The rate, out of 100,000.
@@ -173,7 +182,9 @@ interface IStream is IERC4906, IERC2981 {
     /// @return The work.
     function workOf(uint256 tokenId) external view returns (Work memory);
 
-    /// @notice A live token's item hash. Reverts for a burned or unminted token.
+    /// @notice A live token's item hash. Reverts for a burned or unminted token with
+    ///         OpenZeppelin's `ERC721NonexistentToken(tokenId)` (`IERC721Errors`, ERC-6093), and
+    ///         with no other error; readers such as `StatementLog` rely on that.
     /// @param tokenId The token.
     /// @return The item hash.
     function itemHashOf(uint256 tokenId) external view returns (bytes32);

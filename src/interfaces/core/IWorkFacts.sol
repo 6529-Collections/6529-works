@@ -86,6 +86,8 @@ interface IWorkFacts {
     error RepinIsLocked(address token, uint256 tokenId);
     /// @notice The renderer has no code, or its code is no longer the code that was pinned.
     error RendererCodeChanged(address renderer);
+    /// @notice The token has no RENDERER module, so there is nothing to pin at finalize.
+    error NoRenderer(address token, uint256 tokenId);
     /// @notice A media file is not complete in the content store.
     error NotOnChainComplete(address token, uint256 tokenId);
 
@@ -132,7 +134,7 @@ interface IWorkFacts {
 
     /// @notice Freezes the record and pins the token's current RENDERER module, once. The
     ///         RECORDS module only. The record file must be one complete chunk and the license
-    ///         text complete.
+    ///         text complete. Reverts with `NoRenderer` while the token has no RENDERER module.
     /// @param token The token contract.
     /// @param tokenId The token.
     function finalize(address token, uint256 tokenId) external;

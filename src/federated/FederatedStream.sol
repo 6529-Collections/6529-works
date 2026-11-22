@@ -60,6 +60,7 @@ contract FederatedStream is StreamBase, FederatedMembership, IFederatedStream {
         address renderer_
     ) StreamBase(name_, symbol_, facts_, owner_) FederatedMembership(directory_, artistId_) {
         if (facts_ == address(0)) revert InvalidConfig();
+        emit ModuleDelaySet(0, moduleDelay);
         _createCollection(name_, bytes32(0));
         if (renderer_ != address(0)) _setRenderer(renderer_);
     }

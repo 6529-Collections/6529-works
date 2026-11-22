@@ -151,6 +151,7 @@ contract WorkFacts is IWorkFacts {
         Facts storage f = _module(token, tokenId);
         address renderer = IModuleSlots(token).moduleOf(Slots.RENDERER);
         if (f.finalized) revert WorkIsFinalized(token, tokenId);
+        if (renderer == address(0)) revert NoRenderer(token, tokenId);
         IContentStore.FileInfo memory info = IContentStore(contentStore).fileInfo(f.recordFileId);
         if (
             info.chunkCount != 1 || info.digestKind != 0 || info.encoding != 0

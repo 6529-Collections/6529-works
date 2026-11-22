@@ -17,7 +17,7 @@ interface IEditions is IERC1155, IERC2981 {
     /// @param editionId The edition (its master's token ID).
     /// @param minter Its one minter.
     /// @param maxSupply The maximum until the seal (`type(uint40).max`: no cap).
-    /// @param royaltyReceiver The royalty receiver.
+    /// @param royaltyReceiver The royalty receiver; nonzero unless the rate is zero.
     /// @param royaltyRate The royalty rate, out of 100,000.
     event EditionCreated(
         uint256 indexed editionId,
@@ -63,7 +63,12 @@ interface IEditions is IERC1155, IERC2981 {
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
     /// @notice ERC-7572: the contract-level metadata changed.
     event ContractURIUpdated();
-    /// @notice The network changed the wait before a rebind.
+    /// @notice The contract-level metadata URI was set; carries the value, which ERC-7572's
+    ///         `ContractURIUpdated` does not, so the URI can be rebuilt from logs alone.
+    /// @param uri The URI now.
+    event ContractURISet(string uri);
+    /// @notice The wait before a rebind was set: by the network, or at deployment with its
+    ///         launch value (`previous` zero).
     /// @param previous The wait before.
     /// @param next The wait now.
     event RebindDelaySet(uint48 previous, uint48 next);
@@ -81,7 +86,7 @@ interface IEditions is IERC1155, IERC2981 {
     /// @notice The edition has copies or a seal, its minter is not removed for `rebindDelay`,
     ///         or the new minter is not active.
     error NotRebindable(uint256 editionId);
-    /// @notice The rate is over 100,000.
+    /// @notice The rate is over 100,000, or nonzero with a zero receiver.
     error InvalidRoyalty();
     /// @notice The caller may not emit metadata updates.
     error NotMetadataSource(address caller);
@@ -138,7 +143,8 @@ interface IEditions is IERC1155, IERC2981 {
     /// @param amount The copies.
     function burn(uint256 editionId, uint256 amount) external;
 
-    /// @notice Sets an edition's royalty receiver and rate. The TERMS module only.
+    /// @notice Sets an edition's royalty receiver and rate. The TERMS module only. A nonzero
+    ///         rate needs a nonzero receiver.
     /// @param editionId An existing edition.
     /// @param receiver The receiver.
     /// @param rate The rate, out of 100,000.

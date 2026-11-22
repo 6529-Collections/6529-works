@@ -23,6 +23,11 @@ abstract contract ModuleSlots is AccessManaged, IModuleSlots {
     mapping(bytes32 slot => address) private _modules;
     mapping(bytes32 slot => PendingModule) private _pending;
 
+    /// @dev Logs the launch value of `moduleDelay`, so every setting can be rebuilt from logs.
+    constructor() {
+        emit ModuleDelaySet(0, moduleDelay);
+    }
+
     /// @inheritdoc IModuleSlots
     function moduleOf(bytes32 slot) public view returns (address) {
         return _modules[slot];

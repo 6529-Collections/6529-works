@@ -29,6 +29,7 @@ import {
     PRODUCT_STREAM
 } from "../interfaces/types/EconomicsTypes.sol";
 import { SaleKind } from "../interfaces/types/SaleTypes.sol";
+import { AgedCredits } from "../libraries/AgedCredits.sol";
 import { BoundedCall } from "../libraries/BoundedCall.sol";
 import { Dependency } from "../libraries/Dependency.sol";
 
@@ -105,15 +106,6 @@ contract EnglishAuction is
         uint40 outcomeFrom;
     }
 
-    /// @dev An account's credit. `aged` is the part that is waiting the unclaimed period since
-    ///      `since`; money credited while a wait runs is in `total` only, and starts its own wait
-    ///      when the aged part leaves.
-    struct Credit {
-        uint104 total;
-        uint104 aged;
-        uint48 since;
-    }
-
     /// @dev The governed parameters and the start pause, one slot.
     struct Settings {
         uint32 duration;
@@ -140,7 +132,7 @@ contract EnglishAuction is
     address public streamPolicy;
     Settings private _settings;
     mapping(uint256 saleId => Sale) private _sales;
-    mapping(address account => Credit) private _credits;
+    mapping(address account => AgedCredits.Credit) private _credits;
 
     /// @param authority The AccessManager.
     /// @param stream_ 6529 Stream.
@@ -335,17 +327,13 @@ contract EnglishAuction is
     ///      custody, where anyone may offer it again (`restart`). Refused inside a guarded call
     ///      of this contract or of the escrow, so neither a token from inside its own settlement
     ///      nor a caller inside the escrow can make an attempt fail on a guard. The escrow is
-    ///      asked by a zero deposit, which reverts with `ZeroAmount` only when its guard is free.
+    ///      asked through its `locked()` view, a plain call: if that read fails, this reverts.
     function settleOrRefund(uint256 saleId) external {
         Sale storage s = _require(saleId, AuctionState.ENDED);
         if (s.token == stream) revert SaleNotRefusable(saleId);
         uint256 allowedAt = uint256(s.endTime) + REFUSAL_DELAY;
         if (block.timestamp < allowedAt) revert RefusalTooEarly(saleId, allowedAt);
-        (bool ok, bytes memory answer) =
-            address(escrow).call(abi.encodeCall(IRevenueEscrow.depositETH, (address(this))));
-        bool escrowFree =
-            !ok && answer.length == 4 && bytes4(answer) == IRevenueEscrow.ZeroAmount.selector;
-        if (!escrowFree || _reentrancyGuardEntered()) revert ReentrancyGuardReentrantCall();
+        if (escrow.locked() || _reentrancyGuardEntered()) revert ReentrancyGuardReentrantCall();
         uint256 gasLimit = _settings.refusalGas;
         if (!BoundedCall.hasSufficientGas(gasleft(), gasLimit, 1_000)) {
             revert BoundedCall.BoundedCallInsufficientGas(gasLimit);
@@ -416,24 +404,21 @@ contract EnglishAuction is
     /// @inheritdoc IEnglishAuction
     function claim(address to) external nonReentrant returns (uint256 amount) {
         if (to == address(0)) revert InvalidRecipient(to);
-        amount = _credits[msg.sender].total;
+        amount = AgedCredits.takeAll(_credits[msg.sender]);
         if (amount == 0) revert NothingToClaim(msg.sender);
-        delete _credits[msg.sender];
         emit Claimed(msg.sender, CURRENCY_ETH, to, amount);
         _send(to, amount);
     }
 
     /// @inheritdoc IEnglishAuction
     function expireCredit(address account) external nonReentrant returns (uint256 amount) {
-        Credit memory c = _credits[account];
-        if (c.total == 0) revert NothingToClaim(account);
-        uint256 dueAt = uint256(c.since) + directory.unclaimedPeriod();
+        AgedCredits.Credit storage c = _credits[account];
+        uint256 dueAt = AgedCredits.dueAt(c, directory.unclaimedPeriod());
+        if (dueAt == 0) revert NothingToClaim(account);
         if (block.timestamp < dueAt) revert CreditNotExpired(account, dueAt);
         address to = economics.networkFeeRecipient(PRODUCT_STREAM);
         if (to == address(0)) revert InvalidRecipient(to);
-        amount = c.aged;
-        uint104 rest = c.total - c.aged;
-        _credits[account] = Credit(rest, rest, rest == 0 ? 0 : uint48(block.timestamp));
+        amount = AgedCredits.expireAged(c);
         emit Claimed(account, CURRENCY_ETH, to, amount);
         _send(to, amount);
     }
@@ -549,9 +534,7 @@ contract EnglishAuction is
 
     /// @inheritdoc IEnglishAuction
     function expiresAt(address account) external view returns (uint256) {
-        Credit storage c = _credits[account];
-        if (c.total == 0) return 0;
-        return uint256(c.since) + directory.unclaimedPeriod();
+        return AgedCredits.dueAt(_credits[account], directory.unclaimedPeriod());
     }
 
     /// @inheritdoc IEnglishAuction
@@ -725,17 +708,10 @@ contract EnglishAuction is
         }
     }
 
-    /// @dev Adds to a credit. A credit going from zero starts a wait for the whole amount;
-    ///      while a wait runs, new money joins `total` only, so nobody can shorten or postpone
-    ///      a running wait.
+    /// @dev Adds to a credit under the shared rule (`AgedCredits`): nobody can shorten or
+    ///      postpone a running wait.
     function _credit(address account, uint256 saleId, uint256 amount) private {
-        Credit storage c = _credits[account];
-        if (c.total == 0) {
-            uint104 a = SafeCast.toUint104(amount);
-            (c.total, c.aged, c.since) = (a, a, uint48(block.timestamp));
-        } else {
-            c.total = SafeCast.toUint104(uint256(c.total) + amount);
-        }
+        AgedCredits.add(_credits[account], amount);
         emit Credited(account, CURRENCY_ETH, saleId, amount);
     }
 

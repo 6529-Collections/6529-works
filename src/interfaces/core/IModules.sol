@@ -18,7 +18,8 @@ interface IModuleSlots {
     /// @param module The module now.
     event ModuleSet(bytes32 indexed slot, address previous, address module);
 
-    /// @notice The network changed the wait for modules and minters added from now on.
+    /// @notice The wait for modules and minters added from now on was set: by the network, or
+    ///         at deployment with its launch value (`previous` zero).
     /// @param previous The wait before.
     /// @param next The wait now.
     event ModuleDelaySet(uint48 previous, uint48 next);

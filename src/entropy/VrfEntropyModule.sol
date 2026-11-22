@@ -7,8 +7,10 @@ import { ERC165 } from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import { BoundedParameter } from "../governance/BoundedParameter.sol";
-import { IAccounts } from "../interfaces/IAccounts.sol";
-import { IArtistRegistry } from "../interfaces/IArtistRegistry.sol";
+import { Slots } from "../interfaces/core/CoreTypes.sol";
+import { IAccounts } from "../interfaces/core/IAccounts.sol";
+import { IModuleSlots } from "../interfaces/core/IModules.sol";
+import { IFederationRegistry } from "../interfaces/IFederationRegistry.sol";
 import { IEntropyModule } from "../interfaces/IEntropyModule.sol";
 import { IPackageRegistry } from "../interfaces/IPackageRegistry.sol";
 import { PackageItem, SeedPolicy } from "../interfaces/types/PackageTypes.sol";
@@ -154,6 +156,9 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
     /// @notice The package registry whose approved packages and consumed items gate requests
     ///         (immutable).
     IPackageRegistry public immutable packageRegistry;
+    /// @notice The permanent directory whose ACCOUNTS and FEDERATION modules gate federated
+    ///         requests (immutable).
+    IModuleSlots public immutable directory;
     /// @inheritdoc IEntropyModule
     /// @dev With the wrapper, the only caller of {rawFulfillRandomWords}.
     address public coordinator;
@@ -199,6 +204,7 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
     ///        repeat waits twice the previous wait, up to `MAX_RETRY_DELAY`.
     /// @param packageRegistry_ The package registry that gates requests.
     /// @param packageRegistryCodeHash The reviewed code hash `packageRegistry_` must have.
+    /// @param directory_ The permanent directory (its ACCOUNTS and FEDERATION modules).
     constructor(
         address authority_,
         address coordinator_,
@@ -206,7 +212,8 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
         VrfConfig memory config_,
         uint64 retryDelay_,
         IPackageRegistry packageRegistry_,
-        bytes32 packageRegistryCodeHash
+        bytes32 packageRegistryCodeHash,
+        IModuleSlots directory_
     ) AccessManaged(authority_) {
         if (retryDelay_ < MIN_RETRY_DELAY || retryDelay_ > MAX_RETRY_DELAY) {
             revert InvalidRetryDelay(retryDelay_);
@@ -222,6 +229,7 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
         _validate(c);
         retryDelay = retryDelay_;
         packageRegistry = packageRegistry_;
+        directory = directory_;
         coordinator = coordinator_;
         _coordinatorCodeHash = coordinatorCodeHash;
         _config = c;
@@ -303,8 +311,9 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
     }
 
     /// @inheritdoc IEntropyModule
-    /// @dev The gate reads the canonical artist registry through the package registry
-    ///      (`IPackageRegistry.artistRegistry`). The wait and repeat count are a curated draw's
+    /// @dev The gate reads the directory's FEDERATION module (the token must be served:
+    ///      `IFederationRegistry.isActive`, and its listed artist comes from `entry`) and its
+    ///      ACCOUNTS module (the caller must be a wallet of that artist). The wait and repeat count are a curated draw's
     ///      ({requestSeed}). The quote is read and the whole payment forwarded in the same call
     ///      (the price follows the transaction's gas price); the request ID is recorded after
     ///      the wrapper returns, as {requestSeed} records a coordinator's.
@@ -314,14 +323,18 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
         returns (uint256 requestId)
     {
         bytes32 itemHash = WorksHashing.itemHashCalldata(item);
-        address ar = packageRegistry.artistRegistry();
-        (uint256 artistId, IArtistRegistry.FederationStatus status) =
-            IArtistRegistry(ar).federatedListing(token);
         address w = wrapper;
+        if (item.seedPolicy != uint8(SeedPolicy.VRF) || item.contentHash == 0 || w == address(0)) {
+            revert NotRequestable(itemHash);
+        }
+        IModuleSlots d = directory;
+        address federation = d.moduleOf(Slots.FEDERATION);
+        address accounts = d.moduleOf(Slots.ACCOUNTS);
         if (
-            item.seedPolicy != uint8(SeedPolicy.VRF) || item.contentHash == 0 || w == address(0)
-                || status != IArtistRegistry.FederationStatus.ACTIVE
-                || !IAccounts(ar).isWallet(artistId, msg.sender)
+            federation == address(0) || accounts == address(0)
+                || !IFederationRegistry(federation).isActive(token)
+                || !IAccounts(accounts)
+                    .isWallet(IFederationRegistry(federation).entry(token).artistId, msg.sender)
         ) revert NotRequestable(itemHash);
         bytes32 key = keccak256(abi.encode(token, item.contentHash));
         Seed storage seed = _federatedSeeds[key];
