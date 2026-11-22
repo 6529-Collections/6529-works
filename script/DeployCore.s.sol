@@ -2,7 +2,7 @@
 pragma solidity 0.8.37;
 
 import { console2 } from "forge-std/console2.sol";
-import { VmSafe } from "forge-std/Vm.sol";
+import { Vm, VmSafe } from "forge-std/Vm.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { DelegationManagementMock } from "test/mocks/identity/DelegationManagementMock.sol";
 import { DeployCore } from "./DeployCore.sol";
@@ -58,6 +58,7 @@ contract DeployCoreScript is ScriptIO {
         if (bytes(manifestPath).length != 0) manifest.digest = sha256(_readBinary(manifestPath));
         if (manifest.digest == 0) revert MissingParameter("MANIFEST_DIGEST");
 
+        vm.recordLogs();
         vm.startBroadcast(msg.sender);
         if (p.delegation.code.length == 0 && local) {
             p.delegation = address(new DelegationManagementMock());
@@ -80,9 +81,21 @@ contract DeployCoreScript is ScriptIO {
             d.manager.acceptNetwork();
         }
         VerifyCore.verify(p, d, cfg, json, accepted);
+        checkMinterLogs(d);
 
         log(p, d);
         if (vm.isContext(VmSafe.ForgeContext.ScriptBroadcast)) record(p, d, forkBlock);
+    }
+
+    /// @notice Reverts unless, among every log recorded in this run, the only minter each token
+    ///         added is its genesis minter (`VerifyCore.verifyMinterLogs`).
+    function checkMinterLogs(DeployCore.Deployment memory d) internal {
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        VerifyCore.verifyMinterLogs(
+            d,
+            VerifyCore.mintersAdded(logs, address(d.stream)),
+            VerifyCore.mintersAdded(logs, address(d.editions))
+        );
     }
 
     /// @notice Prints every address as `<name>: <address>` (the Sepolia manifest writer reads
