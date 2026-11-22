@@ -35,6 +35,7 @@ import {
     HugeIdTarget,
     MockMintTarget
 } from "../../mocks/sales/AuctionMocks.sol";
+import { SettlementShareTarget } from "../../mocks/sales/AuctionSettlementMocks.sol";
 import { MockPermit2 } from "../../mocks/sales/SaleMocks.sol";
 import { AuctionBase } from "./AuctionBase.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
@@ -2130,6 +2131,62 @@ contract EnglishAuctionTest is AuctionBase {
         );
         assertEq((uint256(1) * 1 + 99_999) / 100_000, 1);
         assertEq((uint256(0) * 5_000 + 99_999) / 100_000, 0);
+    }
+
+    /// @dev A fee share of exactly the denominator is valid terms (found by mutation testing):
+    ///      the sale starts, and its settlement pays the whole price to the network's recipient
+    ///      and nothing to the seller.
+    function test_Settle_AFeeShareOfTheWholePricePaysItAllToTheFeeRecipient() public {
+        PrimaryTerms memory t = _terms(ETH);
+        t.feeShare = 100_000;
+        stream.setTerms(t);
+        uint256 saleId = _start();
+        _bidEth(saleId, alice, 1 ether);
+        _end(saleId);
+        auction.settle(saleId);
+        assertEq(network.balance, 1 ether, "the whole price is the fee");
+        assertEq(seller.balance, 0, "nothing for the seller");
+        assertEq(stream.ownerOf(1), alice);
+    }
+
+    /// @dev The fee share a listed token reports at settlement is bounded by the denominator
+    ///      (found by mutation testing): one above it reverts `InvalidSaleTerms` and settles
+    ///      nothing; at exactly the denominator the whole price goes to the fee recipient.
+    function test_Settle_RefusesASettlementFeeShareAboveTheDenominator() public {
+        SettlementShareTarget token = new SettlementShareTarget();
+        token.setAdmittedMinter(address(auction), true);
+        token.setTerms(_terms(ETH));
+        vm.prank(successor);
+        auction.setTarget(address(token), true);
+        uint256 saleId = auction.start(address(token), "");
+        _bidEth(saleId, alice, 1 ether);
+        _end(saleId);
+        token.setSettlementShare(100_001);
+        vm.expectRevert(
+            abi.encodeWithSelector(ISaleAdapter.InvalidSaleTerms.selector, address(token), 1)
+        );
+        auction.settle(saleId);
+        token.setSettlementShare(100_000);
+        auction.settle(saleId);
+        assertEq(network.balance, 1 ether, "the whole price is the fee");
+        assertEq(seller.balance, 0, "nothing for the seller");
+        assertEq(token.ownerOf(1), alice);
+    }
+
+    /// @dev A zero payout is skipped before its wallet is checked (found by mutation testing):
+    ///      terms with no fee share and no fee recipient, under a resolver that names none,
+    ///      settle and pay the seller everything.
+    function test_Settle_AZeroFeeWithNoFeeRecipientPaysOnlyTheSeller() public {
+        PrimaryTerms memory t = _terms(ETH);
+        (t.feeRecipient, t.feeShare) = (address(0), 0);
+        stream.setTerms(t);
+        resolver.set(PRODUCT_STREAM, address(0), 0);
+        uint256 saleId = _start();
+        _bidEth(saleId, alice, 1 ether);
+        _end(saleId);
+        auction.settle(saleId);
+        assertEq(seller.balance, 1 ether, "the whole price is the seller's");
+        assertEq(stream.ownerOf(1), alice);
     }
 }
 

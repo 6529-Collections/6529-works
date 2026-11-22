@@ -8,6 +8,7 @@ import { IChunkStore } from "src/interfaces/IChunkStore.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { BoundedCall } from "src/libraries/BoundedCall.sol";
 import { SSTORE2 } from "src/libraries/SSTORE2.sol";
+import { RawChunkSource } from "../mocks/content/ChunkSourceMocks.sol";
 
 /// @dev Helpers for linked chunks and list manifests.
 abstract contract PermanenceBase is ContentBase {
@@ -283,6 +284,60 @@ contract ContentStoreLinkTest is PermanenceBase {
         emit IContentStore.ManifestRegistered(id, 500, 9, 0, DIGEST, "a/b", one);
         store.registerManifestList(lists, 1, 500, 9, "a/b", DIGEST, 0);
     }
+
+    /// @dev A linked chunk longer than its place in the file never counts, like a whole one: a
+    ///      100-byte link where the layout requires the 2-byte last chunk.
+    function test_Link_ALinkedChunkLongerThanItsPlaceNeverCompletes() public {
+        bytes memory first = _data(CHUNK, 12);
+        bytes32[] memory hashes = new bytes32[](2);
+        (hashes[0],) = store.writeChunk(first);
+        hashes[1] = store.linkChunk(_writeParts(_data(100, 13), 40));
+        bytes32 fileId = store.registerManifest(hashes, CHUNK + 2, IDENTITY, HTML, DIGEST);
+        assertFalse(store.isComplete(fileId));
+        assertEq(store.maxParts(fileId), 0);
+        assertEq(store.firstMissing(fileId, 0, 2, address(store)), 1);
+        assertEq(store.missingChunks(fileId).length, 1);
+    }
+
+    /// @dev Reads re-check that a linked chunk's parts still fill its recorded length: a last
+    ///      part that lost its final byte is refused even when that byte was a zero, which leaves
+    ///      the buffer's bytes, and so its hash, unchanged (the etch proves the check exists).
+    function test_Link_ReadsDetectAPartThatLostItsLastByte() public {
+        bytes memory chunk = _data(1000, 14);
+        chunk[999] = 0x00;
+        bytes32[] memory parts = _writeParts(chunk, 400);
+        bytes32 hash = store.linkChunk(parts);
+        assertEq(store.chunkData(hash), chunk);
+        vm.etch(store.chunkPointer(parts[2]), bytes.concat(hex"00", _slice(chunk, 800, 199)));
+        vm.expectRevert(
+            abi.encodeWithSelector(IContentStore.ContentLinkedChunkCorrupt.selector, hash)
+        );
+        store.chunkData(hash);
+    }
+
+    /// @dev The hash re-check refuses tampered bytes whichever side of the recorded hash their
+    ///      own hash falls on.
+    function test_Link_ReadsDetectTamperedPartsEitherSideOfTheHash() public {
+        bytes memory chunk = _data(1000, 15);
+        bytes32[] memory parts = _writeParts(chunk, 400);
+        bytes32 hash = store.linkChunk(parts);
+        address part = store.chunkPointer(parts[1]);
+        bool above;
+        bool below;
+        for (uint256 seed; !(above && below); ++seed) {
+            bytes memory tampered = _data(400, 100 + seed);
+            bytes32 got =
+                keccak256(bytes.concat(_slice(chunk, 0, 400), tampered, _slice(chunk, 800, 200)));
+            if (got > hash ? above : below) continue;
+            if (got > hash) above = true;
+            else below = true;
+            vm.etch(part, bytes.concat(hex"00", tampered));
+            vm.expectRevert(
+                abi.encodeWithSelector(IContentStore.ContentLinkedChunkCorrupt.selector, hash)
+            );
+            store.chunkData(hash);
+        }
+    }
 }
 
 /// @dev Manifests registered from list chunks, digest kinds, and the ranged completeness check.
@@ -513,6 +568,82 @@ contract ContentStoreListTest is PermanenceBase {
         }
         assertEq(calls, 4);
     }
+
+    /// @dev A range that starts at or past its end is empty: the capped `to` comes back and no
+    ///      chunk is read, whether `from` is past `to` or past the chunk count.
+    function test_FirstMissing_ARangeStartingPastItsEndIsEmpty() public {
+        bytes memory file = _data(6 * CHUNK + 1, 23);
+        (bytes32 fileId, bytes[] memory chunks,) = _declare(file, IDENTITY, HTML);
+        _uploadAll(chunks);
+        assertEq(store.firstMissing(fileId, 5, 3, address(store)), 3, "from past to");
+        assertEq(store.firstMissing(fileId, 9, 100, address(store)), 7, "from past the count");
+    }
+
+    /// @dev The early list bound holds for every stride, not only one: with two hashes a list,
+    ///      2,049 lists could hold more than `MAX_CHUNKS` hashes and are refused before any is
+    ///      read, and 2,048 are not refused by it.
+    function test_List_RefusesTooManyListsOfTwoBeforeReadingThem() public {
+        uint256 max = store.MAX_CHUNKS();
+        (bytes32 two,) = store.writeChunk(_packed(_fakeHashes(2, 7), 0, 2));
+        bytes32[] memory lists = new bytes32[](max / 2 + 1);
+        for (uint256 i; i < lists.length; ++i) {
+            lists[i] = two;
+        }
+        vm.expectRevert(abi.encodeWithSelector(IContentStore.ContentListInvalid.selector, 0));
+        store.registerManifestList(lists, 2, max * CHUNK, IDENTITY, HTML, DIGEST, 0);
+        assembly ("memory-safe") {
+            mstore(lists, div(max, 2))
+        }
+        bytes32 fileId =
+            store.registerManifestList(lists, 2, max * CHUNK, IDENTITY, HTML, DIGEST, 0);
+        assertEq(store.fileInfo(fileId).chunkCount, max);
+    }
+
+    /// @dev A stride above what one list chunk can hold (767 hashes) is refused, even when the
+    ///      only list chunk is the last one and would fit it.
+    function test_List_RefusesAStrideAboveAFullListChunk() public {
+        bytes32[] memory hashes = _fakeHashes(1, 8);
+        bytes32[] memory lists = _writeList(hashes, 1);
+        vm.expectRevert(abi.encodeWithSelector(IContentStore.ContentListInvalid.selector, 0));
+        store.registerManifestList(lists, PER_LIST + 1, CHUNK, IDENTITY, HTML, DIGEST, 0);
+        bytes32 fileId =
+            store.registerManifestList(lists, PER_LIST, CHUNK, IDENTITY, HTML, DIGEST, 0);
+        assertEq(store.chunkHash(fileId, 0), hashes[0]);
+    }
+
+    /// @dev A list chunk before the last must hold exactly the stride: a longer one is refused
+    ///      like a shorter one.
+    function test_List_RefusesAMiddleListChunkLongerThanTheStride() public {
+        bytes32[] memory hashes = _fakeHashes(3, 9);
+        bytes32[] memory lists = new bytes32[](2);
+        (lists[0],) = store.writeChunk(_packed(hashes, 0, 2));
+        (lists[1],) = store.writeChunk(_packed(hashes, 2, 3));
+        vm.expectRevert(abi.encodeWithSelector(IContentStore.ContentListInvalid.selector, 0));
+        store.registerManifestList(lists, 1, 3 * CHUNK, IDENTITY, HTML, DIGEST, 0);
+    }
+
+    /// @dev Lists that hold more than `MAX_CHUNKS` hashes are refused from their sizes alone,
+    ///      before their hashes are copied: the refusal costs the list reads, not the copy and
+    ///      hashing of 4,097 hashes.
+    function test_List_RefusesMoreThanMaxChunksForTheCostOfItsListReads() public {
+        uint256 max = store.MAX_CHUNKS();
+        bytes32[] memory lists = _writeList(_fakeHashes(max + 1, 4), PER_LIST);
+        bytes memory callData = abi.encodeCall(
+            store.registerManifestList,
+            (lists, PER_LIST, (max + 1) * CHUNK, IDENTITY, HTML, DIGEST, uint8(0))
+        );
+        address target = address(store);
+        bool ok;
+        uint256 used;
+        assembly ("memory-safe") {
+            let before := gas()
+            ok := call(gas(), target, 0, add(callData, 0x20), mload(callData), 0, 0)
+            used := sub(before, gas())
+        }
+        assertFalse(ok, "refused");
+        // About 9K here; copying and hashing the 4,097 hashes first costs about 560K.
+        assertLt(used, 100_000, "refused before the copy");
+    }
 }
 
 /// @dev Another chunk store as a source: `firstMissing` checks what it serves against the
@@ -629,6 +760,46 @@ contract ContentStoreSourceTest is PermanenceBase {
             abi.encodeWithSelector(BoundedCall.BoundedCallShortfall.selector, address(mock)),
             "a shortfall, not an answer"
         );
+    }
+
+    /// @dev A 100-byte chunk whose last byte is zero, registered as a one-chunk file, and the
+    ///      store's own ABI header for it (offset 0x20, then the length).
+    function _zeroEndedFile() internal returns (bytes32 id, bytes memory chunk, bytes memory head) {
+        chunk = _data(100, 31);
+        chunk[99] = 0x00;
+        bytes32[] memory one = new bytes32[](1);
+        one[0] = keccak256(chunk);
+        id = store.registerManifest(one, 100, IDENTITY, HTML, DIGEST);
+        head = abi.encode(uint256(0x20), uint256(100));
+    }
+
+    /// @dev A source that reverts with the chunk's exact encoding as its revert data refuses the
+    ///      chunk: only an answer counts, never the bytes a refusal carries.
+    function test_Source_ARefusalCarryingTheChunkIsNotServed() public {
+        (bytes32 id, bytes memory chunk,) = _zeroEndedFile();
+        RawChunkSource source = new RawChunkSource();
+        source.set(abi.encode(chunk), true);
+        assertEq(store.firstMissing(id, 0, 1, address(source)), 0, "a refusal serves nothing");
+        source.set(abi.encode(chunk), false);
+        assertEq(store.firstMissing(id, 0, 1, address(source)), 1, "the same bytes answered");
+    }
+
+    /// @dev The answer must hold the whole chunk: one byte short is not served, even when the
+    ///      missing byte is the zero that would follow the answer in memory.
+    function test_Source_AnAnswerOneByteShortIsNotServed() public {
+        (bytes32 id, bytes memory chunk, bytes memory head) = _zeroEndedFile();
+        RawChunkSource source = new RawChunkSource();
+        source.set(bytes.concat(head, _slice(chunk, 0, 99)), false);
+        assertEq(store.firstMissing(id, 0, 1, address(source)), 0, "one byte short");
+    }
+
+    /// @dev An answer of exactly the header and the chunk, without the ABI padding after it, is
+    ///      the chunk: the length bound is inclusive.
+    function test_Source_AnUnpaddedAnswerOfTheExactLengthIsServed() public {
+        (bytes32 id, bytes memory chunk, bytes memory head) = _zeroEndedFile();
+        RawChunkSource source = new RawChunkSource();
+        source.set(bytes.concat(head, chunk), false);
+        assertEq(store.firstMissing(id, 0, 1, address(source)), 1, "exactly 0x40 + 100 bytes");
     }
 }
 
