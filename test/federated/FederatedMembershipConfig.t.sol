@@ -44,6 +44,13 @@ contract FederatedMembershipConfigTest is FederationBase {
         new FederatedStream(c);
     }
 
+    function test_Constructor_LogsTheOwner() public {
+        IFederatedStream.Config memory c = _streamConfig(fedArtist);
+        vm.expectEmit(true, true, false, false);
+        emit IFederatedToken.OwnershipTransferred(address(0), fedArtist);
+        new FederatedStream(c);
+    }
+
     function test_Constructor_TheRegistryAndLedgerHaveCode() public {
         address eoa = makeAddr("noCode");
         IFederatedStream.Config memory c = _streamConfig(fedArtist);
