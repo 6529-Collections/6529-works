@@ -458,6 +458,21 @@ of its survivors was a defect in a contract; three were access checks no test pi
 of its shards ran longer than the weekly job allows (now split in parts): see
 [what it did not reach](mutation-baseline.md#not-reached).
 
+**Third batch (22 November 2026).** The files the second campaign did not reach ran as the tool's
+own shards on two rented 96-core machines: 14 files, 5,917 mutants once `GovernanceConfig`'s
+earlier groups are added, 5,476 killed (92.5%) and 5,548 by the final suite (93.8%). 45 new tests,
+each run against the mutant it kills, pin among others the content store's checks on an added
+source's answer, `StatementLog`'s relay delay, a fee share at and above the denominator, the
+auction's re-entry guard on `expireCredit` and the governance readback. Midway the owner decided
+to restructure `Stream`, `WorkRecords`, `Editions` and the English and edition auctions with their
+lenses; for those seven only rule-level tests were kept (access, who may act, who is paid), their
+other 232 survivors are listed as deferred with a category, and their floors are unchanged.
+`ContentStore`, `StatementLog`, `EditionRules`, `WorksAccessManager`, `Roles`, `GovernanceConfig`
+and `GovernanceConfigurator` were triaged in full and their floors set or raised. No survivor was
+a defect. `UniformEditionAuction` now measures 88.6%, below its floor of 91, until the restructure
+or a reset. Tables and triage:
+[third batch](mutation-baseline.md#third-batch-22-november-2026).
+
 ## Symbolic proofs (Halmos)
 
 ```bash
@@ -692,9 +707,11 @@ survivors, and only a lying mock of a trusted contract the defensive ones.
   the shared edition auction base), GV-18 (every governed setter emits old and new values) and
   GV-20 (dependency checks across setters). The 30
   declaration rules are off-chain conventions ([rule traceability](#rule-traceability)).
-- **Mutation floors.** Every file the weekly run mutates has a floor. Four permanent files
-  (`WorkRecords`, `Editions`, `StatementLog`, `ContentStore`) and nine replaceable ones keep
-  first-campaign floors measured before later rewrites, and `Stream` and `GovernanceConfig`
-  were re-measured only in part ([not reached](mutation-baseline.md#not-reached)). Since 21
+- **Mutation floors.** Every file the weekly run mutates has a floor. `BoundedParameter` and
+  `UniformClearing` keep floors measured before later rewrites. `Stream`, `WorkRecords`,
+  `Editions`, `EnglishAuction`, `UniformEditionAuction` and both lenses were measured by the
+  [third batch](mutation-baseline.md#third-batch-22-november-2026) but keep their earlier floors
+  while they are restructured; 232 of their survivors are deferred untested, and
+  `UniformEditionAuction` measures below its floor. Since 21
   November 2026 every src/ file with executable code has its own coverage floor
   ([coverage](#coverage)).

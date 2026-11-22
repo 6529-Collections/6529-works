@@ -2,7 +2,8 @@
 
 The first full mutation campaign over `src/`, with every surviving mutant triaged, and a second
 campaign (21 to 22 November 2026) over the files the permanence passes added or rewrote,
-[below](#second-campaign-21-to-22-november-2026). How the
+[below](#second-campaign-21-to-22-november-2026), and a [third batch](#third-batch-22-november-2026)
+over the files the second did not reach. How the
 campaign works, and how to run it, is in the [testing guide](README.md#mutation-testing). The
 weekly workflow (`.github/workflows/mutation.yml`) produces the same report from the same
 mutants; this file is the reviewed reference, and
@@ -2220,6 +2221,9 @@ survivors were run against the final federated module tests rather than the whol
 
 ### Not reached
 
+The [third batch](#third-batch-22-november-2026) has since measured every file below except
+`BoundedParameter` and `UniformClearing`; what follows is the state this campaign left.
+
 - **Not reached at all.** From the stale permanent contracts: `src/stream/WorkRecords.sol`,
   `src/editions/Editions.sol`, `src/records/StatementLog.sol` and `src/content/ContentStore.sol`
   (each rewritten since its floor was set; their shards were dropped or stopped to give the
@@ -2237,3 +2241,327 @@ survivors were run against the final federated module tests rather than the whol
   mutants against the federated module tests), and `FederationRegistry`'s about 5, both over
   the weekly job's 335 minutes. The tool now runs them in parts (`RELATION_PARTS`: four and
   three shards, every n-th comparison each), which together make the same mutants.
+
+## Third batch (22 November 2026)
+
+The files the second campaign [did not reach](#not-reached), run as the tool's own shards on two
+rented 96-core machines, then triaged here. While the triage ran, the owner decided to
+restructure `Stream`, `WorkRecords`, `Editions`, the English auction and the edition auction (and
+both lenses): their logic moves into replaceable modules. For those seven files the triage
+pins only the rules a rewrite keeps (access checks, checks on who may do what, and comparisons
+that decide who is paid or who owns a token) and lists every other survivor as **deferred: the
+contract is being restructured**, with a category and no test. Their floors are unchanged.
+`StatementLog`, `ContentStore`, `EditionRules`, `WorksAccessManager`, `Roles`,
+`GovernanceConfig` and `GovernanceConfigurator` stay as they are and were triaged in full.
+
+### How it was measured
+
+- **Code.** `claude/mutation-snapshot` at a7f02983. `main` (581cfb6f, after #116) has the same
+  `src/`, so line numbers below are also `main`'s.
+- **Tools and shards.** As the second campaign: slither-analyzer 0.11.6 through
+  `tools/mutation.py`, Foundry 1.7.1, solc 0.8.37, the `lite` profile; 72 shards, each in a fresh
+  checkout. Split files ran their four groups, every other file all fifteen operators. `Stream`
+  ran three groups (its operators group had finished in the second campaign: 45 mutants, its one
+  gap killed since); `GovernanceConfig` ran relations and conditions (statements and operators
+  had finished in the second campaign: 136 mutants, 119 killed, the 17 others equivalent or
+  defensive). `FederatedEditionAuction` and its lens were not run again.
+- **Re-checks.** Every module-test survivor ran against the whole suite, except 15 left when the
+  budget ran out: 14 `EnglishAuction` conditions survivors and 1 `WorkRecords` relations one. Each
+  of the 15 was then run against the whole final suite here: 5 are killed (`EnglishAuction` L778,
+  L1056, L1265, L1388 and L1417, by its gas-ceiling and rescue tests); the other 10 are triaged
+  below.
+- **Tests added since the snapshot.** Eight test files changed between a7f02983 and `main`
+  (curation, economics, federated and identity suites). Every survivor was run against them:
+  they kill none.
+- **The final suite.** Each test written for a survivor was run against that survivor's mutant
+  applied to `main`'s code: it fails on the mutant and passes on the real code.
+
+### Kill rate per contract
+
+| Contract | Mutants | Killed (batch) | Rate | Killed (final) | Rate, final | Equivalent | Gas / defensive | Deferred | Floor |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `src/content/ContentStore.sol` | 708 | 644 | 91.0% | 666 | 94.1% | 40 | 2 | 0 | 92 (was 88) |
+| `src/records/StatementLog.sol` | 496 | 464 | 93.5% | 472 | 95.2% | 22 | 2 | 0 | 93 (was 91) |
+| `src/editions/EditionRules.sol` | 16 | 14 | 87.5% | 14 | 87.5% | 2 | 0 | 0 | 85 |
+| `src/governance/WorksAccessManager.sol` | 126 | 122 | 96.8% | 122 | 96.8% | 4 | 0 | 0 | 94 |
+| `src/governance/Roles.sol` | 250 | 232 | 92.8% | 233 | 93.2% | 17 | 0 | 0 | 91 (was 90) |
+| `src/governance/GovernanceConfig.sol` (four groups) | 321 | 265 | 82.6% | 273 | 85.0% | 47 | 1 | 0 | 83 (was 77) |
+| `src/governance/GovernanceConfigurator.sol` | 22 | 22 | 100.0% | 22 | 100.0% | 0 | 0 | 0 | 98 |
+| `src/stream/WorkRecords.sol` | 944 | 858 | 90.9% | 860 | 91.1% | | | 84 | 89, unchanged |
+| `src/stream/Stream.sol` (three groups) | 806 | 765 | 94.9% | 771 | 95.7% | | | 35 | 90, unchanged |
+| `src/editions/Editions.sol` | 752 | 706 | 93.9% | 712 | 94.7% | | | 40 | 93, unchanged |
+| `src/sales/EnglishAuction.sol` | 972 | 913 | 93.9% | 932 | 95.9% | | | 40 | 90, unchanged |
+| `src/sales/EnglishAuctionLens.sol` | 405 | 378 | 93.3% | 378 | 93.3% | | | 27 | 93, unchanged |
+| `src/sales/UniformEditionAuction.sol` | 44 | 39 | 88.6% | 39 | 88.6% | | | 5 | 91, unchanged |
+| `src/sales/UniformEditionAuctionLens.sol` | 55 | 54 | 98.2% | 54 | 98.2% | | | 1 | 87, unchanged |
+| **Total** | **5917** | **5476** | **92.5%** | **5548** | **93.8%** | | | **232** | |
+
+"Batch" counts what the module tests and the whole-suite re-check killed (for `EnglishAuction`,
+with the five the late re-check killed); "final" adds the survivors the new tests kill. The
+`GovernanceConfig` row adds the second campaign's statements and operators shards (136 mutants of
+the same code) to this batch's 185, so it covers the four groups the weekly run makes; its
+equivalent and defensive counts include that campaign's 16 and 1. Floors are the final rate
+minus two points, rounded down. The seven deferred files keep their floors; their equivalent,
+gas and defensive survivors are counted under "Deferred" and listed with their reasons below.
+
+`UniformEditionAuction` measures 88.6% here, below its floor of 91, which was set on rc.2's 1,142
+mutants before the file shrank: the weekly run will report it until the restructure lands or its
+floor is reset. Two tests written in this triage, against `_MAX_REVERT` and the payout-gas limit
+bounds, killed all five survivors; they were not kept, because they pin constants the rewrite
+replaces.
+
+### What the new tests pin
+
+45 new test functions in 17 test files, with five new mock files under `test/mocks/`
+(`ChunkSourceMocks`, `RecordsMutationMocks`, `StreamMutationMocks`, `EditionsMutationMocks`,
+`AuctionSettlementMocks`):
+
+- **The content store's trust in its sources.** An added chunk source whose answer is one byte
+  short, or a refusal carrying the chunk's bytes, is not served, and an unpadded answer of the
+  exact length is; linked chunks that lost a byte or changed either side of their hash are
+  detected; list bounds are checked before the lists are read.
+- **Who may act, and on what.** `StatementLog`'s relay needs an immediate grant with no delay, its
+  dispute outcomes need a real token subject, and only an exact `UnknownWork` reads as no work.
+  Stream refuses a rescue of a work its own minting adapter does not hold and a NONE outcome with a
+  buyer; Editions binds only a master of the exact item and kind; removing a minter, a target or
+  the federation registry checks nothing, so governance can always remove one.
+- **Who is paid.** A fee share above the denominator is refused at minting and at settlement; a
+  share of exactly the denominator pays the whole price to the fee recipient; a zero fee with no
+  recipient pays the seller everything; the mint policy is told the current economics resolver.
+- **Locks.** `expireCredit` refuses re-entry; a pause's outcome position stops an outcome recorded
+  before the pause from cancelling the sale.
+- **The governance readback.** `verify` detects a selector remapped to a higher role, a role admin
+  moved either way and a grant delay; a four-byte wiring call is validated by its selector.
+
+No survivor showed a defect in the contracts. Checks the suite did not pin before, now pinned:
+the content store's checks on an added source's answer (L547 to L549) and its early list bounds;
+`StatementLog`'s `delay == 0` conjunct in the relay (L409, which only matters for an authority
+other than OpenZeppelin's AccessManager); the re-entry guard on `EnglishAuction.expireCredit`
+(L666); the pause's outcome position (L587); Stream's check that a rescued work is held by its
+own minting adapter (L486). One check is redundant without harm: `Editions._bind`'s
+`status != MINTER_ADMITTED` (L779), which every path refuses earlier with the same error.
+
+### Survivors, triaged (third batch)
+
+Line numbers are a7f02983's (and `main`'s). "Killed" names the test that kills the mutant; each
+was run against its mutant.
+
+#### `src/content/ContentStore.sol`
+
+64 survivors: 22 killed by new tests, 40 equivalent, 2 gas.
+
+- **Killed.** L547 MIA `if ok` to `if true` and L547 LOR `&&` to `||` (a source that reverts
+  with the chunk's exact encoding counted as serving it): `test_Source_ARefusalCarryingTheChunkIsNotServed`.
+  L547 AOR `0x40 / expected`, `0x40 % expected` and L547 CR (the answer-length check removed: an
+  answer one byte short was served): `test_Source_AnAnswerOneByteShortIsNotServed`. L547 ROR `>=`
+  to `>`: `test_Source_AnUnpaddedAnswerOfTheExactLengthIsServed`. L208 ROR `<` to `!=`:
+  `test_FirstMissing_ARangeStartingPastItsEndIsEmpty`. L371 AOR `/ per` to `* per`:
+  `test_List_RefusesTooManyListsOfTwoBeforeReadingThem`. L56 AOR (three, `MAX_HASHES_PER_LIST`):
+  `test_List_RefusesAStrideAboveAFullListChunk`. L380 ROR `n != per * 32` to `<`:
+  `test_List_RefusesAMiddleListChunkLongerThanTheStride`. L386 MIA and AOR `%` (the early count
+  check; `_record` repeats it with the same error, so only the cost differs, about 9K gas against
+  560K): `test_List_RefusesMoreThanMaxChunksForTheCostOfItsListReads`. L524 ROR `==` to `>=`:
+  `test_Link_ALinkedChunkLongerThanItsPlaceNeverCompletes`. L505 ROR `filled != length` to `>`:
+  `test_Link_ReadsDetectAPartThatLostItsLastByte`. L505 ROR `keccak256(data) != hash` to `<`:
+  `test_Link_ReadsDetectTamperedPartsEitherSideOfTheHash`. L593 ROR (three, the MIME ranges'
+  ends): `test_RegisterManifest_MimeAcceptsTheEndsOfEachRange`. L270 ROR (two, encoding IDs above
+  the Base64 ones): `test_Attest_RefusesEncodingIdsAboveTheBase64Ones`.
+- **Equivalent.** UOR loop counters (L105, L164, L184, L193, L208, L219, L376, L435, L502, L588,
+  L592). ROR `<` to `!=` on loops that step by one from their start (L105, L114, L122, L164,
+  L184, L193, L219, L376, L389, L435, L502, L588). L417 MIA and ROR `>=`, L310 AOR `length +
+  done` (without the clamp the last copy runs past `out` into the released chunk buffer; the bytes
+  returned are the same), L309 ROR `!=` (each copy is clamped, so `done` meets `length` exactly).
+  L196, L207, L276, L443 ROR `>=` (assigns an equal value), L442 ROR (equal gives 0 either way),
+  L239, L332 ROR (`bytes32` with zero), L279 ROR (`stop` is at most `count`), L380 ROR `j + 1 != k`
+  (`j + 1` is at most `k`), L465 ROR `n != 1` (a chunk is never empty), L505 ROR `filled < length`
+  (`SSTORE2.copyInto` reverts before a part could overfill the buffer), L573 ROR (equal gives
+  `CHUNK_SIZE` either way), L591 ROR (`i` is at most `m.length - 1`).
+- **Gas.** L469, L555 CR `mstore(0x40, mark)`: only releases a scratch buffer.
+
+#### `src/records/StatementLog.sol`
+
+32 survivors: 8 killed by new tests, 22 equivalent, 2 defensive.
+
+- **Killed.** L380 LOR and MIA (a contract answering true to every call is no token subject):
+  `test_DisputeOutcome_ATokenAnsweringTrueToEveryCallIsUnchecked`. L160 ROR (a kind above the
+  governance kind): `test_GovernanceManifest_RefusesAKindAboveTheGovernanceKind`. L257 ROR (four:
+  only an exact `UnknownWork` reads as no work): `test_LatestDisputeOutcome_OnlyAnExactUnknownWorkReadsZero`.
+  L409 ROR `delay == 0` to `>= 0`: `test_Relay_AnImmediateAnswerWithADelayDoesNotAuthorize`.
+- **Equivalent.** L241, L357, L362, L363, L368, L369, L387, L426 ROR (`bytes32` with zero). L241
+  ROR `code.length < 0` (a codeless account then fails the ERC-165 check and reads zero). L252 ROR
+  (a successful answer is at most the 192 bytes copied). L312, L359, L404 (two), L405 ROR (roles
+  that cannot reach the line, or the last role). L433 BOR (the bit is clear). L76 to L87 SBR
+  (four constants), L212 SBR (read only), L333 SBR (`encodePacked` of three words).
+- **Defensive.** L418 LOR and MIA: `_owns`'s zero checks. `who` is never zero (a caller, or a
+  signer `SignatureVerifier` verified, which is never zero), and with a zero token the reads that
+  follow answer nothing and return false alike.
+
+#### `src/editions/EditionRules.sol`
+
+2 survivors: 2 equivalent. L40 ROR (`bytes32` with zero); L35 SBR (a `uint128` constant).
+
+#### `src/governance/WorksAccessManager.sol`
+
+4 survivors: 4 equivalent. L169 MIA `until != 0` to `true` and ROR `>=` (with no mark the inner
+time check is false and the delete writes zero over zero). L155 CR `return (isMember, 0)` (the
+named return is already set, the delay defaults to 0). L188 CR `return newMember` (no caller
+reads `_grantRole`'s result).
+
+#### `src/governance/Roles.sol`
+
+18 survivors: 1 killed by a new test, 17 equivalent.
+
+- **Killed.** L113 ROR `role == CURATOR` to `>=` (IDs past the table labelled `CURATOR`):
+  `test_LabelsNameEachRoleAndNothingPastTheTable`.
+- **Equivalent.** L36 to L67 SBR (thirteen `uint64` constants as `uint32`, which still hold
+  them). L87 ROR `<= ADMIN` and `<= NETWORK`, L95 ROR `<= ADMIN` (the roles they add are already
+  listed). L98 CR `return 0` (the default return).
+
+#### `src/governance/GovernanceConfig.sol`
+
+39 survivors (relations and conditions): 8 killed by new tests, 31 equivalent.
+
+- **Killed.** L189, L190 ROR `< 4` to `<= 4` (a wiring call of exactly four bytes):
+  `test_AFourByteWiringCallIsValidatedByItsSelector`. L256 ROR `getRoleAdmin != admin` to `<` and
+  `>`: `test_ReadbackDetectsARoleAdminMovedEitherWay`. L256 ROR `getRoleGrantDelay != 0` to `< 0`:
+  `test_ReadbackDetectsARoleGivenAGrantDelay`. L266 ROR `actual != fn.role` to `<`:
+  `test_ReadbackDetectsASelectorRemappedToAHigherRole`. L309 ROR `role ==` to `>=`:
+  `test_OneKeyMayHoldALowerRoleAfterAHigherOne`. L239 MIA `cfg.brake != address(0)` to `true` (an
+  install without a brake logged `BrakeSet(0, 0)`): `test_NoBrakeLogsNoBrakeChange`.
+- **Equivalent.** ROR `<` to `!=` on loops that step by one from 0 (L118, L123, L184, L215, L225,
+  L228, L234, L260, L263, L271, L295, L302, L308, L317, L323). L209, L252 ROR `<=` and `!=` (role
+  13 is not known and is skipped). L142, L195 `== 0` ROR (`bytes4` with zero). L195 `iface !=
+  ANY_TARGET` to `<` (`0xffffffff` is the largest `bytes4`). L256 guardian `> ADMIN`, L320 `<=
+  ADMIN` (`ADMIN` is zero). L276 `delay` and `current` `< 0` (for an operational grant `hasRole`'s
+  delay is `getAccess`'s current delay, so each check repeats the other). L276 `pending` and
+  `effect` `< 0` (nonzero only while a decrease from a larger current delay is pending, which
+  `current != 0` refuses). L291 ROR (three: every access record has `since != 0`; a revoke deletes
+  the whole record).
+
+#### `src/governance/GovernanceConfigurator.sol`
+
+No survivor.
+
+#### `src/stream/WorkRecords.sol` (deferred: the contract is being restructured)
+
+86 survivors: 2 killed by behaviour tests, 84 deferred.
+
+- **Killed.** L695 CR (a refresh of a token with no record): `test_refreshMetadata_refusesATokenWithNoRecord`.
+  L953 ROR (an added store whose code changed, either way):
+  `test_syncOnChain_aStoreWhoseCodeChangedEitherWayIsRefused`.
+- **Deferred, layout and packing** (the per-work store cursor and its resumption): L357 ROR
+  (four), MIA and LOR, L358, L379 and L987 CR, L974 ROR (two) and MIA.
+- **Deferred, decoder** (the delivery satellite's locator answer): L76 CONST, L1029 ROR, L1037 CR,
+  L1042 ROR (five), CR, MIA and LOR, L1043 ROR, MIA and RR.
+- **Deferred, view formatting:** `mediaStore` (L449 ROR (two) and MIA, L451 ROR (two)) and
+  `pinnedRenderer` (L484 MIA).
+- **Deferred, other:** L187 CR (with `_cc0SpdxId` unset, a CC0 license with an empty identifier
+  would finalize: a rule to carry into the rewrite), L254 MIA (no seed recorded under the NONE
+  policy).
+- **Deferred, argued equivalent, gas or defensive in this triage:** loop forms (L217, L389, L427,
+  L840, L940, L971, L1015 ROR; L217, L390, L427, L840, L940, L1015 UOR); first or last enum
+  values and zero comparisons (L223, L254, L257, L527, L754, L899, L1045, L1046 ROR); bounds a
+  value cannot pass (L344, L365 (three), L369, L386, L389, L392, L710, L983, L985, L1011 ROR, L1011
+  AOR); writes of equal values or of values no read sees (L231, L257, L344, L532 MIA; L534, L536,
+  L930, L976 CR); L921 ROR (two, revert data shorter than the selector), L1012 MIA (the same
+  chunk reached through another read), L1029 MIA and L1044 ROR (refused either way); gas L71 AOR;
+  defensive L1020 ROR (the trusted content store's answer) and L1073 MIA (editions bound at
+  genesis).
+
+#### `src/stream/Stream.sol` (deferred: the contract is being restructured)
+
+41 survivors: 6 killed by behaviour tests, 35 deferred.
+
+- **Killed.** L414 MIA (removing a minter checks nothing): `test_setAdmittedMinter_removalChecksNothing`.
+  L451 ROR (only SOLD settles a sale): `test_settlePrimary_refusesNoneWithABuyer`. L486 ROR (a
+  rescue needs the work's own minting adapter): `test_rescueToMuseum_refusesAWorkHeldByAnotherAdapter`.
+  L874 ROR and MIA (the mint policy is told the current economics resolver):
+  `test_MP1_TheContextNamesAReplacedEconomicsResolver`. L970 ROR (a fee share above the
+  denominator): `test_MP1_AFeeShareAboveTheDenominatorIsRefused`.
+- **Deferred, decoder:** the mint policy's answer and the context Stream sends it (L803 ROR; L873,
+  L898, L919, L933 and L934 CR; L917 MIA (two), L922 MIA); the `authority()` answer word (L716
+  ROR).
+- **Deferred, layout and packing:** the terms table, its overflow range and fee-recipient indexes
+  (L1116 ROR and MIA, L1152 ROR and MIA, L1156 CR); beneficiary IDs above 160 bits (L374 ROR).
+- **Deferred, view formatting:** `rendererOf` and its revert bound (L102 CONST (two), L1015 ROR
+  (three)).
+- **Deferred, other:** L791 ROR (a descending metadata range logged as a batch).
+- **Deferred, argued equivalent in this triage:** L418, L965 (two) ROR (`bytes32` with zero), L454
+  ROR (equal price and cap), L458 (two), L461, L465 ROR (first or last outcomes, or values refused
+  above), L689 ROR (loop form), L711, L1116 ROR, L905 and L910 CR (memory that holds the same
+  bytes).
+
+#### `src/editions/Editions.sol` (deferred: the contract is being restructured)
+
+46 survivors: 6 killed by behaviour tests, 40 deferred.
+
+- **Killed.** L288 MIA (removing a minter checks nothing): `test_SetAdmittedMinter_RemovalChecksNothing`.
+  L423 ROR (two) and L637 ROR (only a master of the exact item and kind takes an edition):
+  `test_BindMinter_RefusesAWorkOfAKindAboveTheMaster`, `test_BindMinter_RefusesAnItemHashingAboveTheMasters`.
+  L735 ROR (two: a receiver accepts only with the exact selector word):
+  `test_Receiver_AcceptanceIsExactlyTheSelectorWord`.
+- **Deferred, bounds on encoded data:** L120 CONST (two, `_MAX_ANSWER`).
+- **Deferred, decoder:** the receiver hook's operator and batch encoding (L725 and L728 MIA, L728
+  SBR).
+- **Deferred, layout and packing:** L462 SBR (a unit price above 128 bits in the log), L653 SBR (a
+  master rate above 16 bits).
+- **Deferred, other:** L265 ROR (a Stream answering a lower edition ID).
+- **Deferred, argued equivalent in this triage:** L107 to L120 SBR (eight constants), L111 CONST
+  (another code for the same status), L262 and L570 SBR (values that fit), L414, L459, L484 and
+  L543 SBR (read only), L290, L460, L465, L485, L512, L529 ROR (first or last status), L294, L397,
+  L417, L637, L789, L821 ROR (`bytes32` with zero), L530 CR (default return), L735 ROR (an answer
+  longer than a word is already refused), L779 MIA and ROR (two: the redundant admission check).
+
+#### `src/sales/EnglishAuction.sol` (deferred: the contract is being restructured)
+
+64 survivors: 5 killed by the late re-check, 19 killed by behaviour tests, 40 deferred.
+
+- **Killed.** L587 MIA, AOR (three) and ROR (an outcome recorded before the pause cannot cancel):
+  `test_Cancel_RefusesTheLatestOutcomeWhenItPredatesThePause`. L666 CR (`nonReentrant` on
+  `expireCredit`): `test_ExpireCredit_AReentrantRecipientIsBlocked`. L726 and L728 MIA (removing
+  the registry checks nothing and clears its pin):
+  `test_SetFederationRegistry_RemovalChecksNothingAndClearsThePin`. L864 MIA and RR (a listed
+  token is a target whatever the registry says): `test_Bid_AFederatedSaleOfATokenListedSinceStillTakesBids`.
+  L866 ROR (two, a registry whose code changed): `test_Start_ARegistryWhoseCodeChangedEitherWayStartsNothing`.
+  L890 and L1007 ROR (a fee share of exactly the denominator):
+  `test_Settle_AFeeShareOfTheWholePricePaysItAllToTheFeeRecipient`. L963 ROR:
+  `test_Start_AFederatedFeeShareOfTheWholePriceSells`. L1007 MIA and L1008 CR (a settlement share
+  above the denominator): `test_Settle_RefusesASettlementFeeShareAboveTheDenominator`. L1149 MIA
+  (a zero payout skipped): `test_Settle_AZeroFeeWithNoFeeRecipientPaysOnlyTheSeller`. L1452 MIA
+  (delisting checks nothing): `test_SetTarget_DelistingChecksNothing`.
+- **Deferred, bounds on encoded data:** the refusal-gas constructor bounds (L137 CONST (two), L141
+  CONST, L1465 ROR).
+- **Deferred, gas:** L101, L107, L109 and L113 CONST (two each: the payout, delivery, reserve and
+  token payout gas moved by one unit).
+- **Deferred, argued equivalent or defensive in this triage:** loop forms (L273 UOR and ROR); the
+  Permit2 witness, read only on that path (L315 and L346 MIA; L315 and L346 ROR, four); first or
+  last enum values (L368, L774, L902, L1088, L1098, L1101, L1123, L1397 ROR); `bytes32` with zero
+  (L587, L619 ROR); writes of equal values or of fields no read sees (L1039, L1058, L1274, L1275
+  CR; L1050, L1053, L1273 MIA; L1050 ROR); L1065 ROR (the end the sale already has); defensive
+  L1360 ROR (a locked currency never returns to None).
+
+#### `src/sales/EnglishAuctionLens.sol` (deferred: the contract is being restructured)
+
+27 survivors: 27 deferred.
+
+- **Deferred, view formatting:** `refusableAt` through a pause (L227 MIA; L233 ROR (three), MIA,
+  AOR (four) and LOR; L235 CR and RR).
+- **Deferred, bounds on encoded data:** the terms answer the lens reads (L74 CONST, L450 ROR and
+  AOR, L454 ROR, L457 ROR (three)).
+- **Deferred, argued equivalent in this triage:** L148 ROR and AOR (gas only), L161, L227, L247
+  ROR (NONE is the first value), L441 MIA (malformed either way), L457 ROR (nothing exceeds the
+  maximum), L527 MIA (`pausedAt` is written only with its flag).
+
+#### `src/sales/UniformEditionAuction.sol`, `src/sales/UniformEditionAuctionLens.sol` (deferred)
+
+`UniformEditionAuction`: 5 survivors, 5 deferred: bounds on encoded data (L93 CONST, two:
+`_MAX_REVERT`) and other (L107 CONST (two) and L108 CONST: the payout-gas limit bounds).
+`UniformEditionAuctionLens`: 1 survivor, deferred and argued equivalent (L1153 CR, the default
+return).
+
+### Not re-checked
+
+Nothing: the 15 survivors the batch left without a re-check were run against the whole final
+suite (above). `FederatedEditionAuction` and `FederatedEditionAuctionLens` keep the second
+campaign's results. `BoundedParameter` and `UniformClearing`, which the second campaign also did
+not reach, were not part of this batch and keep their existing floors.
