@@ -9,7 +9,7 @@ import { ICurationVerifier } from "src/interfaces/ICurationVerifier.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { HandlerReach } from "../helpers/HandlerReach.sol";
 import { CurationArtistRegistryMock } from "../mocks/curation/CurationArtistRegistryMock.sol";
-import { StreamContentMock } from "../mocks/curation/StreamContentMock.sol";
+import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { CurationHelpers } from "./CurationBase.sol";
 
 /// @notice Drives the curation signers around live approvals: signers sign package approvals at
@@ -257,7 +257,9 @@ contract CurationSignerInvariantTest is CurationHelpers {
             ICurationVerifier(address(verifier)),
             address(verifier).codehash,
             address(artists),
-            address(artists).codehash
+            address(artists).codehash,
+            IEconomicsResolver(address(_policyStub)),
+            address(0)
         );
         artists.bindPackageRegistry(address(registry));
         vm.startPrank(admin);
@@ -269,7 +271,6 @@ contract CurationSignerInvariantTest is CurationHelpers {
         );
         manager.grantRole(Roles.CURATION_SIGNER, vm.addr(0xC1), 0);
         manager.grantRole(Roles.CURATION_SIGNER, vm.addr(0xC2), 0);
-        registry.bindStream(address(new StreamContentMock()));
         vm.stopPrank();
         handler = new CurationSignerHandler(manager, verifier, registry, admin);
         bytes4[] memory s = new bytes4[](10);

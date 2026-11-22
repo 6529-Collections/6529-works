@@ -2,26 +2,16 @@
 pragma solidity ^0.8.24;
 
 import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessManaged.sol";
-import { Roles } from "../governance/Roles.sol";
-import { Dependency } from "../libraries/Dependency.sol";
 import { IAssetAllowlist } from "./interfaces/IAssetAllowlist.sol";
-import { TokenTransfer } from "./TokenTransfer.sol";
 
 /// @title AssetAllowlist
-/// @notice The governed payment-currency allowlist (ADR 0001 section 5): which assets new sales may
-///         settle in, each currency's absolute minimum bid increment, and each product's default
-///         currency. Switching a product to USDC, or adding a 6529 token, is "admit the asset, then
-///         change the default", with no contract change. Sales lock their currency and floor when
-///         they start, so later changes only affect later sales.
-/// @dev Governed through AccessManager, with the delay classes of ADR 0002 and the role IDs of
-///      `Roles` (src/governance/Roles.sol): {admitAsset} and {setDefaultCurrency} map to
-///      `Roles.FUNDS_SETTER` (the network, 3 days), {setIncrementFloor} and {setOpeningBid}
-///      to `Roles.PARAMETER_SETTER` (the network, 24 hours), and {deprecateAsset}, which only
-///      tightens, to the network with no delay. Direction rules and compare-and-set
-///      live here because AccessManager only sees selectors. Every setter compares a revision
-///      counter that every change bumps, so a queued operation never applies to a later state
-///      that merely looks the same. Nothing in the withdrawal paths reads this contract, so
-///      admission can never block a withdrawal.
+/// @notice The governed payment settings of the network's sales, ETH only: the English auction's
+///         opening bid and minimum increment, and each product's default currency (ETH). No other
+///         asset can be admitted, and ETH can never be deprecated, so a sale's currency can never
+///         be frozen.
+/// @dev Governed through the AccessManager. Every setter compares a revision counter that every
+///      change bumps, so a queued operation never applies to a later state that merely looks
+///      the same. Nothing in the withdrawal paths reads this contract.
 contract AssetAllowlist is IAssetAllowlist, AccessManaged {
     /// @notice ETH, which is always identified by the zero address.
     address public constant ETH = address(0);
@@ -49,38 +39,10 @@ contract AssetAllowlist is IAssetAllowlist, AccessManaged {
     mapping(bytes32 product => Currency) private _defaults;
 
     /// @param authority The AccessManager governing this contract.
-    /// @param ethIncrementFloor The ETH increment floor in wei (ADR 0001: 0.001 ETH); ETH is
+    /// @param ethIncrementFloor The ETH increment floor in wei (0.001 ETH at launch); ETH is
     ///        admitted at deployment because 6529 Stream launches with it, at revision 1.
     constructor(address authority, uint256 ethIncrementFloor) AccessManaged(authority) {
         _admit(ETH, ethIncrementFloor);
-    }
-
-    /// @inheritdoc IAssetAllowlist
-    /// @dev Compare-and-set on the asset's revision. Any admission, deprecation or floor change
-    ///      after the operation was written bumps the revision, so the operation reverts; this
-    ///      includes an emergency deprecation that returns the asset to the status and floor the
-    ///      operation saw.
-    function admitAsset(address asset, uint64 expectedRevision, uint256 floor) external restricted {
-        AssetConfig storage config = _assets[asset];
-        _checkRevision(expectedRevision, config.revision);
-        // As GOV-5 for unpauses: AccessManager counts the funds delay from scheduling, so a
-        // re-admission scheduled ahead could undo a deprecation in its own block. The delay is
-        // counted from the deprecation instead.
-        if (config.status == Status.Deprecated) {
-            uint256 allowedAt = uint256(config.since) + Roles.DELAY_3D;
-            // forge-lint: disable-next-line(block-timestamp)
-            if (block.timestamp < allowedAt) revert ReadmissionTooEarly(asset, allowedAt);
-        }
-        if (asset != ETH) {
-            // The install predicate every dependency gets, under the allowlist's own error.
-            if (!Dependency.isInstallable(asset)) revert AssetNotAdmissible(asset);
-            // A sanity probe, not proof of a standard token (governance vets that): both reads
-            // must return exactly one word, and no balance may exceed the supply.
-            if (TokenTransfer.balanceOf(asset, address(this)) > TokenTransfer.totalSupply(asset)) {
-                revert AssetNotAdmissible(asset);
-            }
-        }
-        _admit(asset, floor);
     }
 
     /// @inheritdoc IAssetAllowlist
@@ -128,7 +90,7 @@ contract AssetAllowlist is IAssetAllowlist, AccessManaged {
     {
         AssetConfig storage config = _activeConfig(asset);
         _checkRevision(expectedRevision, config.revision);
-        // A storage bound only (the bid shares the status word), not a price cap (R19).
+        // A storage bound only (the bid shares the status word), not a price cap.
         if (bid > type(uint96).max) revert OpeningBidAboveCeiling(bid, type(uint96).max);
         uint256 previous = config.openingBid;
         // Safe: `bid` is at most `type(uint96).max` (checked above).

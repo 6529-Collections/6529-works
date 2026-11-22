@@ -3,30 +3,25 @@ pragma solidity ^0.8.24;
 
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { ICurationVerifier } from "./ICurationVerifier.sol";
+import { IEconomicsResolver } from "./IEconomicsResolver.sol";
 import { PartyAcceptance } from "./types/PackageTypes.sol";
 
 /// @title IPackageRegistry
-/// @notice Approved packages, party consent, single-use items, per-product content uniqueness and
-///         the artist's revocable "move to Stream" (ADR 0001 section 3).
+/// @notice Approved packages, party consent and the artist's revocable "move to Stream": the
+///         package registry, which is also 6529 Stream's mint policy (`IMintPolicy`).
 /// @dev Lifecycle of a package root:
 ///      1. `registerPackage`: anyone submits the root, the evidence hash and the verifier's
 ///         attestation; the registry stores the approval and emits the evidence hash and the
-///         signer. The CURATOR role appends the matching CURATION_EVIDENCE statement (subject
-///         `(address(0), uint256(packageRoot))`). Approvals do not expire.
+///         signer. Approvals do not expire.
 ///      2. `acceptPackage`: each party's signed acceptance is stored as
 ///         `acceptedAs[root][account] = artistId`; a first acceptance creates the identity in
-///         the artist registry, and only first acceptances count as artist activity.
-///      3. `IMintPolicy.authorize`: the bound 6529 Stream consumes one item when its sale starts, checking the
-///         Merkle proof, every party's `acceptedAs` entry (no registry calls), that the payee list
-///         is canonical, sums to 100,000 and pays only parties, and the lead artist's move
-///         authorization.
-///      Uniqueness is keyed on `PackageItem.contentHash`, the declared decoded SHA-256 of the
-///      primary media, scoped per product: one storage word per product and content hash records
-///      the item that claimed it, which also makes consumption single-use (`consumedItemOf`).
-///      This on-chain check is defense in depth: the curation signer verifies every declared
-///      SHA-256 against the decoded bytes before attesting, and the evidence hash covers that
-///      check. Statements about an item before it is minted use the subject
-///      `(address(0), uint256(itemHash))`. Contract callers are bound once at genesis.
+///         the artist registry.
+///      3. `IMintPolicy.authorize`: a sale contract that is an active minter of the bound 6529
+///         Stream admits one item when its sale starts, checking the Merkle proof, every
+///         party's acceptance, the payee list and the lead artist's move authorization, then
+///         mints it in Stream. Stream keeps one live token per content hash, so an item mints
+///         once. Statements about an item before it is minted use the subject
+///         `(address(0), uint256(itemHash))`.
 interface IPackageRegistry is IERC165 {
     /// @notice Whether a package root is approved.
     enum PackageStatus {
@@ -71,10 +66,14 @@ interface IPackageRegistry is IERC165 {
     /// @param signer The curation signer.
     /// @param epoch The kill epoch of this kill: the count of kills so far, this one included.
     event SignerApprovalsKilled(address indexed signer, uint64 epoch);
-    /// @notice A contract was bound under `name` (STREAM or EDITIONS), once.
+    /// @notice A contract was bound under `name` (STREAM), once.
     /// @param name The binding's name as a `bytes32` string.
     /// @param target The contract bound.
     event Bound(bytes32 indexed name, address target);
+    /// @notice The VRF entropy module changed.
+    /// @param previous The module before (zero at deployment).
+    /// @param next The module now, or zero (VRF items are then refused).
+    event EntropyModuleSet(address previous, address next);
 
     /// @notice The verifier rejected the attestation.
     error NotApproved(bytes32 packageRoot);
@@ -84,10 +83,6 @@ interface IPackageRegistry is IERC165 {
     error PackageNotApproved(bytes32 packageRoot);
     /// @notice The Merkle proof does not place the item in the package.
     error ItemNotInPackage(bytes32 packageRoot, bytes32 itemHash);
-    /// @notice The content hash is already claimed in `product`, by `claimedBy`.
-    error ContentUsed(bytes32 product, bytes32 contentHash, bytes32 claimedBy);
-    /// @notice A released content hash is reserved for the item of artist `beneficiary`.
-    error ContentReserved(bytes32 contentHash, uint256 beneficiary);
     /// @notice A listed party has not accepted the package root.
     error PartyNotAccepted(bytes32 packageRoot, address account);
     /// @notice The parties, payees, kind, seed or edition fields are inconsistent.
@@ -98,24 +93,36 @@ interface IPackageRegistry is IERC165 {
     error MoveNonceUsed(uint256 artistId, uint256 nonce);
     /// @notice The acceptance's profile fields do not match the artist record.
     error ProfileMismatch(uint256 artistId);
-    /// @notice The caller is not the bound contract for this function.
-    error UnboundCaller(address caller);
     /// @notice `name` is already bound.
     error AlreadyBound(bytes32 name);
     /// @notice A compare-and-set setter's expected current value is stale.
     error ExpectedValueMismatch();
-    /// @notice The mint request is not `abi.encode(StreamMintRequest)` (`IMintTarget`'s error).
+    /// @notice The mint request is not `abi.encode(StreamMintRequest)`.
     error InvalidMintRequest();
+    /// @notice The item names no sale kind, or a currency other than ETH (`CURRENCY_ETH` or
+    ///         `CURRENCY_DEFAULT`).
+    error InvalidItemSale();
+    /// @notice The item names no parties, or (a preview) its lead party has no artist ID yet.
+    error InvalidLeadArtist();
+    /// @notice The item's seed does not fit its seed policy, or it is a VRF item and no entropy
+    ///         module is set.
+    error InvalidSeedPolicy();
+    /// @notice The item's license ID does not follow the `SpdxId` rule.
+    error InvalidLicenseId();
+    /// @notice The economics resolver's terms cannot be locked.
+    error InvalidWorkTerms();
+    /// @notice The VRF seed of this item has not been delivered.
+    error SeedNotDelivered(bytes32 itemHash);
 
-    /// @notice Binds 6529 Stream, the only `consume` caller, once (ERC-165 for `IStream`, not an
-    ///         EIP-7702 delegated account). ADMIN role.
+    /// @notice Binds 6529 Stream, the only token this policy admits works for, once (ERC-165
+    ///         for `IStream`, not an EIP-7702 delegated account). Governed.
     /// @param target The 6529 Stream contract.
     function bindStream(address target) external;
-    /// @notice Binds 6529 Stream Editions, once (ERC-165 for `IEditions`, not an EIP-7702
-    ///         delegated account). ADMIN role. Informational since Editions stopped reading the
-    ///         mint policy (it claims no content here: Stream's record decides an edition).
-    /// @param target The 6529 Stream Editions contract.
-    function bindEditions(address target) external;
+    /// @notice Sets the VRF entropy module a VRF item's seed is read from. Governed,
+    ///         compare-and-set. A nonzero module must support `IEntropyModule` (ERC-165).
+    /// @param expected The module the caller expects now; a stale value reverts.
+    /// @param next The new module, or zero to refuse VRF items.
+    function setEntropyModule(address expected, address next) external;
     /// @notice Registers an approved package root. Permissionless; the verifier decides.
     /// @param packageRoot The package root: the Merkle root over its items'
     ///        `WorksHashing.leaf(itemHash)` values.
@@ -164,7 +171,7 @@ interface IPackageRegistry is IERC165 {
     ///         not yet minted can no longer mint, and an edition sale can no longer open on them
     ///         (`IItemApprovals.isApprovedItem`). Packages the signer approves later are not
     ///         affected, nor attestations signed before and registered after: disable the
-    ///         signer in the verifier for those, in the same batch (C32). A network action with
+    ///         signer in the verifier for those, in the same batch. A network action with
     ///         no delay.
     /// @param signer The curation signer whose registered approvals stop.
     function killSignerApprovals(address signer) external;
@@ -178,9 +185,12 @@ interface IPackageRegistry is IERC165 {
     /// @notice The bound 6529 Stream.
     /// @return The 6529 Stream contract, or zero before it is bound.
     function stream() external view returns (address);
-    /// @notice The bound 6529 Stream Editions.
-    /// @return The 6529 Stream Editions contract, or zero before it is bound.
-    function editions() external view returns (address);
+    /// @notice The economics resolver new works take their terms from (immutable).
+    /// @return The resolver.
+    function economics() external view returns (IEconomicsResolver);
+    /// @notice The VRF entropy module, or zero.
+    /// @return The module.
+    function entropyModule() external view returns (address);
     /// @notice A package root's status, evidence hash and attesting signer.
     /// @param packageRoot The package root.
     /// @return status NONE, APPROVED or REVOKED (also when its signer's approvals were killed
@@ -196,17 +206,12 @@ interface IPackageRegistry is IERC165 {
     /// @param account The party's account.
     /// @return The artist ID, or zero.
     function acceptedAs(bytes32 packageRoot, address account) external view returns (uint256);
-    /// @notice The item that consumed `contentHash` on 6529 Stream, or zero. Tools derive an
-    ///         item's content hash from the item itself.
+    /// @notice The item whose work holds `contentHash` on 6529 Stream, or zero: the item of the
+    ///         live token `IStream.tokenOfContent` names, or of the burned token it names while
+    ///         that token's content is not released. The entropy module reads it.
     /// @param contentHash The content hash.
-    /// @return itemHash The consuming item's hash, or zero (also after a release).
+    /// @return itemHash The item hash, or zero (never minted, or released after a burn).
     function consumedItemOf(bytes32 contentHash) external view returns (bytes32 itemHash);
-    /// @notice The artist a released content hash is reserved for, or zero if never released.
-    ///         It binds only while the content is released: once its item consumes, the
-    ///         content is used again.
-    /// @param contentHash The content hash.
-    /// @return artistId The beneficiary's artist ID, or zero.
-    function releasedTo(bytes32 contentHash) external view returns (uint256 artistId);
     /// @notice The kill epoch of a curation signer's latest kill (`killSignerApprovals`): its
     ///         packages registered before that epoch no longer authorize.
     /// @param signer The curation signer.

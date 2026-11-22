@@ -2,14 +2,14 @@
 pragma solidity ^0.8.24;
 
 /// @title IAssetAllowlist
-/// @notice The governed payment-currency allowlist (ADR 0001 section 5). Sale adapters read it when
-///         a sale starts and lock the currency and its increment floor for that sale. Withdrawals
-///         never read it: split wallets and the revenue escrow release any asset they hold. ETH is
-///         `address(0)`.
+/// @notice The governed payment settings of the network's sales, ETH only (ETH is `address(0)`):
+///         the English auction's opening bid and increment floor, which it reads when a bid is
+///         placed, and each product's default currency. No other asset can be admitted, and ETH
+///         is never deprecated. Withdrawals never read it.
 /// @dev Every governed setter is compare-and-set on a revision counter. Each asset and each
-///      product has its own counter, bumped by every change to it (admission, deprecation, floor
-///      change; default change), so a queued operation runs only against the exact state it was
-///      written for, even if the state later returns to the same values (no ABA).
+///      product has its own counter, bumped by every change to it, so a queued operation runs
+///      only against the exact state it was written for, even if the state later returns to the
+///      same values.
 interface IAssetAllowlist {
     /// @notice `None`: never admitted. `Active`: new sales may use it. `Deprecated`: new sales may
     ///         not use it; sales already started and every withdrawal are unaffected.
@@ -54,22 +54,14 @@ interface IAssetAllowlist {
     /// @param revision The asset's revision after the change.
     event OpeningBidSet(address indexed asset, uint256 previous, uint256 current, uint64 revision);
 
-    /// @notice `asset` has no code, is an EIP-7702 delegated account, or reports a balance above
-    ///         its total supply. Unreadable balances or supply revert with the token-read error.
-    error AssetNotAdmissible(address asset);
     /// @notice Compare-and-set failed: the state is at revision `actual`, not `expected`.
     error RevisionMismatch(uint64 expected, uint64 actual);
     /// @notice The requested change does not apply to an asset in status `current`.
     error InvalidStatusTransition(address asset, Status current);
     /// @notice `asset` is not active.
     error AssetNotActive(address asset);
-    /// @notice ETH, the native currency, is never deprecated: a deprecation would otherwise
-    ///         freeze every ETH sale and, after the freeze exit, end each one unsold (MONEY-M1,
-    ///         G-2 in the rc.2 review).
+    /// @notice ETH, the native currency, is never deprecated.
     error EthNotDeprecable();
-    /// @notice A deprecated `asset` may be re-admitted only from `allowedAt`, one
-    ///         `Roles.DELAY_3D` (3 days) after its deprecation.
-    error ReadmissionTooEarly(address asset, uint256 allowedAt);
     /// @notice An increment floor must be non-zero.
     error InvalidIncrementFloor();
     /// @notice The product identifier is zero.
@@ -107,9 +99,6 @@ interface IAssetAllowlist {
 
     /// @notice When `asset`'s status last changed (its latest admission or deprecation) and the
     ///         seconds it spent deprecated in earlier, closed deprecations, without reverting.
-    /// @dev Sale adapters stop their clocks while their currency is deprecated (MARKET-1,
-    ///      MARKET-2): the time deprecated so far is `inactiveTotal`, plus
-    ///      `block.timestamp - since` while the asset is deprecated now.
     /// @param asset The asset to look up (ETH is `address(0)`).
     /// @return status The asset's status.
     /// @return since The timestamp, in seconds, of the latest admission or deprecation; zero if
@@ -156,16 +145,6 @@ interface IAssetAllowlist {
         external
         view
         returns (bool configured, address asset, uint64 revision);
-
-    /// @notice Admits `asset`, or re-admits a deprecated one, with increment floor `floor`, if the
-    ///         asset is at `expectedRevision` (0 for a never-admitted asset). Re-admission is the
-    ///         only way back from deprecation, and is refused until `Roles.DELAY_3D` (3 days) after it
-    ///         (`ReadmissionTooEarly`), even when scheduled before the deprecation.
-    /// @param asset The asset to admit: ETH (`address(0)`) or a token contract that passes the
-    ///        {AssetNotAdmissible} checks; must not be active already.
-    /// @param expectedRevision The revision the asset must be at.
-    /// @param floor The increment floor, in the asset's base units; must be non-zero.
-    function admitAsset(address asset, uint64 expectedRevision, uint256 floor) external;
 
     /// @notice Stops new sales from using active `asset`. Immediate; bumps the asset's revision,
     ///         so every operation queued against the earlier state reverts. ETH is refused
