@@ -119,7 +119,17 @@ contract ArtistRegistryTest is IdentityFixture {
     ///      wallet but the root, without being asked.
     function test_IsWallet_ASourceWhoseCodeChangedConsolidatesNobody() public {
         assertTrue(registry.isWallet(artistId, wallet));
-        vm.etch(address(adapter), address(new AlwaysConsolidated()).code);
+        bytes32 pinned = address(adapter).codehash;
+        bool below;
+        bool above;
+        for (uint256 i; !(below && above); ++i) {
+            // The same answer behind code of another hash: a trailing byte that never runs.
+            bytes memory code = abi.encodePacked(address(new AlwaysConsolidated()).code, uint8(i));
+            vm.etch(address(adapter), code);
+            bytes32 h = address(adapter).codehash;
+            (below, above) = (below || h < pinned, above || h > pinned);
+            assertFalse(registry.isWallet(artistId, wallet));
+        }
         assertFalse(registry.isWallet(artistId, wallet));
         assertFalse(registry.isWallet(artistId, outsider));
         assertTrue(registry.isWallet(artistId, artist), "the root still is");
@@ -491,6 +501,123 @@ contract ArtistRegistryTest is IdentityFixture {
             )
         );
         registry.cancelChange(artistId);
+        vm.warp(block.timestamp + 1 days);
+        vm.prank(wallet);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IArtistRegistry.ContestWindowClosed.selector, artistId, uint48(START + 14 days)
+            )
+        );
+        registry.cancelChange(artistId);
+    }
+
+    /// @dev A contest stays lapsed after its lapse time, not only at it.
+    function test_Contest_StaysLapsedAfterNinetyDays() public {
+        _stageReplacement(_identity(newRoot, newRoot), newKey);
+        vm.prank(wallet);
+        registry.cancelChange(artistId);
+        vm.warp(block.timestamp + 91 days);
+        assertEq(registry.activeAuthorityOf(artistId), artist);
+        registry.expireContest(artistId);
+        assertEq(uint8(registry.pendingChange(artistId).kind), uint8(ChangeKind.NONE));
+    }
+
+    /// @dev A vote recorded after the contest upholds it whatever its value relative to the
+    ///      outcome the contest saw, and a due change may be upheld and executed later than its
+    ///      exact due time.
+    function test_Contest_UpheldLateByAVoteBelowThePriorOutcome() public {
+        DisputeOutcomeLogMock outcomes = _wireOutcomes();
+        bytes32 prior = bytes32(type(uint256).max);
+        bytes32 vote = bytes32(uint256(1));
+        outcomes.setOutcome(address(registry), artistId, prior);
+        _stageReplacement(_identity(newRoot, newRoot), newKey);
+        vm.prank(wallet);
+        registry.cancelChange(artistId);
+        outcomes.setOutcome(address(registry), artistId, vote);
+        vm.warp(block.timestamp + 15 days);
+        vm.prank(network);
+        registry.resolveContested(artistId, true, vote);
+        assertEq(registry.authorityOf(artistId), newRoot);
+    }
+
+    /// @dev Only the latest recorded outcome resolves a contest: references on either side of it
+    ///      are refused.
+    function test_ResolveContested_RefusesOutcomesEitherSideOfTheLatest() public {
+        DisputeOutcomeLogMock outcomes = _wireOutcomes();
+        _stageReplacement(_identity(newRoot, newRoot), newKey);
+        vm.prank(wallet);
+        registry.cancelChange(artistId);
+        bytes32 latest = bytes32(uint256(1) << 128);
+        outcomes.setOutcome(address(registry), artistId, latest);
+        bytes32[2] memory others = [bytes32(uint256(1)), bytes32(type(uint256).max)];
+        for (uint256 i; i < others.length; ++i) {
+            vm.prank(network);
+            vm.expectRevert(
+                abi.encodeWithSelector(
+                    IArtistRegistry.OutcomeNotRecorded.selector, artistId, others[i]
+                )
+            );
+            registry.resolveContested(artistId, false, others[i]);
+        }
+        vm.prank(network);
+        registry.resolveContested(artistId, false, latest);
+    }
+
+    /// @dev An own change executes any time after it is due.
+    function test_OwnChange_ExecutesLaterThanDue() public {
+        _stage(artistKey, _identity(artist, payout));
+        vm.warp(block.timestamp + 30 days);
+        registry.executeChange(artistId);
+        assertEq(registry.payoutAddress(artistId), payout);
+    }
+
+    /// @dev A root another account's pending change reserves is taken too, whichever side of
+    ///      this account's ID that account's ID falls.
+    function test_OwnChange_RefusesRootsOthersReserveEitherSideOfThisOne() public {
+        (uint256 belowKey, uint256 aboveKey) = (0, 0);
+        for (uint256 k = 0x2000; belowKey == 0 || aboveKey == 0; ++k) {
+            address a = vm.addr(k);
+            if (a < artist && belowKey == 0) belowKey = k;
+            if (a > artist && aboveKey == 0) aboveKey = k;
+        }
+        uint256[2] memory keys = [belowKey, aboveKey];
+        for (uint256 i; i < keys.length; ++i) {
+            address other = vm.addr(keys[i]);
+            address wanted = vm.addr(0x3000 + i);
+            uint256 otherId = _register(other);
+            // Both accounts may move their root to `wanted`; the other one stages it first.
+            _consolidate(other, wanted);
+            _consolidate(artist, wanted);
+            ArtistIdentity memory next = _identity(wanted, wanted);
+            uint64 deadline = uint64(block.timestamp + 1 days);
+            bytes32 digest =
+                registry.changeDigest(otherId, next, registry.changeNonce(otherId), deadline);
+            vm.prank(stranger);
+            registry.stageChange(otherId, next, deadline, _proof(keys[i], digest));
+            assertEq(registry.reservedFor(wanted), otherId);
+            (bool ok, bytes memory data) = _relay(_changeCall(artistKey, next));
+            assertFalse(ok);
+            assertEq(data, abi.encodeWithSelector(IArtistRegistry.AccountTaken.selector, wanted));
+        }
+    }
+
+    /// @dev A root held by another account is taken whichever side of this account's ID that
+    ///      account's ID falls.
+    function test_OwnChange_RefusesRootsOfAccountsEitherSideOfThisOne() public {
+        (address below, address above) = (address(0), address(0));
+        for (uint256 k = 0x1000; below == address(0) || above == address(0); ++k) {
+            address a = vm.addr(k);
+            if (a < artist && below == address(0)) below = a;
+            if (a > artist && above == address(0)) above = a;
+        }
+        address[2] memory others = [below, above];
+        for (uint256 i; i < others.length; ++i) {
+            _register(others[i]);
+            (bool ok, bytes memory data) =
+                _relay(_changeCall(artistKey, _identity(others[i], payout)));
+            assertFalse(ok);
+            assertEq(data, abi.encodeWithSelector(IArtistRegistry.AccountTaken.selector, others[i]));
+        }
     }
 
     /// @dev A second contest of a contested replacement is a no-op: no event, and the contest
@@ -878,6 +1005,17 @@ contract ArtistRegistryTest is IdentityFixture {
         assertTrue(registry.supportsInterface(type(IArtistPayoutResolver).interfaceId));
         assertTrue(registry.supportsInterface(type(IAccounts).interfaceId));
         assertFalse(registry.supportsInterface(0xffffffff));
+        bytes4[5] memory ids = [
+            type(IERC165).interfaceId,
+            type(IArtistRoleResolver).interfaceId,
+            type(IArtistRegistry).interfaceId,
+            type(IArtistPayoutResolver).interfaceId,
+            type(IAccounts).interfaceId
+        ];
+        for (uint256 i; i < ids.length; ++i) {
+            assertFalse(registry.supportsInterface(bytes4(uint32(ids[i]) - 1)));
+            assertFalse(registry.supportsInterface(bytes4(uint32(ids[i]) + 1)));
+        }
     }
 
     function test_FixedValues() public view {
@@ -962,6 +1100,15 @@ contract ArtistRegistryTest is IdentityFixture {
             abi.encodeWithSelector(IArtistRegistry.InvalidBinding.selector, address(foreign))
         );
         registry.bindStatementLog(address(foreign));
+        address[2] memory resolvers = [address(1), address(type(uint160).max)];
+        for (uint256 i; i < resolvers.length; ++i) {
+            DisputeOutcomeLogMock other = new DisputeOutcomeLogMock(resolvers[i]);
+            vm.prank(admin);
+            vm.expectRevert(
+                abi.encodeWithSelector(IArtistRegistry.InvalidBinding.selector, address(other))
+            );
+            registry.bindStatementLog(address(other));
+        }
         assertEq(registry.statementLog(), address(0), "nothing bound");
     }
 
