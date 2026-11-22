@@ -346,6 +346,18 @@ contract GovernedVaultTest is EconomicsBase {
         vm.expectRevert(reason);
         vault.releaseToDestination(ledger_, payees, bytes32(0), ETH, 0);
 
+        // The bound is exact: a 1,024-byte refusal is kept whole, a 1,025-byte one is not.
+        bytes memory longest = new bytes(1024);
+        longest[0] = 0x01;
+        fake.configure(longest, true);
+        vm.expectRevert(longest);
+        vault.releaseToDestination(ledger_, payees, bytes32(0), ETH, 0);
+        fake.configure(abi.encodePacked(longest, uint8(2)), true);
+        vm.expectRevert(
+            abi.encodeWithSelector(BoundedCall.BoundedCallFailed.selector, address(fake))
+        );
+        vault.releaseToDestination(ledger_, payees, bytes32(0), ETH, 0);
+
         fake.configure(abi.encode(uint256(1), uint256(2)), false);
         vm.expectRevert(
             abi.encodeWithSelector(BoundedCall.BoundedCallMalformedReturn.selector, address(fake))
