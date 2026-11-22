@@ -66,6 +66,30 @@
     "inputs": [
       {
         "internalType": "bytes32",
+        "name": "fileId",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint256",
+        "name": "maxChunks",
+        "type": "uint256"
+      }
+    ],
+    "name": "attestComplete",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "done",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
         "name": "chunkHash",
         "type": "bytes32"
       }
@@ -119,6 +143,25 @@
         "internalType": "address",
         "name": "",
         "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "fileId",
+        "type": "bytes32"
+      }
+    ],
+    "name": "completeThrough",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
       }
     ],
     "stateMutability": "view",
@@ -607,6 +650,38 @@
       }
     ],
     "name": "ChunkWritten",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "fileId",
+        "type": "bytes32"
+      }
+    ],
+    "name": "CompletenessAttested",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "fileId",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "chunksPresent",
+        "type": "uint256"
+      }
+    ],
+    "name": "CompletenessProgress",
     "type": "event"
   },
   {

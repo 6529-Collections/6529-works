@@ -24,8 +24,8 @@ is the [uploader](../../tools/content/README.md).
 
 | Caller | Calls | Rules |
 | --- | --- | --- |
-| Anyone (artist, platform, collector, uploader) | `writeChunk`, `linkChunk`, `registerManifest`, `registerManifestList`, `attestBase64`, in any order | WS-24 to WS-27, WS-29, WS-31, WS-50, WS-51 |
-| Anyone; `WorkRecords`; the renderer | `fileInfo`, `sha256Of`, `isComplete`, `firstMissing`, `missingChunks`, `readChunk`, `chunkData`, `read`, `isBase64Attested` | WS-28, WS-30, WS-52, WS-53 |
+| Anyone (artist, platform, collector, uploader) | `writeChunk`, `linkChunk`, `registerManifest`, `registerManifestList`, `attestBase64`, `attestComplete`, in any order | WS-24 to WS-27, WS-29, WS-31, WS-50, WS-51, WS-55 |
+| Anyone; `WorkRecords`; the renderer | `fileInfo`, `sha256Of`, `isComplete`, `completeThrough`, `firstMissing`, `missingChunks`, `readChunk`, `chunkData`, `read`, `isBase64Attested` | WS-28, WS-30, WS-52, WS-53, WS-55 |
 | Governance | `DependencyRegistry.register`, `deprecate` | WS-34, WS-35; [role matrix](../../docs/audit/roles.md#dependencyregistry) |
 | `Stream.tokenURI`, `Editions.uri` (through `rendererOf`); anyone by `eth_call` | `Renderer.tokenURI(token, id)`, `fullTokenURI(token, id)` | RND-1 to RND-27 |
 
@@ -42,6 +42,8 @@ Integrators start at [Reading a work](../../docs/integrators/reading-a-work.md) 
 - **Storage layout.** A file's `entries` are its chunk hashes (`hashesPerList` 0) or its list
   chunks' pointers; a link is one `(length, count)` word and one pointer per part.
   `chunkPointer` is zero for a linked chunk: read it with `chunkData` or `readChunk` (WS-50).
+  `completeThrough` (the last slot) is each file's attested prefix of present chunks; only
+  `attestComplete` writes it, and `isComplete` walks only past it (WS-55).
 - **Writes trust CREATE2's result (WS-24).** No read or write recomputes an address, and the
   store deduplicates by `chunkPointer` before writing (a repeat CREATE2 would collide).
 - **Large reads are superlinear.** Every touched chunk is read in full and checked against its

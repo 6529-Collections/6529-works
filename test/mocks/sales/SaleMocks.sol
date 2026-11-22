@@ -128,6 +128,10 @@ contract MockRevenueEscrow {
         owed[wallet][asset] += amount;
         totalOwed[asset] += amount;
     }
+
+    function locked() external pure returns (bool) {
+        return false;
+    }
 }
 
 /// @dev The allowlist's `isActive` and `defaultCurrency` reads, set by the test.

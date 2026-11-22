@@ -310,6 +310,20 @@ contract EconomicsInvariantTest is Test {
         }
     }
 
+    /// @dev R12, ECO-45: what may expire now and at later times matches the per-lot model,
+    ///      never includes a unit younger than 180 days and always includes every unit 360 days
+    ///      old.
+    function _assertExpiry(address target, address asset) internal view {
+        uint256 t = block.timestamp;
+        uint256[4] memory at = [t, t + 179 days, t + 180 days, t + 360 days];
+        for (uint256 i; i < 4; ++i) {
+            uint256 e = escrow.expirableAt(target, asset, at[i]);
+            assertEq(e, handler.modelExpirable(target, asset, at[i]), "expirable");
+            assertLe(e, handler.modelOlder(target, asset, at[i], 180 days), "180 days");
+            assertGe(e, handler.modelOlder(target, asset, at[i], 360 days), "360 days");
+        }
+    }
+
     /// @notice The escrow holds at least what it owes, and every credit matches the model.
     function invariant_EscrowIsSolventAndMatchesTheModel() public view {
         for (uint256 k; k < 3; ++k) {
@@ -317,12 +331,11 @@ contract EconomicsInvariantTest is Test {
             uint256 sum = escrow.owed(address(toggle), asset) + escrow.owed(network, asset);
             assertEq(escrow.owed(address(toggle), asset), handler.ghostOwed(address(toggle), asset));
             assertEq(escrow.owed(network, asset), handler.ghostOwed(network, asset));
-            assertEq(
-                escrow.creditedAt(network, asset), handler.ghostCreditedAt(network, asset), "clock"
-            );
+            _assertExpiry(address(toggle), asset);
             for (uint256 w; w < wallets.length; ++w) {
                 uint256 owed = escrow.owed(address(wallets[w]), asset);
                 assertEq(owed, handler.ghostOwed(address(wallets[w]), asset));
+                _assertExpiry(address(wallets[w]), asset);
                 sum += owed;
             }
             assertEq(sum, escrow.totalOwed(asset), "credits sum to total owed");

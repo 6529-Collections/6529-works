@@ -10,8 +10,10 @@ import { ISplitFactory } from "./ISplitFactory.sol";
 ///         split wallet's credit only to an equivalent replacement wallet (same factory,
 ///         identical payees), its own credits (the fee and museum vaults') anywhere, and any
 ///         other account's credit only to the replacement that account itself named (its
-///         consent). A credit nobody claims for 180 days after it went from zero moves to the
-///         network fee vault ({expire}); later additions do not move that clock.
+///         consent). Every amount credited stays its account's for at least 180 days from its
+///         block and may move to the network fee vault less than 360 days after it ({expire}); no
+///         deposit, by anyone, makes an amount expire sooner, or moves the time from which an
+///         amount already 180 days old may expire (see `RevenueEscrow`).
 /// @dev Declares itself through ERC-165, so the artist registry and the economics resolver can
 ///      refuse the escrow as a payout or fee recipient (`ProtocolContracts`).
 interface IRevenueEscrow is IERC165 {
@@ -62,12 +64,13 @@ interface IRevenueEscrow is IERC165 {
     /// @param amount The amount swept: the whole excess.
     event ExcessSwept(address indexed asset, address indexed recipient, uint256 amount);
 
-    /// @notice `amount` of `asset` owed to `wallet`, unclaimed for 180 days since it went from
-    ///         zero, moved to the network fee vault `network`, which is now owed `owed`.
+    /// @notice `amount` of `asset` owed to `wallet`, every unit of it credited at least 180 days
+    ///         ago, moved to the network fee vault `network`, which is now owed `owed`.
     /// @param wallet The account whose credit moved.
     /// @param asset The asset of the credit (ETH is `address(0)`).
     /// @param network The network fee vault credited.
-    /// @param amount The amount moved: the wallet's whole credit in the asset.
+    /// @param amount The amount moved: the wallet's expirable part (`aged`, after ageing to this
+    ///        block); the rest of its credit stays.
     /// @param owed The network's whole credit in the asset after the move.
     event Expired(
         address indexed wallet,
@@ -101,15 +104,15 @@ interface IRevenueEscrow is IERC165 {
     /// @notice `account` is not a factory wallet and has not named `replacement` with
     ///         {consentToRecovery}.
     error RecoveryNotConsented(address account, address replacement);
-    /// @notice `wallet`'s credit in `asset` was added to less than 180 days ago; it may move to
-    ///         the network from `dueAt`.
+    /// @notice No part of `wallet`'s credit in `asset` may move to the network yet; the next part
+    ///         may from `dueAt`, unless a later credit extends its window.
     error CreditNotExpired(address wallet, address asset, uint256 dueAt);
 
     /// @notice The split factory whose wallet configurations {recover} compares.
     /// @return The split factory, fixed at deployment.
     function factory() external view returns (ISplitFactory);
 
-    /// @notice The amount of `asset` owed to `wallet`.
+    /// @notice The amount of `asset` owed to `wallet`: `aged + maturing + recent` of {credits}.
     /// @param wallet The credited account.
     /// @param asset The asset to look up (ETH is `address(0)`).
     /// @return The credit, in the asset's base units.
@@ -126,18 +129,56 @@ interface IRevenueEscrow is IERC165 {
     /// @return The replacement it named, or zero.
     function recoveryConsent(address account) external view returns (address);
 
-    /// @notice When `wallet`'s credit in `asset` last went from zero to nonzero (a deposit or a
-    ///         recovery to it); later additions leave it unchanged; zero if never.
+    /// @notice `wallet`'s credit in `asset` as stored at its last change, in three parts that age
+    ///         oldest first; they sum to {owed}. A deposit or a recovery to the wallet joins the
+    ///         open window, or opens one at its block when there is none or it has closed.
+    /// @dev The stored parts are not aged to now: {expirableAt} does that. A window closes 180
+    ///      days after `openedAt`; its credits then mature 180 days after `lastAt`.
     /// @param wallet The credited account.
     /// @param asset The asset to look up (ETH is `address(0)`).
-    /// @return The time, in seconds.
-    function creditedAt(address wallet, address asset) external view returns (uint48);
+    /// @return aged The part that may move to the network.
+    /// @return maturing The last closed window's credits, which may move from `maturesAt`.
+    /// @return recent The open window's credits.
+    /// @return maturesAt When `maturing` may move: 180 days after its window's last credit.
+    /// @return openedAt When the open window opened (its first credit).
+    /// @return lastAt When the open window took its last credit.
+    function credits(address wallet, address asset)
+        external
+        view
+        returns (
+            uint256 aged,
+            uint256 maturing,
+            uint256 recent,
+            uint48 maturesAt,
+            uint48 openedAt,
+            uint48 lastAt
+        );
 
-    /// @notice Moves everything owed to `wallet` in `asset` to the network fee vault
-    ///         (`factory().network()`) as a credit, once 180 days have passed since it went
-    ///         from zero. Anyone may call; anyone may then {flush} it to the vault.
-    /// @dev Reverts with {CreditNotExpired} before then, {NothingOwed} when nothing is owed and
-    ///      {InvalidWallet} for the network itself.
+    /// @notice What {expire} would move from `wallet`'s credit in `asset` at `time` if nothing
+    ///         else happened first; zero for the network fee vault (`factory().network()`), whose
+    ///         credit never expires. Any other account's credit, the museum vault's included,
+    ///         is projected like anyone's.
+    /// @param wallet The credited account.
+    /// @param asset The asset to look up (ETH is `address(0)`).
+    /// @param time The time to age the credit to; an earlier time than now counts as now.
+    /// @return The amount, in the asset's base units.
+    function expirableAt(address wallet, address asset, uint256 time)
+        external
+        view
+        returns (uint256);
+
+    /// @notice Whether a call holds the escrow's reentrancy guard, so its guarded functions would
+    ///         revert; the English auction reads it before a settlement attempt.
+    /// @return True while the guard is held.
+    function locked() external view returns (bool);
+
+    /// @notice Moves the part of `wallet`'s credit in `asset` that may expire (every unit of it
+    ///         credited at least 180 days ago, see `RevenueEscrow`) to the network fee vault
+    ///         (`factory().network()`) as a credit; the rest stays. Anyone may call; anyone may
+    ///         then {flush} it to the vault.
+    /// @dev Reverts with {CreditNotExpired} when no part may move yet, {NothingOwed} when nothing
+    ///      is owed and {InvalidWallet} for the network fee vault itself; the museum vault and
+    ///      other network accounts expire into the fee vault like anyone.
     /// @param wallet The credited account.
     /// @param asset The asset (ETH is `address(0)`).
     /// @return amount The amount moved.

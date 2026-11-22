@@ -10,6 +10,56 @@ import { SplitLedger } from "../../src/economics/SplitLedger.sol";
 import { SplitVault } from "../../src/economics/SplitVault.sol";
 import { Actor, Gate, MedusaBase, PlainToken } from "./MedusaBase.sol";
 
+/// @dev The harness's own model of the escrow's expiry windows (ECO-45), window by window: a
+///      credit joins the latest window while it holds credit and is younger than 180 days, and
+///      opens a new one otherwise; a window's credit may expire from 180 days after its last.
+library MedusaWindows {
+    uint256 internal constant PERIOD = 180 days;
+
+    struct Book {
+        uint256[] amount;
+        uint256[] openedAt;
+        uint256[] lastAt;
+        uint256 head;
+    }
+
+    function credit(Book storage b, uint256 value, uint256 nowAt) internal {
+        uint256 n = b.amount.length;
+        if (b.head < n && nowAt < b.openedAt[n - 1] + PERIOD) {
+            b.amount[n - 1] += value;
+            b.lastAt[n - 1] = nowAt;
+        } else {
+            b.amount.push(value);
+            b.openedAt.push(nowAt);
+            b.lastAt.push(nowAt);
+        }
+    }
+
+    function expirable(Book storage b, uint256 t) internal view returns (uint256 sum) {
+        for (uint256 i = b.head; i < b.amount.length; ++i) {
+            if (b.lastAt[i] + PERIOD <= t) sum += b.amount[i];
+        }
+    }
+
+    /// @dev The credit of every window that opened at least 360 days before `t`: its last
+    ///      credit came within 180 days of its opening, so all of it must be expirable by `t`.
+    function veryOld(Book storage b, uint256 t) internal view returns (uint256 sum) {
+        for (uint256 i = b.head; i < b.amount.length; ++i) {
+            if (b.openedAt[i] + 2 * PERIOD <= t) sum += b.amount[i];
+        }
+    }
+
+    function expire(Book storage b, uint256 t) internal {
+        while (b.head < b.amount.length && b.lastAt[b.head] + PERIOD <= t) {
+            ++b.head;
+        }
+    }
+
+    function takeAll(Book storage b) internal {
+        b.head = b.amount.length;
+    }
+}
+
 /// @dev The artist payout resolver as the harness sets it: one artist, whose payout address the
 ///      harness rotates between two keys or freezes (zero, unresolved).
 contract PayoutBook is IArtistPayoutResolver {
@@ -84,7 +134,8 @@ contract LedgerMedusa is MedusaBase {
     mapping(uint256 w => mapping(address asset => mapping(uint256 i => bool))) public mMarked;
     mapping(address account => mapping(address asset => uint256)) public mBal;
     mapping(address account => mapping(address asset => uint256)) public mOwed;
-    mapping(address account => mapping(address asset => uint256)) public mCreditedAt;
+    /// @dev The escrow credits lot by lot, with their windows (R12, ECO-45).
+    mapping(address account => mapping(address asset => MedusaWindows.Book)) internal mBooks;
     mapping(address asset => uint256) public mTotalOwed;
     mapping(address account => address) public mConsent;
     mapping(address account => mapping(uint256 nonce => bool)) public mNonce;
@@ -388,6 +439,7 @@ contract LedgerMedusa is MedusaBase {
         (bool ok,) = _expect(stranger, address(escrow), data, expected, "flush");
         if (!ok) return;
         mOwed[account][asset] = 0;
+        MedusaWindows.takeAll(mBooks[account][asset]);
         mTotalOwed[asset] -= amount;
         _move(address(escrow), account, asset, amount);
         for (uint256 w; w < WALLETS; ++w) {
@@ -432,22 +484,24 @@ contract LedgerMedusa is MedusaBase {
         if (!asGovernor) unauthorizedSucceeded = true;
         if (consented) mConsent[account] = address(0);
         mOwed[account][asset] = 0;
+        MedusaWindows.takeAll(mBooks[account][asset]);
         _addCredit(rep, asset, amount);
     }
 
-    /// `expire`: anyone, 180 days after the credit last went from zero; never the network's own
-    /// credit; it becomes a credit of the fee vault (ECO-45).
+    /// `expire`: anyone; it moves the credits of every window whose last credit is 180 days
+    /// old, never the fee vault's own credit; they become a credit of the fee vault (ECO-45).
     function expire(uint8 sel, bool eth) public {
         address account = _creditee(sel);
         address asset = _asset(eth);
-        uint256 amount = mOwed[account][asset];
-        bool expected = account != address(vault) && amount != 0
-            && block.timestamp >= mCreditedAt[account][asset] + PERIOD;
+        MedusaWindows.Book storage book = mBooks[account][asset];
+        uint256 due = MedusaWindows.expirable(book, block.timestamp);
+        bool expected = account != address(vault) && due != 0;
         bytes memory data = abi.encodeCall(escrow.expire, (account, asset));
         (bool ok,) = _expect(stranger, address(escrow), data, expected, "expire");
         if (!ok) return;
-        mOwed[account][asset] = 0;
-        _addCredit(address(vault), asset, amount);
+        MedusaWindows.expire(book, block.timestamp);
+        mOwed[account][asset] -= due;
+        _addCredit(address(vault), asset, due);
     }
 
     /// Tokens sent to the escrow without a deposit: owed to nobody.
@@ -597,8 +651,9 @@ contract LedgerMedusa is MedusaBase {
         return true;
     }
 
-    /// ECO-27, INV-ECO-6, ECO-40: the escrow holds at least what it owes, per asset; every
-    /// credit, its clock and the totals match the model.
+    /// ECO-27, INV-ECO-6, ECO-40, ECO-45: the escrow holds at least what it owes, per asset;
+    /// every credit, what of it may expire now and later, and the totals match the model; what
+    /// may expire is never early and always includes every window opened 360 days before.
     function property_EscrowIsSolvent() public view returns (bool) {
         for (uint256 a; a < 2; ++a) {
             address asset = _asset(a == 0);
@@ -609,9 +664,7 @@ contract LedgerMedusa is MedusaBase {
                 address account = _tracked[k];
                 uint256 owed = escrow.owed(account, asset);
                 if (owed != mOwed[account][asset]) return false;
-                if (owed != 0 && escrow.creditedAt(account, asset) != mCreditedAt[account][asset]) {
-                    return false;
-                }
+                if (account != address(vault) && !_expiryMatches(account, asset)) return false;
                 sum += owed;
             }
             if (sum != mTotalOwed[asset]) return false;
@@ -669,8 +722,20 @@ contract LedgerMedusa is MedusaBase {
     }
 
     function _addCredit(address account, address asset, uint256 amount) internal {
-        if (mOwed[account][asset] == 0) mCreditedAt[account][asset] = block.timestamp;
         mOwed[account][asset] += amount;
+        MedusaWindows.credit(mBooks[account][asset], amount, block.timestamp);
+    }
+
+    function _expiryMatches(address account, address asset) internal view returns (bool) {
+        MedusaWindows.Book storage book = mBooks[account][asset];
+        uint256 t = block.timestamp;
+        uint256[3] memory at = [t, t + PERIOD, t + 2 * PERIOD];
+        for (uint256 i; i < 3; ++i) {
+            uint256 e = escrow.expirableAt(account, asset, at[i]);
+            if (e != MedusaWindows.expirable(book, at[i])) return false;
+            if (e < MedusaWindows.veryOld(book, at[i])) return false;
+        }
+        return true;
     }
 
     function _move(address from, address to, address asset, uint256 amount) internal {

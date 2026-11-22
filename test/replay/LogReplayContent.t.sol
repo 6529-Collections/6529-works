@@ -46,6 +46,12 @@ contract LogReplayContentTest is ReplayBase {
         _sync();
         assertTrue(store.isComplete(pending));
         assertEq(store.maxParts(pending), 2);
+        // Attested complete in two pieces: progress, then the attestation.
+        assertFalse(store.attestComplete(pending, 1));
+        _sync();
+        assertTrue(store.attestComplete(pending, 5));
+        _sync();
+        assertEq(store.completeThrough(pending), 2);
     }
 
     /// @dev A manifest registered from a list chunk, with a digest kind other than SHA-256.
@@ -87,6 +93,16 @@ contract LogReplayContentTest is ReplayBase {
             address(store), keccak256(abi.encode(fileId, uint256(1))), bytes32(uint256(1 << 64))
         );
         vm.expectRevert();
+        contentIdx.assertMatches();
+    }
+
+    /// @dev Negative control: slot 5 holds `completeThrough`; a prefix no log attested makes the
+    ///      comparison fail.
+    function test_IndexerDetectsACompletenessPrefixLogsDoNotExplain() public {
+        bytes32 fileId = cc0TextFileId;
+        contentIdx.assertMatches();
+        vm.store(address(store), keccak256(abi.encode(fileId, uint256(5))), bytes32(uint256(1)));
+        vm.expectRevert(bytes("completeThrough: 1 != 0"));
         contentIdx.assertMatches();
     }
 

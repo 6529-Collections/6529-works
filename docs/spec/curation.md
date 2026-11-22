@@ -312,6 +312,11 @@ sequenceDiagram
   addresses of one account is invalid at consume.
 - **Frozen or replaced.** Acceptances, even ones signed earlier, revert with `InvalidSignature`
   while the account is frozen or its root is being replaced.
+- **What a party consents to.** A party accepts the root, and so every item under it: parties,
+  payees, content, license, sale and edition terms. Not the royalty rate: on 6529 Stream it is
+  the economics resolver's product rate, read when the work starts, and on a federated contract
+  the artist sets it with `approveItem`, outside the item hash (FED-11). A collaborator never
+  signs the rate its royalty income depends on (LIM-ID-27).
 
 ### Move and start
 

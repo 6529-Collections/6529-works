@@ -97,7 +97,7 @@ contract LogReplayLedgerTest is ReplayBase {
         _sync();
         vm.warp(block.timestamp + 1 days);
         vm.prank(payer);
-        escrow.depositETH{ value: 0.5 ether }(alice); // the clock does not move
+        escrow.depositETH{ value: 0.5 ether }(alice); // joins the open window
         usd.mint(payer, 50e18);
         vm.startPrank(payer);
         usd.approve(address(escrow), 50e18);
@@ -126,12 +126,24 @@ contract LogReplayLedgerTest is ReplayBase {
         _govern(hotAdmin, address(escrow), abi.encodeCall(escrow.recover, (w1, w1b, address(0))));
         _sync();
 
-        // A credit unclaimed for 180 days becomes the network fee vault's (R12).
+        // Credits whose window's last credit is 180 days old become the network fee vault's,
+        // the rest stays (R12, ECO-45): one window of two credits, then a credit after it closed.
         vm.prank(payer);
         escrow.depositETH{ value: 0.25 ether }(carol);
         _sync();
-        vm.warp(block.timestamp + 180 days);
-        escrow.expire(carol, address(0));
+        vm.warp(block.timestamp + 100 days);
+        vm.prank(payer);
+        escrow.depositETH{ value: 0.1 ether }(carol);
+        _sync();
+        vm.warp(block.timestamp + 90 days);
+        vm.prank(payer);
+        escrow.depositETH{ value: 0.05 ether }(carol);
+        _sync();
+        vm.warp(block.timestamp + 90 days);
+        assertEq(escrow.expire(carol, address(0)), 0.35 ether);
+        _sync();
+        vm.warp(block.timestamp + 90 days);
+        assertEq(escrow.expire(carol, address(0)), 0.05 ether);
         _sync();
 
         // Only what no credit is owed can be swept (ECO-40).
