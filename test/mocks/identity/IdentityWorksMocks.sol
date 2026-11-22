@@ -152,3 +152,43 @@ contract HostileResolverMock {
         }
     }
 }
+
+/// @dev A consolidation source that says yes to every pair: different code from the pinned
+///      adapter.
+contract AlwaysConsolidated {
+    function isConsolidated(address, address) external pure returns (bool) {
+        return true;
+    }
+}
+
+/// @dev Editions whose edition `editionId` is the master work `workId` of `stream`.
+contract RemappedEditionsMock {
+    address public immutable stream;
+    uint256 public immutable editionId;
+    uint256 public immutable workId;
+
+    constructor(address stream_, uint256 editionId_, uint256 workId_) {
+        (stream, editionId, workId) = (stream_, editionId_, workId_);
+    }
+
+    function masterOf(uint256 id) external view returns (address, uint256, bytes32) {
+        require(id == editionId, "unknown");
+        return (stream, workId, keccak256("content"));
+    }
+}
+
+/// @dev A Stream whose `artistOf` burns all the gas it is given.
+contract BurningArtistStream {
+    function supportsInterface(bytes4 id) external pure returns (bool) {
+        return id == type(IERC165).interfaceId || id == type(IStream).interfaceId;
+    }
+
+    function editions() external pure returns (address) {
+        return address(0);
+    }
+
+    function artistOf(uint256) external view returns (uint256) {
+        while (gasleft() > 0) { }
+        return 0;
+    }
+}

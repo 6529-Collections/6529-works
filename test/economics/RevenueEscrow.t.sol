@@ -16,6 +16,7 @@ import { ISplitFactory } from "src/economics/interfaces/ISplitFactory.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import {
     BlocklistToken,
+    FixedAuthority,
     ForceSender,
     NoReturnToken,
     RebasingToken,
@@ -56,15 +57,6 @@ contract DoubleEntryAlias {
     function transfer(address to, uint256 amount) external returns (bool) {
         primary.aliasTransfer(msg.sender, to, amount);
         return true;
-    }
-}
-
-/// @dev Answers `authority()` with a fixed address, as a vault governed by another manager would.
-contract FixedAuthority {
-    address public immutable authority;
-
-    constructor(address authority_) {
-        authority = authority_;
     }
 }
 

@@ -9,7 +9,6 @@ import { IArtistPayoutResolver } from "src/economics/interfaces/IArtistPayoutRes
 import { IAccounts } from "src/interfaces/IAccounts.sol";
 import { IArtistRegistry, IConsolidationSource } from "src/interfaces/IArtistRegistry.sol";
 import { IArtistRoleResolver } from "src/interfaces/IArtistRoleResolver.sol";
-import { IStream } from "src/interfaces/IStream.sol";
 import { ArtistIdentity, ChangeKind, PendingChange } from "src/interfaces/types/IdentityTypes.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { BoundedCall } from "src/libraries/BoundedCall.sol";
@@ -17,12 +16,15 @@ import { Dependency } from "src/libraries/Dependency.sol";
 import { SignatureVerifier } from "src/libraries/SignatureVerifier.sol";
 import { StreamMock } from "../mocks/stream/StreamMock.sol";
 import {
+    AlwaysConsolidated,
+    BurningArtistStream,
     ConsolidationSourceMock,
     DisputeOutcomeLogMock,
     EditionsMastersMock,
     FederationRegistryStub,
     PackageRegistryStub,
     PullOnlyPayeeMock,
+    RemappedEditionsMock,
     SplitFactoryWalletsMock
 } from "../mocks/identity/IdentityWorksMocks.sol";
 import { BurningEditionsMock } from "../mocks/identity/PermanenceMocks.sol";
@@ -30,46 +32,6 @@ import { IdentityFixture } from "./IdentityFixture.sol";
 
 /// @notice The artist registry: accounts (every consolidated wallet acts for the account), the
 ///         account's own changes, network replacements, freezes, payouts and the role answers.
-/// @dev A consolidation source that says yes to every pair: different code from the pinned
-///      adapter.
-contract AlwaysConsolidated {
-    function isConsolidated(address, address) external pure returns (bool) {
-        return true;
-    }
-}
-
-/// @dev Editions whose edition `editionId` is the master work `workId` of `stream`.
-contract RemappedEditionsMock {
-    address public immutable stream;
-    uint256 public immutable editionId;
-    uint256 public immutable workId;
-
-    constructor(address stream_, uint256 editionId_, uint256 workId_) {
-        (stream, editionId, workId) = (stream_, editionId_, workId_);
-    }
-
-    function masterOf(uint256 id) external view returns (address, uint256, bytes32) {
-        require(id == editionId, "unknown");
-        return (stream, workId, keccak256("content"));
-    }
-}
-
-/// @dev A Stream whose `artistOf` burns all the gas it is given.
-contract BurningArtistStream {
-    function supportsInterface(bytes4 id) external pure returns (bool) {
-        return id == type(IERC165).interfaceId || id == type(IStream).interfaceId;
-    }
-
-    function editions() external pure returns (address) {
-        return address(0);
-    }
-
-    function artistOf(uint256) external view returns (uint256) {
-        while (gasleft() > 0) { }
-        return 0;
-    }
-}
-
 contract ArtistRegistryTest is IdentityFixture {
     bytes32 internal constant VOTE = keccak256("vote");
 

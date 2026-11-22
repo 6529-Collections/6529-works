@@ -2,13 +2,13 @@
 pragma solidity ^0.8.24;
 
 import { Vm } from "forge-std/Vm.sol";
-import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
 import { FederatedEditions } from "src/federated/FederatedEditions.sol";
+import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { FederatedStream } from "src/federated/FederatedStream.sol";
+import { FederationRegistry } from "src/federated/FederationRegistry.sol";
 import { ArtistRegistry } from "src/identity/ArtistRegistry.sol";
 import { IConsolidationSource } from "src/interfaces/IArtistRegistry.sol";
-import { FederationRegistry } from "src/federated/FederationRegistry.sol";
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IFederatedStream } from "src/interfaces/IFederatedStream.sol";
@@ -540,8 +540,6 @@ contract FederationGovernanceTest is FederationBase {
         );
     }
 
-    // ------------------------------------------------------------------ replacement
-
     /// @dev Once replaced, the old registry answers every read as the current one does: here
     ///      the version the replacement approved, not its own.
     function test_Replacement_TheOldRegistryForwardsItsReads() public {
@@ -576,6 +574,8 @@ contract FederationGovernanceTest is FederationBase {
         assertEq(uint8(e.status), uint8(IFederationRegistry.Status.NONE));
         assertEq(e.artistId, 0);
     }
+
+    // ------------------------------------------------------------------ replacement
 
     function test_Replacement_InheritsEveryListingWithNothingToMigrate() public {
         (uint256 saleId, uint256 tokenId) = _startFed(_fedWork(fedArtist));

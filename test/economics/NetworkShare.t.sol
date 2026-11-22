@@ -14,42 +14,12 @@ import { Burner, GasRuleAssertions } from "../helpers/GasRule.sol";
 import {
     BlocklistToken,
     FeeOnTransferToken,
-    MockERC20,
+    OverCreditToken,
+    RefusesAndCreditsToken,
     RefusesButMovesToken
 } from "../mocks/economics/EconomicsMocks.sol";
 import { TokenTransfer } from "src/economics/TokenTransfer.sol";
 import { EconomicsBase } from "./EconomicsBase.sol";
-
-/// @dev Reports a transfer to `liar` as refused and, instead of moving anything, credits the
-///      sender one unit: a refusal after which the sender's balance is not what it was.
-contract RefusesAndCreditsToken is MockERC20("Credit", "CRD") {
-    address public liar;
-
-    function setLiar(address account) external {
-        liar = account;
-    }
-
-    function transfer(address to, uint256 amount) public override returns (bool) {
-        if (to == liar) {
-            mint(msg.sender, 1);
-            return false;
-        }
-        _balances[msg.sender] -= amount;
-        _balances[to] += amount;
-        return true;
-    }
-}
-
-/// @dev Debits the sender the amount and credits the recipient one unit more: the sender's
-///      delta is right, the recipient's is not.
-contract OverCreditToken is MockERC20("Over", "OVR") {
-    function transfer(address to, uint256 amount) public override returns (bool) {
-        _balances[msg.sender] -= amount;
-        _balances[to] += amount + 1;
-        totalSupply += 1;
-        return true;
-    }
-}
 
 /// @dev Calls a release and returns what it released and what `watched` holds afterwards, so a
 ///      release that skipped the network's push reads as a different answer. Bubbles reverts.

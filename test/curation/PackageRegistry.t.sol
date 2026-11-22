@@ -29,7 +29,10 @@ import { ArtistIdentity } from "src/interfaces/types/IdentityTypes.sol";
 import { IEditions } from "src/interfaces/IEditions.sol";
 import { IStream } from "src/interfaces/IStream.sol";
 import { MockBoundCaller } from "test/mocks/curation/MockBoundCaller.sol";
-import { MisnumberingArtistRegistry } from "test/mocks/curation/CurationArtistRegistryMock.sol";
+import {
+    MisnumberingArtistRegistry,
+    UndernumberingArtistRegistry
+} from "test/mocks/curation/CurationArtistRegistryMock.sol";
 import { Limits } from "src/interfaces/types/Limits.sol";
 import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { EditionRules } from "src/editions/EditionRules.sol";
@@ -40,26 +43,6 @@ import { ERC1271WalletMock } from "test/mocks/libraries/AdversarialTargets.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
 import { SignatureReverts } from "test/helpers/SignatureReverts.sol";
 import { CurationBase } from "./CurationBase.sol";
-
-/// @dev An artist registry that registers every account under an ID one below its address.
-contract UndernumberingArtistRegistry is IERC165 {
-    function artistIdOf(address) external pure returns (uint256) {
-        return 0;
-    }
-
-    function requireSigned(uint256, bytes32, bytes calldata) external pure returns (address) {
-        return address(0);
-    }
-
-    function register(address root, bytes32, bytes32) external pure returns (uint256) {
-        return uint256(uint160(root)) - 1;
-    }
-
-    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
-        return interfaceId == type(IERC165).interfaceId
-            || interfaceId == type(IArtistRegistry).interfaceId;
-    }
-}
 
 /// @dev A verifier that approves every root: code that could take the place of the pinned one.
 contract ApproveEverythingVerifier {

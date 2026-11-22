@@ -146,3 +146,23 @@ contract MisnumberingArtistRegistry is IERC165 {
             || interfaceId == type(IArtistRegistry).interfaceId;
     }
 }
+
+/// @dev An artist registry that registers every account under an ID one below its address.
+contract UndernumberingArtistRegistry is IERC165 {
+    function artistIdOf(address) external pure returns (uint256) {
+        return 0;
+    }
+
+    function requireSigned(uint256, bytes32, bytes calldata) external pure returns (address) {
+        return address(0);
+    }
+
+    function register(address root, bytes32, bytes32) external pure returns (uint256) {
+        return uint256(uint160(root)) - 1;
+    }
+
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return interfaceId == type(IERC165).interfaceId
+            || interfaceId == type(IArtistRegistry).interfaceId;
+    }
+}
