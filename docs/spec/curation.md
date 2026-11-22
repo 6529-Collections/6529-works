@@ -1,16 +1,17 @@
 # Curation
 
-Curation decides which works may ever mint on 6529 Stream. Main Stage is the only way in (owner
-decision 25, [ADR 0001's amendment of 1 November 2026](../adr/0001-v1-scope.md#amendments)):
+Curation decides which works may ever mint on 6529 Stream. Main Stage is the only way in
+([ADR 0001's amendment of 1 November 2026](../adr/0001-v1-scope.md#amendments)):
 the artist's Main Stage submission carries the work's package (a Merkle root of items) before
 the vote, so voters approve exactly what would mint, and a submission not picked as a Meme card
 becomes Stream-eligible under the network's routing rule (at least 10% of the median winning
 Main Stage vote of the last 30 days, held for 24 hours, never less than 3,000,000 TDH; changed by
-TDH vote, D86). These are network rules, not contract code. A curation signer attests the
+TDH vote). These are network rules, not contract code. A curation signer attests the
 approval; anyone registers the
 root; every party named by an item signs it; and the lead artist signs a revocable move that lets
-the work start. At the auction start the package registry consumes the item, checking all of this
-and recording its content hash so the same work never mints twice. For auditors, integrators and
+the work start. At the auction start the sale contract asks the package registry (`authorize`), which consumes
+the item, checks all of this, applies the content rules and answers the mint facts and sale
+terms. The registry is the replaceable mint policy ([`IMintPolicy`](../../src/interfaces/core/IMintPolicy.sol)). For auditors, integrators and
 curation operators; `PackageRegistry` and `Eip712CurationVerifier` implement it.
 
 > Pre-audit. See the [project status](../../README.md#status).
@@ -59,12 +60,12 @@ enters the item hash, so voters approve and parties sign exactly these values.
 | --- | --- | --- |
 | `kind` | `ORIGINAL` (a 1/1) or `EDITION_MASTER` (a 1/1 that anchors one 6529 Stream Editions edition). | `consume`: an `ORIGINAL` has empty edition terms; a master's terms pass `EditionRules.isValid`. |
 | `collectionId` | A 6529 Stream collection (below 2^32). | Stream `mint`, on the policy's record: the collection exists. |
-| `contentHash` | Decoded SHA-256 of the primary media; the per-product uniqueness key. | `consume`: nonzero and unused on Stream. `WorkRecords.openRecord`: equals the primary file's SHA-256. |
-| `mediaHash` | Hash over every media file (file ID, decoded SHA-256, role), primary first. Media is fixed by approval. | `WorkRecords.openRecord`. |
+| `contentHash` | Decoded SHA-256 of the primary media; the per-product uniqueness key. | `authorize`: nonzero, and no live token holds it on Stream. `WorkFacts.open`: equals the primary file's SHA-256. |
+| `mediaHash` | Hash over every media file (file ID, decoded SHA-256, role), primary first. Media is fixed by approval. | `WorkFacts.open`. |
 | `recordFileId` | Content-store file ID of the approved JSON record; the artist may replace it until finalize. | Structure checked at `setRecord` and `finalize`. |
 | `parties` | 1 to `Limits.MAX_PARTIES` (16) `(account, role)` entries, lead `ARTIST` first, `COLLABORATOR` for credited contributors. | `consume` ([CUR-6](#rules-and-invariants)). |
 | `payees` | The canonical payee list of the artist portion: fixed payees by account, artist-resolved payees by artist ID. | `consume` ([CUR-8](#rules-and-invariants)). |
-| `license` | SPDX ID and the content-store file of the full text. | `authorize`: `SpdxId` rule. `openRecord`: CC0 names the deployment's CC0 text. |
+| `license` | SPDX ID and the content-store file of the full text. | `authorize`: `SpdxId` rule. `WorkFacts.open`: CC0 names the deployment's CC0 text. |
 | `seedPolicy`, `seed` | `NONE`, `ARTIST` (with the artist's nonzero seed) or `VRF`. See [entropy.md](entropy.md). | `authorize`: a seed exactly under `ARTIST`; `VRF` needs Stream's entropy module and a seed delivered there. |
 | `sale` | `SaleTerms`: how the work is first sold. | `authorize`: a nonzero sale kind; Stream `mint`: minted only by an admitted adapter of that kind (the English auction at genesis, which also requires empty `params`). |
 | `edition` | `EditionTerms` of the edition a master anchors; all zero for an `ORIGINAL`. | `consume` and Editions `createEdition`: `EditionRules.isValid`. |
@@ -147,7 +148,7 @@ The contracts cannot check these. The signer's tooling currently checks them bef
 
 - **Verify every declared SHA-256 against the decoded bytes**, for every media file, including
   the content hash, on which on-chain uniqueness keys.
-- **Simulate `WorkRecords.openRecord`** for every item. Its media checks
+- **Simulate `WorkFacts.open`** for every item. Its media checks
   ([WS-2](works-and-storage.md#rules-and-invariants)) do not run at mint, so a mis-committed
   item mints and its record never opens.
 - **Decode Base64 strictly** (RFC 4648 alphabet, as the content store's `attestBase64` checks).
@@ -183,29 +184,25 @@ stateDiagram-v2
 
 ### Item and content hash (6529 Stream)
 
-Stream holds this state (AUC-44). If an upheld dispute burns a work, `Stream.releaseContent`
-tombstones its item: the item never claims its released content again, and since every genesis
-item hash commits to its content hash, it never mints again, through any root (a successor
-mint policy must keep item hashes committing to their content: the core holds content
-uniqueness, not item identifiers, AUC-44). The content hash:
+Stream keeps one rule: at most one live token per content hash (AUC-44). A burn does not clear
+`tokenOfContent`. Everything else about content is the mint policy's: when `tokenOfContent(hash)`
+names a burned token, the registry mints that content again only when the network has released it
+for the minting item's lead artist, and never for a tombstoned item. Every item hash commits to
+its content hash, so a tombstoned item never mints again, through any root.
 
 ```mermaid
 stateDiagram-v2
     state "Free" as Free
-    state "Used by an item" as Used
+    state "Held by a live token" as Used
     state "Released, reserved for the beneficiary" as Released
     [*] --> Free
     Free --> Used : a mint of any approved item
-    Used --> Released : Stream.releaseContent (PARAMETER_SETTER, 24 hours)
+    Used --> Released : the token is burned, then PackageRegistry.releaseContent (network)
     Released --> Used : a mint of an item whose lead is the beneficiary
 ```
 
-`consumedItemOf(contentHash)` reads the item holding the content, or zero when free or
-released. `releasedTo(contentHash)` reads the beneficiary of the latest release; it binds only
-while the content is released. `isReleased(itemHash)` reads the tombstone. All three are
-Stream's views; the registry's views of the same names answer from Stream. The registry keeps
-no edition record: an edition's content is decided from Stream's (see
-[edition content](#edition-content)).
+`releasedTo(token, contentHash)` reads the beneficiary of the latest release; `isBarred(itemHash)`
+reads the tombstone. The registry keeps no edition record.
 
 ### Curation signer
 
@@ -234,13 +231,12 @@ stateDiagram-v2
 | Party consent recorded | Anyone, relaying the party's signature | none | `PackageRegistry.acceptPackage` |
 | Move nonce revoked | Any wallet of the lead artist's account | none | `PackageRegistry.revokeMove` |
 | A signer's registered approvals killed | The network | none | `PackageRegistry.killSignerApprovals` |
-| Item consumed, content used | Bound 6529 Stream, inside `IStream.mint` at the auction start | none | `PackageRegistry.authorize` (its private `_consume`) |
-| Content released, item tombstoned | `PARAMETER_SETTER` | 24 hours | `Stream.releaseContent` (AUC-10, AUC-44) |
+| Item consumed, content used | A minter of the token (`IModules.isMinter`), at the auction start, before it mints | none | `PackageRegistry.authorize` |
+| Content released, item tombstoned | The network | per role map | `PackageRegistry.releaseContent` |
 | Signer becomes active | The network grants `CURATION_SIGNER` (the role's admin is `NETWORK`) | none, no grant delay | `AccessManager.grantRole` |
 | Signer disabled | `NETWORK` | none | `Eip712CurationVerifier.disableSigner` |
 | Signer re-enabled | `SUCCESSOR_SETTER` | 7 days | `Eip712CurationVerifier.enableSigner` |
 | Verifier replaced, old one retired | `SUCCESSOR_SETTER` | 7 days | `PackageRegistry.setVerifier` |
-| Stream or Editions bound | ADMIN (genesis configurator, before it renounces ADMIN) | once each | `PackageRegistry.bindStream`, `bindEditions` |
 
 Role mappings are from [`config/genesis.example.json`](../../config/genesis.example.json); the
 selector-by-selector matrix is [roles.md](../audit/roles.md).
@@ -259,7 +255,7 @@ sequenceDiagram
     participant Curator as CURATOR key
     participant Log as StatementLog
     Wave->>Wave: artist submits the package, the TDH-weighted vote and routing rule approve
-    Signer->>Signer: check every SHA-256, simulate openRecord
+    Signer->>Signer: check every SHA-256, simulate WorkFacts.open
     Signer->>Verifier: signerEpoch(signer)
     Signer->>Anyone: attestation abi.encode(signer, signature)
     Anyone->>Registry: registerPackage(root, evidenceHash, attestation)
@@ -289,7 +285,7 @@ sequenceDiagram
     participant Party as Party key
     participant Relayer as Anyone
     participant Registry as PackageRegistry
-    participant Artists as ArtistRegistry
+    participant Artists as Accounts
     Party->>Relayer: signed PackageAcceptance
     Relayer->>Registry: acceptPackage(root, acceptance, signature)
     Registry->>Artists: artistIdOf(account)
@@ -324,7 +320,7 @@ sequenceDiagram
     participant Auction as EnglishAuction
     participant Stream as Stream
     participant Registry as PackageRegistry
-    participant Artists as ArtistRegistry
+    participant Artists as Accounts
     participant Entropy as VrfEntropyModule
     Lead->>Anyone: signed MoveToStream(root, itemHash, nonce, deadline)
     Anyone->>Auction: start(stream, abi.encode(StreamMintRequest))
@@ -387,13 +383,10 @@ package root, item hash, lead artist and content hash ([AUC-43](stream-and-aucti
 
 ### Edition content
 
-The mint policy plays no part in an edition (review A, M-1). After a master's primary sale
-settles, `Editions.createEdition` checks the item against the master's stored item hash and
-Stream's record that the item consumed its content (`IStream.consumedItemOf`), both permanent
-([ED-1, ED-3](editions-and-sales.md#rules-and-invariants)). The item was proved in an approved
-package when the master minted, so neither a revoked root nor a replaced mint policy can block
-a settled master's edition. The registry's Editions binding (`bindEditions`, `editions()`) is
-kept for the genesis wiring and is informational.
+The mint policy plays no part in an edition. The edition sale contract checks the item against
+the master's stored item hash (`IStream.itemHashOf`) and kind, then creates the edition
+([ED-1](editions-and-sales.md#rules-and-invariants)). The item was proved in an approved package when the master
+minted, so neither a revoked root nor a replaced mint policy can block its edition.
 
 ### Revoking a package
 
@@ -456,17 +449,13 @@ sequenceDiagram
 
 ### Content release after an upheld dispute
 
-[Disputes and statements](disputes-and-statements.md) specifies the dispute, the burn and the
-governed `Stream.releaseContent` (PARAMETER_SETTER, 24 hours). The release is Stream's alone
-since AUC-44; the registry plays no part:
+[Disputes and statements](disputes-and-statements.md) specifies the dispute and the burn. The
+network then calls `PackageRegistry.releaseContent(token, contentHash, beneficiary)`:
 
-- **Preconditions.** The token is burned (`NotBurned`); its own work minted `contentHash` and it
-  was not released yet (`ClaimNotAllowed(PRODUCT_STREAM, contentHash)`), so a release happens
-  once per burned item; only the released bit and the token field are compared, so a content
-  minted again after a release and burned again can be released again. The beneficiary must be a registered artist (`UnknownArtist`).
-- **Effects.** The content hash is reserved for items whose lead artist is the beneficiary; the
-  burned item is tombstoned; Stream emits `ContentReleased`. No edition is affected: a burned
-  work never settled, so it has no edition.
+- **Preconditions.** `IStream(token).tokenOfContent(contentHash)` names a burned token whose item
+  was not released yet; the beneficiary is a registered artist.
+- **Effects.** The content is reserved for items whose lead artist is the beneficiary; the burned
+  item is barred; the registry emits `ContentReleased`.
 
 ## Rules and invariants
 
@@ -483,10 +472,10 @@ since AUC-44; the registry plays no part:
 | CUR-9 | A consumed item has a nonzero content hash, a seed exactly under `ARTIST`, empty edition terms if `ORIGINAL`, and terms `EditionRules.isValid` accepts if `EDITION_MASTER`. Kind, seed policy and party roles are open `uint8`s in the package types; this policy refuses any value it does not know (a kind above `EDITION_MASTER`, a seed policy above `VRF`, a party role above `COLLABORATOR`), where a value above today's enums used to fail the ABI decode. | `PackageRegistry._checkTerms` | [`PackageRegistry.t.sol`](../../test/curation/PackageRegistry.t.sol): `test_invalidItem_seedPolicy`, `test_invalidItem_valuesTodaysEnumsDoNotName`, `test_invalidItem_zeroContentHash`, `test_invalidItem_originalWithEditionTerms`, `test_invalidItem_masterEditionTerms`, `test_invalidItem_masterEditionTermsSharedRule` |
 | CUR-10 | A move is signed by a wallet of the lead's account over this registry's `MoveToStream` digest for this item, unexpired, on an unused nonce; the nonce is spent whatever the signature encoding. | `PackageRegistry._useMove`, `_spendMoveNonce` | [`PackageRegistry.t.sol`](../../test/curation/PackageRegistry.t.sol): `test_move_revertsExpired`, `test_move_revertsWrongSigner`, `test_move_revertsWrongChain`, `test_move_bindsItem`, `test_move_signedByCurrentAuthorityAfterRecovery`, `test_move_nonceSpentWhateverTheSignatureForm`; [`ConsolidatedAccounts.t.sol`](../../test/curation/ConsolidatedAccounts.t.sol): `test_Move_AnyWalletOfTheLeadAccount`; [`IdentityRecovery.t.sol`](../../test/integration/IdentityRecovery.t.sol): `test_ASecondWalletSignsTheMove` |
 | CUR-11 | Only a wallet of the artist's account revokes its unused move nonces; a used or revoked nonce reverts; nonces are isolated per artist and bit. | `PackageRegistry.revokeMove` | [`PackageRegistry.t.sol`](../../test/curation/PackageRegistry.t.sol): `test_revokeMove_beforeUse`, `test_revokeMove_onlyCurrentAuthority`, `test_revokeMove_revertsWhenUsedOrRevoked`, `testFuzz_revokeMove_bitmapIsolation`; [`CuratedSale.t.sol`](../../test/integration/CuratedSale.t.sol): `test_MoveSignatureIsRevocable` |
-| CUR-12 | A content hash is held by at most one item on 6529 Stream, so an item is consumed at most once, through any root: Stream holds the record (AUC-44). | `Stream._claimContent` | [`PackageRegistry.t.sol`](../../test/curation/PackageRegistry.t.sol): `test_consume_revertsDoubleConsume`, `test_consume_itemIsSingleUseAcrossPackages`, `test_consume_contentUniquenessKeysOnContentHash`; [`PackageRegistryInvariant.t.sol`](../../test/curation/PackageRegistryInvariant.t.sol): `invariant_itemConsumedAtMostOnce`, `invariant_contentRecordsMatch` |
-| CUR-13 | Retired: the registry no longer records edition claims; an edition's content is decided from Stream's permanent record (ED-1, ED-3; review A, M-1). The ID is not reused. | none | none |
-| CUR-14 | A release happens once per burned item, names a registered artist, reserves the content for items led by that artist, and tombstones the burned item everywhere. It is governed (24 hours) and held by Stream (AUC-44). | `Stream.releaseContent`, `_claimContent` | [`Stream.t.sol`](../../test/stream/Stream.t.sol): `test_releaseContent_afterBurnLetsTheRealArtistMint`, `test_releaseContent_reverts`; [`Dispute.t.sol`](../../test/integration/Dispute.t.sol): `test_UpheldDisputeCancelsBurnsReleasesAndTheRightfulArtistMints`, `test_ReleaseIsGovernedNamesAnArtistAndHappensOnce`, `test_TheNetworkCancelsAPendingRelease` |
-| CUR-15 | Only the bound Stream calls `authorize`; Stream and Editions are each bound once, to a contract answering ERC-165 for its interface and not delegated (the Editions binding is informational). | `PackageRegistry.authorize`, `bindStream`, `bindEditions` | [`PackageRegistry.t.sol`](../../test/curation/PackageRegistry.t.sol): `test_consume_onlyBoundStream`, `test_bindStream_once`, `test_bindEditions_onceAndLater`, `test_unboundRegistryRefusesEveryone` |
+| CUR-12 | An item is consumed at most once, through any root; Stream holds at most one live token per content hash. | `PackageRegistry.authorize`, `Stream.mint` | `test_consume_revertsDoubleConsume`, `test_consume_itemIsSingleUseAcrossPackages`, `invariant_itemConsumedAtMostOnce` |
+| CUR-13 | Retired: the registry no longer records edition claims. The ID is not reused. | none | none |
+| CUR-14 | A release happens once per burned item, by the network, names a registered artist, reserves the content for items led by that artist, and bars the burned item. It is held by the mint policy. | `PackageRegistry.releaseContent` | `test_releaseContent_afterBurnLetsTheRealArtistMint`, `test_UpheldDisputeCancelsBurnsReleasesAndTheRightfulArtistMints`, `test_ReleaseIsGovernedNamesAnArtistAndHappensOnce` |
+| CUR-15 | Only a minter of the token (`IModules(token).isMinter`) calls `authorize`. | `PackageRegistry.authorize` | `test_consume_onlyBoundStream`, `test_unboundRegistryRefusesEveryone` |
 | CUR-16 | Revocation is the network's (NETWORK, no delay), final and per root. | `PackageRegistry.revokePackage`; genesis role map | [`PackageRegistry.t.sol`](../../test/curation/PackageRegistry.t.sol): `test_revokePackage_onlyGuardian`, `test_revokePackage_isPerRoot`; [`CuratedSale.t.sol`](../../test/integration/CuratedSale.t.sol): `test_GuardianRevokesAPackageAndDisablesASigner` |
 | CUR-17 | Disabling a signer is the network's (NETWORK, no delay), possible in advance, and stops only future registrations; re-enabling is 7 days (SUCCESSOR_SETTER). | `Eip712CurationVerifier.disableSigner`, `enableSigner` | [`Eip712CurationVerifier.t.sol`](../../test/curation/Eip712CurationVerifier.t.sol): `test_disableSigner_immediateAndOneWay`, `test_disableSigner_inAdvance`, `test_disableSigner_survivesRoleRegrant`, `test_enableSigner_thirtyDayClass`; [`PackageRegistry.t.sol`](../../test/curation/PackageRegistry.t.sol): `test_registerPackage_revertsAfterSignerDisabled`, `test_disabledSigner_registeredRootsStayUsable` |
 | CUR-18 | A verifier swap is compare-and-set, pins the code hash, never installs the current or a retired verifier, and leaves registered approvals intact. | `PackageRegistry.setVerifier`, `_setVerifier` | [`PackageRegistry.t.sol`](../../test/curation/PackageRegistry.t.sol): `test_setVerifier`, `test_setVerifier_compareAndSet`, `test_setVerifier_refusesARetiredVerifier`, `test_setVerifier_keepsRegisteredApprovals`, `test_setVerifier_onlySuccessorSetter` |
@@ -516,8 +505,8 @@ repeat acceptance emits no `PackageAccepted`: read `isMoveNonceUsed` and `accept
 | Pre-signed acceptances differ in profile fields. | The first relayed sets a new identity's profile; the others revert (`ProfileMismatch`). | The artist re-signs with the recorded profile. |
 | An account to be accepted is another artist's pending new authority. | The artist registry reverts (`AccountTaken`). | Wait for the change to resolve, or list another account. |
 | An unwanted move signature exists. | Anyone holding it can start the work before its deadline. | `revokeMove`, or let the deadline pass. |
-| An item's media commitments do not match the content store. | It mints, but its record never opens: core-only metadata. | None on-chain; the signer's `openRecord` simulation is the control. |
-| A copier's work is minted from another artist's content. | During the auction an upheld dispute burns it; after the sale, a statement only. | `releaseContent` (24 hours) reserves the content for the rightful artist. |
+| An item's media commitments do not match the content store. | It mints, but its record never opens: core-only metadata. | None on-chain; the signer's `WorkFacts.open` simulation is the control. |
+| A copier's work is minted from another artist's content. | During the auction an upheld dispute burns it; after the sale, a statement only. | `releaseContent` (the network) reserves the content for the rightful artist. |
 | A release names an artist with no identity. | `UnknownArtist`. | The rightful artist first registers, by a first acceptance. |
 | A mistaken content release is scheduled. | The content would be reserved for the wrong artist. | The network cancels it within the 24 hours. |
 | An ERC-1271 check runs short of gas. | `BoundedCall.BoundedCallShortfall(signer)`. | Resubmit with more gas. |
