@@ -53,7 +53,7 @@ EDITION_MASTER = 1
 # English auction states; edition auction statuses.
 ENDED, SETTLED_1 = 3, 4
 EA_SETTLED, EA_VOID = 4, 5
-CREDIT_EXPIRY = MARK_EXPIRY = 180 * 86400
+MARK_EXPIRY = 180 * 86400
 
 # Canonical ABI types (src/interfaces/types/PackageTypes.sol, ContentTypes.sol, ISplitWallet.sol).
 PAYEES = "(uint256,address,uint32)[]"
@@ -490,10 +490,11 @@ class Keeper:
         credits = self.logs("RevenueEscrow", escrow_sig)
         pairs = sorted({(topic_address(g, 1), topic_address(g, 2)) for g in credits})
         for wallet, asset in pairs:
-            if w(self.view("RevenueEscrow", "owed(address,address)", wallet, asset), 0) == 0:
-                continue
-            since = w(self.view("RevenueEscrow", "creditedAt(address,address)", wallet, asset), 0)
-            if now >= since + CREDIT_EXPIRY:
+            # The escrow ages each credit by its windows and answers what may move now (zero
+            # for the network's own credit); only that part moves, the rest stays.
+            sig = "expirableAt(address,address,uint256)"
+            due = self.view("RevenueEscrow", sig, wallet, asset, now)
+            if w(due, 0) != 0:
                 label = f"expire escrow credit of {wallet}"
                 self.send("RevenueEscrow", "expire(address,address)", wallet, asset, label=label)
 

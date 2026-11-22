@@ -11,13 +11,12 @@ import { BlocklistToken, ReentrantRecipient } from "../mocks/economics/Economics
 /// @notice The escrow's credit clock (R12, ECO-45) and the order of its deposit checks, which the
 ///         English auction's `settleOrRefund` reads as a lock probe.
 contract RevenueEscrowCreditClockTest is EconomicsBase {
-    /// @dev Anyone may deposit for any wallet, so a stranger can start a wallet's clock with one
-    ///      base unit while its credit is zero. A real payout escrowed for that wallet on day 179
-    ///      (a USDC-style token blocks the wallet, so it cannot be flushed) then expires to the
-    ///      network on day 180: one day, not 180, and less than the 3 days a consented `recover`
-    ///      needs. Passes while the finding stands; fails with "finding fixed" once a later
-    ///      addition keeps 180 days of its own.
-    function test_Finding_AStrangersDustDepositShortensALaterPayoutsClockToOneDay() public {
+    /// @dev Anyone may deposit for any wallet. A stranger's one-unit deposit opens the wallet's
+    ///      window; a real payout escrowed for that wallet on day 179 (a USDC-style token blocks
+    ///      the wallet, so it cannot be flushed) joins the window and keeps its own 180 days: the
+    ///      window's credits move together from day 359, 180 days after the payout, never on day
+    ///      180. (Before the windows, the payout expired with the dust's clock on day 180.)
+    function test_AStrangersDustDepositDoesNotShortenALaterPayoutsClock() public {
         BlocklistToken usdb = new BlocklistToken();
         address seller = makeAddr("blockedSeller");
         usdb.setBlocked(seller, true);
@@ -31,18 +30,35 @@ contract RevenueEscrowCreditClockTest is EconomicsBase {
         usdb.approve(address(escrow), 5_000e6);
 
         vm.prank(stranger);
-        escrow.depositERC20(seller, address(usdb), 1); // day 0: the clock starts on dust
-        uint256 clockStart = block.timestamp;
+        escrow.depositERC20(seller, address(usdb), 1); // day 0: dust opens the window
+        uint256 start = block.timestamp;
 
-        vm.warp(clockStart + 179 days);
+        vm.warp(start + 179 days);
         vm.prank(adapter);
         escrow.depositERC20(seller, address(usdb), 5_000e6); // a failed payout, escrowed
         vm.expectRevert();
         escrow.flush(seller, address(usdb));
 
-        vm.warp(clockStart + 180 days);
-        uint256 taken = escrow.expire(seller, address(usdb));
-        assertEq(taken, 5_000e6 + 1, "finding fixed");
+        vm.warp(start + 180 days);
+        uint256 dueAt = start + 179 days + 180 days;
+        assertEq(escrow.expirableAt(seller, address(usdb), block.timestamp), 0);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IRevenueEscrow.CreditNotExpired.selector, seller, address(usdb), dueAt
+            )
+        );
+        escrow.expire(seller, address(usdb));
+
+        vm.warp(dueAt - 1);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IRevenueEscrow.CreditNotExpired.selector, seller, address(usdb), dueAt
+            )
+        );
+        escrow.expire(seller, address(usdb));
+
+        vm.warp(dueAt);
+        assertEq(escrow.expire(seller, address(usdb)), 5_000e6 + 1, "180 days after the payout");
         assertEq(escrow.owed(address(feeVault), address(usdb)), 5_000e6 + 1, "now the network's");
     }
 

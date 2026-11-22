@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Escrow credit expiry by windows (ECO-45, R12; `RevenueEscrow`, permanent): a credit opens a
+  180-day window or joins the open one, and a window's credits may move to the network 180 days
+  after its last credit. Every amount waits at least 180 days from its own arrival and under 360
+  in the worst case; no deposit, by anyone, shortens a wait or moves the due time of an amount
+  already 180 days old (before, a stranger's earlier deposit could make a later payout expire
+  the next day). Four storage words per account and asset: `credits(wallet, asset)` replaces
+  `creditedAt`, `owed` is their sum, `expirableAt(wallet, asset, time)` is new, and `expire` moves
+  only the due part. Log replay, the economics invariants, the Medusa ledger harness, the Halmos
+  escrow proofs and the reference keeper follow the new rule.
+
 - Developer path: a [quickstart](docs/quickstart.md) from clone to a local run, with measured
   build and test times; `script/local/walkthrough.sh`, which deploys on anvil with test accounts,
   accepts, verifies and sells one work end to end (store, curate, accept, start with a bid,
