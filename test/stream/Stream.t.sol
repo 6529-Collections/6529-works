@@ -1581,6 +1581,13 @@ contract StreamTest is StreamFixture, GasRuleAssertions {
         tword = (tword & ~(uint256(type(uint32).max) << 160)) | (uint256(70_000) << 160);
         vm.store(address(stream), tslot, bytes32(tword));
         assertEq(IStreamViews(address(stream)).work(tokenId).serial, 70_000);
+        // The supply reads both 64-bit counters whole (minted in the low word, burned above).
+        bytes32 counts = bytes32(StreamLayout.COUNTS_SLOT);
+        uint256 word = uint256(vm.load(address(stream), counts));
+        word &= ~uint256(type(uint128).max);
+        word |= (uint256(1) << 32) + 5 | uint256(1) << 64;
+        vm.store(address(stream), counts, bytes32(word));
+        assertEq(IStreamViews(address(stream)).totalSupply(), (uint256(1) << 32) + 4);
     }
 
     /// @dev The name bound is exact: 256 printable bytes are accepted and 257 refused.
