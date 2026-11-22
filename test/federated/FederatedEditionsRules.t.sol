@@ -2,10 +2,12 @@
 pragma solidity ^0.8.24;
 
 import { Vm } from "forge-std/Vm.sol";
+import { IERC2981 } from "@openzeppelin/contracts/interfaces/IERC2981.sol";
 import { FederatedEditionAuction } from "src/federated/FederatedEditionAuction.sol";
 import { FederatedEditionAuctionLens } from "src/federated/FederatedEditionAuctionLens.sol";
 import { FederatedEditions } from "src/federated/FederatedEditions.sol";
 import { FederatedStream } from "src/federated/FederatedStream.sol";
+import { IEditions } from "src/interfaces/IEditions.sol";
 import { IFederatedEditions } from "src/interfaces/IFederatedEditions.sol";
 import { IFederatedToken } from "src/interfaces/IFederatedToken.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
@@ -137,8 +139,47 @@ contract FederatedEditionsRulesTest is FederationBase {
         vm.expectEmit(address(pairEditions));
         emit IFederatedToken.MetadataUpdate(tokenId);
         pairEditions.createEdition(tokenId, w.item);
-        assertEq(pairEditions.edition(tokenId).maxSupply, 5);
-        assertFalse(pairEditions.edition(tokenId).supplySealed);
+        IEditions.Edition memory e = pairEditions.edition(tokenId);
+        assertEq(e.maxSupply, 5);
+        assertFalse(e.supplySealed);
+        assertEq(e.contentHash, w.item.contentHash);
+        assertEq(e.terms.maxCount, 5);
+        assertEq(e.terms.saleKind, SaleKind.UNIFORM_AUCTION);
+    }
+
+    /// @dev At a network share of zero the royalty receiver is the seller vault itself, as the
+    ///      lock reports.
+    function test_Create_AtAZeroShareTheRoyaltyReceiverIsTheSellerVault() public {
+        _govern(
+            hotAdmin,
+            address(artists),
+            abi.encodeCall(artists.lowerFederatedFeeShare, (address(pairEditions), 0))
+        );
+        (Work memory w, uint256 tokenId) = _soldMaster(0);
+        address seller = splitFactory.walletFor(w.item.payees, 0);
+        address recipient = pairEditions.previewTerms(w.item.payees).feeRecipient;
+        vm.expectEmit(address(pairEditions));
+        emit IFederatedEditions.EditionTermsLocked(tokenId, seller, seller, recipient, 0);
+        pairEditions.createEdition(tokenId, w.item);
+        assertEq(pairEditions.edition(tokenId).royaltyReceiver, seller);
+    }
+
+    function test_SupportsInterface_OnlyTheExactIds() public view {
+        bytes4[5] memory ids = [
+            type(IERC2981).interfaceId,
+            type(IMintTarget).interfaceId,
+            type(IFederatedToken).interfaceId,
+            type(IFederatedEditions).interfaceId,
+            bytes4(0x49064906)
+        ];
+        for (uint256 i; i < ids.length; ++i) {
+            assertTrue(pairEditions.supportsInterface(ids[i]));
+            assertFalse(pairEditions.supportsInterface(bytes4(uint32(ids[i]) - 1)));
+            assertFalse(pairEditions.supportsInterface(bytes4(uint32(ids[i]) + 1)));
+        }
+        assertTrue(pairEditions.supportsInterface(0x01ffc9a7));
+        assertTrue(pairEditions.supportsInterface(0xd9b67a26), "ERC-1155");
+        assertFalse(pairEditions.supportsInterface(0xffffffff));
     }
 
     // ------------------------------------------------------------------ copies
@@ -155,7 +196,11 @@ contract FederatedEditionsRulesTest is FederationBase {
         (uint256 id, PrimaryTerms memory terms) = pairEditions.mint(collector, tokenId, 2, _data());
         assertEq(id, tokenId);
         assertEq(terms.saleKind, SaleKind.UNIFORM_AUCTION);
-        pairEditions.mint(collector, tokenId, 3, _data());
+        // The reported unit price is a full word, logged as given.
+        uint256 big = uint256(type(uint128).max) + 1;
+        vm.expectEmit(address(pairEditions));
+        emit IFederatedEditions.EditionPrimaryMint(tokenId, collector, 3, address(0), big);
+        pairEditions.mint(collector, tokenId, 3, abi.encode(address(0), big));
         assertEq(pairEditions.edition(tokenId).minted, 5);
         assertEq(pairEditions.balanceOf(collector, tokenId), 5);
         // 5 of 10 minted: 6 more is one too many.
@@ -168,6 +213,8 @@ contract FederatedEditionsRulesTest is FederationBase {
             abi.encodeWithSelector(IFederatedEditions.InvalidSealCount.selector, tokenId, 4)
         );
         pairEditions.sealSupply(tokenId, 4);
+        vm.expectEmit(address(pairEditions));
+        emit IFederatedEditions.EditionSupplySealed(tokenId, 5);
         pairEditions.sealSupply(tokenId, 5);
         vm.stopPrank();
         assertEq(pairEditions.edition(tokenId).maxSupply, 5);
