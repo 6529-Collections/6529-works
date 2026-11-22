@@ -102,7 +102,7 @@ contract LogReplayContentTest is ReplayBase {
         bytes32 fileId = cc0TextFileId;
         contentIdx.assertMatches();
         vm.store(address(store), keccak256(abi.encode(fileId, uint256(5))), bytes32(uint256(1)));
-        vm.expectRevert();
+        vm.expectRevert(bytes("completeThrough: 1 != 0"));
         contentIdx.assertMatches();
     }
 

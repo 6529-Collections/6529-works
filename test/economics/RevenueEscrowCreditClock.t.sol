@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { IRevenueEscrow } from "src/economics/interfaces/IRevenueEscrow.sol";
+import { TokenTransfer } from "src/economics/TokenTransfer.sol";
 import { EconomicsBase } from "./EconomicsBase.sol";
 import { BlocklistToken, ReentrantRecipient } from "../mocks/economics/EconomicsMocks.sol";
 
@@ -33,7 +34,11 @@ contract RevenueEscrowCreditClockTest is EconomicsBase {
         vm.warp(start + 179 days);
         vm.prank(adapter);
         escrow.depositERC20(seller, address(usdb), 5_000e6); // a failed payout, escrowed
-        vm.expectRevert();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                TokenTransfer.TokenCallFailed.selector, address(usdb), usdb.transfer.selector
+            )
+        );
         escrow.flush(seller, address(usdb));
 
         vm.warp(start + 180 days);

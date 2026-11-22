@@ -48,8 +48,10 @@ import { TokenTransfer } from "./TokenTransfer.sol";
 ///      open or closed (their due time is computed from their last credit when the escrow
 ///      looks); an amount the escrow already aged under the period then in force stays aged.
 ///      The amounts a window holds never change with the period: never money credited later.
-///      A recovery counts as a new credit to its replacement. The network's own credits never
-///      expire. Storage: four words per account and asset ({credits}); every change follows from
+///      A recovery counts as a new credit to its replacement. The network fee vault's credit
+///      (`factory().network()`) never expires; any other account's, the museum vault's and other
+///      network accounts' included, expires into the fee vault like anyone's. Storage: four
+///      words per account and asset ({credits}); every change follows from
 ///      the logged deposits, flushes, recoveries and expiries and their block times.
 ///      Funds force-sent or transferred here without a deposit are owed to nobody; only
 ///      {sweepExcess} moves them, and it can reach nothing beyond `balance - totalOwed` of the

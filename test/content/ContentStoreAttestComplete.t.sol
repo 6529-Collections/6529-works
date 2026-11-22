@@ -162,10 +162,14 @@ contract ContentStoreAttestCompleteTest is ContentBase {
     ///      file attested and complete.
     function test_TheAttestationCannotBeForgedOrUndone() public {
         bool[] memory present = new bool[](3);
-        (bytes32 missingId,) = _file(3, 1, present);
+        (bytes32 missingId, bytes32[] memory missingHashes) = _file(3, 1, present);
         for (uint256 k; k < 3; ++k) {
             vm.prank(address(uint160(0xA000 + k)));
-            vm.expectRevert();
+            vm.expectRevert(
+                abi.encodeWithSelector(
+                    IContentStore.ContentChunkMissing.selector, missingId, 0, missingHashes[0]
+                )
+            );
             store.attestComplete(missingId, 3);
         }
         assertEq(store.completeThrough(missingId), 0);

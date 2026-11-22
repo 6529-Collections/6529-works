@@ -197,8 +197,10 @@ contract RevenueEscrowExpiryTest is EconomicsBase {
         escrow.expire(address(feeVault), ETH);
 
         _deposit(stranger, alice, 2 ether);
-        assertEq(escrow.expirableAt(alice, ETH, 0), 0, "a past time is now");
         assertEq(escrow.expirableAt(alice, ETH, block.timestamp + PERIOD), 2 ether);
+        vm.warp(block.timestamp + PERIOD);
+        // Matured now: a past time reads as now (2 ether), not as that time (nothing yet).
+        assertEq(escrow.expirableAt(alice, ETH, 0), 2 ether, "a past time is now");
     }
 
     // ------------------------------------------------------------------ fuzzed interleavings
