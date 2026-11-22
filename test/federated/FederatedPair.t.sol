@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { Vm } from "forge-std/Vm.sol";
 import { IERC1155Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import {
     ReentrancyGuardTransient
@@ -145,6 +146,31 @@ contract FederatedPairTest is FederationBase {
         assertEq(address(fea).balance, fl.claimable(b, address(0)), "only b's credited refund");
     }
 
+    /// @dev The supply check counts what was already minted: once some copies of a sealed
+    ///      edition exist, the bound adapter cannot mint one more than the rest.
+    function test_Pair_MintBeyondTheRemainingSealedSupplyIsRefused() public {
+        (Work memory w, uint256 oneSaleId, uint256 tokenId, uint256 saleId) = _openPair(0);
+        address a = makeAddr("a");
+        _editionBidFed(saleId, a, 100, 3);
+        _ethBid(oneSaleId, collector, 1 ether);
+        _settleAtEnd(oneSaleId);
+        pairEditions.createEdition(tokenId, w.item);
+        vm.warp(fl.endTimes(saleId).endTime);
+        assertTrue(fea.settle(saleId, new uint256[](0)));
+        uint256 count = fl.settlement(saleId).count;
+        vm.prank(a);
+        (uint256 won,) = fea.claimBid(saleId, 1, a);
+        assertGt(won, 0);
+        assertEq(pairEditions.edition(tokenId).maxSupply, count);
+        bytes memory data = abi.encode(address(0), uint256(1 ether));
+        uint256 rest = count - won;
+        vm.prank(address(fea));
+        vm.expectRevert(
+            abi.encodeWithSelector(IFederatedEditions.EditionUnavailable.selector, tokenId)
+        );
+        pairEditions.mint(collector, tokenId, rest + 1, data);
+    }
+
     function test_Pair_ADelistingVoidsTheRunningEditionSaleWithRefunds() public {
         (,,, uint256 saleId) = _openPair(0);
         address a = makeAddr("a");
@@ -165,6 +191,30 @@ contract FederatedPairTest is FederationBase {
         (uint256 won, uint256 refund) = fea.claimBid(saleId, 1, a);
         assertEq(won, 0);
         assertEq(refund, paid, "every bid back in full");
+    }
+
+    /// @dev The opening log names the edition's master, the federated 1/1 contract.
+    function test_Pair_TheOpeningLogsTheMaster() public {
+        Work memory w = _fedMaster(fedArtist, 0);
+        (, uint256 tokenId) = _startFed(pairStream, fedArtist, w, RATE);
+        vm.recordLogs();
+        fea.open(address(pairEditions), tokenId, abi.encode(w.item));
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bool found;
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].topics[0] != IUniformEditionAuction.AuctionOpened.selector) continue;
+            found = true;
+            (address master) = abi.decode(_firstWord(logs[i].data), (address));
+            assertEq(master, address(pairStream));
+        }
+        assertTrue(found);
+    }
+
+    function _firstWord(bytes memory data) internal pure returns (bytes memory word) {
+        word = new bytes(32);
+        for (uint256 i; i < 32; ++i) {
+            word[i] = data[i];
+        }
     }
 
     function test_Pair_AMasterWhoseEditionSaleBeganNeverRestarts() public {
@@ -689,6 +739,15 @@ contract FederatedPairTest is FederationBase {
         uint256 held = address(fea).balance;
         assertTrue(fea.settle(saleId, new uint256[](0)), "voided");
         assertEq(uint8(fl.auction(saleId).status), uint8(IUniformEditionAuction.AuctionStatus.VOID));
+        // A void sale is not voided again.
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IUniformEditionAuction.InvalidAuctionState.selector,
+                saleId,
+                IUniformEditionAuction.AuctionStatus.VOID
+            )
+        );
+        fea.settle(saleId, new uint256[](0));
         assertEq(address(fea).balance, held, "nothing paid");
         assertFalse(pairEditions.edition(tokenId).supplySealed, "nothing sealed");
         vm.prank(low);
@@ -698,5 +757,24 @@ contract FederatedPairTest is FederationBase {
         assertEq(wonLow + wonHigh, 0);
         assertEq(refundLow, paidLow);
         assertEq(refundHigh, paidHigh);
+    }
+
+    /// @dev A served sale between the settle calls of a wide book keeps settling: only an
+    ///      unserved one is voided mid-scan.
+    function test_Pair_AServedSaleMidScanSettlesNormally() public {
+        (Work memory w, uint256 oneSaleId, uint256 tokenId, uint256 saleId) = _openPair(0);
+        _editionBidFed(saleId, makeAddr("low"), 0, 40);
+        _editionBidFed(saleId, makeAddr("high"), 300, 1);
+        _settleAtEnd(oneSaleId);
+        pairEditions.createEdition(tokenId, w.item);
+        vm.warp(fl.endTimes(saleId).endTime);
+        assertFalse(fea.settle(saleId, new uint256[](0)), "the scan continues");
+        uint256 calls;
+        while (!fea.settle(saleId, new uint256[](0))) {
+            require(++calls < 20, "settles in a few calls");
+        }
+        assertEq(
+            uint8(fl.auction(saleId).status), uint8(IUniformEditionAuction.AuctionStatus.SETTLED)
+        );
     }
 }

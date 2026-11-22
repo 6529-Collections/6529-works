@@ -95,7 +95,12 @@ class ShardTest(unittest.TestCase):
         self.assertEqual(sorted({s.path for s in all_shards.values()}), files)
         for f in files:
             mine = [s for s in all_shards.values() if s.path == f]
-            self.assertEqual(len(mine), len(mt.SPLIT_GROUPS) if f in mt.SPLIT_FILES else 1, f)
+            expected = (
+                len(mt.SPLIT_GROUPS) if f in mt.SPLIT_FILES
+                else len(mt.FULL_SPLIT_GROUPS) if f in mt.FULL_SPLIT_FILES
+                else 1
+            ) + mt.RELATION_PARTS.get(f, 1) - 1
+            self.assertEqual(len(mine), expected, f)
             # Every file gets the CONST pass exactly once.
             self.assertEqual(sum(s.constants for s in mine), 1, f)
         self.assertNotIn("src/interfaces/IStream.sol", files)  # an interface only
@@ -110,6 +115,77 @@ class ShardTest(unittest.TestCase):
             seen |= g
         self.assertEqual(len(seen), 15)  # slither-mutate 0.11.6 has 15 operators
         self.assertEqual(mt.SPLIT_GROUPS["statements"], "RR,CR")
+
+    def test_full_split_groups_cover_every_mutator_once_and_files_split_one_way(self) -> None:
+        seen: set[str] = set()
+        for g in (set(m.split(",")) for m in mt.FULL_SPLIT_GROUPS.values()):
+            self.assertFalse(seen & g, g)
+            seen |= g
+        self.assertEqual(len(seen), 15)
+        self.assertFalse(mt.SPLIT_FILES & mt.FULL_SPLIT_FILES)
+        shards = mt.shards(ROOT)
+        for f in mt.FULL_SPLIT_FILES:
+            mine = {s.name: s for s in shards.values() if s.path == f}
+            self.assertEqual(sorted(set(s.mutators for s in mine.values())),
+                             sorted(mt.FULL_SPLIT_GROUPS.values()), f)
+            # Only the statements group runs CONST, as on a four-way split file.
+            self.assertEqual([s.name for s in mine.values() if s.constants],
+                             [n for n in mine if n.endswith("-statements")], f)
+
+    def test_relation_parts_split_one_relations_shard_into_disjoint_parts(self) -> None:
+        shards = mt.shards(ROOT)
+        self.assertTrue(mt.RELATION_PARTS)
+        for f, n in mt.RELATION_PARTS.items():
+            self.assertIn(f, mt.SPLIT_FILES | mt.FULL_SPLIT_FILES)
+            ror = sorted((s for s in shards.values() if s.path == f and s.mutators == "ROR"),
+                         key=lambda s: s.name)
+            # One shard per part, no unparted relations shard, no CONST pass on a part.
+            self.assertEqual([s.part for s in ror], [(k, n) for k in range(n)], f)
+            self.assertFalse(any(s.constants for s in ror), f)
+            self.assertEqual(
+                [s.name for s in ror],
+                [f"{mt._module(f)}-{Path(f).stem}-relations-{k + 1}-of-{n}" for k in range(n)],
+            )
+            # Every comparison, by its position in ROR's visit order, falls in exactly one part.
+            for ordinal in range(500):
+                self.assertEqual(sum(ordinal % s.part[1] == s.part[0] for s in ror), 1)
+        # Every other shard is a whole file's shard.
+        self.assertTrue(all(s.part is None for s in shards.values()
+                            if s.path not in mt.RELATION_PARTS or s.mutators != "ROR"))
+
+    def test_ror_part_reads_k_of_n(self) -> None:
+        self.assertIsNone(mt.ror_part(""))
+        self.assertEqual(mt.ror_part("2/4"), (2, 4))
+        for bad in ("4/4", "-1/3"):
+            with self.assertRaises(mt.MutationError):
+                mt.ror_part(bad)
+
+    def test_a_relations_part_reaches_slither_mutate_through_the_environment(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            source = root / "src" / "x" / "Thing.sol"
+            source.parent.mkdir(parents=True)
+            source.write_bytes(CONSTANTS.encode("utf-8"))
+            seen = []
+
+            def record(cmd, log, timeout=None, env=None):
+                seen.append((cmd, env))
+                log.write_text("", encoding="utf-8")
+                return 1  # no summary: the shard reads as an error, which is fine here
+
+            real = mt._run_logged
+            mt._run_logged = record
+            try:
+                for part, want in (((1, 3), "1/3"), (None, "")):
+                    shard = mt.Shard("x-Thing-relations", "src/x/Thing.sol", "test/x/**",
+                                     "ROR", False, part)
+                    mt.run_slither_mutate(
+                        root, shard, root, 60, mt.FileResult(shard.path), mt.Deadline(None)
+                    )
+                    self.assertEqual(seen[-1][1][mt.ROR_PART_ENV], want)
+                    self.assertIn("ROR", seen[-1][0])
+            finally:
+                mt._run_logged = real
 
     def test_every_module_runs_tests(self) -> None:
         for module, glob in mt.MODULE_TESTS.items():

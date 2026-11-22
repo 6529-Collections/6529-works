@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { Vm } from "forge-std/Vm.sol";
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { ArtistRegistry } from "src/identity/ArtistRegistry.sol";
@@ -15,12 +16,15 @@ import { Dependency } from "src/libraries/Dependency.sol";
 import { SignatureVerifier } from "src/libraries/SignatureVerifier.sol";
 import { StreamMock } from "../mocks/stream/StreamMock.sol";
 import {
+    AlwaysConsolidated,
+    BurningArtistStream,
     ConsolidationSourceMock,
     DisputeOutcomeLogMock,
     EditionsMastersMock,
     FederationRegistryStub,
     PackageRegistryStub,
     PullOnlyPayeeMock,
+    RemappedEditionsMock,
     SplitFactoryWalletsMock
 } from "../mocks/identity/IdentityWorksMocks.sol";
 import { BurningEditionsMock } from "../mocks/identity/PermanenceMocks.sol";
@@ -50,6 +54,11 @@ contract ArtistRegistryTest is IdentityFixture {
         _register(artist);
         vm.expectRevert(IArtistRegistry.InvalidIdentity.selector);
         _register(address(0));
+        // A root that may not be paid (here a protocol contract) is refused as well.
+        vm.expectRevert(IArtistRegistry.InvalidIdentity.selector);
+        _register(packageRegistry);
+        vm.expectRevert(IArtistRegistry.InvalidIdentity.selector);
+        _register(address(registry));
         vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.UnboundCaller.selector, stranger));
         vm.prank(stranger);
         registry.register(stranger, PROFILE, PROFILE_DOC);
@@ -98,6 +107,45 @@ contract ArtistRegistryTest is IdentityFixture {
         assertTrue(registry.isWallet(id, outsider));
         assertFalse(registry.isWallet(id, wallet));
         assertFalse(registry.isWallet(uint256(type(uint160).max) + 1, address(1)));
+        assertFalse(registry.isWallet(0, address(0)), "the zero address is nobody's wallet");
+    }
+
+    /// @dev A consolidation source whose code no longer matches its pin answers "no" for every
+    ///      wallet but the root, without being asked.
+    function test_IsWallet_ASourceWhoseCodeChangedConsolidatesNobody() public {
+        assertTrue(registry.isWallet(artistId, wallet));
+        bytes32 pinned = address(adapter).codehash;
+        bool below;
+        bool above;
+        for (uint256 i; !(below && above); ++i) {
+            // The same answer behind code of another hash: a trailing byte that never runs.
+            bytes memory code = abi.encodePacked(address(new AlwaysConsolidated()).code, uint8(i));
+            vm.etch(address(adapter), code);
+            bytes32 h = address(adapter).codehash;
+            (below, above) = (below || h < pinned, above || h > pinned);
+            assertFalse(registry.isWallet(artistId, wallet));
+        }
+        assertFalse(registry.isWallet(artistId, wallet));
+        assertFalse(registry.isWallet(artistId, outsider));
+        assertTrue(registry.isWallet(artistId, artist), "the root still is");
+    }
+
+    /// @dev A pending change reserves a new root for the account, and only a new one: a change
+    ///      that keeps the root reserves nothing.
+    function test_OwnChange_ReservesOnlyANewRoot() public {
+        _stage(artistKey, _identity(artist, payout));
+        assertEq(uint8(registry.pendingChange(artistId).kind), uint8(ChangeKind.OWN));
+        assertEq(registry.reservedFor(artist), 0);
+    }
+
+    /// @dev An account ID above 160 bits is never read as the address in its low bits: it names
+    ///      no registered account, whoever's root those bits spell.
+    function test_IsWallet_AnIdAbove160BitsNeverAliasesARoot() public view {
+        uint256 alias_ = (uint256(1) << 160) | uint160(artist);
+        assertTrue(registry.isWallet(artistId, artist));
+        assertFalse(registry.isWallet(alias_, artist));
+        assertFalse(registry.isWallet(alias_, wallet));
+        assertEq(registry.frozenUntil(alias_), 0);
     }
 
     /// @dev The account may be named by any address that is or was its root.
@@ -294,7 +342,10 @@ contract ArtistRegistryTest is IdentityFixture {
 
     function test_Replacement_FourteenDaysThenExecutes() public {
         ArtistIdentity memory next = _identity(newRoot, newRoot);
+        vm.recordLogs();
         _stageReplacement(next, newKey);
+        assertEq(_logged(IArtistRegistry.ChangeCancelled.selector), 0, "nothing to cancel");
+        assertEq(registry.reservedFor(newRoot), artistId);
         PendingChange memory p = registry.pendingChange(artistId);
         assertEq(uint8(p.kind), uint8(ChangeKind.REPLACEMENT));
         assertEq(p.executableAt, block.timestamp + 14 days);
@@ -445,6 +496,188 @@ contract ArtistRegistryTest is IdentityFixture {
             )
         );
         registry.cancelChange(artistId);
+        vm.warp(block.timestamp + 1 days);
+        vm.prank(wallet);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IArtistRegistry.ContestWindowClosed.selector, artistId, uint48(START + 14 days)
+            )
+        );
+        registry.cancelChange(artistId);
+    }
+
+    /// @dev Only the network resolves a contest.
+    function test_ResolveContested_IsRestricted() public {
+        DisputeOutcomeLogMock outcomes = _wireOutcomes();
+        _stageReplacement(_identity(newRoot, newRoot), newKey);
+        vm.prank(wallet);
+        registry.cancelChange(artistId);
+        outcomes.setOutcome(address(registry), artistId, VOTE);
+        vm.prank(stranger);
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, stranger)
+        );
+        registry.resolveContested(artistId, false, VOTE);
+    }
+
+    /// @dev Expiring a lapsed contest logs it.
+    function test_ExpireContest_Logs() public {
+        _stageReplacement(_identity(newRoot, newRoot), newKey);
+        vm.prank(wallet);
+        registry.cancelChange(artistId);
+        vm.warp(block.timestamp + 90 days);
+        vm.expectEmit(address(registry));
+        emit IArtistRegistry.ContestExpired(artistId);
+        registry.expireContest(artistId);
+    }
+
+    /// @dev A signed change or acceptance past its deadline is refused.
+    function test_Deadlines_ExpiredChangeAndAcceptanceAreRefused() public {
+        ArtistIdentity memory next = _identity(artist, payout);
+        uint64 deadline = uint64(block.timestamp - 1);
+        bytes32 digest =
+            registry.changeDigest(artistId, next, registry.changeNonce(artistId), deadline);
+        vm.prank(stranger);
+        vm.expectRevert(
+            abi.encodeWithSelector(SignatureVerifier.SignatureExpired.selector, deadline)
+        );
+        registry.stageChange(artistId, next, deadline, _proof(artistKey, digest));
+        ArtistIdentity memory replacement = _identity(newRoot, newRoot);
+        bytes memory acceptance =
+            _sign(newKey, registry.replacementDigest(artistId, replacement, EVIDENCE, deadline));
+        vm.prank(network);
+        vm.expectRevert(
+            abi.encodeWithSelector(SignatureVerifier.SignatureExpired.selector, deadline)
+        );
+        registry.stageReplacement(artistId, replacement, EVIDENCE, deadline, acceptance);
+    }
+
+    /// @dev Staging logs the change and the consumed acceptance; executing applies every field
+    ///      and ends the pending change.
+    function test_Replacement_LogsAndAppliesTheWholeIdentity() public {
+        ArtistIdentity memory next =
+            ArtistIdentity(newRoot, newRoot, keccak256("new profile"), keccak256("new doc"));
+        vm.recordLogs();
+        _stageReplacement(next, newKey);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        assertEq(_count(logs, IArtistRegistry.ChangeStaged.selector), 1);
+        assertEq(_count(logs, IArtistRegistry.ReplacementAcceptanceConsumed.selector), 1);
+        vm.warp(block.timestamp + 14 days);
+        registry.executeChange(artistId);
+        (ArtistIdentity memory id,) = registry.artist(artistId);
+        assertEq(id.profileId, next.profileId);
+        assertEq(id.profileDocHash, next.profileDocHash);
+        assertEq(uint8(registry.pendingChange(artistId).kind), uint8(ChangeKind.NONE));
+        assertEq(registry.pendingChange(artistId).executableAt, 0);
+    }
+
+    /// @dev A contest stays lapsed after its lapse time, not only at it.
+    function test_Contest_StaysLapsedAfterNinetyDays() public {
+        _stageReplacement(_identity(newRoot, newRoot), newKey);
+        vm.prank(wallet);
+        registry.cancelChange(artistId);
+        vm.warp(block.timestamp + 91 days);
+        assertEq(registry.activeAuthorityOf(artistId), artist);
+        registry.expireContest(artistId);
+        assertEq(uint8(registry.pendingChange(artistId).kind), uint8(ChangeKind.NONE));
+    }
+
+    /// @dev A vote recorded after the contest upholds it whatever its value relative to the
+    ///      outcome the contest saw, and a due change may be upheld and executed later than its
+    ///      exact due time.
+    function test_Contest_UpheldLateByAVoteBelowThePriorOutcome() public {
+        DisputeOutcomeLogMock outcomes = _wireOutcomes();
+        bytes32 prior = bytes32(type(uint256).max);
+        bytes32 vote = bytes32(uint256(1));
+        outcomes.setOutcome(address(registry), artistId, prior);
+        _stageReplacement(_identity(newRoot, newRoot), newKey);
+        vm.prank(wallet);
+        registry.cancelChange(artistId);
+        outcomes.setOutcome(address(registry), artistId, vote);
+        vm.warp(block.timestamp + 15 days);
+        vm.prank(network);
+        registry.resolveContested(artistId, true, vote);
+        assertEq(registry.authorityOf(artistId), newRoot);
+    }
+
+    /// @dev Only the latest recorded outcome resolves a contest: references on either side of it
+    ///      are refused.
+    function test_ResolveContested_RefusesOutcomesEitherSideOfTheLatest() public {
+        DisputeOutcomeLogMock outcomes = _wireOutcomes();
+        _stageReplacement(_identity(newRoot, newRoot), newKey);
+        vm.prank(wallet);
+        registry.cancelChange(artistId);
+        bytes32 latest = bytes32(uint256(1) << 128);
+        outcomes.setOutcome(address(registry), artistId, latest);
+        bytes32[2] memory others = [bytes32(uint256(1)), bytes32(type(uint256).max)];
+        for (uint256 i; i < others.length; ++i) {
+            vm.prank(network);
+            vm.expectRevert(
+                abi.encodeWithSelector(
+                    IArtistRegistry.OutcomeNotRecorded.selector, artistId, others[i]
+                )
+            );
+            registry.resolveContested(artistId, false, others[i]);
+        }
+        vm.prank(network);
+        registry.resolveContested(artistId, false, latest);
+    }
+
+    /// @dev An own change executes any time after it is due.
+    function test_OwnChange_ExecutesLaterThanDue() public {
+        _stage(artistKey, _identity(artist, payout));
+        vm.warp(block.timestamp + 30 days);
+        registry.executeChange(artistId);
+        assertEq(registry.payoutAddress(artistId), payout);
+    }
+
+    /// @dev A root another account's pending change reserves is taken too, whichever side of
+    ///      this account's ID that account's ID falls.
+    function test_OwnChange_RefusesRootsOthersReserveEitherSideOfThisOne() public {
+        (uint256 belowKey, uint256 aboveKey) = (0, 0);
+        for (uint256 k = 0x2000; belowKey == 0 || aboveKey == 0; ++k) {
+            address a = vm.addr(k);
+            if (a < artist && belowKey == 0) belowKey = k;
+            if (a > artist && aboveKey == 0) aboveKey = k;
+        }
+        uint256[2] memory keys = [belowKey, aboveKey];
+        for (uint256 i; i < keys.length; ++i) {
+            address other = vm.addr(keys[i]);
+            address wanted = vm.addr(0x3000 + i);
+            uint256 otherId = _register(other);
+            // Both accounts may move their root to `wanted`; the other one stages it first.
+            _consolidate(other, wanted);
+            _consolidate(artist, wanted);
+            ArtistIdentity memory next = _identity(wanted, wanted);
+            uint64 deadline = uint64(block.timestamp + 1 days);
+            bytes32 digest =
+                registry.changeDigest(otherId, next, registry.changeNonce(otherId), deadline);
+            vm.prank(stranger);
+            registry.stageChange(otherId, next, deadline, _proof(keys[i], digest));
+            assertEq(registry.reservedFor(wanted), otherId);
+            (bool ok, bytes memory data) = _relay(_changeCall(artistKey, next));
+            assertFalse(ok);
+            assertEq(data, abi.encodeWithSelector(IArtistRegistry.AccountTaken.selector, wanted));
+        }
+    }
+
+    /// @dev A root held by another account is taken whichever side of this account's ID that
+    ///      account's ID falls.
+    function test_OwnChange_RefusesRootsOfAccountsEitherSideOfThisOne() public {
+        (address below, address above) = (address(0), address(0));
+        for (uint256 k = 0x1000; below == address(0) || above == address(0); ++k) {
+            address a = vm.addr(k);
+            if (a < artist && below == address(0)) below = a;
+            if (a > artist && above == address(0)) above = a;
+        }
+        address[2] memory others = [below, above];
+        for (uint256 i; i < others.length; ++i) {
+            _register(others[i]);
+            (bool ok, bytes memory data) =
+                _relay(_changeCall(artistKey, _identity(others[i], payout)));
+            assertFalse(ok);
+            assertEq(data, abi.encodeWithSelector(IArtistRegistry.AccountTaken.selector, others[i]));
+        }
     }
 
     /// @dev A second contest of a contested replacement is a no-op: no event, and the contest
@@ -540,8 +773,10 @@ contract ArtistRegistryTest is IdentityFixture {
         vm.warp(block.timestamp + 14 days);
         vm.expectEmit(address(registry));
         emit IArtistRegistry.ContestResolved(artistId, true, true, VOTE);
+        vm.recordLogs();
         vm.prank(network);
         registry.resolveContested(artistId, true, VOTE);
+        assertEq(_logged(IArtistRegistry.ChangeCancelled.selector), 0, "executed, not cancelled");
         assertEq(registry.authorityOf(artistId), newRoot);
     }
 
@@ -738,6 +973,60 @@ contract ArtistRegistryTest is IdentityFixture {
         assertTrue(registry.isArtist(address(editions), 1, artist));
     }
 
+    /// @dev An edition whose master is not the bound Stream is "no", even when the work ID it
+    ///      names is one of the artist's works.
+    function test_IsArtist_AnEditionOfAnotherMasterIsNo() public {
+        (StreamMock stream, EditionsMastersMock editions) = _wireStream();
+        assertTrue(registry.isArtist(address(editions), 1, artist));
+        editions.setEdition(1, stranger);
+        assertFalse(registry.isArtist(address(editions), 1, artist));
+        assertTrue(registry.isArtist(address(stream), 1, artist), "the work itself still answers");
+    }
+
+    /// @dev An edition is answered for through the work its master names, not through its own
+    ///      ID.
+    function test_IsArtist_AnEditionResolvesToTheWorkItsMasterNames() public {
+        (StreamMock stream,) = _wireStream();
+        RemappedEditionsMock remapped = new RemappedEditionsMock(address(stream), 5, 1);
+        stream.setEditions(address(remapped));
+        assertTrue(registry.isArtist(address(remapped), 5, artist), "edition 5 is work 1");
+        stream.setWork(5, uint160(outsider));
+        assertTrue(registry.isArtist(address(remapped), 5, artist), "not work 5's artist");
+        assertFalse(registry.isArtist(address(remapped), 5, outsider));
+    }
+
+    /// @dev An edition the Editions contract does not know is "no", even when a work of the
+    ///      artist has the same ID.
+    function test_IsArtist_AnUnknownEditionWithTheIdOfAWorkIsNo() public {
+        (StreamMock stream,) = _wireStream();
+        EditionsMastersMock empty = new EditionsMastersMock();
+        stream.setEditions(address(empty));
+        assertTrue(registry.isArtist(address(stream), 1, artist));
+        assertFalse(registry.isArtist(address(empty), 1, artist));
+    }
+
+    /// @dev Gas rule: a Stream `artistOf` that runs out of the gas forwarded to it reverts
+    ///      `BoundedCallShortfall`, never reads as "not the artist".
+    function test_IsArtist_AStreamShortfallReverts() public {
+        BurningArtistStream burning = new BurningArtistStream();
+        vm.prank(admin);
+        registry.bindStream(address(burning));
+        bytes memory call = abi.encodeCall(registry.isArtist, (address(burning), 1, artist));
+        (bool ok, bytes memory data) = address(registry).staticcall{ gas: 1_000_000 }(call);
+        assertFalse(ok);
+        assertEq(
+            data,
+            abi.encodeWithSelector(BoundedCall.BoundedCallShortfall.selector, address(burning))
+        );
+    }
+
+    /// @dev Before a Stream is bound every subject is "no", without calling anything.
+    function test_IsArtist_NoStreamBoundIsNo() public {
+        assertEq(registry.stream(), address(0));
+        assertFalse(registry.isArtist(makeAddr("token"), 1, artist));
+        assertFalse(registry.isArtist(address(0), 1, artist));
+    }
+
     /// @dev Gas rule: an Editions `masterOf` that runs out of the gas forwarded to it reverts
     ///      `BoundedCallShortfall`, never reads as "not the artist".
     function test_IsArtist_AnEditionsShortfallReverts() public {
@@ -783,6 +1072,32 @@ contract ArtistRegistryTest is IdentityFixture {
         registry.bindSplitFactory(factory);
     }
 
+    /// @dev The constructor checks the source against its pin, as the setter does.
+    function test_Constructor_ChecksTheSourceAgainstItsPin() public {
+        vm.expectRevert(
+            abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(adapter))
+        );
+        new ArtistRegistry(address(manager), adapter, keccak256("other code"));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, stranger));
+        new ArtistRegistry(address(manager), IConsolidationSource(stranger), bytes32(0));
+    }
+
+    /// @dev Each one-shot binding checks its target before anything else, and logs it.
+    function test_Bindings_CheckTheTargetFirstAndLog() public {
+        vm.startPrank(admin);
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, stranger));
+        registry.bindPackageRegistry(stranger);
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, stranger));
+        registry.bindStream(stranger);
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, stranger));
+        registry.bindFederationRegistry(stranger);
+        StreamMock s = new StreamMock();
+        vm.expectEmit(address(registry));
+        emit IArtistRegistry.Bound("STREAM", address(s));
+        registry.bindStream(address(s));
+        vm.stopPrank();
+    }
+
     function test_SetConsolidationSource_SwapsTheSourceWithItsPin() public {
         ConsolidationSourceMock mock = new ConsolidationSourceMock();
         IConsolidationSource next = IConsolidationSource(address(mock));
@@ -794,6 +1109,10 @@ contract ArtistRegistryTest is IdentityFixture {
             abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(next))
         );
         registry.setConsolidationSource(adapter, next, keccak256("other code"));
+        vm.expectEmit(address(registry));
+        emit IArtistRegistry.ConsolidationSourceSet(
+            address(adapter), address(next), address(next).codehash
+        );
         registry.setConsolidationSource(adapter, next, address(next).codehash);
         vm.stopPrank();
         assertTrue(registry.isWallet(artistId, outsider));
@@ -813,6 +1132,17 @@ contract ArtistRegistryTest is IdentityFixture {
         assertTrue(registry.supportsInterface(type(IArtistPayoutResolver).interfaceId));
         assertTrue(registry.supportsInterface(type(IAccounts).interfaceId));
         assertFalse(registry.supportsInterface(0xffffffff));
+        bytes4[5] memory ids = [
+            type(IERC165).interfaceId,
+            type(IArtistRoleResolver).interfaceId,
+            type(IArtistRegistry).interfaceId,
+            type(IArtistPayoutResolver).interfaceId,
+            type(IAccounts).interfaceId
+        ];
+        for (uint256 i; i < ids.length; ++i) {
+            assertFalse(registry.supportsInterface(bytes4(uint32(ids[i]) - 1)));
+            assertFalse(registry.supportsInterface(bytes4(uint32(ids[i]) + 1)));
+        }
     }
 
     function test_FixedValues() public view {
@@ -897,6 +1227,15 @@ contract ArtistRegistryTest is IdentityFixture {
             abi.encodeWithSelector(IArtistRegistry.InvalidBinding.selector, address(foreign))
         );
         registry.bindStatementLog(address(foreign));
+        address[2] memory resolvers = [address(1), address(type(uint160).max)];
+        for (uint256 i; i < resolvers.length; ++i) {
+            DisputeOutcomeLogMock other = new DisputeOutcomeLogMock(resolvers[i]);
+            vm.prank(admin);
+            vm.expectRevert(
+                abi.encodeWithSelector(IArtistRegistry.InvalidBinding.selector, address(other))
+            );
+            registry.bindStatementLog(address(other));
+        }
         assertEq(registry.statementLog(), address(0), "nothing bound");
     }
 
@@ -916,6 +1255,17 @@ contract ArtistRegistryTest is IdentityFixture {
         factory = new SplitFactoryWalletsMock();
         vm.prank(admin);
         registry.bindSplitFactory(address(factory));
+    }
+
+    /// @dev How many logs since `vm.recordLogs` have `topic` as their first topic.
+    function _logged(bytes32 topic) internal returns (uint256) {
+        return _count(vm.getRecordedLogs(), topic);
+    }
+
+    function _count(Vm.Log[] memory logs, bytes32 topic) internal pure returns (uint256 n) {
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].topics.length != 0 && logs[i].topics[0] == topic) ++n;
+        }
     }
 
     function _wireStream() internal returns (StreamMock stream, EditionsMastersMock editions) {

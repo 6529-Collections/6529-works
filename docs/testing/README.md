@@ -102,8 +102,8 @@ section below says which.
 | Nightly (`.github/workflows/nightly.yml`) | every day at 03:30 UTC, and on demand | the invariant suites under the `deep` profile (2,000 runs of depth 256) in five jobs of up to 3 hours (the economics invariants in two, the four new campaigns, the auctions, the others); every fuzz test at 10,000 runs (`deep`); one 30-minute Medusa campaign per harness (45-minute job, the release checked against a pinned SHA-256, the corpus cached); the fork tests in `test/fork` (the Safe suites included) against public mainnet and Sepolia endpoints | locally: deep fuzz 10.5 min on 48 threads (5.9 CPU hours, so roughly 1.5 hours on a 4-core runner); the four new campaigns under `deep` about 68 min; the fork suites 6 s from the RPC cache. The deep fuzz, the new deep partition and the Medusa jobs have not run on a runner | no (scheduled) |
 | Mutation (`.github/workflows/mutation.yml`) | weekly, Sunday 02:00 UTC, and on demand; one small shard when a push to `main` changes the workflow or the tool | every shard of `tools/mutation.py`, eight jobs at a time, each stopped at a 335-minute budget; the merged report in the run summary, with a row for every planned file; fails, naming the shard or contract, when a planned shard left no results or ran out of its budget, a contract has no floor, or a contract's kill rate drops below its floor | several hours | no (scheduled) |
 
-`forge test` runs in six parts whose filters together select every test exactly once (3,152
-tests on 21 November 2026: 3,053, 6, 4, 16, 25 and 48; the 12 examples and the keeper fixture fall
+`forge test` runs in six parts whose filters together select every test exactly once (3,259
+tests on 22 November 2026: 3,160, 6, 4, 16, 25 and 48; the 12 examples and the keeper fixture fall
 in the first), so the parts run on separate runners. Each
 part restores the latest compiler output and compiles only what changed. The 15-minute CI
 budget applies to each job. The fourth part holds the four campaigns of this build, which
@@ -376,7 +376,16 @@ python tools/mutation.py report mutation --markdown mutation/report.md
   `storage` read as `memory`, a `constant` read as `immutable`); every other file runs all
   fifteen. On those files the
   relational shard makes two replacements per comparison (the boundary shift and the equality
-  flip, which subsume the other three) instead of five. Each mutant runs the tests of its
+  flip, which subsume the other three) instead of five. Seven more files whose single shard
+  does not finish in a job keep every operator and all five relational replacements
+  (`RevenueEscrow`, `SplitLedger`, `FederatedEditions`, `FederatedMembership`, `FederatedStream`,
+  `FederationRegistry`, `WorkDelivery`; `FULL_SPLIT_FILES`): they run as five shards, the four
+  groups plus the eight operators the others skip, so their mutants are exactly a single
+  shard's and their floors were measured on the same mutants. The relational shard of two of
+  them runs in parts (`RELATION_PARTS`: `FederatedStream` in four, `FederationRegistry` in
+  three; on the second campaign it took about 10 and 5 hours): part k of n mutates every n-th
+  comparison from the k-th, in the order the operator visits them, with every replacement, so
+  the parts together make the whole shard's mutants. Each mutant runs the tests of its
   module first, under the `lite` profile with `--fail-fast`; every survivor then runs against
   the whole suite, so a mutant an integration test kills counts as killed. A mutant whose
   tests time out (20 minutes) counts as killed, as slither-mutate counts it; the report
@@ -434,6 +443,20 @@ past the input's end; a token that refuses `approve` by
 reverting, returns more than one word, or sets the upper bits of its `true`, and balances above
 2**128; the resolver's bounds on each side; and CC0 license texts either side of the pinned
 one.
+
+**Second campaign (21 to 22 November 2026).** The files the permanence passes added had no
+floor, and the permanent contracts the second pass rewrote had stale ones. A second campaign on
+eac9dd2e measured 19 files (two with nothing to mutate) in about 153 hours of shard time on 22
+checkouts: 5,093 mutants, 4,518 killed by the campaign (88.7%) and 4,819 by the final suite
+(94.6%), every remaining survivor argued equivalent, gas-only or defensive. It set or raised
+their floors; its tables and the triage of every survivor are in
+[mutation-baseline.md](mutation-baseline.md#second-campaign-21-to-22-november-2026). It wrote
+107 new tests, and extended about 26, for its gaps, each run against the mutant it kills. None
+of its survivors was a defect in a contract; three were access checks no test pinned
+(`ArtistRegistry.resolveContested`, `FederationRegistry.setStatus`, and `FederatedStream`'s
+`setLocator` and `setDefaultRenderer`), now pinned. It did not reach every stale floor, and two
+of its shards ran longer than the weekly job allows (now split in parts): see
+[what it did not reach](mutation-baseline.md#not-reached).
 
 ## Symbolic proofs (Halmos)
 
@@ -669,9 +692,9 @@ survivors, and only a lying mock of a trusted contract the defensive ones.
   the shared edition auction base), GV-18 (every governed setter emits old and new values) and
   GV-20 (dependency checks across setters). The 30
   declaration rules are off-chain conventions ([rule traceability](#rule-traceability)).
-- **Unmeasured code.** Fourteen implementation files have no mutation floor, among them
-  `SplitLedger`, `SplitVault`, `GovernedVault`, `WorkDelivery`, `StreamViews`, `StreamLayout`,
-  `SaleStarter` and the seven federated contracts. Since 21 November 2026 every src/ file with
-  executable code has its own coverage floor ([coverage](#coverage)). One trial,
-  `GovernedVault` on 93d10d42's code, killed 91 of 101 mutants (about 84 s a mutant); its ten
-  survivors are not yet triaged ([mutation testing](#mutation-testing)).
+- **Mutation floors.** Every file the weekly run mutates has a floor. Four permanent files
+  (`WorkRecords`, `Editions`, `StatementLog`, `ContentStore`) and nine replaceable ones keep
+  first-campaign floors measured before later rewrites, and `Stream` and `GovernanceConfig`
+  were re-measured only in part ([not reached](mutation-baseline.md#not-reached)). Since 21
+  November 2026 every src/ file with executable code has its own coverage floor
+  ([coverage](#coverage)).

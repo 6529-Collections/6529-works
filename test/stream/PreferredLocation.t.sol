@@ -3,6 +3,9 @@ pragma solidity ^0.8.24;
 
 import { Locator, LocatorKind, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
+import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import { IWorkDelivery, IWorkLocators } from "src/interfaces/IWorkDelivery.sol";
+import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { ContentAddresses as CA } from "../helpers/ContentAddresses.sol";
 import { RecordsFixture } from "./RecordsFixture.sol";
 
@@ -184,6 +187,86 @@ contract PreferredLocationTest is RecordsFixture {
         } else {
             assertEq(uint8(chosen.kind), uint8(kinds[expected]));
             assertEq(chosen.uri, delivery.locators(tokenId, file)[expected].uri);
+        }
+    }
+
+    /// @dev With no preference the first live locator is served, however many dead ones come
+    ///      before it.
+    function test_preferredLocator_theFirstLiveAfterTwoDead() public {
+        _check(Case(5, 0, 0, 0, 0, 0, 0xb));
+    }
+
+    /// @dev A file of another work is refused by name (`FileNotInWork`), by the resolution and
+    ///      by every per-file setting.
+    function test_delivery_refusesAFileNotInTheWork() public {
+        (uint256 tokenId, bytes32 file,,) = _workWithLocators(1, 0, 0, false, false);
+        bytes32 other = keccak256("not this work's file");
+        bytes memory reason =
+            abi.encodeWithSelector(IWorkRecords.FileNotInWork.selector, tokenId, other);
+        vm.expectRevert(reason);
+        delivery.preferredLocator(tokenId, other);
+        vm.startPrank(storageOperator);
+        vm.expectRevert(reason);
+        delivery.setFilePreference(tokenId, other, 0);
+        vm.expectRevert(reason);
+        delivery.markLocatorDead(tokenId, other, 0);
+        vm.stopPrank();
+        delivery.preferredLocator(tokenId, file);
+    }
+
+    /// @dev An IPFS locator starts with exactly one of the two fixed CID prefixes: a prefix
+    ///      just below either is refused, the prefixes themselves are accepted.
+    function test_delivery_ipfsLocatorsNeedAFixedPrefix() public {
+        (uint256 tokenId, bytes32 file,,) = _workWithLocators(0, 0, 0, false, false);
+        string[2] memory valid = [CA.ipfs("prefix"), CA.ipfsRoot("prefix")];
+        vm.startPrank(platform);
+        for (uint256 i; i < valid.length; ++i) {
+            bytes memory below = abi.encodePacked(valid[i]);
+            below[13] = "h"; // "ipfs://bafkreh" / "ipfs://bafybeh": just below the prefix
+            vm.expectRevert(IWorkLocators.InvalidLocator.selector);
+            delivery.addLocator(tokenId, file, Locator(LocatorKind.IPFS, string(below)));
+            delivery.addLocator(tokenId, file, Locator(LocatorKind.IPFS, valid[i]));
+        }
+        vm.stopPrank();
+    }
+
+    /// @dev The dead check reads the locator's own bit: a dead locator cannot be marked again
+    ///      or preferred, a live one beside it can.
+    function test_delivery_theDeadCheckReadsTheLocatorsOwnBit() public {
+        (uint256 tokenId, bytes32 file,,) = _workWithLocators(3, 0, 0, false, false);
+        vm.startPrank(storageOperator);
+        delivery.markLocatorDead(tokenId, file, 1);
+        vm.expectRevert(IWorkLocators.InvalidLocator.selector);
+        delivery.markLocatorDead(tokenId, file, 1);
+        vm.expectRevert(IWorkLocators.InvalidLocator.selector);
+        delivery.setFilePreference(tokenId, file, 1);
+        delivery.setFilePreference(tokenId, file, 0);
+        delivery.setFilePreference(tokenId, file, 2);
+        vm.stopPrank();
+        assertEq(delivery.deadLocators(tokenId, file), 2);
+    }
+
+    /// @dev Who added each locator is recorded at every index up to the last: here the
+    ///      artist's first locator lands at index 8, after the platform's eight.
+    function test_delivery_recordsTheArtistsLocatorAtAHighIndex() public {
+        (uint256 tokenId, bytes32 file,,) = _workWithLocators(9, 0, 1 << 8, false, false);
+        (uint256 artistCount, uint256 platformCount, uint256 byArtist) =
+            delivery.locatorCounts(tokenId, file);
+        assertEq(artistCount, 1);
+        assertEq(platformCount, 8);
+        assertEq(byArtist, 1 << 8);
+    }
+
+    function test_delivery_supportsOnlyTheExactIds() public view {
+        bytes4[3] memory ids = [
+            type(IWorkDelivery).interfaceId,
+            type(IWorkLocators).interfaceId,
+            type(IERC165).interfaceId
+        ];
+        for (uint256 i; i < ids.length; ++i) {
+            assertTrue(delivery.supportsInterface(ids[i]));
+            assertFalse(delivery.supportsInterface(bytes4(uint32(ids[i]) - 1)));
+            assertFalse(delivery.supportsInterface(bytes4(uint32(ids[i]) + 1)));
         }
     }
 

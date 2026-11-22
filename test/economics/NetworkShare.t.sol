@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { Vm } from "forge-std/Vm.sol";
 import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
 import { GovernedVault } from "src/economics/GovernedVault.sol";
 import { SplitLedger } from "src/economics/SplitLedger.sol";
@@ -13,6 +14,8 @@ import { Burner, GasRuleAssertions } from "../helpers/GasRule.sol";
 import {
     BlocklistToken,
     FeeOnTransferToken,
+    OverCreditToken,
+    RefusesAndCreditsToken,
     RefusesButMovesToken
 } from "../mocks/economics/EconomicsMocks.sol";
 import { TokenTransfer } from "src/economics/TokenTransfer.sol";
@@ -81,6 +84,26 @@ contract NetworkShareTest is EconomicsBase, GasRuleAssertions {
         assertEq(address(feeVault).balance, 1 ether, "the network is paid in the same call");
         assertEq(ledger.released(wallet, ETH, feeIndex), 1 ether);
         assertEq(wallet.balance, 0);
+    }
+
+    /// @dev A release whose network share rounds down to nothing pays and logs the payee only:
+    ///      no zero transfer to the vault and no zero `Released`.
+    function test_ReleaseWithNothingDueToTheNetworkLogsThePayeeOnly() public {
+        address wallet = _wallet(_list(_fixed(seller, 99_000), _fixed(address(feeVault), 1000)));
+        vm.deal(wallet, 50);
+        uint256 sellerIndex = _indexOf(wallet, seller);
+        uint256 feeIndex = _indexOf(wallet, address(feeVault));
+        vm.recordLogs();
+        vm.prank(alice);
+        assertEq(_release(wallet, ETH, sellerIndex), 49);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        uint256 released;
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].topics[0] == ISplitWallet.Released.selector) ++released;
+        }
+        assertEq(released, 1, "the payee's release only");
+        assertEq(ledger.released(wallet, ETH, feeIndex), 0);
+        assertEq(address(feeVault).balance, 0);
     }
 
     /// @dev The claim router over a royalty wallet that pays the network: the seller's item also
@@ -202,6 +225,35 @@ contract NetworkShareTest is EconomicsBase, GasRuleAssertions {
         _release(wallet, address(liar), artistIndex);
         assertEq(liar.balanceOf(wallet), 1_000, "nothing moved");
         assertEq(liar.balanceOf(artistPayout), 0);
+    }
+
+    /// @dev A push the token refuses but after which the wallet's balance changed (here, grew)
+    ///      cannot be accounted either: the whole release reverts.
+    function test_APushRefusedThatChangedTheWalletBalanceRevertsTheRelease() public {
+        RefusesAndCreditsToken token_ = new RefusesAndCreditsToken();
+        token_.setLiar(address(feeVault));
+        address wallet = _mixed();
+        token_.mint(wallet, 1_000);
+        uint256 artistIndex = _artistIndex(wallet, ARTIST);
+        vm.prank(artistPayout);
+        vm.expectRevert(
+            abi.encodeWithSelector(TokenTransfer.TokenBalanceMismatch.selector, address(token_))
+        );
+        _release(wallet, address(token_), artistIndex);
+        assertEq(token_.balanceOf(wallet), 1_000, "nothing moved");
+    }
+
+    /// @dev A release is checked on the recipient's side too (ECO-23): a token that credits the
+    ///      recipient more than the amount fails the release.
+    function test_AReleaseThatCreditsTheRecipientMoreReverts() public {
+        OverCreditToken over = new OverCreditToken();
+        address wallet = _wallet(_list(_fixed(bob, 50_000), _fixed(alice, 50_000)));
+        over.mint(wallet, 1_000);
+        vm.expectRevert(
+            abi.encodeWithSelector(TokenTransfer.TokenBalanceMismatch.selector, address(over))
+        );
+        _release(wallet, address(over), _indexOf(wallet, bob));
+        assertEq(over.balanceOf(bob), 0);
     }
 
     /// @dev Gas rule (R11's push): the network vault costing 1x to 100x more is paid the same,

@@ -104,6 +104,16 @@ contract GovernedVaultTest is EconomicsBase {
         assertTrue(vault.supportsInterface(type(IERC1155Receiver).interfaceId));
         assertTrue(vault.supportsInterface(type(IGovernedVault).interfaceId));
         assertTrue(vault.supportsInterface(type(IERC165).interfaceId));
+        bytes4[4] memory ids = [
+            type(IERC721Receiver).interfaceId,
+            type(IERC1155Receiver).interfaceId,
+            type(IGovernedVault).interfaceId,
+            type(IERC165).interfaceId
+        ];
+        for (uint256 i; i < ids.length; ++i) {
+            assertFalse(vault.supportsInterface(bytes4(uint32(ids[i]) - 1)));
+            assertFalse(vault.supportsInterface(bytes4(uint32(ids[i]) + 1)));
+        }
     }
 
     /// @dev The resolver refuses recognised protocol contracts as fee recipient or museum; the
@@ -162,6 +172,8 @@ contract GovernedVaultTest is EconomicsBase {
 
         VaultTest1155 editions = new VaultTest1155();
         editions.mint(address(vault), 7, 4);
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit IGovernedVault.TokenForwarded(address(editions), 7, safe, 3);
         vm.prank(stranger);
         vault.forwardERC1155(address(editions), 7, 3);
         assertEq(editions.balanceOf(safe, 7), 3);
@@ -332,6 +344,18 @@ contract GovernedVaultTest is EconomicsBase {
         bytes memory reason = abi.encodeWithSignature("Refused(uint256)", 7);
         fake.configure(reason, true);
         vm.expectRevert(reason);
+        vault.releaseToDestination(ledger_, payees, bytes32(0), ETH, 0);
+
+        // The bound is exact: a 1,024-byte refusal is kept whole, a 1,025-byte one is not.
+        bytes memory longest = new bytes(1024);
+        longest[0] = 0x01;
+        fake.configure(longest, true);
+        vm.expectRevert(longest);
+        vault.releaseToDestination(ledger_, payees, bytes32(0), ETH, 0);
+        fake.configure(abi.encodePacked(longest, uint8(2)), true);
+        vm.expectRevert(
+            abi.encodeWithSelector(BoundedCall.BoundedCallFailed.selector, address(fake))
+        );
         vault.releaseToDestination(ledger_, payees, bytes32(0), ETH, 0);
 
         fake.configure(abi.encode(uint256(1), uint256(2)), false);

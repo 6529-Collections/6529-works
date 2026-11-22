@@ -91,7 +91,8 @@ contract FederatedPermanenceTest is FederationBase {
     function test_Locator_OnlyPrintableAsciiWithinTheBound() public {
         (, uint256 tokenId) = _startFed(_fedWork(fedArtist));
         string memory before = fed.tokenURI(tokenId);
-        string[8] memory bad = [
+        string[9] memory bad = [
+            _s(hex"610062"),
             _s(hex"61ff"),
             _s(hex"c3a9"),
             "a b",
@@ -111,6 +112,10 @@ contract FederatedPermanenceTest is FederationBase {
         for (uint256 i; i < longest.length; ++i) {
             longest[i] = "a";
         }
+        // One allowed byte more than the bound: only the length refuses it.
+        vm.prank(fedArtist);
+        vm.expectRevert(IFederatedStream.InvalidLocator.selector);
+        fed.setLocator(tokenId, 0, 1, string(abi.encodePacked(longest, "a")));
         vm.startPrank(fedArtist);
         fed.setLocator(tokenId, 0, 1, "https://x.test/a-b_c.d~e!$&'()*+,;=:@/?%20[]{}|^`<>");
         fed.setLocator(tokenId, 0, 1, string(longest));
@@ -204,6 +209,10 @@ contract FederatedPermanenceTest is FederationBase {
         vm.warp(end + 21 days);
         fea.abandon(saleId, abi.encode(w.item));
         assertEq(uint8(fl.auction(saleId).status), uint8(IUniformEditionAuction.AuctionStatus.VOID));
+        // The abandonment sealed the edition at zero: the adapter cannot seal it again.
+        vm.prank(address(fea));
+        vm.expectRevert(abi.encodeWithSelector(IFederatedEditions.EditionSealed.selector, tokenId));
+        pairEditions.sealSupply(tokenId, 0);
     }
 
     /// @dev Pass 3: a federated edition sale voided while its best-effort seal was refused

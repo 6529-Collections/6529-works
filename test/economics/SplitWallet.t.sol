@@ -452,6 +452,87 @@ contract SplitWalletTest is EconomicsBase {
         assertEq(address(hostile).balance, 1 ether);
     }
 
+    /// @dev A signed release holds the wallet's lock too: its recipient cannot re-enter.
+    function test_ReentryDuringASignedReleaseIsBlocked() public {
+        ReentrantRecipient hostile = new ReentrantRecipient();
+        address w = _wallet(_list(_fixed(alice, 50_000), _fixed(bob, 50_000)));
+        uint256 iA = _indexOf(w, alice);
+        uint256 iB = _indexOf(w, bob);
+        hostile.configure(
+            address(ledger),
+            abi.encodeCall(ISplitWallet.release, (_payeesOf(w), bytes32(0), ETH, iB))
+        );
+        vm.deal(w, 2 ether);
+        IReleaseVerifier.Authorization memory a =
+            _auth(w, ETH, iA, alice, address(hostile), type(uint256).max, 1);
+        assertEq(_releaseSigned(a, _sign(alicePk, a)), 1 ether);
+        assertTrue(hostile.entered());
+        assertFalse(hostile.lastOk());
+        assertEq(
+            hostile.lastResult(),
+            abi.encodeWithSelector(ISplitWallet.ReentrancyGuardReentrantCall.selector)
+        );
+        assertEq(bob.balance, 0);
+        assertEq(_releasable(w, ETH, iB), 1 ether);
+    }
+
+    /// @dev Nobody can mark a share of a wallet while one of its releases is in progress.
+    function test_MarkDuringReleaseIsBlocked() public {
+        ReentrantRecipient hostile = new ReentrantRecipient();
+        address w = _wallet(_list(_fixed(address(hostile), 50_000), _fixed(alice, 50_000)));
+        uint256 iOther = _indexOf(w, alice);
+        hostile.configure(
+            address(ledger), abi.encodeCall(ledger.mark, (_payeesOf(w), bytes32(0), ETH, iOther))
+        );
+        vm.deal(w, 2 ether);
+        _release(w, ETH, _indexOf(w, address(hostile)));
+        assertFalse(hostile.lastOk());
+        assertEq(
+            hostile.lastResult(),
+            abi.encodeWithSelector(ISplitWallet.ReentrancyGuardReentrantCall.selector)
+        );
+        (uint256 target, uint256 at) = ledger.markOf(w, ETH, iOther);
+        assertEq(target + at, 0, "no mark");
+    }
+
+    /// @dev `observed` reverts mid-release, as `releasable` does.
+    function test_ObservedRevertsDuringRelease() public {
+        ReentrantRecipient hostile = new ReentrantRecipient();
+        address w = _solo(address(hostile));
+        hostile.configure(address(ledger), abi.encodeCall(ISplitWallet.observed, (w, ETH)));
+        vm.deal(w, 1 ether);
+        _release(w, ETH, 0);
+        assertFalse(hostile.lastOk());
+        assertEq(
+            hostile.lastResult(),
+            abi.encodeWithSelector(ISplitWallet.ReentrancyGuardReentrantCall.selector)
+        );
+        assertEq(ledger.observed(w, ETH), 1 ether);
+    }
+
+    /// @dev A forfeit holds the wallet's lock: a token that calls back during the transfer to
+    ///      the network cannot release from the same wallet.
+    function test_ReentryDuringAForfeitIsBlocked() public {
+        CallbackToken cb = new CallbackToken();
+        address w = _wallet(_list(_fixed(alice, 50_000), _fixed(bob, 50_000)));
+        uint256 iA = _indexOf(w, alice);
+        uint256 iB = _indexOf(w, bob);
+        cb.mint(w, 1000);
+        ledger.mark(_payeesOf(w), bytes32(0), address(cb), iA);
+        vm.warp(block.timestamp + ledger.UNCLAIMED_PERIOD());
+        cb.setHook(
+            address(ledger),
+            abi.encodeCall(ISplitWallet.release, (_payeesOf(w), bytes32(0), address(cb), iB))
+        );
+        assertEq(ledger.forfeit(_payeesOf(w), bytes32(0), address(cb), iA), 500);
+        assertFalse(cb.lastHookOk());
+        assertEq(
+            cb.lastHookResult(),
+            abi.encodeWithSelector(ISplitWallet.ReentrancyGuardReentrantCall.selector)
+        );
+        assertEq(cb.balanceOf(bob), 0);
+    }
+
     function test_ViewsRevertDuringRelease() public {
         ReentrantRecipient hostile = new ReentrantRecipient();
         address w = _solo(address(hostile));

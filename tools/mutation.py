@@ -13,7 +13,9 @@ down, and each change must fail a test.
 
 Subcommands:
   list                     the shards: one per src/ file with code, the largest split into
-                           four mutator groups (SPLIT_FILES, SPLIT_GROUPS)
+                           four mutator groups (SPLIT_FILES, SPLIT_GROUPS) or into five that
+                           keep every operator (FULL_SPLIT_FILES, FULL_SPLIT_GROUPS); the
+                           slowest relational shards run in parts (RELATION_PARTS)
   run SHARD [...]          mutate the shard's file against its module's tests, re-run every
                            survivor against the whole suite (--no-recheck skips that) and
                            write OUT/SHARD/results.json and the logs; --budget MINUTES stops
@@ -120,8 +122,33 @@ SPLIT_GROUPS = {
     "conditions": "MIA",
 }
 SKIPPED_ON_SPLIT_FILES = "ASOR,BOR,FHR,LIR,MVIE,MVIV,MWA,SBR"
+# Files too slow for one CI job that keep every operator: one shard per group of FULL_SPLIT_GROUPS,
+# the four groups above plus the eight operators split files skip, with all five relational
+# replacements. Their mutants are exactly the ones a single shard would make, so their floors
+# are measured on the same mutants (the 21 November 2026 campaign measured them this way).
+FULL_SPLIT_FILES = {
+    "src/economics/RevenueEscrow.sol",
+    "src/economics/SplitLedger.sol",
+    "src/federated/FederatedEditions.sol",
+    "src/federated/FederatedMembership.sol",
+    "src/federated/FederatedStream.sol",
+    "src/federated/FederationRegistry.sol",
+    "src/stream/WorkDelivery.sol",
+}
+FULL_SPLIT_GROUPS = {**SPLIT_GROUPS, "others": SKIPPED_ON_SPLIT_FILES}
+# Split files whose relational shard alone does not finish in a CI job: it runs as this many
+# shards, part k of n taking every n-th comparison of the contract from the k-th, in the order
+# ROR visits them (with every replacement of each). The parts' mutants together are exactly
+# the whole shard's. On the 21 November 2026 campaign FederatedStream's relations took about
+# 10 hours and FederationRegistry's about 5.
+RELATION_PARTS = {
+    "src/federated/FederatedStream.sol": 4,
+    "src/federated/FederationRegistry.sol": 3,
+}
 # The split files' relational shard uses two replacements per comparison instead of five.
 SUFFICIENT_ROR_ENV = "MUTATION_SUFFICIENT_ROR"
+# "k/n": ROR makes only part k of n of the file's relational mutants (RELATION_PARTS).
+ROR_PART_ENV = "MUTATION_ROR_PART"
 
 CATEGORIES = ("revert", "comment", "tweak", "constant")
 SUMMARY = re.compile(r"(Revert|Comment|Tweak) mutants: (\d+) caught of (\d+)", re.IGNORECASE)
@@ -148,6 +175,7 @@ class Shard:
     tests: str
     mutators: str | None  # None: every slither-mutate mutator
     constants: bool
+    part: tuple[int, int] | None = None  # (k, n): part k of n of the ROR mutants
 
 
 @dataclass
@@ -231,15 +259,31 @@ def shards(root: Path) -> dict[str, Shard]:
             raise MutationError(f"{rel}: no tests are mapped for module {module!r}")
         base = f"{module}-{Path(rel).stem}"
         tests = MODULE_TESTS[module]
-        if rel in SPLIT_FILES:
-            for group, mutators in SPLIT_GROUPS.items():
-                name = f"{base}-{group}"
-                out[name] = Shard(name, rel, tests, mutators, group == "statements")
+        groups = (
+            SPLIT_GROUPS if rel in SPLIT_FILES
+            else FULL_SPLIT_GROUPS if rel in FULL_SPLIT_FILES
+            else None
+        )
+        if groups:
+            for group, mutators in groups.items():
+                parts = RELATION_PARTS.get(rel, 1) if group == "relations" else 1
+                if parts == 1:
+                    name = f"{base}-{group}"
+                    out[name] = Shard(name, rel, tests, mutators, group == "statements")
+                    continue
+                for k in range(parts):
+                    name = f"{base}-{group}-{k + 1}-of-{parts}"
+                    out[name] = Shard(name, rel, tests, mutators, False, (k, parts))
         else:
             out[base] = Shard(base, rel, tests, None, True)
-    missing = SPLIT_FILES - {s.path for s in out.values()}
+    missing = (SPLIT_FILES | FULL_SPLIT_FILES) - {s.path for s in out.values()}
     if missing:
         raise MutationError(f"SPLIT_FILES names files that do not exist: {sorted(missing)}")
+    if SPLIT_FILES & FULL_SPLIT_FILES:
+        raise MutationError(f"split two ways: {sorted(SPLIT_FILES & FULL_SPLIT_FILES)}")
+    unsplit = set(RELATION_PARTS) - SPLIT_FILES - FULL_SPLIT_FILES
+    if unsplit or any(n < 2 for n in RELATION_PARTS.values()):
+        raise MutationError(f"RELATION_PARTS needs split files and two parts or more: {unsplit}")
     return out
 
 
@@ -340,10 +384,12 @@ def _patch_mutators() -> None:
         BinaryType.NOT_EQUAL: (BinaryType.LESS, BinaryType.GREATER),
     }
     use_sufficient = os.environ.get(SUFFICIENT_ROR_ENV) == "1"
+    part = ror_part(os.environ.get(ROR_PART_ENV, ""))
 
     def ror_mutate(self) -> dict:
         result: dict = {}
         source = self.slither.source_code[self.in_file].encode("utf8")
+        ordinals: dict[tuple[int, int], int] = {}
         for function in self.contract.functions_and_modifiers_declared:
             if not self.should_mutate_function(function):
                 continue
@@ -372,6 +418,11 @@ def _patch_mutators() -> None:
                     if old_str.count(ir.type.value) != 1 or (
                         ir.type.value in ("<", ">") and old_str.count(ir.type.value + "=") != 0
                     ):
+                        continue
+                    # A part takes every n-th comparison in the order they are first visited;
+                    # one comparison can appear in several IRs, and keeps its first number.
+                    ordinal = ordinals.setdefault((start, stop), len(ordinals))
+                    if part and ordinal % part[1] != part[0]:
                         continue
                     replacements = (
                         sufficient[ir.type]
@@ -406,6 +457,16 @@ def _patch_mutators() -> None:
         return None
 
     ROR.ROR._mutate = ror_mutate
+
+
+def ror_part(value: str) -> tuple[int, int] | None:
+    """(k, n) from ROR_PART_ENV's "k/n", or None for the whole file."""
+    if not value:
+        return None
+    k, n = (int(x) for x in value.split("/"))
+    if not 0 <= k < n:
+        raise MutationError(f"{ROR_PART_ENV}={value!r}: want k/n with 0 <= k < n")
+    return k, n
 
 
 # For an unsigned `x`, the replacement of a comparison with the literal 0 that cannot change
@@ -531,6 +592,7 @@ def run_slither_mutate(
     log = out / "slither-mutate.log"
     env = {k: v for k, v in os.environ.items() if k != "FOUNDRY_PROFILE"}
     env[SUFFICIENT_ROR_ENV] = "1" if shard.path in SPLIT_FILES else "0"
+    env[ROR_PART_ENV] = f"{shard.part[0]}/{shard.part[1]}" if shard.part else ""
     source = root / shard.path
     original = source.read_bytes()
     try:
@@ -681,7 +743,10 @@ def run_shard(root: Path, shard: Shard, out: Path, do_recheck: bool, timeout: in
         flush=True,
     )
     if result.status == "timeout":
-        hint = "" if shard.path in SPLIT_FILES else " (split it: SPLIT_FILES in tools/mutation.py)"
+        hint = (
+            "" if shard.path in SPLIT_FILES | FULL_SPLIT_FILES
+            else " (split it: FULL_SPLIT_FILES or SPLIT_FILES in tools/mutation.py)"
+        )
         print(
             f"[{shard.name}] stopped at its {budget / 60:.0f}-minute budget; the report lists "
             f"{shard.path} as `timeout`{hint}",
@@ -700,6 +765,7 @@ def run_shard(root: Path, shard: Shard, out: Path, do_recheck: bool, timeout: in
         "tests": shard.tests,
         "mutators": shard.mutators or "all",
         "constants": shard.constants,
+        "part": list(shard.part) if shard.part else None,
         "recheck_tests": RECHECK_TESTS if do_recheck else None,
         "started": started.isoformat(timespec="seconds"),
         "finished": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),

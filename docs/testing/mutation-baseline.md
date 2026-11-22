@@ -1,6 +1,8 @@
 # Mutation testing baseline
 
-The first full mutation campaign over `src/`, with every surviving mutant triaged. How the
+The first full mutation campaign over `src/`, with every surviving mutant triaged, and a second
+campaign (21 to 22 November 2026) over the files the permanence passes added or rewrote,
+[below](#second-campaign-21-to-22-november-2026). How the
 campaign works, and how to run it, is in the [testing guide](README.md#mutation-testing). The
 weekly workflow (`.github/workflows/mutation.yml`) produces the same report from the same
 mutants; this file is the reviewed reference, and
@@ -1811,3 +1813,427 @@ Each survivor is one of:
 | 879 | ROR | `if (dependency.code.length == 0 \|\| DelegatedEOA.isDelegated(dependency` to `if (dependency.code.length <= 0 \|\| DelegatedEOA.isDelegated(dependency` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 
 </details>
+
+## Second campaign (21 to 22 November 2026)
+
+The first campaign predates the permanence passes. This one measured the implementation files
+that had no floor (the economics, federation and delivery contracts ADR 0007 and ADR 0008
+added) and re-measured the permanent contracts the second pass rewrote, then triaged every
+survivor. It did not reach every stale file; [what it did not reach](#not-reached) is listed
+below, and their floors are unchanged.
+
+### How it was measured
+
+- **Code.** `claude/coverage` at eac9dd2e (`main` after #112 plus the coverage tests of #111).
+  `src/` was not changed; only tests, the tool's split list, floors and these pages were.
+- **Tools.** As the first campaign: slither-analyzer 0.11.6 through `tools/mutation.py`,
+  Foundry 1.7.1, solc 0.8.37, the `lite` profile.
+- **Shards.** A file the tool splits four ways (`SPLIT_FILES`) ran its four standard shards.
+  Every other file ran all fifteen operators, all five relational replacements and CONST, the
+  mutants of a single shard; the larger ones ran them as five shards in parallel (statements
+  with CONST; arithmetic, logical and unary operators; relational operators; `if`
+  conditions; the other eight operators), which is now the tool's `FULL_SPLIT_FILES` split.
+- **Machine.** 22 scratch checkouts on one 48-thread machine, from 23:45 to about 10:30: about
+  153 hours of shard time in all.
+- **Re-checks.** Each module-test survivor ran against the whole suite, as the tool does, except
+  in the shards where that re-check alone would have taken hours (`FederatedStream` others and
+  relations, `WorkDelivery` others, `GovernedVault`, `FederatedDeployer`, `StreamViews`, the
+  federated lens, three `FederationRegistry` shards). Those were stopped once their mutants had
+  all run against the module tests; their "campaign" counts take every survivor not re-checked as
+  surviving (a lower bound, as the tool reports a re-check cut short). Every survivor of those
+  shards that no new test kills was then run against the whole final suite on its own, except
+  the relations survivors of `FederatedStream` and `FederationRegistry`, which finished last and
+  were run against the final federated module tests (`test/federated/`).
+- **The final suite.** Each test written for a survivor was run against that survivor's mutant
+  directly: it fails on the mutant and passes on the real code. "Killed by the final suite"
+  counts those. The survivors triaged as equivalent survive the whole final suite (in the
+  campaign's re-check or afterwards), or, for the two relations shards above, the final
+  federated module tests.
+
+### Kill rate per contract
+
+| Contract | Group | Mutants | Killed (campaign) | Rate | Killed (final) | Rate, final | Equivalent | Gas / defensive | Without them | Shard time |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `src/curation/PackageRegistry.sol` | D | 459 | 435 | 94.8% | 444 | 96.7% | 15 | 0 | 100.0% | 9.9 h |
+| `src/economics/GovernedVault.sol` | A | 126 | 115 | 91.3% | 123 | 97.6% | 3 | 0 | 100.0% | 1.8 h |
+| `src/economics/RevenueEscrow.sol` | C | 259 | 251 | 96.9% | 254 | 98.1% | 5 | 0 | 100.0% | 5.0 h |
+| `src/economics/SplitLedger.sol` | A | 657 | 625 | 95.1% | 634 | 96.5% | 23 | 0 | 100.0% | 14.6 h |
+| `src/economics/SplitVault.sol` | A | 0 | 0 | n/a | 0 | n/a | 0 | 0 | n/a | 0.0 h |
+| `src/federated/FederatedDeployer.sol` | B | 100 | 88 | 88.0% | 94 | 94.0% | 6 | 0 | 100.0% | 3.6 h |
+| `src/federated/FederatedEditionAuction.sol` | B | 69 | 61 | 88.4% | 65 | 94.2% | 2 | 2 | 100.0% | 3.3 h |
+| `src/federated/FederatedEditionAuctionLens.sol` | B | 81 | 69 | 85.2% | 69 | 85.2% | 7 | 5 | 100.0% | 2.8 h |
+| `src/federated/FederatedEditions.sol` | A | 335 | 267 | 79.7% | 325 | 97.0% | 10 | 0 | 100.0% | 19.2 h |
+| `src/federated/FederatedMembership.sol` | A | 152 | 133 | 87.5% | 144 | 94.7% | 3 | 5 | 100.0% | 6.6 h |
+| `src/federated/FederatedStream.sol` | A | 1101 | 937 | 85.1% | 1036 | 94.1% | 65 | 0 | 100.0% | 35.1 h |
+| `src/federated/FederationRegistry.sol` | B | 349 | 293 | 84.0% | 321 | 92.0% | 28 | 0 | 100.0% | 11.2 h |
+| `src/identity/ArtistRegistry.sol` | C | 632 | 562 | 88.9% | 610 | 96.5% | 20 | 2 | 100.0% | 14.4 h |
+| `src/interfaces/IWorkPowers.sol` | B | 8 | 8 | 100.0% | 8 | 100.0% | 0 | 0 | 100.0% | 0.8 h |
+| `src/interfaces/types/SaleTypes.sol` | B | 0 | 0 | n/a | 0 | n/a | 0 | 0 | n/a | 0.0 h |
+| `src/sales/SaleStarter.sol` | B | 33 | 33 | 100.0% | 33 | 100.0% | 0 | 0 | 100.0% | 1.4 h |
+| `src/stream/StreamLayout.sol` | B | 30 | 24 | 80.0% | 24 | 80.0% | 6 | 0 | 100.0% | 1.4 h |
+| `src/stream/StreamViews.sol` | B | 148 | 124 | 83.8% | 134 | 90.5% | 14 | 0 | 100.0% | 4.2 h |
+| `src/stream/WorkDelivery.sol` | A | 554 | 493 | 89.0% | 501 | 90.4% | 53 | 0 | 100.0% | 18.1 h |
+| **Total** | | **5093** | **4518** | **88.7%** | **4819** | **94.6%** | **260** | **14** | **100.0%** | **153 h** |
+
+"Group" is the campaign plan's order: A the unmeasured economics, federation and delivery
+contracts, B the rest of the unmeasured files, C the permanent contracts with stale floors, D
+the replaceable ones. "Campaign" counts what the
+module tests and the whole-suite re-check killed; "final" adds the
+survivors the new tests kill. The last column leaves out the equivalent mutants and the gas
+margins, which no test can kill, and the defensive ones.
+
+### What the new tests pin
+
+107 new test functions in 23 test files, and assertions added to about 26 existing ones, each
+named in the triage below with the survivor it kills. They pin, among others:
+
+- **Access.** Who may call each governed or artist-only function the survivors showed unpinned
+  (above), and the federation registry's refusals of a template, adapter or partner that is not
+  the reviewed one.
+- **Exact boundaries.** Interface IDs one above and one below the supported ones; the federated
+  party, payee and locator bounds at their edges (64 fixed payees mint); counts, serials, shares
+  and IDs above 16 bits stored whole; the ledger's one-word answer bound; an EIP-3860 creation
+  code of three chunks reassembled in order.
+- **Effects and logs.** The fields and logs of each record, quote, creation, binding, seal and
+  renderer change, so a statement that writes or emits the wrong value fails a test.
+- **Locks and order.** Re-entry during a signed release, a forfeit, a sweep and a mark is refused;
+  a sale voided mid-scan pays nobody.
+- **Pairs.** An editions copy joins only beside a 1/1 of the same artist, on an approved
+  template, with the same fee share and naming it back; a 1/1 is refused once its editions
+  partner is delisted, and when its artist ID names another artist's root.
+
+No survivor showed a defect in the contracts: every one is either killed by a test written
+for it or argued equivalent, gas-only or defensive below. Three survivors were access checks
+no test pinned: commenting out `restricted` on `ArtistRegistry.resolveContested` or
+`FederationRegistry.setStatus`, or `_onlyArtist()` in `FederatedStream.setLocator` and
+`setDefaultRenderer`, left every test passing. The checks are in the code and correct; tests now
+pin each one.
+
+### Survivors, triaged (second campaign)
+
+Line numbers are eac9dd2e's. "Killed" names the test that kills the mutant (new, or extended
+with the assertion that kills it); each was run against its mutant.
+
+#### `src/economics/SplitLedger.sol`
+
+32 survivors: 9 killed by new tests, 23 equivalent.
+
+- **Killed.** L99 CR, the network's dependency check: `test_ConstructorRejectsANetworkWithoutCode`.
+  L181, L208, L228, L276 CR, the wallet's lock in a signed release, `mark`, `forfeit` and
+  `observed`: `test_ReentryDuringASignedReleaseIsBlocked`, `test_MarkDuringReleaseIsBlocked`,
+  `test_ReentryDuringAForfeitIsBlocked`, `test_ObservedRevertsDuringRelease` (without the lock
+  the outer release still fails its balance check: the ledger stays closed either way). L393
+  MIA and ROR, a push with nothing due: `test_ReleaseWithNothingDueToTheNetworkLogsThePayeeOnly`.
+  L398 ROR: `test_APushRefusedThatChangedTheWalletBalanceRevertsTheRelease`. L439 ROR, the
+  recipient's delta: `test_AReleaseThatCreditsTheRecipientMoreReverts`.
+- **Equivalent.** L113, L126, L209, L503 ROR: a `bytes32` compared with zero (`!=` and `>`,
+  `==` and `<=` agree). L216 ROR `previous != 0` to `>=`: with no mark, `done < 0` is false
+  anyway. L313 ROR `== max` to `>=`. L319 ROR `!=` to `>` and `>=`: `_due` has just reverted for
+  receipts below the record, and writing an equal value changes nothing. L345 ROR `<` to `<=`
+  (equal gives zero either way), L347 ROR `>` to `>=` (assigns an equal value). L387 ROR `i ==
+  count` to `>=` (the search ends at most at `count`) and `artistId != 0` to `<` (an artist
+  payee's account is zero, never the network). L429 ROR `!=` to `>` (only the ledger takes ETH
+  out of a wallet, so its balance can only end higher). L435 ROR `!= 32` to `<` and `>` (an
+  answer over one word is already a refusal from `BoundedCall`; a shorter one never reads as
+  1). L218, L516 BOR `|` to `^` (disjoint bits; a bit a check above proved clear). L54, L61 SBR
+  `constant` to `immutable` or `uint128` (the same value). L376, L540 SBR `uint128` locals (an
+  index below the payee count; a lock word of 0 or 1). L509 SBR `encode` to `encodePacked`
+  (two words encode alike).
+
+#### `src/economics/GovernedVault.sol`
+
+11 survivors: 8 killed by new tests, 3 equivalent.
+
+- **Killed.** L151 ROR (six), one-sided interface IDs:
+  `test_ReceivesWorksThroughSafeTransfers`. L29 CONST `_MAX_ANSWER` one up and one down:
+  `test_ReleaseToDestinationBoundsTheLedgersAnswer` (a 1,024-byte refusal kept whole, a
+  1,025-byte one not). L90 CR (an ERC-1155 forward's log) was killed by the re-check; the
+  forward test now asserts it too.
+- **Equivalent.** L66 ROR `== max` to `>=`. L29 SBR `immutable` and `uint128`.
+
+#### `src/federated/FederatedEditions.sol`
+
+68 survivors: 58 killed by new tests (most in `test/federated/FederatedEditionsRules.t.sol`), 10
+equivalent.
+
+- **Killed.** L76 CR partner check: `test_Constructor_RefusesAPartnerWithoutCode`. L98, L99 CR
+  creation logs and L97 ROR and MIA, the maximum: `test_Create_LogsAndKeepsTheMastersMaximum`.
+  L113 CR, the master check on binding, and L297 ROR (an item hash on either side):
+  `test_Bind_RefusesAnItemThatIsNotTheMasters`; L297 ROR `kind != MASTER` to `>`:
+  `test_Bind_RefusesAWorkThatIsNotAMaster`. L114 ROR, the sale kind:
+  `test_Bind_RefusesAnAdapterOfAnotherSaleKind`. L112 ROR and MIA, L119 MIA, L121 MIA:
+  `test_Bind_ACreatedEditionKeepsTheTermsItWasCreatedWith`. L120 CR and SBR (`tx.origin`), the
+  binding log: `test_Bind_RefusesAnItemThatIsNotTheMasters`. L142 ROR (exact data), L145 AOR
+  (the remaining supply after partial mints), L148 ASOR (the running count), L149 CR (the
+  terms' sale kind), L150 CR (the mint log), L143 SBR (a full-word unit price), L162 ROR and
+  L167 CR (seals): `test_Mint_ExactDataTheRunningCountTheTermsAndTheLog` and
+  `test_Pair_MintBeyondTheRemainingSealedSupplyIsRefused`. L141 MIA:
+  `test_Mint_AnUnsealedMintNeedsTheAdapterStillAdmitted`. L224, L225 CR (the edition view),
+  L244 CR, L309 MVIE, L310 CR, ROR and MIA, L312 CR (the lock and its log):
+  `test_Create_LogsAndKeepsTheMastersMaximum`, `test_Create_AtAZeroShareTheRoyaltyReceiverIsTheSellerVault`.
+  L267 CR: `test_Uri_RefusesAnUnknownEdition`. L283 to L287 ROR (22): `test_SupportsInterface_OnlyTheExactIds`.
+- **Equivalent.** L85, L112 (`<=`), L211, L217, L326 ROR: a `bytes32` compared with zero. L91
+  ROR `!= SOLD` to `>`: NONE cannot reach it, `_checkMaster` above requires a settled sale.
+  L297 ROR `kind !=` to `<` (kinds are 0 and 1). L190 CR `return nothing` (the named return is
+  already zero). L196, L216 SBR `storage` to `memory` (read only).
+
+#### `src/federated/FederatedMembership.sol`
+
+19 survivors: 11 killed by new tests, 3 equivalent, 5 defensive.
+
+- **Killed.** L57, L58 CR (registry and ledger checks), L54 ROR (eight: the artist ID and fee
+  bounds at their edges), L71 CR (the owner log): `test/federated/FederatedMembershipConfig.t.sol`.
+- **Equivalent.** L81 ROR `!= NONE` to `>` (the first value). L186 ROR `<` to `<=` (assigns an
+  equal value). L171 ROR `== ACTIVE` to `<=` (NONE read as active): no reachable state has it,
+  as a stream is listed only after its editions partner and links a partner only before it
+  joins (a link after joining reverts `FederationStateInvalid`, tried).
+- **Defensive.** L88 LOR and ROR (four): the listing check after `register`. The federation
+  registry lists the token ACTIVE under its artist or reverts; only a registry governance
+  installed that lied could differ.
+
+#### `src/federated/FederatedDeployer.sol`
+
+12 survivors: 6 killed by new tests, 6 equivalent.
+
+- **Killed.** L52 ASOR (three: `done =`, `|=`, `^=`), reachable only above two chunks:
+  `test_Deploy_ACreationCodeOfThreeChunksIsReassembledInOrder` (an init code of the EIP-3860
+  maximum that jumps into its third chunk). L54 SBR (`encodePacked` salt): the same test, which
+  now checks the CREATE2 address. L32 ROR: `test_Constructor_AnExactChunkIsOnePointer`. L42 CR:
+  `test_Constructor_LogsTheStoredCode`.
+- **Equivalent.** L33 ROR `<` to `<=` (a full last chunk is the chunk either way); L51 ROR, UOR
+  and SBR (loop forms); L47 SBR `memory` to `storage` (read only).
+
+#### `src/federated/FederatedEditionAuctionLens.sol`
+
+12 survivors: 7 equivalent, 5 defensive.
+
+- **Equivalent.** L98, L103 CR `return address(0)` (the default return). L164 ROR (`bytes32`
+  with zero). L33, L67 SBR (`immutable`, `uint128`: the values fit). L124 SBR (`encodePacked` of
+  two words).
+- **Defensive.** L74 ROR (five): the fee terms' checks of the registry entry (its code hash is
+  the token's own, and its share is below the denominator by construction).
+
+#### `src/stream/StreamViews.sol`
+
+24 survivors: 10 killed by new tests, 14 equivalent.
+
+- **Killed.** L34 RR and the interface RR: `test/stream/StreamViews.t.sol`. L32 MWA and ROR
+  (three: the name loop): `test_IsValidCollectionName_AnswersEveryNameWithoutReverting`. L111
+  BOR `& 5`: `test_createCollection_nameLengthBoundIsExact` (a long name read back whole). L52,
+  L72, L80 SBR (`uint16` serial and count, `uint32` supply counters):
+  `test_views_readCountsAndSerialsAbove16Bits`.
+- **Equivalent.** L110 AOR (two): a long string's head is odd, so the shift drops the 1 either
+  way. L111 AOR `* 31` and BOR `| 5`, `<< 5`, `^ 5` (four), L111 SBR `encodePacked`: they read
+  more words than the name holds and copy them past its end into free memory; the bytes
+  returned are the same (gas only). L69 BOR (the low byte is a bool). L32 ROR `!=` and SBR
+  (loop forms), L72 SBR (`uint32` local), L23 SBR (two).
+
+#### `src/stream/StreamLayout.sol`
+
+6 survivors: 6 equivalent. L26 to L29 SBR `uint128` slot numbers, L35 and L49 SBR
+`encodePacked` of two words.
+
+#### `src/sales/SaleStarter.sol`, `src/interfaces/IWorkPowers.sol`
+
+No survivor (the eight CONST mutants of `IWorkPowers` are killed by the Stream tests in the
+re-check). `src/economics/SplitVault.sol` and `src/interfaces/types/SaleTypes.sol` have no
+mutants: two `bytes` constants, and type declarations.
+
+#### `src/economics/RevenueEscrow.sol`
+
+8 survivors: 3 killed by new tests, 5 equivalent.
+
+- **Killed.** L147 CR, `sweepExcess`'s guard: `test_SweepExcess_ReentryIsBlocked`. L173 ROR:
+  `test_SupportsInterface`. L202 ROR, the network's own accounts:
+  `test_RecoverTreatsOnlyTheExactAuthorityAsTheNetworks`.
+- **Equivalent.** L104 CR `nonReentrant` on `recover`: it makes only static reads (`configOf`,
+  `authority()`), so nothing can re-enter it. L108 ROR (`bytes32`). L186 ROR (`old + amount`
+  is never below `amount`). L40 SBR (two).
+
+#### `src/identity/ArtistRegistry.sol`
+
+70 survivors: 48 killed by new tests, 20 equivalent, 2 gas margins.
+
+- **Killed.** Operators: L221 (`test_Register_Refusals`), L508 (`test_IsArtist_NoStreamBoundIsNo`),
+  L516 (`test_IsArtist_AnEditionOfAnotherMasterIsNo`), L690 (`test_IsWallet_AnIdAbove160BitsNeverAliasesARoot`).
+  Conditions: L267 and L323 (no stray `ChangeCancelled`: `test_Replacement_FourteenDaysThenExecutes`,
+  `test_Contest_UpheldByAVoteRecordedAfterIt`), L442, L725, L799
+  (`test_IsWallet_UnregisteredAccountIsItsOwnWallet`, `test_IsWallet_ASourceWhoseCodeChangedConsolidatesNobody`,
+  `test_OwnChange_ReservesOnlyANewRoot`), and the operator lines again. Relations: L164 (a log
+  naming another resolver, on both sides), L286 (`test_Contest_WindowClosesWithTheNotice`), L314
+  (`test_ResolveContested_RefusesOutcomesEitherSideOfTheLatest`), L317 and L319
+  (`test_Contest_UpheldLateByAVoteBelowThePriorOutcome`), L342 (`test_OwnChange_ExecutesLaterThanDue`),
+  L445 and L690, L547 (five, `test_SupportsInterface`), L725 (two, both sides of the pin),
+  L744 (four: `test_OwnChange_RefusesRootsOfAccountsEitherSideOfThisOne`,
+  `test_OwnChange_RefusesRootsOthersReserveEitherSideOfThisOne`), L839
+  (`test_Contest_StaysLapsedAfterNinetyDays`). Statements: L107
+  (`test_Constructor_ChecksTheSourceAgainstItsPin`), L117, L131, L137, L779
+  (`test_Bindings_CheckTheTargetFirstAndLog`), L182, L243 and L263
+  (`test_Deadlines_ExpiredChangeAndAcceptanceAreRefused`), L266, L800, L821, L823
+  (`test_Replacement_LogsAndAppliesTheWholeIdentity`), L310 `restricted` on `resolveContested`
+  (`test_ResolveContested_IsRestricted`), L332 (`test_ExpireContest_Logs`), L516, L517, L520
+  (`test_IsArtist_AnEditionResolvesToTheWorkItsMasterNames`, `test_IsArtist_AnUnknownEditionWithTheIdOfAWorkIsNo`),
+  L527 (`test_IsArtist_AStreamShortfallReverts`).
+- **Equivalent.** L240, L387, L410 (two), L431, L497, L541, L703 ROR: `ChangeKind` or
+  `FederationStatus` compared with NONE, its first value. L257, L314 (`== 0`), L516 ROR: a
+  `bytes32` with zero. L260, L793 ROR `== REPLACEMENT` to `>=` and L297 `!=` to `<`
+  (REPLACEMENT is the last value). L267 ROR `>=` (REPLACEMENT was refused just above). L282 ROR
+  and L811 ROR (a pending change always exists there). L594 ROR (two: an unlisted token records
+  no artist, and a delisted listing reads DELISTED either way). L528 CR `return false` (the
+  function then ends returning false).
+- **Gas margin.** L852 ROR `<=` to `<` (the shortfall boundary) and L522 CR (the shortfall's
+  reference point taken earlier).
+
+#### `src/curation/PackageRegistry.sol`
+
+24 survivors: 9 killed by new tests, 15 equivalent.
+
+- **Killed.** L268, L270, L271, L288, L289 CR (the quote's and record's fields):
+  `test_previewAndAuthorize_carryTheItemsOwnFields`. L234 ROR:
+  `test_acceptPackage_revertsWhenTheArtistRegistryAnswersALowerId`. L356 ROR:
+  `test_isApprovedItem_aProofAtTheMaximumDepth`. L468 ROR (a head below 32):
+  `test_authorize_revertsMalformedRequest`. L508 ROR: `test_authorize_revertsInvalidWorkTerms`.
+- **Equivalent.** L567, L571, L597 UOR (loop counters). L602 CR (the default return). L90 CONST
+  `NONCES_PER_WORD` 255 to 254 (another one-to-one packing of nonces into words below the
+  sentinel bit; only the storage layout differs). L175, L192, L257, L386, L487 (`== VRF`) ROR
+  (first or last enum values). L179, L481, L487 (`seed > 0`) ROR (`bytes32` with zero). L468
+  ROR `length < 160` to `<=` (a 160-byte request cannot hold the struct's tails, so it is
+  refused either way; only the error differs). L523 ROR (a package's epoch never exceeds the
+  current one). The re-check killed L487's `== ARTIST` to `>=`; the new
+  `test_preview_aVrfItemWithoutASeed` kills it in the module's own tests.
+
+#### `src/stream/WorkDelivery.sol`
+
+61 survivors: 8 killed by new tests, 53 equivalent.
+
+- **Killed.** L142, L251 CR (a file of another work, refused by name):
+  `test_delivery_refusesAFileNotInTheWork`. L233 ROR (two): `test_delivery_supportsOnlyTheExactIds`.
+  L157 BOR (the first live locator): `test_preferredLocator_theFirstLiveAfterTwoDead`. L253 BOR
+  (two, the dead bit): `test_delivery_theDeadCheckReadsTheLocatorsOwnBit`. L104 SBR (`uint8`
+  bit): `test_delivery_recordsTheArtistsLocatorAtAHighIndex`. The re-check killed L279's
+  one-sided IPFS prefix comparisons; `test_delivery_ipfsLocatorsNeedAFixedPrefix` kills them in
+  the module's own tests.
+- **Equivalent.** L96 ROR (a count rises by one per locator and stops at its quota). L164,
+  L195, L198 ROR `== NONE` to `>=` (the largest `uint256`). L284 ROR (an empty character set
+  comes with an empty last set, refused alike). L285 ROR and AOR (the loop also checking the
+  last character, which is in the set). L298, L299 ROR and L298 MIA (no locator has kind NONE;
+  NONE and ONCHAIN are the first and last kinds). L104, L207 ASOR and BOR (the bit set is
+  fresh). L300 BOR (two: a longer loop, the same answer). L269 to L271 LIR and MVIV (twelve:
+  every branch that passes sets all three locals, and with none taken the URI is refused).
+  L303 CR (the default return). The SBR mutants of the constants (they fit `uint128`), of
+  locals and loop counters, and of read-only `storage` references (L125, L167). L158, L285,
+  L300 UOR (loop counters).
+
+#### `src/federated/FederatedEditionAuction.sol`
+
+8 survivors: 4 killed by new tests, 2 equivalent, 1 gas margin, 1 defensive.
+
+- **Killed.** L110 CR (the master the opening logs): `test_Pair_TheOpeningLogsTheMaster`. L131 CR
+  (the edition ID in the abandonment's seal): `test_Abandon_AFederatedSaleAfterARefusedMaster`.
+  L83 LOR (a served sale mid-scan voided): `test_Pair_AServedSaleMidScanSettlesNormally`. L83
+  ROR `== SETTLING` to `>=` (a void sale voided again): `test_Pair_ADelistingMidScanVoidsBeforeAnyPayout`.
+- **Equivalent.** L83 ROR `<=` and `_scans != 0` to `>=`: scans exist only while SETTLING, and
+  `settle` voids an unserved sale on its first call anyway.
+- **Gas margin.** L135 ROR (the shortfall boundary).
+- **Defensive.** L132 CR: zeroing the count word past the free memory pointer, which nothing has
+  written on that path.
+
+#### `src/federated/FederatedStream.sol`
+
+165 survivors: 1 killed by the re-check, 99 killed by new tests, 65 equivalent. The relations
+shard (352 mutants) finished mutating at about 10:15; its 65 survivors were then run against the
+final federated module tests (`test/federated/`), not the whole suite, which is why its 21
+equivalents are the one set not re-checked against every test.
+
+- **Killed (access).** L366 `_onlyArtist()` in `setLocator` and L393 in `setDefaultRenderer`:
+  `test_OnlyTheArtist_SetsLocatorsAndTheDefaultRenderer`. Neither check was pinned by a test.
+- **Killed (effects and logs).** L145 CR (store check), L159 CR, L216 CR and SBR, L258 CR,
+  L332, L345, L347, L359, L361, L371, L372, L384, L385 CR, L568 CR, L342, L602, L820 CR (renderer
+  pins): `test/federated/FederatedStreamEffects.t.sol`; L57, L58 CONST (flag values) and L344,
+  L383 ASOR, L382 MIA, ROR and BOR, L599 MIA, ROR and BOR, L710 BOR:
+  `test_SyncOnChainAndFinalize_KeepEachOthersFlag`, `test_SyncOnChain_LeavesAnOpenWorkOpen`,
+  `test_SyncOnChain_LogsOnce`, `test_RendererOf_AFinalizedWorkKeepsItsPin`; L396 MVIE and L397
+  MIA and ROR: `test_SetDefaultRenderer_RefreshesOnlyMintedTokens`.
+- **Killed (items and mints).** L165 BOR (eight): `test_RevokeItem_AfterAMintKeepsTheWorkForARestart`.
+  L184, L285 ROR (zero amounts), L245, L252 ROR (outcomes): `test_Mint_RefusesARequestNotForTheAdaptersOwnCustody`,
+  `test_Burn_OnlyTheMintingAdapterBeforeSettlement`, `test_SettlePrimary_RefusesAMalformedOutcome`.
+  L248 MIA and ROR (the stored price cap): `test_SettlePrimary_RecordsAPriceAboveTheStoredWidthAsTheCap`.
+  L298 LOR and ROR, L316 ROR (reclaim and the receiver): `test_Reclaim_RefusesATokenItsAdapterBurned`,
+  `test_Reclaim_ASoldTokenAwaitingDeliveryIsNotTheTemplates`, `test_Reclaim_RefusesATokenNeverMinted`.
+  L212, L214 SBR (IDs above 16 bits): `test_Mint_IdsAbove16BitsAreStoredWhole`. L669, L679 SBR
+  (a share above 16 bits): `test_Mint_AShareAbove16BitsIsKeptWhole`. L666 MIA and ROR:
+  `test_SeedOf_ASeedWithoutTheArtistPolicyIsNotKept`. L747 AOR, L742, L743 ROR, L754 SBR:
+  `test_Collaborators_EachPartyConsentsInItsOwnPosition`, `test_Collaborators_PartiesAndConsentsAreCountedExactly`,
+  `test_Collaborators_TheFirstPartyIsTheArtist`, `test_Collaborators_AnArtistPayeeMustBeAParty`.
+  L639 to L641 and L655 ROR (commitments on both sides, an empty media list):
+  `test_Mint_TheContentAndMediaCommitmentsAreExact`. L780 MIA and L73 CONST (the locator bound
+  and a NUL byte): `test_Locator_OnlyPrintableAsciiWithinTheBound`. L364, L497, L548, L549, L587,
+  L590, L614 ROR: `test_Locator_TheArtistPointsEachFileSomewhere`, `test_collection_OnlyTheOne`,
+  `test_SupportsInterface_OnlyTheExactIds`.
+- **Equivalent.** L344, L383 ASOR and BOR `+=` and `^=` (a flag set once, or only while clear);
+  L659 ASOR and BOR, L202, L249 BOR (disjoint bit fields); L64 CONST `APPROVED` 1 to 2 (any bit
+  below the rate's works); loop counters (UOR, ROR `<` to `!=`, SBR `uint128`); L244, L287 ROR
+  (state 0 is a token never minted, refused by the adapter check first); L255, L304, L643, L666
+  `>=`, L667 ROR (first or last values; a VRF seed is overwritten); L639 ROR on the content hash
+  (a zero hash fails the next check); L692, L693 ROR; SBR mutants of constants that fit
+  `uint128`, of locals bounded by 32-bit counters, of read-only `storage` references (L273, L284,
+  L414) and of the store's small answer words (L802, L803).
+- **Relations.** Killed by the tests above, or by
+  `test_Collaborators_APayeeSortingBelowAPartyMustStillBeAParty` (L754 `!=` to `<`: the party
+  search must compare accounts for equality) and `test_Collaborators_ExactlyMaxPayeesMint` (the
+  payee bound `>` to `>=`). Equivalent: L248 `<` to `<=` (the cap and the price are equal there);
+  L639 `contentHash == 0` to `<` and `<=` (a zero hash then has to equal the first file's
+  SHA-256, and the store never answers a zero digest); the `kind >= EDITION_MASTER` form (larger
+  kinds are refused in the same condition); L757 `j == n` to `>=` (the search stops at `n`); and
+  the loop forms at L379, L589, L651, L717, L746, L750 and L754.
+
+#### `src/federated/FederationRegistry.sol`
+
+56 survivors: 28 killed by new tests, 28 equivalent. As for `FederatedStream`, the 35 relations
+survivors were run against the final federated module tests rather than the whole suite.
+
+- **Killed.** L202 `restricted` on `setStatus` (a delisting): `test_SetStatus_IsRestricted`; the
+  check was not pinned by any test. L116 to L118 CR (constructor checks):
+  `test_Constructor_ChecksItsDependencies`. L142 CR (the deployer check, a delegated account
+  included), L145, L172, L190, L244 CR (logs): `test_Templates_DeployerCheckedAndEveryChangeLogged`.
+  L188 MIA: `test_Adapters_RemovalChecksNothing`. L255 MIA (a replaced registry forwards its
+  reads) and L391 MIA (an unbound one answers for itself): `test_Replacement_TheOldRegistryForwardsItsReads`,
+  `test_Registry_AnswersItselfBeforeItIsBound`.
+- **Killed (relations).** L139 on the form and the code hash:
+  `test_Templates_RefuseThePairFormAndAZeroCodeHash`. L229 on the status and the fee share:
+  `test_Register_OnlyAnApprovedTemplateOnTheProductsTerms`. L238 `artistIdOf(account) !=
+  x.artistId` to `<`: `test_Register_AnAccountThatIsAnotherArtistsRootIsTaken`. L328 (two):
+  `test_SupportsInterface_OnlyTheExactIds`. L373 on the partner's template status and artist:
+  `test_Register_AnEditionsPartnerOfTheSameArtistOnAnApprovedTemplate`; on a partner with no
+  template and its fee share either side: `test_Register_AnEditionsPartnerOnATemplateWithTheSameFeeShare`;
+  on a delisted partner: `test_Register_AStreamWhoseEditionsPartnerIsDelistedIsRefused`. L403
+  (a status move from a later status): `test_TemplateMoves_OnlyFromTheirOwnStatus`.
+- **Equivalent.** L206 UOR and SBR (loop counter), L90 SBR (two: the value fits), L225, L259,
+  L295, L368 SBR `storage` and `memory` (read only). Relations: first or last enum values (L139
+  status `!=` to `>`, L139 and L231 form against `PAIR`, which no template has, L268 against
+  `DELISTED`, L299 and L373 against `ERC721` and `ERC1155`, L373 status `>` against `ACTIVE`
+  with an unlisted partner's `listedAs` of 0 refused just before); L139 code hash `<=` (a
+  `bytes32` with zero); L206 and L209 (loop forms); L261 to L263, L296 (a listed token's
+  template is never NONE); L267 `<` to `<=` (assigns an equal value); L301 (a listed partner's
+  template is never NONE); L373 `listedAs` one-sided (the listing records the partner's own
+  artist, which equals the token's by the check before it).
+
+### Not reached
+
+- **Not reached at all.** From the stale permanent contracts: `src/stream/WorkRecords.sol`,
+  `src/editions/Editions.sol`, `src/records/StatementLog.sol` and `src/content/ContentStore.sol`
+  (each rewritten since its floor was set; their shards were dropped or stopped to give the
+  machine to the unmeasured files). From the replaceable ones: the English and edition auctions
+  and their lenses (`EnglishAuction`, `EnglishAuctionLens`, `UniformClearing`,
+  `UniformEditionAuction`, `UniformEditionAuctionLens`), `GovernanceConfigurator`, `Roles`,
+  `WorksAccessManager` and `BoundedParameter`. Their floors are the first campaign's, unchanged.
+- **Reached in part.** `src/stream/Stream.sol`: its operators shard finished (45 mutants, one gap,
+  now killed by `test_Terms_EconomicsChangeAffectsOnlyNewWorks`); the statements, relations and
+  conditions shards were stopped at the cutoff. `src/governance/GovernanceConfig.sol`: its
+  statements and operators shards finished (136 mutants: 14 loop-counter and 2 default-return
+  equivalents, 1 defensive: `verify` re-runs `validate` on a configuration `apply` already
+  validated); relations and conditions were not run. Both keep their first-campaign floors.
+- **Over the weekly budget.** `FederatedStream`'s relations shard took about 10 hours here (352
+  mutants against the federated module tests), and `FederationRegistry`'s about 5, both over
+  the weekly job's 335 minutes. The tool now runs them in parts (`RELATION_PARTS`: four and
+  three shards, every n-th comparison each), which together make the same mutants.

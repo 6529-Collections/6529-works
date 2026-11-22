@@ -5,7 +5,11 @@ import { IStream } from "src/interfaces/IStream.sol";
 import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 import { WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
 import { ItemKind, PackageItem, SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
-import { PrimaryTerms } from "src/interfaces/types/SaleTypes.sol";
+import {
+    PrimaryOutcome,
+    PrimarySettlement,
+    PrimaryTerms
+} from "src/interfaces/types/SaleTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { StreamFixture } from "./StreamFixture.sol";
 
@@ -125,6 +129,16 @@ contract StreamTermsTest is StreamFixture {
             IStreamViews(address(stream)).work(b).royaltyReceiver,
             _royaltyWallet(seller, otherFee, 10_000)
         );
+        // The settlement returns each work's own fee recipient (the second one interned).
+        PrimarySettlement memory sb = auction.settleWith(
+            stream, b, PrimaryOutcome.SOLD, makeAddr("buyer"), address(0), 1 ether
+        );
+        assertEq(sb.feeRecipient, otherFee);
+        assertEq(sb.feeShare, 10_000);
+        PrimarySettlement memory sa = auction.settleWith(
+            stream, a, PrimaryOutcome.SOLD, makeAddr("buyer"), address(0), 1 ether
+        );
+        assertEq(sa.feeRecipient, feeRecipient);
     }
 
     /// @dev Different artists' works keep their own artist and creator.

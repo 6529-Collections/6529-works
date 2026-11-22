@@ -16,6 +16,7 @@ import { ISplitFactory } from "src/economics/interfaces/ISplitFactory.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import {
     BlocklistToken,
+    FixedAuthority,
     ForceSender,
     NoReturnToken,
     RebasingToken,
@@ -581,6 +582,35 @@ contract RevenueEscrowTest is EconomicsBase {
         assertTrue(escrow.supportsInterface(type(IERC165).interfaceId));
         assertFalse(escrow.supportsInterface(0xffffffff));
         assertFalse(escrow.supportsInterface(type(IClaimRouter).interfaceId));
+        bytes4[2] memory ids = [type(IRevenueEscrow).interfaceId, type(IERC165).interfaceId];
+        for (uint256 i; i < ids.length; ++i) {
+            assertFalse(escrow.supportsInterface(bytes4(uint32(ids[i]) - 1)));
+            assertFalse(escrow.supportsInterface(bytes4(uint32(ids[i]) + 1)));
+        }
+    }
+
+    /// @dev Only an account answering exactly this escrow's authority is the network's own: one
+    ///      governed by any other manager, whatever its address, needs its own consent.
+    function test_RecoverTreatsOnlyTheExactAuthorityAsTheNetworks() public {
+        FixedAuthority low = new FixedAuthority(address(1));
+        FixedAuthority high = new FixedAuthority(address(type(uint160).max));
+        vm.startPrank(depositor);
+        escrow.depositETH{ value: 1 ether }(address(low));
+        escrow.depositETH{ value: 1 ether }(address(high));
+        vm.stopPrank();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IRevenueEscrow.RecoveryNotConsented.selector, address(low), keeper
+            )
+        );
+        escrow.recover(address(low), keeper, ETH);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IRevenueEscrow.RecoveryNotConsented.selector, address(high), keeper
+            )
+        );
+        escrow.recover(address(high), keeper, ETH);
+        assertEq(escrow.owed(address(low), ETH), 1 ether);
     }
 
     /// @dev Ported from the review: force-sent ETH (or tokens sent without a deposit) is never
@@ -698,6 +728,22 @@ contract RevenueEscrowTest is EconomicsBase {
     }
 
     /// @dev A recipient that refuses ETH fails the sweep, which keeps the excess for a retry.
+    /// @dev A sweep holds the escrow's guard: its recipient cannot re-enter to flush a credit.
+    function test_SweepExcess_ReentryIsBlocked() public {
+        _creditsAndExcess();
+        ReentrantRecipient hostile = new ReentrantRecipient();
+        hostile.configure(
+            address(escrow), abi.encodeCall(IRevenueEscrow.flush, (address(wallet), ETH))
+        );
+        assertEq(escrow.sweepExcess(ETH, address(hostile)), 1.5 ether);
+        assertFalse(hostile.lastOk());
+        assertEq(
+            hostile.lastResult(),
+            abi.encodeWithSelector(ReentrancyGuardTransient.ReentrancyGuardReentrantCall.selector)
+        );
+        assertEq(escrow.owed(wallet, ETH), 3 ether);
+    }
+
     function test_SweepExcess_RefusedETHRevertsAndKeepsTheExcess() public {
         _creditsAndExcess();
         ToggleRecipient closed = new ToggleRecipient();

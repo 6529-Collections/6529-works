@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { Vm } from "forge-std/Vm.sol";
+import { IERC2981 } from "@openzeppelin/contracts/interfaces/IERC2981.sol";
 import { IERC721Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { IFederatedStream } from "src/interfaces/IFederatedStream.sol";
@@ -99,8 +101,17 @@ contract FederatedRecordTest is FederationBase {
         vm.prank(fedArtist);
         vm.expectRevert(abi.encodeWithSelector(IFederatedStream.UnknownWork.selector, tokenId));
         fed.setLocator(tokenId, 1, 1, "ar://none");
+        vm.prank(fedArtist);
+        vm.expectRevert(abi.encodeWithSelector(IFederatedStream.UnknownWork.selector, tokenId));
+        fed.setLocator(tokenId, 2, 1, "ar://none");
         vm.expectRevert(abi.encodeWithSelector(IFederatedStream.UnknownWork.selector, tokenId));
         fed.preferredLocator(tokenId, keccak256("not a file"));
+        // Neither a file ID above or below the work's, nor zero, is one of its files.
+        bytes32[3] memory others = [bytes32(type(uint256).max), bytes32(uint256(1)), bytes32(0)];
+        for (uint256 i; i < others.length; ++i) {
+            vm.expectRevert(abi.encodeWithSelector(IFederatedStream.UnknownWork.selector, tokenId));
+            fed.preferredLocator(tokenId, others[i]);
+        }
     }
 
     function test_SyncOnChain_OnlyOnceEveryFileIsComplete() public {
@@ -113,14 +124,123 @@ contract FederatedRecordTest is FederationBase {
         assertTrue(fed.record(stored).onChainComplete);
     }
 
+    /// @dev Finalizing and marking a work on-chain complete set separate flags: neither clears
+    ///      the other, in either order.
+    function test_SyncOnChainAndFinalize_KeepEachOthersFlag() public {
+        (, uint256 first) = _startFed(fed, fedArtist, _storedWork(fedArtist), RATE);
+        fed.syncOnChain(first);
+        vm.prank(fedArtist);
+        fed.finalize(first);
+        assertTrue(fed.record(first).finalized);
+        assertTrue(fed.record(first).onChainComplete, "finalize keeps on-chain complete");
+        (, uint256 second) = _startFed(fed, fedArtist, _storedWork(fedArtist), RATE);
+        vm.prank(fedArtist);
+        fed.finalize(second);
+        fed.syncOnChain(second);
+        assertTrue(fed.record(second).onChainComplete);
+        assertTrue(fed.record(second).finalized, "the sync keeps finalized");
+    }
+
+    /// @dev An on-chain complete work that is not finalized reads neither finalized nor pinned:
+    ///      it still renders through the default renderer and its record still changes.
+    function test_SyncOnChain_LeavesAnOpenWorkOpen() public {
+        (, uint256 tokenId) = _startFed(fed, fedArtist, _storedWork(fedArtist), RATE);
+        assertFalse(fed.record(tokenId).finalized);
+        assertFalse(fed.record(tokenId).onChainComplete);
+        fed.syncOnChain(tokenId);
+        assertFalse(fed.record(tokenId).finalized);
+        assertEq(fed.rendererOf(tokenId), address(renderer));
+        bytes32 next = _record("Still open");
+        vm.prank(fedArtist);
+        fed.setRecord(tokenId, next);
+        assertEq(fed.record(tokenId).version, 1);
+    }
+
+    function test_SupportsInterface_OnlyTheExactIds() public view {
+        bytes4[5] memory ids = [
+            type(IERC2981).interfaceId,
+            type(IMintTarget).interfaceId,
+            type(IFederatedToken).interfaceId,
+            type(IFederatedStream).interfaceId,
+            bytes4(0x49064906)
+        ];
+        for (uint256 i; i < ids.length; ++i) {
+            assertTrue(fed.supportsInterface(ids[i]));
+            assertFalse(fed.supportsInterface(bytes4(uint32(ids[i]) - 1)));
+            assertFalse(fed.supportsInterface(bytes4(uint32(ids[i]) + 1)));
+        }
+        assertFalse(fed.supportsInterface(0xffffffff));
+    }
+
+    /// @dev A second sync of a work already on-chain complete logs nothing.
+    function test_SyncOnChain_LogsOnce() public {
+        (, uint256 stored) = _startFed(fed, fedArtist, _storedWork(fedArtist), RATE);
+        fed.syncOnChain(stored);
+        vm.recordLogs();
+        fed.syncOnChain(stored);
+        assertEq(vm.getRecordedLogs().length, 0);
+        assertTrue(fed.record(stored).onChainComplete);
+    }
+
+    /// @dev A new default renderer refreshes the metadata of every minted token, and logs no
+    ///      refresh while nothing is minted.
+    function test_SetDefaultRenderer_RefreshesOnlyMintedTokens() public {
+        address current = address(renderer);
+        vm.recordLogs();
+        vm.prank(fedArtist);
+        fed.setDefaultRenderer(current, current, current.codehash);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        for (uint256 i; i < logs.length; ++i) {
+            assertTrue(
+                logs[i].topics[0] != IFederatedToken.BatchMetadataUpdate.selector, "none minted"
+            );
+        }
+        _opened();
+        _opened();
+        vm.expectEmit(address(fed));
+        emit IFederatedToken.BatchMetadataUpdate(1, 2);
+        vm.prank(fedArtist);
+        fed.setDefaultRenderer(current, current, current.codehash);
+    }
+
+    /// @dev A finalized work keeps the renderer it pinned when the default changes; an open one
+    ///      follows the default.
+    function test_RendererOf_AFinalizedWorkKeepsItsPin() public {
+        (,, uint256 pinned) = _opened();
+        (,, uint256 open) = _opened();
+        vm.prank(fedArtist);
+        fed.finalize(pinned);
+        address other = makeAddr("rendererCopy");
+        vm.etch(other, address(renderer).code);
+        vm.prank(fedArtist);
+        fed.setDefaultRenderer(address(renderer), other, other.codehash);
+        assertEq(fed.rendererOf(pinned), address(renderer));
+        assertEq(fed.rendererOf(open), other);
+    }
+
+    /// @dev Only an ARTIST item keeps its seed: a seed on an item of no seed policy is ignored.
+    function test_SeedOf_ASeedWithoutTheArtistPolicyIsNotKept() public {
+        Work memory w = _fedWork(fedArtist);
+        w.item.seed = keccak256("ignored");
+        (, uint256 tokenId) = _startFed(w);
+        (uint8 policy, bytes32 seed) = fed.seedOf(tokenId);
+        assertEq(policy, 0);
+        assertEq(seed, bytes32(0));
+    }
+
     function test_Burn_OnlyTheMintingAdapterBeforeSettlement() public {
         (Work memory w, uint256 saleId, uint256 tokenId) = _opened();
         vm.expectRevert(
             abi.encodeWithSelector(IFederatedStream.NotMintingAdapter.selector, address(this))
         );
         fed.burn(tokenId, 1);
-        vm.prank(address(auction));
+        vm.startPrank(address(auction));
+        vm.expectRevert(IMintTarget.InvalidMintRequest.selector);
+        fed.burn(tokenId, 0);
+        vm.expectRevert(IMintTarget.InvalidMintRequest.selector);
+        fed.burn(tokenId, 2);
         fed.burn(tokenId, 1);
+        vm.stopPrank();
         assertEq(fed.liveTokenOf(1), 0);
         vm.expectRevert(abi.encodeWithSelector(IFederatedStream.UnknownWork.selector, tokenId));
         fed.work(tokenId);
@@ -152,6 +272,11 @@ contract FederatedRecordTest is FederationBase {
         fed.settlePrimary(tokenId, PrimaryOutcome.UNBID, collector, address(0), 0);
         vm.expectRevert(invalid);
         fed.settlePrimary(tokenId, PrimaryOutcome.FROZEN_OUT, address(0), address(0), 1);
+        // NONE is never a sale, even with a buyer; RESCUED is no outcome of this template.
+        vm.expectRevert(invalid);
+        fed.settlePrimary(tokenId, PrimaryOutcome.NONE, collector, address(0), 1);
+        vm.expectRevert(invalid);
+        fed.settlePrimary(tokenId, PrimaryOutcome.RESCUED, address(0), address(0), 0);
         vm.stopPrank();
         (,, uint8 state) = fed.tokenInfo(tokenId);
         assertEq(state, 1, "still in sale");
@@ -223,6 +348,8 @@ contract FederatedRecordTest is FederationBase {
         assertEq(c.name, fed.name());
         vm.expectRevert(abi.encodeWithSelector(IFederatedStream.UnknownWork.selector, 2));
         fed.collection(2);
+        vm.expectRevert(abi.encodeWithSelector(IFederatedStream.UnknownWork.selector, 0));
+        fed.collection(0);
     }
 
     /// @dev A work whose media are uploaded in full, so `syncOnChain` can mark it complete.

@@ -25,6 +25,7 @@ import { Dependency } from "src/libraries/Dependency.sol";
 import { SignatureVerifier } from "src/libraries/SignatureVerifier.sol";
 import { DeployV1 } from "script/DeployV1.sol";
 import { MockVrfWrapper } from "../mocks/entropy/EntropyMocks.sol";
+import { Limits } from "src/interfaces/types/Limits.sol";
 import { FederationBase } from "./FederationBase.sol";
 
 /// @notice The second build pass on the federation: a joined contract has no way out and is
@@ -306,6 +307,126 @@ contract FederationSecondPassTest is FederationBase {
         assertEq(fed.work(tokenId).seller, splitFactory.walletFor(w.item.payees, 0));
     }
 
+    /// @dev With several collaborators each consent is checked against its own party, in order:
+    ///      the consents in party order mint, and the same consents swapped are refused.
+    function test_Collaborators_EachPartyConsentsInItsOwnPosition() public {
+        address collab2 = _actor("secondCollaborator");
+        Work memory w = _withCollaborator(_fedWork(fedArtist));
+        Party[] memory parties = new Party[](3);
+        (parties[0], parties[1]) = (w.item.parties[0], w.item.parties[1]);
+        parties[2] = Party(collab2, uint8(PartyRole.COLLABORATOR));
+        w.item.parties = parties;
+        vm.prank(fedArtist);
+        fed.approveItem(_itemHash(w), RATE);
+        bytes[] memory consents = new bytes[](2);
+        consents[0] = _consent(collab2, address(fed), w)[0];
+        consents[1] = _consent(collab, address(fed), w)[0];
+        bytes memory swapped = _mintData(w, consents);
+        vm.expectRevert(
+            abi.encodeWithSelector(SignatureVerifier.InvalidSignature.selector, collab2)
+        );
+        auction.start(address(fed), swapped);
+        (consents[0], consents[1]) = (consents[1], consents[0]);
+        uint256 saleId = auction.start(address(fed), _mintData(w, consents));
+        assertGt(saleId, 0);
+    }
+
+    /// @dev The party list is bounded exactly: `Limits.MAX_PARTIES` parties mint with one consent
+    ///      per collaborator, one more is refused even with every consent; the first party is
+    ///      the contract's artist; and the consents number exactly the collaborators.
+    function test_Collaborators_PartiesAndConsentsAreCountedExactly() public {
+        Work memory w = _fedWork(fedArtist);
+        uint256 n = Limits.MAX_PARTIES + 1;
+        Party[] memory parties = new Party[](n);
+        bytes[] memory consents = new bytes[](n - 1);
+        parties[0] = Party(fedArtist, uint8(PartyRole.ARTIST));
+        for (uint256 i = 1; i < n; ++i) {
+            parties[i] = Party(_actor(string.concat("party", vm.toString(i))), 1);
+        }
+        // 17 parties, every consent given: refused at the bound.
+        w.item.parties = parties;
+        for (uint256 i = 1; i < n; ++i) {
+            consents[i - 1] = _consent(parties[i].account, address(fed), w)[0];
+        }
+        vm.prank(fedArtist);
+        fed.approveItem(_itemHash(w), RATE);
+        vm.expectRevert(IMintTarget.InvalidMintRequest.selector);
+        auction.start(address(fed), _mintData(w, consents));
+        // Exactly 16 parties: one consent too many is refused, the exact count mints.
+        Party[] memory sixteen = new Party[](n - 1);
+        for (uint256 i; i < n - 1; ++i) {
+            sixteen[i] = parties[i];
+        }
+        w.item.parties = sixteen;
+        bytes[] memory exact = new bytes[](n - 2);
+        bytes[] memory extra = new bytes[](n - 1);
+        for (uint256 i = 1; i < n - 1; ++i) {
+            exact[i - 1] = _consent(sixteen[i].account, address(fed), w)[0];
+            extra[i - 1] = exact[i - 1];
+        }
+        extra[n - 2] = exact[0];
+        vm.prank(fedArtist);
+        fed.approveItem(_itemHash(w), RATE);
+        vm.expectRevert(IMintTarget.InvalidMintRequest.selector);
+        auction.start(address(fed), _mintData(w, extra));
+        assertGt(auction.start(address(fed), _mintData(w, exact)), 0);
+    }
+
+    /// @dev The first party is the contract's artist, whoever is named on either side of it.
+    function test_Collaborators_TheFirstPartyIsTheArtist() public {
+        address[2] memory others = [address(1), address(type(uint160).max)];
+        for (uint256 i; i < others.length; ++i) {
+            Work memory w = _fedWork(fedArtist);
+            w.item.parties[0] = Party(others[i], uint8(PartyRole.ARTIST));
+            // A fixed payee, so that nothing but the first party can refuse the item.
+            w.item.payees = new ISplitWallet.Payee[](1);
+            w.item.payees[0] = ISplitWallet.Payee(0, makeAddr("fixedPayee"), 100_000);
+            vm.prank(fedArtist);
+            fed.approveItem(_itemHash(w), RATE);
+            vm.expectRevert(IMintTarget.InvalidMintRequest.selector);
+            auction.start(address(fed), _mintData(w));
+        }
+    }
+
+    /// @dev An artist-resolved payee must be one of the parties, however many parties there
+    ///      are: a registered artist named only as a payee is refused.
+    function test_Collaborators_AnArtistPayeeMustBeAParty() public {
+        address third = _actor("thirdArtist");
+        uint64 deadline = uint64(block.timestamp + 1 days);
+        bytes memory sig = _sign(third, artists.registrationDigest(third, 0, 0, deadline));
+        vm.prank(address(fedRegistry));
+        artists.registerFederated(third, 0, 0, deadline, sig);
+        Work memory w = _withCollaborator(_fedWork(fedArtist));
+        w.item.payees[1] = ISplitWallet.Payee(uint160(third), address(0), 60_000);
+        vm.prank(fedArtist);
+        fed.approveItem(_itemHash(w), RATE);
+        bytes memory data = _mintData(w, _consent(collab, address(fed), w));
+        vm.expectRevert(IMintTarget.InvalidMintRequest.selector);
+        auction.start(address(fed), data);
+    }
+
+    /// @dev The party search compares accounts for equality: a registered payee who is not a
+    ///      party is refused even when its account sorts below a party's.
+    function test_Collaborators_APayeeSortingBelowAPartyMustStillBeAParty() public {
+        uint160 highest =
+            uint160(fedArtist) > uint160(collab) ? uint160(fedArtist) : uint160(collab);
+        address third;
+        for (uint256 i; uint160(third) == 0 || uint160(third) >= highest; ++i) {
+            third = _actor(string.concat("lowPayee", vm.toString(i)));
+        }
+        uint64 deadline = uint64(block.timestamp + 1 days);
+        bytes memory sig = _sign(third, artists.registrationDigest(third, 0, 0, deadline));
+        vm.prank(address(fedRegistry));
+        artists.registerFederated(third, 0, 0, deadline, sig);
+        Work memory w = _withCollaborator(_fedWork(fedArtist));
+        w.item.payees[1] = ISplitWallet.Payee(uint160(third), address(0), 60_000);
+        vm.prank(fedArtist);
+        fed.approveItem(_itemHash(w), RATE);
+        bytes memory data = _mintData(w, _consent(collab, address(fed), w));
+        vm.expectRevert(IMintTarget.InvalidMintRequest.selector);
+        auction.start(address(fed), data);
+    }
+
     /// @dev Consent is counted by account: any wallet of the collaborator's consolidated account
     ///      signs (the artist registry answers `isWallet`).
     function test_Collaborators_AnyWalletOfTheAccountConsents() public {
@@ -373,6 +494,22 @@ contract FederationSecondPassTest is FederationBase {
         fed.approveItem(_itemHash(w), RATE);
         vm.expectRevert(IMintTarget.InvalidMintRequest.selector);
         auction.start(address(fed), _mintData(w));
+    }
+
+    /// @dev Exactly `Splits.MAX_PAYEES` payees mint: the bound refuses only more.
+    function test_Collaborators_ExactlyMaxPayeesMint() public {
+        Work memory w = _fedWork(fedArtist);
+        uint256 n = Splits.MAX_PAYEES;
+        ISplitWallet.Payee[] memory payees = new ISplitWallet.Payee[](n);
+        uint32 each = uint32(Splits.DENOMINATOR / n);
+        for (uint256 i; i < n; ++i) {
+            payees[i] = ISplitWallet.Payee(0, address(uint160(0x1000 + i)), each);
+        }
+        payees[n - 1].share += uint32(Splits.DENOMINATOR - each * n);
+        w.item.payees = payees;
+        vm.prank(fedArtist);
+        fed.approveItem(_itemHash(w), RATE);
+        assertGt(auction.start(address(fed), _mintData(w)), 0);
     }
 
     // ------------------------------------------------------------------ the artist's wallets

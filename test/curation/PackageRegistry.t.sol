@@ -29,7 +29,10 @@ import { ArtistIdentity } from "src/interfaces/types/IdentityTypes.sol";
 import { IEditions } from "src/interfaces/IEditions.sol";
 import { IStream } from "src/interfaces/IStream.sol";
 import { MockBoundCaller } from "test/mocks/curation/MockBoundCaller.sol";
-import { MisnumberingArtistRegistry } from "test/mocks/curation/CurationArtistRegistryMock.sol";
+import {
+    MisnumberingArtistRegistry,
+    UndernumberingArtistRegistry
+} from "test/mocks/curation/CurationArtistRegistryMock.sol";
 import { Limits } from "src/interfaces/types/Limits.sol";
 import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { EditionRules } from "src/editions/EditionRules.sol";
@@ -627,6 +630,32 @@ contract PackageRegistryTest is CurationBase {
         assertFalse(registry.isMoveNonceUsed(_id(lead), 1));
     }
 
+    /// @dev The quote and the mint record carry the item's own sale terms, root, media hash and
+    ///      record file, whatever they hold (the registry does not check a currency: the
+    ///      adapter does).
+    function test_previewAndAuthorize_carryTheItemsOwnFields() public {
+        PackageItem memory item = _item(lead, SHA_A);
+        item.sale.currency = makeAddr("someToken");
+        item.sale.params = hex"0102";
+        bytes32 root = WorksHashing.leaf(_hash(item));
+        _register(root);
+        _accept(root, leadKey);
+        MoveAuthorization memory move = _move(leadKey, root, _hash(item), 0);
+        PrimaryTerms memory t = registry.preview(
+            _context(address(_policyStub)),
+            abi.encode(StreamMintRequest(root, item, new bytes32[](0), move))
+        );
+        assertEq(t.currency, item.sale.currency);
+        assertEq(t.params, item.sale.params);
+        IMintPolicy.MintRecord memory rec = _authorize(root, item, new bytes32[](0), move);
+        assertEq(rec.packageRoot, root);
+        assertEq(rec.mediaHash, item.mediaHash);
+        assertEq(rec.recordFileId, item.recordFileId);
+        assertEq(rec.currency, item.sale.currency);
+        assertEq(rec.params, item.sale.params);
+        assertEq(rec.contentHash, SHA_A);
+    }
+
     /// @dev The registry hashes the item from calldata (`WorksHashing.itemHashCalldata`);
     ///      whatever the dynamic fields hold, the result is `WorksHashing.itemHash`.
     /// The license ID is fixed: the policy refuses one outside the `SpdxId` grammar before hashing.
@@ -1023,6 +1052,29 @@ contract PackageRegistryTest is CurationBase {
         _expectInvalidWith(item, _keys(leadKey), reason);
     }
 
+    /// @dev A VRF item carries no seed of its own (the seed comes from the entropy module): with
+    ///      an entropy module in the context it is quoted.
+    function test_preview_aVrfItemWithoutASeed() public {
+        PackageItem memory item = _item(lead, SHA_A);
+        item.seedPolicy = uint8(SeedPolicy.VRF);
+        item.seed = 0;
+        bytes32 root = WorksHashing.leaf(_hash(item));
+        _register(root);
+        _accept(root, leadKey);
+        IMintPolicy.MintContext memory c = IMintPolicy.MintContext(
+            stream, address(_policyStub), makeAddr("entropyModule"), address(_policyStub)
+        );
+        PrimaryTerms memory t = registry.preview(
+            c,
+            abi.encode(
+                StreamMintRequest(
+                    root, item, new bytes32[](0), _move(leadKey, root, _hash(item), 0)
+                )
+            )
+        );
+        assertEq(t.creator, lead);
+    }
+
     /// @dev Kinds, seed policies and party roles are open `uint8`s in the package types; the
     ///      genesis policy refuses every value it does not know for a new item (a value above
     ///      today's enum used to fail the ABI decode instead).
@@ -1267,6 +1319,10 @@ contract PackageRegistryTest is CurationBase {
         vm.prank(stream);
         vm.expectRevert(reason);
         registry.authorize(c, request);
+        request[31] = bytes1(uint8(0)); // nor below it
+        vm.prank(stream);
+        vm.expectRevert(reason);
+        registry.authorize(c, request);
     }
 
     /// @dev The quote refuses product terms that cannot yield a valid royalty payee list: a
@@ -1276,9 +1332,10 @@ contract PackageRegistryTest is CurationBase {
         SettablePolicyStub stub = new SettablePolicyStub();
         address seller = address(0x5E11E7);
         address fee = makeAddr("feeRecipient");
-        ProductEconomics[4] memory bad = [
+        ProductEconomics[5] memory bad = [
             ProductEconomics(address(0), 0, 100_001),
             ProductEconomics(fee, 100_000, 5000),
+            ProductEconomics(fee, 100_001, 5000),
             ProductEconomics(address(0), 1, 5000),
             ProductEconomics(seller, 1, 5000)
         ];
@@ -1381,6 +1438,40 @@ contract PackageRegistryTest is CurationBase {
         vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(odd)));
         reg.acceptPackage(root, a, "");
         assertEq(reg.acceptedAs(root, lead), 0);
+    }
+
+    /// @dev The same refusal for an ID below the one asked for.
+    function test_acceptPackage_revertsWhenTheArtistRegistryAnswersALowerId() public {
+        UndernumberingArtistRegistry odd = new UndernumberingArtistRegistry();
+        PackageRegistry reg = new PackageRegistry(
+            address(manager),
+            ICurationVerifier(address(verifier)),
+            address(verifier).codehash,
+            address(odd),
+            address(odd).codehash
+        );
+        bytes32 root = keccak256("undernumbered");
+        reg.registerPackage(root, EVIDENCE, _attestation(signerKey1, root, EVIDENCE));
+        PartyAcceptance memory a = _acceptance(lead);
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(odd)));
+        reg.acceptPackage(root, a, "");
+    }
+
+    /// @dev A proof of exactly `Limits.MAX_PROOF_DEPTH` nodes places an item; one more does not.
+    function test_isApprovedItem_aProofAtTheMaximumDepth() public {
+        bytes32 itemHash = keccak256("deep item");
+        bytes32[] memory proof = new bytes32[](Limits.MAX_PROOF_DEPTH);
+        bytes32 node = WorksHashing.leaf(itemHash);
+        for (uint256 i; i < proof.length; ++i) {
+            proof[i] = keccak256(abi.encode("sibling", i));
+            node = _pairHash(node, proof[i]);
+        }
+        _register(node);
+        assertTrue(registry.isApprovedItem(node, itemHash, proof));
+    }
+
+    function _pairHash(bytes32 a, bytes32 b) internal pure returns (bytes32) {
+        return a < b ? keccak256(abi.encode(a, b)) : keccak256(abi.encode(b, a));
     }
 
     // ------------------------------------------------------------------- releaseContent
