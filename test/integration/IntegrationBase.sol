@@ -163,7 +163,7 @@ abstract contract IntegrationBase is CoreIntegrationBase {
     }
 
     /// @dev Adds `collaborator` as a party and a payee with `share` of 100,000 (the lead keeps
-    ///      the rest). Call before publishing.
+    ///      the rest), payees in ascending artist ID. Call before publishing.
     function _withCollaborator(Work memory w, address collaborator, uint32 share)
         internal
         pure
@@ -177,6 +177,10 @@ abstract contract IntegrationBase is CoreIntegrationBase {
         payees[0] =
             ISplitWallet.Payee(uint256(uint160(parties[0].account)), address(0), 100_000 - share);
         payees[1] = ISplitWallet.Payee(uint256(uint160(collaborator)), address(0), share);
+        // The ledger takes payees in ascending artist ID.
+        if (payees[0].artistId > payees[1].artistId) {
+            (payees[0], payees[1]) = (payees[1], payees[0]);
+        }
         w.item.payees = payees;
         return w;
     }
