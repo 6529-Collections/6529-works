@@ -27,6 +27,17 @@ contract SplitFactoryTest is EconomicsBase {
         new SplitLedger(IArtistPayoutResolver(alice), address(feeVault));
     }
 
+    /// @dev The network fee vault is checked like the resolver: an account without code, or a
+    ///      delegated EOA, is refused.
+    function test_ConstructorRejectsANetworkWithoutCode() public {
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, alice));
+        new SplitLedger(resolver, alice);
+        address eoa = makeAddr("delegated-network");
+        vm.etch(eoa, abi.encodePacked(hex"ef0100", address(feeVault)));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
+        new SplitLedger(resolver, eoa);
+    }
+
     /// @dev Regression for review L-1 (ported from `test_PoC_FactoryAcceptsDelegatedEOAResolver`,
     ///      inverted): an EIP-7702 delegated EOA could be re-delegated to any code later.
     function test_ConstructorRejectsDelegatedEOADependencies() public {
