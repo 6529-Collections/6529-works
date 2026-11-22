@@ -31,8 +31,11 @@ import { TokenTransfer } from "./TokenTransfer.sol";
 ///
 ///      Expiry (ECO-45). The wait is the unclaimed period, the network's setting
 ///      (`IDirectory.unclaimedPeriod`, 180 days at launch), read from the split factory's resolver
-///      (the `Directory`) whenever the escrow ages a credit: at every deposit, recovery and
-///      expiry, and in {expirableAt}. If that read fails, the call reverts and the money stays.
+///      (the `Directory`) whenever the escrow ages a credit: at every deposit (the depositee's
+///      credit), recovery (the replacement's credit), expiry (the expired account's credit, and
+///      the fee vault's as it is credited), and in the view {expirableAt}. A flush takes the
+///      whole credit and reads no period. If that read fails, the call reverts and the money
+///      stays.
 ///      Every amount credited to an account stays that account's at least for the period in
 ///      force from the block it was credited in, and may move to the network ({expire}) less
 ///      than twice that after it. Credits are grouped in windows: a credit to an account and
@@ -47,6 +50,12 @@ import { TokenTransfer } from "./TokenTransfer.sol";
 ///      A change of the period applies to every amount not yet aged, including windows already
 ///      open or closed (their due time is computed from their last credit when the escrow
 ///      looks); an amount the escrow already aged under the period then in force stays aged.
+///      Each of those writes stores what has aged by then, so whether a later change of the
+///      period reaches an amount depends on the last write to that account and asset: an
+///      amount that write found a period old stays aged (even if the period is raised after),
+///      and an amount no write has aged yet takes the period in force when the escrow next
+///      reads it. Anyone may cause such a write (a deposit to the account, or an expiry, which
+///      pays only the network fee vault).
 ///      The amounts a window holds never change with the period: never money credited later.
 ///      A recovery counts as a new credit to its replacement. The network fee vault's credit
 ///      (`factory().network()`) never expires; any other account's, the museum vault's and other
@@ -265,11 +274,12 @@ contract RevenueEscrow is IRevenueEscrow, AccessManaged, ReentrancyGuardTransien
     ///      under the unclaimed period `period`. A closed window's credits join `aged` one period
     ///      after its last credit (`maturingLastAt`). The open window closes one period after it
     ///      opened; its credits become `maturing`, due one period after its last credit, which
-    ///      may already have passed. Under one period, when the open window closes `maturing` is
-    ///      already empty: it holds the window before, whose last credit came no later than the
-    ///      open window opened, so it matured no later than the open one closed. If the period
-    ///      grew in between, the two windows are joined under the later last credit: the older
-    ///      credits wait longer, never less. The addition keeps every unit regardless.
+    ///      may already have passed. When the open window closes, `maturing` is always already
+    ///      empty: it holds the window before, whose last credit came no later than the open
+    ///      window opened (`maturingLastAt <= openedAt`, since a window opens only at a write
+    ///      after the one before closed), and this one roll uses one period, so the first branch
+    ///      aged it whenever the second applies. The addition therefore adds to zero; it is
+    ///      written as an addition so no unit could ever be dropped.
     function _rolled(address wallet, address asset, uint256 time, uint256 period)
         private
         view

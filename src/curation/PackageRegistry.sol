@@ -19,6 +19,7 @@ import { MintFacts, MintTerms } from "../interfaces/core/CoreTypes.sol";
 import { IMintPolicy } from "../interfaces/core/IMintPolicy.sol";
 import { IModules } from "../interfaces/core/IModules.sol";
 import { IStream } from "../interfaces/core/IStream.sol";
+import { IWorkFacts } from "../interfaces/core/IWorkFacts.sol";
 import {
     CURRENCY_DEFAULT,
     CURRENCY_ETH,
@@ -467,7 +468,13 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, IItemApprovals, Acces
 
     /// @dev Item rules: a sale kind, sold in ETH (`CURRENCY_ETH` or `CURRENCY_DEFAULT`, which is
     ///      ETH at launch); a lead party; a known seed policy coherent with its seed, and a VRF
-    ///      item only with an entropy module; a license ID that follows the `SpdxId` rule.
+    ///      item only with an entropy module; a license ID that follows the `SpdxId` rule; a CC0
+    ///      license naming the deployment's CC0 text (`IWorkFacts.cc0TextFileId`), the rule
+    ///      `WorkFacts.open` enforces. The media rules of `WorkFacts.open` (one to
+    ///      `MAX_MEDIA_FILES` files, the primary first with the content hash, each registered in
+    ///      the content store with its stated SHA-256) cannot be checked here, since the request
+    ///      carries only the media commitment: curation checks them before it signs a package,
+    ///      and `SaleStarter` opens the record in the same transaction as the start.
     function _checkItem(PackageItem calldata item) private view {
         address currency = item.sale.currency;
         if (item.sale.saleKind == 0 || (currency != CURRENCY_ETH && currency != CURRENCY_DEFAULT)) {
@@ -481,6 +488,15 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, IItemApprovals, Acces
                 || (policy == uint8(SeedPolicy.VRF) && entropyModule == address(0))
         ) revert InvalidSeedPolicy();
         if (!SpdxId.isValidCalldata(item.license.spdxId)) revert InvalidLicenseId();
+        // `WorkFacts.open` refuses a CC0 item whose text is not the deployment's CC0 text, and
+        // takes only the exact item a token was minted from: such a token could never get a
+        // record. Unbound (only `preview` reaches here then), there is no text to compare with.
+        address stream_ = stream;
+        if (
+            stream_ != address(0)
+                && WorksHashing.licenseKey(item.license.spdxId) == WorksHashing.CC0_LICENSE_KEY
+                && item.license.textFileId != IWorkFacts(IStream(stream_).facts()).cc0TextFileId()
+        ) revert InvalidLicenseId();
     }
 
     /// @dev Fills the facts and terms both `authorize` and `preview` answer, from the item and

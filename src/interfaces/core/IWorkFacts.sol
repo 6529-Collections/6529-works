@@ -17,6 +17,13 @@ import { Facts } from "./CoreTypes.sol";
 ///      - a CC0 license is never left; a locked license never changes;
 ///      - a finalized work's renderer changes only by `repin`, and never once that is locked;
 ///      - "on-chain complete" is checked against the content store, by anyone.
+///      The pin is the renderer's code hash, and only a contract is pinned (never an EIP-7702
+///      delegated account), so whoever chooses a RENDERER should choose one whose output depends
+///      on nothing that can change: a proxy, or a renderer reading mutable state, changes what a
+///      finalized work shows without changing the hash. The media's content hashes are
+///      permanent here; where a work that is not fully on-chain is fetched from (its file
+///      locations) is answered by the replaceable delivery module, which a renderer asks, so a
+///      location can change while the content it must match cannot.
 interface IWorkFacts {
     /// @notice A record was opened.
     /// @param token The token contract.

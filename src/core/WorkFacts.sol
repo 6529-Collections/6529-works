@@ -224,9 +224,15 @@ contract WorkFacts is IWorkFacts {
         return _opened(token, tokenId);
     }
 
-    /// @dev Pins `renderer` and its current code hash. A renderer without code is refused.
+    /// @dev Pins `renderer` and its current code hash. Only an installable contract is pinned
+    ///      (the rule of `Dependency.isInstallable`, written here without assembly): an address
+    ///      without code is refused, and so is an EIP-7702 delegated account, whose code is the
+    ///      23-byte designator `0xef0100 || delegate` that its key holder can change at will.
     function _pin(Facts storage f, address renderer) private {
-        if (renderer.code.length == 0) revert RendererCodeChanged(renderer);
+        uint256 size = renderer.code.length;
+        if (size == 0 || (size == 23 && bytes3(renderer.code) == 0xef0100)) {
+            revert RendererCodeChanged(renderer);
+        }
         f.renderer = renderer;
         f.rendererCodeHash = renderer.codehash;
     }

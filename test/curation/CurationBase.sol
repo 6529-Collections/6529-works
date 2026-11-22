@@ -146,7 +146,7 @@ abstract contract CurationHelpers is Test {
         i.parties[0] = Party(artist, uint8(PartyRole.ARTIST));
         i.payees = new ISplitWallet.Payee[](1);
         i.payees[0] = ISplitWallet.Payee(_id(artist), address(0), 100_000);
-        i.license = License("CC0-1.0", keccak256("cc0"));
+        i.license = License("CC0-1.0", keccak256("cc0 text file")); // the fixture WorkFacts CC0 text
         i.sale = SaleTerms(SaleKind.ENGLISH_AUCTION, CURRENCY_ETH, "");
     }
 
