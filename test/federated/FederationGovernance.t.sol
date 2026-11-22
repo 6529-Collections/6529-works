@@ -633,6 +633,39 @@ contract FederationGovernanceTest is FederationBase {
         );
     }
 
+    /// @dev Suspension starts only from APPROVED and resumption only from SUSPENDED: a template
+    ///      revoked while suspended is neither suspended nor resumed.
+    function test_TemplateMoves_OnlyFromTheirOwnStatus() public {
+        _govern(
+            hotAdmin,
+            address(fedRegistry),
+            abi.encodeCall(fedRegistry.suspendTemplate, (streamHash))
+        );
+        _govern(
+            hotAdmin, address(fedRegistry), abi.encodeCall(fedRegistry.revokeTemplate, (streamHash))
+        );
+        _expectStatusInvalid(
+            abi.encodeCall(fedRegistry.suspendTemplate, (streamHash)),
+            FederationRegistry.TemplateStatus.REVOKED
+        );
+        _expectStatusInvalid(
+            abi.encodeCall(fedRegistry.resumeTemplate, (streamHash)),
+            FederationRegistry.TemplateStatus.REVOKED
+        );
+    }
+
+    function _expectStatusInvalid(bytes memory call, FederationRegistry.TemplateStatus status)
+        internal
+    {
+        _governExpectRevert(
+            address(fedRegistry),
+            call,
+            abi.encodeWithSelector(
+                FederationRegistry.TemplateStatusInvalid.selector, streamHash, status
+            )
+        );
+    }
+
     function _payment(address payer, uint256 amount) internal pure returns (Payment memory) {
         return Payment(PaymentMethod.DIRECT, payer, amount, 0, 0, "");
     }
