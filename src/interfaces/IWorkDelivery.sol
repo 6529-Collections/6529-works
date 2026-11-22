@@ -131,7 +131,6 @@ interface IWorkDelivery {
     /// @return The `IDirectory` contract.
     function directory() external view returns (address);
 
-
     /// @notice Appends an ARWEAVE or IPFS locator for one of a work's media files. A wallet of
     ///         the lead artist's account until finalize; the PLATFORM role at any time. Before
     ///         finalize each side has half of `Limits.MAX_LOCATORS_PER_FILE`; after it only the
