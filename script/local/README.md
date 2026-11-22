@@ -26,8 +26,9 @@ exits non-zero at the first failed step, so CI runs it after the build.
    accepts in the same run. The record is written to `deployments/31337/core-<timestamp>.json`
    (git-ignored).
 2. **Read back.** [`VerifyCore.s.sol`](../VerifyCore.s.sol) reads every contract of the record
-   back: code, wiring, genesis modules and minters, the four settings at their launch values and
-   the governance configuration.
+   back (wiring, genesis modules and minters, the four settings at their launch values, the
+   genesis wiring calls and the governance configuration), then deploys the same build again in
+   memory from the block before the deployment and compares every contract's runtime code.
 3. **`curate()`.** PLATFORM creates a collection; the artist stores a small SVG and a JSON
    record in the content store; curation signer 1 signs the package root, which the keeper
    registers, and CURATOR appends the curation evidence statement; the artist accepts the

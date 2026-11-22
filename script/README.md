@@ -8,8 +8,9 @@ deploy script refuses every other chain. 6529 Works is pre-audit and not deploye
 | File | What it is |
 | --- | --- |
 | [`DeployCore.sol`](DeployCore.sol) | The library: predicts every address, deploys, builds the governance configuration and the genesis wiring from the genesis JSON, installs it |
+| [`CoreFactory.sol`](CoreFactory.sol) | The deployer's factory: creates each contract at its predicted address in one call only the deployer may make |
 | [`DeployCore.s.sol`](DeployCore.s.sol) | The broadcast script (anvil or Sepolia). It deploys, installs, accepts on anvil, reads back, prints every address and writes `deployments/<chain>/core-<timestamp>.json` |
-| [`VerifyCore.sol`](VerifyCore.sol), [`VerifyCore.s.sol`](VerifyCore.s.sol) | The read-back, as a library and as a read-only script over a deployment record |
+| [`VerifyCore.sol`](VerifyCore.sol), [`VerifyCore.s.sol`](VerifyCore.s.sol) | The read-back, as a library and as a read-only script over a deployment record: every contract's runtime code against a fresh deployment of the build, and the whole wiring |
 | [`DeployGuards.sol`](DeployGuards.sol) | The off-anvil checks run before anything is broadcast |
 | [`ScriptIO.sol`](ScriptIO.sol) | Everything the scripts read from outside the EVM: environment, files, chain ID, the deployment parameters |
 | [`local/`](local/README.md) | The local walkthrough: one command, a full sale end to end on anvil |
@@ -17,11 +18,14 @@ deploy script refuses every other chain. 6529 Works is pre-audit and not deploye
 
 ## How a deployment is built
 
-- **Addresses.** Every contract is created through a one-use CREATE3 proxy at a CREATE2 address
-  that depends only on `DEPLOY_NAMESPACE` and the contract's name. All addresses are known before
-  anything is deployed, so the tokens and `Directory` take their genesis modules and minters as
-  constructor arguments. An address does not commit to code: `VerifyCore` reads every contract
-  back.
+- **Addresses.** The deployer first creates its `CoreFactory`, at a CREATE2 address that depends
+  on `DEPLOY_NAMESPACE` and the deployer. The factory creates every contract in one call that
+  only the deployer may make: a one-use proxy at a CREATE2 address that depends only on the
+  factory and the contract's name creates the contract in the same call. All addresses are known
+  before anything is deployed, so the tokens and `Directory` take their genesis modules and
+  minters as constructor arguments, and nobody else can put code at any of them. An address does
+  not commit to code: `VerifyCore.s.sol` compares every contract's runtime code with a fresh
+  deployment of the same build and reads the wiring back.
 - **Order.** Governance, `ContentStore` (and the CC0 text), `WorkFacts`, `Directory`, the two
   governed vaults, `SplitLedger`, `ClaimRouter`, `RevenueEscrow`, `Stream`, `Editions` (the
   permanent part), then the replaceable modules, `SaleStarter` last.
@@ -99,14 +103,15 @@ input to any address).
 
 `deploy.ps1` without `-Broadcast` simulates: it runs every check of `DeployGuards` (the
 network is a bare Safe, every holder reachable and none a contract of the deployment, the
-policy is the committed one, no brake) and prints every address. r6's simulation needed 69
-transactions and forge estimated 146,994,557 gas in total (Prague pricing, with forge's 1.3
-multiplier).
+policy is the committed one, no brake) and prints every address. r6's simulation needed 37
+transactions (the factory, one per contract, the install) and forge estimated 143,847,103 gas in
+total (Prague pricing, with forge's 1.3 multiplier).
 
 Sepolia reprices state creation, which forge cannot simulate: the broadcast skips forge's
 replay and takes each limit from the node's `eth_estimateGas` (`--skip-simulation --slow`).
-The largest creation measured on Sepolia was the Renderer's, 37,690,858 gas by publicnode's
-`eth_estimateGas`; several creations cannot be estimated before the contracts they read exist,
+The largest creation measured on Sepolia was the Renderer's, 38,217,377 gas by publicnode's
+`eth_estimateGas` (with the deployer's factory supplied as a state override, since it does not
+exist before the broadcast); several creations cannot be estimated before the contracts they read exist,
 so broadcast through an endpoint with a higher estimate cap:
 
 ```powershell
@@ -121,9 +126,14 @@ A broadcast that stops partway resumes with `-Resume`.
 1. **The network accepts.** The Safe calls `acceptNetwork()` on the manager
    (`flows.ps1 -Step safeCall -Safe <network> -To <manager> -Data 0xa503fb3e -Label acceptNetwork`).
 2. **Read back.** `DEPLOYMENT=deployments/11155111/core-<timestamp>.json` plus the `deploy.env`
-   variables, then `forge script script/VerifyCore.s.sol --rpc-url <rpc>`. It checks code at
-   every address, the permanent wiring, the genesis modules and minters, the four settings at
-   their launch values and the governance configuration.
+   variables, then `forge script script/VerifyCore.s.sol --rpc-url <rpc>`, after the network has
+   accepted (it refuses before, off anvil). It checks the permanent wiring, the genesis modules
+   and minters (and that nothing else of the deployment mints), the four settings at their
+   launch values, every module's manager and wiring, the effect of every genesis wiring call and
+   the governance configuration; then it deploys the same build again in memory from the
+   record's `forkBlock` and compares every contract's address and runtime code with the chain's.
+   The endpoint must serve the state of `forkBlock` (an archive endpoint such as
+   `https://sepolia.gateway.tenderly.co`, or run it soon after the deploy).
 3. **VRF.** The subscription owner adds the entropy module as a consumer and funds the
    subscription.
 4. **Sourcify.** `./script/sepolia/sourcify.ps1 -Record <record> -Out sourcify.json`, from the

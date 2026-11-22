@@ -22,16 +22,19 @@ import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.so
 import { IStatementLog, Statement } from "src/interfaces/IStatementLog.sol";
 import { HashRef, HASH_SHA256 } from "src/interfaces/types/HashRef.sol";
 import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
+import { CoreFactory } from "./CoreFactory.sol";
 
 /// @title DeployCore
 /// @notice Deploys the plain-core stack (ADR 0010) and installs its genesis configuration.
-/// @dev Every contract is created through a small CREATE3 step: a one-use proxy at a CREATE2
-///      address that depends only on the namespace and the contract's name, which then creates
-///      the contract. So every address is known before anything is deployed, and the token
-///      contracts and `Directory` take their genesis modules and minters as constructor
-///      arguments even though those modules are deployed after them. An address therefore does
-///      not commit to code: `VerifyCore` reads every contract back (code present, wiring,
-///      module slots, minters, settings) instead.
+/// @dev Every contract is created by a `CoreFactory` owned by the deployer, in one call that
+///      only the deployer may make: a one-use proxy at a CREATE2 address that depends only on
+///      the factory and the contract's name creates the contract in the same call. So every
+///      address is known before anything is deployed, nobody else can create code at one, and
+///      the token contracts and `Directory` take their genesis modules and minters as
+///      constructor arguments even though those modules are deployed after them. The factory's
+///      own address commits to the namespace and the deployer. An address does not commit to
+///      code: `VerifyCore` compares every contract's runtime code with a reference deployment
+///      of the same build and reads back the wiring.
 ///
 ///      Order (each contract only needs code at the addresses it calls in its constructor):
 ///      governance, ContentStore (and the CC0 text), WorkFacts, Directory, the two governed
@@ -56,10 +59,12 @@ library DeployCore {
         0xa2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499;
     /// @notice The default renderer's inline threshold, 256 KiB.
     uint256 internal constant RENDERER_INLINE_THRESHOLD = 262_144;
-    /// @notice The CREATE3 proxy's creation code: its runtime copies the calldata and creates
-    ///         a contract from it with CREATE, so the contract's address is the proxy's first
-    ///         CREATE address.
+    /// @notice The CREATE3 proxy's creation code (as in `CoreFactory`): its runtime creates a
+    ///         contract from the calldata with CREATE, so the contract's address is the proxy's
+    ///         first CREATE address.
     bytes internal constant PROXY_INITCODE = hex"67363d3d37363d34f03d5260086018f3";
+    /// @notice The public CREATE2 deployer a script under broadcast creates through.
+    address internal constant CREATE2_FACTORY = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
 
     /// @notice The launch value of every module's and minter's waiting period (`moduleDelay`).
     uint48 internal constant LAUNCH_MODULE_DELAY = 7 days;
@@ -106,6 +111,8 @@ library DeployCore {
     ///         lanes that write them.
     struct Deployment {
         bytes32 cc0TextFileId;
+        /// The deployer's `CoreFactory`, which created every contract below.
+        address coreFactory;
         GovernanceConfigurator configurator;
         WorksAccessManager manager;
         ContentStore contentStore;
@@ -189,12 +196,20 @@ library DeployCore {
 
     /// @notice Deploys every contract in `order(p)` from the calling context (a script under
     ///         broadcast, or a test). Addresses equal `predict(p, factory)`, where `factory` is
-    ///         the CREATE2 deployer of that context.
+    ///         the CREATE2 deployer of that context: `CREATE2_FACTORY` in a script, whose calls
+    ///         are sent by `p.deployer`; in a test, the calling contract itself, which then
+    ///         also sends the calls (see `sender`).
     function deploy(Params memory p, address factory) internal returns (Deployment memory d) {
         d = deployPermanent(p, factory);
+        deployModules(p, d);
+    }
+
+    /// @notice Deploys the contracts of `order(p)` after the permanent part, through the
+    ///         `CoreFactory` of `d`, which `deployPermanent` created.
+    function deployModules(Params memory p, Deployment memory d) internal {
         string[] memory list = order(p);
         for (uint256 i = PERMANENT_COUNT; i < list.length; ++i) {
-            _create3(list[i], salt(p, list[i]), initcode(p, d, list[i]));
+            _create(d.coreFactory, list[i], salt(p, list[i]), initcode(p, d, list[i]));
         }
     }
 
@@ -208,10 +223,11 @@ library DeployCore {
         returns (Deployment memory d)
     {
         d = predict(p, factory);
+        _createFactory(p, factory, d.coreFactory);
         string[] memory list = order(p);
         for (uint256 i; i < PERMANENT_COUNT; ++i) {
             string memory name = list[i];
-            _create3(name, salt(p, name), initcode(p, d, name));
+            _create(d.coreFactory, name, salt(p, name), initcode(p, d, name));
             if (_eq(name, "ContentStore")) {
                 d.cc0TextFileId = uploadText(d.contentStore, p.cc0Text, "text/plain");
             }
@@ -221,6 +237,7 @@ library DeployCore {
     /// @notice Every address `deploy(p, factory)` creates, from the salts alone (the CC0 file
     ///         ID is filled in by `deploy`).
     function predict(Params memory p, address factory) internal pure returns (Deployment memory d) {
+        d.coreFactory = factoryAddress(p, factory);
         string[] memory list = order(p);
         for (uint256 i; i < list.length; ++i) {
             assign(d, list[i], addressFor(p, list[i], factory));
@@ -228,14 +245,40 @@ library DeployCore {
         d.manager = WorksAccessManager(vm.computeCreateAddress(address(d.configurator), 1));
     }
 
-    /// @notice The address of contract `name` under `p.namespace`, created through CREATE2
-    ///         deployer `factory`.
+    /// @notice The account that sends the creation calls and owns the `CoreFactory`:
+    ///         `p.deployer` in a script (CREATE2 deployer `CREATE2_FACTORY`), otherwise `factory`
+    ///         itself (a test is its own CREATE2 deployer and sends its own calls).
+    function sender(Params memory p, address factory) internal pure returns (address) {
+        return factory == CREATE2_FACTORY ? p.deployer : factory;
+    }
+
+    /// @notice The `CoreFactory`'s creation code for `p` (its owner is `sender(p, factory)`).
+    function factoryInitcode(Params memory p, address factory)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        return bytes.concat(type(CoreFactory).creationCode, abi.encode(sender(p, factory)));
+    }
+
+    /// @notice The `CoreFactory`'s address: CREATE2 by `factory` from the namespace and its
+    ///         creation code, which names the owner.
+    function factoryAddress(Params memory p, address factory) internal pure returns (address) {
+        return vm.computeCreate2Address(
+            salt(p, "CoreFactory"), keccak256(factoryInitcode(p, factory)), factory
+        );
+    }
+
+    /// @notice The address of contract `name` under `p.namespace`, created by the `CoreFactory`
+    ///         of `p` and CREATE2 deployer `factory`.
     function addressFor(Params memory p, string memory name, address factory)
         internal
         pure
         returns (address)
     {
-        address proxy = vm.computeCreate2Address(salt(p, name), keccak256(PROXY_INITCODE), factory);
+        address proxy = vm.computeCreate2Address(
+            salt(p, name), keccak256(PROXY_INITCODE), factoryAddress(p, factory)
+        );
         return vm.computeCreateAddress(proxy, 1);
     }
 
@@ -611,21 +654,32 @@ library DeployCore {
         );
     }
 
-    /// @dev CREATE3: a proxy at a salt-only CREATE2 address creates `code` with CREATE. A
-    ///      constructor that reverts leaves no code at the predicted address; that reverts here.
-    function _create3(string memory name, bytes32 salt_, bytes memory code)
-        private
-        returns (address a)
-    {
-        bytes memory proxyCode = PROXY_INITCODE;
-        address proxy;
-        assembly ("memory-safe") {
-            proxy := create2(0, add(proxyCode, 0x20), mload(proxyCode), salt_)
+    /// @dev Creates the `CoreFactory` at `expected` unless it exists: its address commits to
+    ///      its creation code and so to its owner, so code there is this factory whoever sent it.
+    function _createFactory(Params memory p, address factory, address expected) private {
+        if (expected.code.length == 0) {
+            bytes memory code = factoryInitcode(p, factory);
+            bytes32 s = salt(p, "CoreFactory");
+            if (factory == CREATE2_FACTORY) {
+                (bool ok,) = factory.call(bytes.concat(s, code));
+                if (!ok) revert CreateFailed("CoreFactory");
+            } else {
+                assembly ("memory-safe") {
+                    pop(create2(0, add(code, 0x20), mload(code), s))
+                }
+            }
         }
-        if (proxy == address(0)) revert CreateFailed(name);
-        (bool ok,) = proxy.call(code);
-        a = vm.computeCreateAddress(proxy, 1);
-        if (!ok || a.code.length == 0) revert CreateFailed(name);
+        if (expected.code.length == 0 || CoreFactory(expected).owner() != sender(p, factory)) {
+            revert CreateFailed("CoreFactory");
+        }
+    }
+
+    /// @dev Creates `code` as contract `name` through the deployer's `CoreFactory`, in one call.
+    function _create(address coreFactory, string memory name, bytes32 salt_, bytes memory code)
+        private
+    {
+        address a = CoreFactory(coreFactory).create(salt_, code);
+        if (a.code.length == 0) revert CreateFailed(name);
     }
 
     function _artifact(string memory artifact, bytes memory args)
@@ -643,6 +697,7 @@ library DeployCore {
     function addressOf(Deployment memory d, string memory name) internal pure returns (address) {
         bytes32 n = keccak256(bytes(name));
         if (n == keccak256("WorksAccessManager")) return address(d.manager);
+        if (n == keccak256("CoreFactory")) return d.coreFactory;
         if (n == keccak256("GovernanceConfigurator")) return address(d.configurator);
         if (n == keccak256("ContentStore")) return address(d.contentStore);
         if (n == keccak256("WorkFacts")) return address(d.workFacts);
@@ -684,6 +739,8 @@ library DeployCore {
         bytes32 n = keccak256(bytes(name));
         if (n == keccak256("WorksAccessManager")) {
             d.manager = WorksAccessManager(a);
+        } else if (n == keccak256("CoreFactory")) {
+            d.coreFactory = a;
         } else if (n == keccak256("GovernanceConfigurator")) {
             d.configurator = GovernanceConfigurator(a);
         } else if (n == keccak256("ContentStore")) {

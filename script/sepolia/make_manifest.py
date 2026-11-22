@@ -29,7 +29,7 @@ REPO = Path(__file__).resolve().parents[2]
 # (created by the configurator), then `DeployCore.order` with the entropy module (a VRF
 # coordinator is set for every Sepolia round).
 CONTRACTS = [
-    "WorksAccessManager", "GovernanceConfigurator", "ContentStore", "WorkFacts", "Directory",
+    "CoreFactory", "WorksAccessManager", "GovernanceConfigurator", "ContentStore", "WorkFacts", "Directory",
     "FeeRecipientVault", "MuseumVault", "SplitFactory", "ClaimRouter", "RevenueEscrow", "Stream",
     "Editions", "ConsolidationAdapter", "Accounts", "AssetAllowlist", "EconomicsResolver",
     "CurationVerifier", "PackageRegistry", "EntropyModule", "StatementLog", "DependencyRegistry",
