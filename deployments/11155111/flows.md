@@ -3,11 +3,13 @@
 On 11 October 2026 the v1 flows were run on two Sepolia rehearsal deployments
 ([README](README.md)). Settlement and the edition flow followed on 13 October, once the
 24-hour auctions had ended. A lifecycle check on r3 followed on 15 October, and the rc.2 flows,
-with the uniform edition auction, on r4 on 1 November:
+with the uniform edition auction, on r4 on 1 November, and the current `main`'s on r5 on
+22 November:
 
 | Instance | Source | Record | Role here |
 | --- | --- | --- | --- |
-| **r4** | `main` at `1e7022b`: the rc.2 candidate, with the uniform edition auction, the museum rule and the 0.05 ETH opening bid | [`1793536584.json`](1793536584.json) | **Current.** The rc.2 flows on 1 November 2026, every edition-auction step on chain: [r4](#r4-the-rc2-candidate-1-november-2026) |
+| **r5** | `main` at `ca02473`: the single network address, the second permanence pass, federation and `SaleStarter` | [`1795338612.json`](1795338612.json) | **Current.** The flows on 22 November 2026 with new throwaway keys: [r5](#r5-the-current-main-22-november-2026) |
+| r4 | `main` at `1e7022b`: the rc.2 candidate, with the uniform edition auction, the museum rule and the 0.05 ETH opening bid | [`1793536584.json`](1793536584.json) | The rc.2 flows on 1 November 2026, every edition-auction step on chain: [r4](#r4-the-rc2-candidate-1-november-2026) |
 | r3 | `main` at `e5fe78c`: every review fix, the state-growth gas diet and the source-quality pass | [`1792095396.json`](1792095396.json) | A lifecycle check on 15 October 2026, measured against r2: [r3](#r3-the-release-candidate-15-october-2026) |
 | r2 | `main` at `400f96d`: the full v1 scope, including the Editions gas cuts ([#41](https://github.com/6529-Collections/6529-works/pull/41)) and the contested overrides ([#44](https://github.com/6529-Collections/6529-works/pull/44)) | [`1791750816.json`](1791750816.json) | Reference for every section below the r3 one |
 | r1 | `main` at `60edd9b`, before #41 and #44 | [`1791746472.json`](1791746472.json) | Measured first; kept for comparison |
@@ -32,10 +34,68 @@ These are testnet rehearsals with throwaway keys, and the code is pre-audit.
 > DEPS-2, and the renderer's media-list read has its own 1,000,000-gas cap since the content
 > fixes (#56), so `tokenURI` needs about 1.07M gas available rather than about 1.0M.
 
+## r5: the current main (22 November 2026)
+
+On 22 November 2026 the flows ran on **r5**, `main` at `ca02473`
+([README](README.md#sepolia-r5-22-november-2026-current)): the first instance with the single
+network address (a 2-of-3 Safe), the second permanence pass and federation. As on r4, the 1/1
+auctions run **1 hour**; every other parameter is the mainnet default.
+
+- **Driver.** [`script/sepolia/Flows.s.sol`](../../script/sepolia/Flows.s.sol) (unchanged: the
+  rc.2 package of ten items) and [`flows.ps1`](../../script/sepolia/flows.ps1), with the r5
+  changes: a pauser key instead of a guardian Safe, the network Safe's `acceptNetwork` and
+  `cancel` relayed by the keeper (`safeCall`, `cancel`), fees of 0.01 gwei priority and 0.05
+  gwei max. Every transaction went through `https://sepolia.gateway.tenderly.co`: the default
+  public RPC's backends lagged on nonces. State file: [`flows/r5.json`](flows/r5.json).
+- **Accounts.** New throwaway testnet keys: the keeper (`0xc355996C…7D50`, no role) relayed
+  every permissionless call; bidders 1 to 4 bid and claimed; pauser key 1 paused; the curation
+  signer 1 approved the package; the network Safe's owners 1 and 2 signed. The artist is the
+  rehearsals' artist key (`0x111Cb972…Ae1B`); the museum is the testnet EOA `0xB37A2a26…4D25`.
+- **Gas.** Sepolia gas is the receipt's (the Prague replay was not run for r5).
+
+### What ran
+
+| Token | Item | Role | Outcome |
+| ---: | --- | --- | --- |
+| 1 | 5: edition master, no cap | The main sale | 1/1 SOLD to bidder 2 at 0.0525 ETH after bidder 1's 0.05 ETH opening bid; edition: 5 bids and a raise from four wallets, 7 copies at 0.000332 ETH (step 25) |
+| 2 | 9: edition master, no cap | The dispute | 1/1 paused by pauser key 1, `DISPUTE_OUTCOME` recorded by the platform, cancelled at once by the network Safe (2-of-3); its edition sale VOID, its one bid refunded |
+| 3 | 0: an original | The museum | 1/1 UNBID, moved to the museum vault at settlement |
+
+Before them: the network Safe's `acceptNetwork` (Safe nonce 0, the Safe's first transaction),
+the content uploads (three measured base64 files, ten records, seven registered-only primary
+files), two collections, and the package: registration with curation signer 1's approval, the
+CURATOR statement and the artist's first acceptance.
+
+### The checklist
+
+| Flow | Result |
+| --- | --- |
+| The network accepts through its Safe | **Pass.** Owners 1 and 2 signed, the keeper relayed `execTransaction`: [`0x157100b8…`](https://sepolia.etherscan.io/tx/0x157100b8e66b3b689092019483c1b142c1ac4a394f376f1437aa84bab1c77c2b) (272,034 gas); `network()` is the Safe. |
+| Content upload, including a 24 KB chunk | **Pass.** 36 uploads; the full chunk (24,572 stored bytes) used 38,356,614 gas. |
+| Package registration, curator statement, artist acceptance | **Pass.** [`registerPackage`](https://sepolia.etherscan.io/tx/0x29c2abd49ef8fabf63bac116f00265e82b9c3ef88fdb5f6ddf2b1ad667489428) (280,566), [`appendCurator`](https://sepolia.etherscan.io/tx/0x56bd3767748680c437dac4fbb965b902848b70488e2d0c3d0dc5f326b901f43a) (272,370), [`acceptPackage`](https://sepolia.etherscan.io/tx/0x8cf001063961b1eb42bd2bdd66cc1725b1b47acd8c1bba4c43d6de5332391b77) (837,629). |
+| A 1-wei bid refused | **Pass.** Reverted on chain with `BidTooLow(0.05 ETH, 1)`: [`0xc969d846…`](https://sepolia.etherscan.io/tx/0xc969d8465ceeabb760a641ec8b1f4790d46e40ce44a9a4651d8c15c118bf25cd). |
+| 1/1 bids, outbid credit and claim | **Pass.** [0.05 ETH](https://sepolia.etherscan.io/tx/0x15a005d26773b50e75663ec70e167a968fec1ad3bc526bc02c3e9e317d01f5ae), [0.0525 ETH](https://sepolia.etherscan.io/tx/0x1c62dd0f3675e7c3b4f8b71dff3dd1f8bd4f081447bbd3ce61e93f774f547132); bidder 1 claimed its 0.05 ETH credit, [`0x22b86159…`](https://sepolia.etherscan.io/tx/0x22b86159d2513c1d736ade5786e37224ae86c03d12289ab5bb2472412e892742). |
+| Edition bids and a raise beside the 1/1 | **Pass.** Five bids from bidders 1 to 4 and one raise (bid 2, step 20 to 36, [`0x79b65ef8…`](https://sepolia.etherscan.io/tx/0x79b65ef8fab0729aae90b2864fb4490d56a9f65a8c6860a461b0fb9af47a5ee8)). |
+| 1/1 settled SOLD; edition created; edition settled; every bid claimed | **Pass.** [`settle`](https://sepolia.etherscan.io/tx/0xf5e611895cd9f67197d2aebb68e62904ad74fe2c2ebd3017a888dafe59db64f8) (372,807), [`createEdition`](https://sepolia.etherscan.io/tx/0x0dfd5e0fe146ac14906c327d9c444d458f69abc527a46dac886d0eb074d886a4) by the keeper (227,085), [edition `settle`](https://sepolia.etherscan.io/tx/0xb2e60f5d428cf9c6d3a79064d3a4100f9ed4d01b209d3409a74d9d233dff82d7) (270,686), two `claimBid` and three `claimBidFor`, then the credited refunds claimed. Copies held: bidder 3 three, bidder 2 two, bidders 1 and 4 one each. |
+| An unbid 1/1 moved to the museum | **Pass.** [`settle`](https://sepolia.etherscan.io/tx/0x24a31c2d087fb90101c88f3ebb38ee32f80f6d14f69daae70a0258c278dde109) (335,224): token 3 is held by the museum vault (`MuseumVault`). |
+| A dispute: pause by a pauser key, outcome, immediate network cancel, void edition | **Pass.** [`pause`](https://sepolia.etherscan.io/tx/0x2fe69cc4790630d5144212c3dd592900b4aab30c293ee0945af9b1a8ba75fc76) by pauser key 1 (165,329), [`DISPUTE_OUTCOME`](https://sepolia.etherscan.io/tx/0x76bad4e92e855492539eb1657be36d8ca6465d273e4c3a898b12003d1d034db7) by the platform, [`cancel`](https://sepolia.etherscan.io/tx/0xcc61c1d35c1091dacb4bdd8f4b38413ed6e2200b7247ad6794c2a2db409ef88e) from the network Safe with no delay (157,105); the edition sale [voided](https://sepolia.etherscan.io/tx/0x1f5719c4301fe69c124d5bf3b69d38c581cf9ff9a82edc89ed4dfe6af3f5763c) and its bid [refunded](https://sepolia.etherscan.io/tx/0x19493ffe0fa5b693b6b4681d9d7a7858bdfb2f9de1da10393897591b5a22bb86). |
+| `openRecord` | **Pass.** Tokens 3 and 1 (519,078 and 519,474 gas). |
+| A VRF request | **Sent, not fulfilled.** [`requestSeed`](https://sepolia.etherscan.io/tx/0x8757a29d450d3bf4d40671ebdef96f1aed85bfdd4b749ee4bea42d8b4a08a022) (646,053) is pending on the coordinator: the subscription holds 0.02 ETH, below what r1 and r2 held (0.25 and 0.2 ETH) when their requests were fulfilled in five blocks. The VRF work (item 6) is not started. |
+
+77 transactions, 87,051,499 gas in all.
+
+### Not run on r5
+
+- The VRF fulfilment and the VRF work's start (waiting on the subscription's balance), the
+  artist's `finalize`, `releaseContent` (a 24-hour PARAMETER_SETTER action), consolidations,
+  `SaleStarter`, the anti-snipe and soft-close extensions, the capped master's cut step,
+  ERC-20 and Permit2 bids, payouts from the split wallets, and the Prague replay.
+- The state-gas reservoir test of the runbook's step 12.
+
 ## r4: the rc.2 candidate (1 November 2026)
 
 On 1 November 2026 the rc.2 flows ran on **r4**, `main` at `1e7022b`
-([README](README.md#sepolia-r4-1-november-2026-current)): the uniform-price edition auction of
+([README](README.md#sepolia-r4-1-november-2026-superseded-by-r5)): the uniform-price edition auction of
 [ADR 0005](../../docs/adr/0005-stream-editions-auction.md) beside each edition master's 1/1,
 the museum rule (owner decision 17), the 0.05 ETH opening bid (decision 19) and a dispute
 pause and cancel. r4's 1/1 auctions run **1 hour** (a testnet setting, the governed minimum);

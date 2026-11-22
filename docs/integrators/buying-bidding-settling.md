@@ -9,9 +9,10 @@ signatures in [Events and indexing](events-and-indexing.md); addresses in [Addre
 
 > Pre-audit. See the [project status](../../README.md#status).
 
-Sepolia r4 ([Addresses](addresses.md#sepolia-r4)) runs `main` at `1e7022b`: the 1/1 auction,
-the uniform edition auction and the claims as this page describes them, with 1-hour 1/1
-auctions (a testnet setting). The superseded r3 runs `v1.0.0-rc.1`, with the edition terms
+Sepolia r5 ([Addresses](addresses.md#sepolia-r5)) runs `main` at `ca02473`: the 1/1 auction,
+`SaleStarter`, the uniform edition auction and the claims as this page describes them, with
+1-hour 1/1 auctions (a testnet setting). The superseded r4 runs `1e7022b` (`v1.0.0-rc.2`), from
+before the second permanence pass. The superseded r3 runs `v1.0.0-rc.1`, with the edition terms
 and the fixed-price and Dutch edition adapters that ADR 0005 replaced. The superseded r2 predates the October 2026 review fixes: it
 has no `claimFor`, ERC-20 payout frame, `scheduleDelay`, currency freeze,
 `SHORTFALL_REVERT_CEILING` or identity restraint

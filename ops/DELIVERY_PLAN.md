@@ -69,11 +69,17 @@ script/          deployment and verification
 [v1.0.0-rc.2](../docs/releases/v1.0.0-rc.2.md).** Phases 1 to 6 are complete. Phase 7
 (testnet) has four Sepolia rehearsals: r4 (1 November 2026) runs rc.2's code, `1e7022b`, with
 the uniform edition auction run on chain
-([record](../deployments/11155111/README.md#sepolia-r4-1-november-2026-current),
+([record](../deployments/11155111/README.md#sepolia-r4-1-november-2026-superseded-by-r5),
 [flows](../deployments/11155111/flows.md#r4-the-rc2-candidate-1-november-2026)), and r3 runs
 [v1.0.0-rc.1](../docs/releases/v1.0.0-rc.1.md). The items under "Open in phase 7" are still to
 do. The code is pre-audit and not production-ready: no external audit has started, and r4 is a
 testnet rehearsal whose live Verify passed on 6 November 2026, at block 12,076,640.
+
+**22 November 2026: Sepolia r5.** A fifth rehearsal runs the current `main`, `ca02473`, with
+new throwaway keys and a 2-of-3 network Safe
+([record](../deployments/11155111/README.md#sepolia-r5-22-november-2026-current),
+[flows](../deployments/11155111/flows.md#r5-the-current-main-22-november-2026)). Its live
+Verify can run from 27 November 2026, and its VRF request waits on the subscription's funding.
 
 **What rc.2 is.** The tag on `main` whose contracts, deploy and verify scripts, genesis policy and
 `foundry.toml` are those of `1e7022b`, the code deployed as Sepolia rehearsal r4. To rc.1 it adds
@@ -100,7 +106,7 @@ and [ADR 0001](../docs/adr/0001-v1-scope.md)'s amendments).
   in CI;
 - Sepolia r4: every contract an exact match on Sourcify, Verify passing on a fork advanced five
   days, and the rc.2 flows measured on chain
-  ([record](../deployments/11155111/README.md#sepolia-r4-1-november-2026-current),
+  ([record](../deployments/11155111/README.md#sepolia-r4-1-november-2026-superseded-by-r5),
   [flows](../deployments/11155111/flows.md#r4-the-rc2-candidate-1-november-2026)).
 
 **Open in phase 7:**
