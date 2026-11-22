@@ -2,6 +2,12 @@
 
 Usage: python script/sepolia/make_genesis.py <new instance> <holders from instance>
        python script/sepolia/make_genesis.py r4 r3
+       python script/sepolia/make_genesis.py r5 config/sepolia-r5/accounts.json
+
+The second argument is an earlier instance, or an accounts file (a path ending in `.json`) that
+names new holders: `network`, `description` (containing "rehearsal <new>") and `holders`, each
+with `role`, `account` and `label`, in the committed policy's order within each role. It holds
+public addresses only.
 
 Reads config/genesis.example.json (the committed policy) and config/sepolia-<from>/genesis.json,
 maps every placeholder holder of the policy, by role and position within the role, to the earlier
@@ -26,10 +32,25 @@ def by_role(holders):
     return out
 
 
+def from_accounts(path):
+    """An accounts file as an earlier instance: `network`, `description` and `holders`
+    (each `role`, `account`, `label`), listed in the committed policy's order within each role."""
+    a = json.loads((REPO / path).read_text(encoding="utf-8"))
+    assert re.fullmatch(r"0x[0-9a-fA-F]{40}", a["network"]), a["network"]
+    for h in a["holders"]:
+        assert re.fullmatch(r"0x[0-9a-fA-F]{40}", h["account"]), h
+    return a
+
+
 def main(new, old):
-    assert re.fullmatch(r"r\d+", new) and re.fullmatch(r"r\d+", old), (new, old)
+    assert re.fullmatch(r"r\d+", new), new
     example = json.loads((REPO / "config/genesis.example.json").read_text(encoding="utf-8"))
-    prev = json.loads((REPO / f"config/sepolia-{old}/genesis.json").read_text(encoding="utf-8"))
+    if old.endswith(".json"):
+        # A new set of holders: config/sepolia-<new>/accounts.json (public addresses only).
+        prev = from_accounts(old)
+    else:
+        assert re.fullmatch(r"r\d+", old), old
+        prev = json.loads((REPO / f"config/sepolia-{old}/genesis.json").read_text(encoding="utf-8"))
     ex_roles, prev_roles = by_role(example["holders"]), by_role(prev["holders"])
     assert set(ex_roles) <= set(prev_roles), set(ex_roles) - set(prev_roles)
     mapping = {}

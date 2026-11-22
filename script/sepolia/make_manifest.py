@@ -11,7 +11,9 @@ addresses come from the simulation. Then simulate again: the addresses must not 
 `safes` section follows the new genesis (config/sepolia-<new>/genesis.json, single network):
 the network address and every holder that is a Safe of the earlier instance's manifest, each
 with that Safe's owners, threshold and version (the same throwaway Safes); a network address
-that is not one of those Safes is written with null details, to fill in before publishing.
+that is not one of those Safes is written with null details, to fill in before publishing. Safes
+first used by the new instance are read from config/sepolia-<new>/accounts.json (`safes`) when
+that file exists. The `keys` section lists the new genesis's operational keys.
 Every deployment input comes from config/sepolia-<new>/deploy.env.
 """
 import hashlib
@@ -74,6 +76,36 @@ def safes_from_genesis(genesis, prev_safes):
     return out
 
 
+def keys_from_genesis(genesis):
+    """The manifest's `keys` section: the genesis file's operational keys, by role."""
+    of = {}
+    for h in genesis["holders"]:
+        of.setdefault(h["role"], []).append(h["account"])
+
+    def one(role):
+        accounts = of.get(role, [])
+        if len(accounts) != 1:
+            raise ValueError(f"{role}: expected one holder, found {len(accounts)}")
+        return accounts[0]
+
+    return {
+        "pausers": of.get("PAUSER", []),
+        "curationSigners": of.get("CURATION_SIGNER", []),
+        "storageOperator": one("STORAGE_OPERATOR"),
+        "platform": one("PLATFORM"),
+        "curator": one("CURATOR"),
+    }
+
+
+def new_safes(new):
+    """Safes first used by instance `new`, from config/sepolia-<new>/accounts.json (`safes`, as
+    in a manifest: address, threshold, owners, version), so the `safes` section can name them."""
+    path = REPO / f"config/sepolia-{new}/accounts.json"
+    if not path.exists():
+        return {}
+    return json.loads(path.read_text(encoding="utf-8")).get("safes", {})
+
+
 def sha(path):
     return hashlib.sha256((REPO / path).read_bytes()).hexdigest()
 
@@ -89,7 +121,9 @@ def main(new, prev, commit, sim_path=None):
     genesis = f"config/sepolia-{new}/genesis.json"
     m["genesis"] = {"path": genesis, "sha256": sha(genesis)}
     g = json.loads((REPO / genesis).read_text(encoding="utf-8"))
-    m["safes"] = safes_from_genesis(g, m["safes"])
+    m["safes"] = safes_from_genesis(g, {**m["safes"], **new_safes(new)})
+    m["keys"] = keys_from_genesis(g)
+    m["signatures"] = "Unsigned: testnet rehearsal. A mainnet manifest is signed by the network Safe's signers."
     for name, s in m["safes"].items():
         if s["owners"] is None:
             print(f"warning: safes.{name} ({s['address']}) needs its owners, threshold and version",

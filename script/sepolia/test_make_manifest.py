@@ -69,5 +69,29 @@ class SafesFromGenesis(unittest.TestCase):
                                                  for k in ("address", "threshold", "owners", "version")})
 
 
+class KeysFromGenesis(unittest.TestCase):
+    def test_keys_by_role(self):
+        genesis = {"holders": [
+            {"role": "PAUSER", "account": "0x11"}, {"role": "PAUSER", "account": "0x12"},
+            {"role": "CURATION_SIGNER", "account": "0x21"}, {"role": "CURATION_SIGNER", "account": "0x22"},
+            {"role": "STORAGE_OPERATOR", "account": "0x31"}, {"role": "PLATFORM", "account": "0x51"},
+            {"role": "CURATOR", "account": "0x61"},
+        ]}
+        out = make_manifest.keys_from_genesis(genesis)
+        self.assertEqual(out["pausers"], ["0x11", "0x12"])
+        self.assertEqual(out["curationSigners"], ["0x21", "0x22"])
+        self.assertEqual((out["storageOperator"], out["platform"], out["curator"]), ("0x31", "0x51", "0x61"))
+
+    def test_missing_single_holder_is_refused(self):
+        with self.assertRaises(ValueError):
+            make_manifest.keys_from_genesis({"holders": [{"role": "PLATFORM", "account": "0x51"}]})
+
+    def test_r5_keys_match_its_genesis(self):
+        g = json.loads((REPO / "config/sepolia-r5/genesis.json").read_text(encoding="utf-8"))
+        out = make_manifest.keys_from_genesis(g)
+        self.assertEqual(len(out["pausers"]), 3)
+        self.assertEqual(len(out["curationSigners"]), 2)
+
+
 if __name__ == "__main__":
     unittest.main()
