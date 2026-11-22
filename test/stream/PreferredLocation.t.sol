@@ -3,6 +3,9 @@ pragma solidity ^0.8.24;
 
 import { Locator, LocatorKind, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
+import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import { IWorkDelivery, IWorkLocators } from "src/interfaces/IWorkDelivery.sol";
+import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { ContentAddresses as CA } from "../helpers/ContentAddresses.sol";
 import { RecordsFixture } from "./RecordsFixture.sol";
 
@@ -184,6 +187,43 @@ contract PreferredLocationTest is RecordsFixture {
         } else {
             assertEq(uint8(chosen.kind), uint8(kinds[expected]));
             assertEq(chosen.uri, delivery.locators(tokenId, file)[expected].uri);
+        }
+    }
+
+    /// @dev With no preference the first live locator is served, however many dead ones come
+    ///      before it.
+    function test_preferredLocator_theFirstLiveAfterTwoDead() public {
+        _check(Case(5, 0, 0, 0, 0, 0, 0xb));
+    }
+
+    /// @dev A file of another work is refused by name (`FileNotInWork`), by the resolution and
+    ///      by every per-file setting.
+    function test_delivery_refusesAFileNotInTheWork() public {
+        (uint256 tokenId, bytes32 file,,) = _workWithLocators(1, 0, 0, false, false);
+        bytes32 other = keccak256("not this work's file");
+        bytes memory reason =
+            abi.encodeWithSelector(IWorkRecords.FileNotInWork.selector, tokenId, other);
+        vm.expectRevert(reason);
+        delivery.preferredLocator(tokenId, other);
+        vm.startPrank(storageOperator);
+        vm.expectRevert(reason);
+        delivery.setFilePreference(tokenId, other, 0);
+        vm.expectRevert(reason);
+        delivery.markLocatorDead(tokenId, other, 0);
+        vm.stopPrank();
+        delivery.preferredLocator(tokenId, file);
+    }
+
+    function test_delivery_supportsOnlyTheExactIds() public view {
+        bytes4[3] memory ids = [
+            type(IWorkDelivery).interfaceId,
+            type(IWorkLocators).interfaceId,
+            type(IERC165).interfaceId
+        ];
+        for (uint256 i; i < ids.length; ++i) {
+            assertTrue(delivery.supportsInterface(ids[i]));
+            assertFalse(delivery.supportsInterface(bytes4(uint32(ids[i]) - 1)));
+            assertFalse(delivery.supportsInterface(bytes4(uint32(ids[i]) + 1)));
         }
     }
 
