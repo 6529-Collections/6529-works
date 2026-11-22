@@ -14,20 +14,8 @@
         "type": "uint64"
       },
       {
-        "label": "since",
-        "offset": 9,
-        "slot": 0,
-        "type": "uint40"
-      },
-      {
-        "label": "inactiveTotal",
-        "offset": 14,
-        "slot": 0,
-        "type": "uint40"
-      },
-      {
         "label": "openingBid",
-        "offset": 19,
+        "offset": 9,
         "slot": 0,
         "type": "uint96"
       },
@@ -36,26 +24,6 @@
         "offset": 0,
         "slot": 1,
         "type": "uint256"
-      }
-    ],
-    "struct AssetAllowlist.Currency": [
-      {
-        "label": "configured",
-        "offset": 0,
-        "slot": 0,
-        "type": "bool"
-      },
-      {
-        "label": "asset",
-        "offset": 1,
-        "slot": 0,
-        "type": "address"
-      },
-      {
-        "label": "revision",
-        "offset": 21,
-        "slot": 0,
-        "type": "uint64"
       }
     ]
   },
@@ -80,13 +48,6 @@
       "offset": 0,
       "slot": 1,
       "type": "mapping(address => struct AssetAllowlist.AssetConfig)"
-    },
-    {
-      "contract": "AssetAllowlist",
-      "label": "_defaults",
-      "offset": 0,
-      "slot": 2,
-      "type": "mapping(bytes32 => struct AssetAllowlist.Currency)"
     }
   ]
 }

@@ -513,6 +513,27 @@
   },
   {
     "anonymous": false,
+    "id": "0x6b8f46d9597b968fcb30ee50c0b8aa793ded8aa3313c850d0458ae17c3c98b16",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "slot",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "module",
+        "type": "address"
+      }
+    ],
+    "name": "ModuleCancelled",
+    "signature": "ModuleCancelled(bytes32,address)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
     "id": "0x4269f60ea01fb342018e13abcba2ff1e41cf055d5d3fca5a8c044196a0b48662",
     "inputs": [
       {
@@ -952,6 +973,21 @@
     "name": "burn",
     "outputs": [],
     "signature": "burn(uint256)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0xfbcfb93b",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "slot",
+        "type": "bytes32"
+      }
+    ],
+    "name": "cancelModule",
+    "outputs": [],
+    "signature": "cancelModule(bytes32)",
     "stateMutability": "nonpayable",
     "type": "function"
   },

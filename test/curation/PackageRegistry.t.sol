@@ -134,7 +134,12 @@ contract PackageRegistryTest is CurationBase {
         // at every use, so nothing about the module is pinned here).
         vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
         new PackageRegistry(
-            address(manager), v, vh, eoa, IEconomicsResolver(address(_policyStub)), address(0),
+            address(manager),
+            v,
+            vh,
+            eoa,
+            IEconomicsResolver(address(_policyStub)),
+            address(0),
             keccak256("cc0 text file")
         );
         vm.expectRevert(

@@ -50,6 +50,12 @@
         "offset": 6,
         "slot": 0,
         "type": "uint48"
+      },
+      {
+        "label": "firstActiveFrom",
+        "offset": 12,
+        "slot": 0,
+        "type": "uint48"
       }
     ],
     "struct PendingModule": [

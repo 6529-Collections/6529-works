@@ -98,6 +98,12 @@
         "offset": 6,
         "slot": 0,
         "type": "uint48"
+      },
+      {
+        "label": "form",
+        "offset": 12,
+        "slot": 0,
+        "type": "enum IFederationRegistry.Form"
       }
     ],
     "struct IFederationRegistry.Template": [

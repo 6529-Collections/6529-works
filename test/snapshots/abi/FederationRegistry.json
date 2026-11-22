@@ -80,6 +80,19 @@
     "type": "error"
   },
   {
+    "id": "0x8b184409",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      }
+    ],
+    "name": "AccountCannotAct",
+    "signature": "AccountCannotAct(uint256)",
+    "type": "error"
+  },
+  {
     "id": "0xa67b9f9e",
     "inputs": [
       {
@@ -583,13 +596,19 @@
   },
   {
     "anonymous": false,
-    "id": "0x884ac7aee6a8b91090c40395002339c7e2b6b5ca06f6389959158e0836461681",
+    "id": "0xa63b603e916a8acd2c7f9499e04f21ac7c26c04101c49cd32f1330131ecbf4f4",
     "inputs": [
       {
         "indexed": true,
         "internalType": "address",
         "name": "minter",
         "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "enum IFederationRegistry.Form",
+        "name": "form",
+        "type": "uint8"
       },
       {
         "indexed": false,
@@ -605,7 +624,7 @@
       }
     ],
     "name": "SaleContractSet",
-    "signature": "SaleContractSet(address,uint48,uint48)",
+    "signature": "SaleContractSet(address,uint8,uint48,uint48)",
     "type": "event"
   },
   {
@@ -1666,6 +1685,11 @@
             "internalType": "uint48",
             "name": "removedAt",
             "type": "uint48"
+          },
+          {
+            "internalType": "enum IFederationRegistry.Form",
+            "name": "form",
+            "type": "uint8"
           }
         ],
         "internalType": "struct IFederationRegistry.SaleContract",
@@ -1703,12 +1727,17 @@
     "type": "function"
   },
   {
-    "id": "0x332f6465",
+    "id": "0x8d4fb9dc",
     "inputs": [
       {
         "internalType": "address",
         "name": "adapter",
         "type": "address"
+      },
+      {
+        "internalType": "enum IFederationRegistry.Form",
+        "name": "form",
+        "type": "uint8"
       },
       {
         "internalType": "bool",
@@ -1718,7 +1747,7 @@
     ],
     "name": "setAdapter",
     "outputs": [],
-    "signature": "setAdapter(address,bool)",
+    "signature": "setAdapter(address,uint8,bool)",
     "stateMutability": "nonpayable",
     "type": "function"
   },
@@ -1863,27 +1892,6 @@
       }
     ],
     "signature": "templateOf(address)",
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "id": "0x49a45c08",
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "minter",
-        "type": "address"
-      }
-    ],
-    "name": "wasMinter",
-    "outputs": [
-      {
-        "internalType": "bool",
-        "name": "",
-        "type": "bool"
-      }
-    ],
-    "signature": "wasMinter(address)",
     "stateMutability": "view",
     "type": "function"
   }

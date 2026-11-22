@@ -62,14 +62,14 @@ assume the number.
 | Role | ID | Execution delay | Held by | Holders at genesis | Mapped selectors |
 | --- | ---: | --- | --- | --- | ---: |
 | `ADMIN` | 0 | 7 days | `network()` only | the network | 0 |
-| `NETWORK` | 1 | immediate | `network()` only | the network | 37 |
+| `NETWORK` | 1 | immediate | `network()` only | the network | 42 |
 | `PAUSER` | 2 | immediate | operational keys | Pauser key 1, Pauser key 2, Pauser key 3 | 4 |
 | `CURATION_SIGNER` | 4 | immediate | operational keys | Curation signer key 1, Curation signer key 2 | 0 |
 | `STORAGE_OPERATOR` | 5 | immediate | operational keys | Storage operator key | 5 |
 | `MINTER` | 6 | immediate | operational keys | none (unused in v1) | 0 |
 | `KEEPER` | 7 | immediate | operational keys | none (unused in v1) | 0 |
 | `PLATFORM` | 8 | immediate | operational keys | Platform key | 3 |
-| `PARAMETER_SETTER` | 9 | 24 hours | `network()` only | the network | 30 |
+| `PARAMETER_SETTER` | 9 | 24 hours | `network()` only | the network | 28 |
 | `FUNDS_SETTER` | 10 | 3 days | `network()` only | the network | 9 |
 | `SUCCESSOR_SETTER` | 11 | 7 days | `network()` only | the network | 19 |
 | `CURATOR` | 12 | immediate | operational keys | Curator key | 1 |
@@ -85,11 +85,11 @@ once; the network roles answer for `network()` only ([`Roles.sol`](../../src/gov
 
 | Class | Delay | Mapped selectors |
 | --- | --- | ---: |
-| No delay | immediate | 50 |
-| 24 hours | 24 hours | 30 |
+| No delay | immediate | 55 |
+| 24 hours | 24 hours | 28 |
 | 3 days | 3 days | 9 |
 | 7 days | 7 days | 19 |
-| **Total** | | **108** |
+| **Total** | | **111** |
 
 ## Matrix by contract
 
@@ -104,6 +104,7 @@ Source: [`src/core/Stream.sol`](../../src/core/Stream.sol).
 | `setOwner(address)` | `0x13af4035` | `FUNDS_SETTER` | 3 days | 3 days | The network or the scheduler, during the delay; the brake may delay it once | The marketplace `owner()`. |
 | `proposeModule(bytes32,address)` | `0x09ea14aa` | `NETWORK` | No delay | immediate | No: executes at once | Announces a module; anyone installs it once `moduleDelay()` has passed. An announcement keeps the time it was given if the setting changes. |
 | `removeModule(bytes32)` | `0x4114509b` | `NETWORK` | No delay | immediate | No: executes at once | At once. |
+| `cancelModule(bytes32)` | `0xfbcfb93b` | `NETWORK` | No delay | immediate | No: executes at once |  |
 | `setModuleDelay(uint48)` | `0x6cb67613` | `NETWORK` | No delay | immediate | No: executes at once | A setting of the network: at once, no floor, zero allowed; `ModuleDelaySet` logs the old and the new value. |
 | `addMinter(address)` | `0x983b2d56` | `NETWORK` | No delay | immediate | No: executes at once | Active once `moduleDelay()` has passed. |
 | `removeMinter(address)` | `0x3092afd5` | `NETWORK` | No delay | immediate | No: executes at once | At once: it mints nothing new and still finishes what it started. |
@@ -120,6 +121,7 @@ Source: [`src/core/Editions.sol`](../../src/core/Editions.sol).
 | `setOwner(address)` | `0x13af4035` | `FUNDS_SETTER` | 3 days | 3 days | The network or the scheduler, during the delay; the brake may delay it once | The marketplace `owner()`. |
 | `proposeModule(bytes32,address)` | `0x09ea14aa` | `NETWORK` | No delay | immediate | No: executes at once | Announces a module; anyone installs it once `moduleDelay()` has passed. An announcement keeps the time it was given if the setting changes. |
 | `removeModule(bytes32)` | `0x4114509b` | `NETWORK` | No delay | immediate | No: executes at once | At once. |
+| `cancelModule(bytes32)` | `0xfbcfb93b` | `NETWORK` | No delay | immediate | No: executes at once |  |
 | `setModuleDelay(uint48)` | `0x6cb67613` | `NETWORK` | No delay | immediate | No: executes at once | A setting of the network: at once, no floor, zero allowed; `ModuleDelaySet` logs the old and the new value. |
 | `addMinter(address)` | `0x983b2d56` | `NETWORK` | No delay | immediate | No: executes at once | Active once `moduleDelay()` has passed. |
 | `removeMinter(address)` | `0x3092afd5` | `NETWORK` | No delay | immediate | No: executes at once | At once: it mints nothing new and still finishes what it started. |
@@ -134,6 +136,7 @@ Source: [`src/core/Directory.sol`](../../src/core/Directory.sol).
 | --- | --- | --- | --- | --- | --- | --- |
 | `proposeModule(bytes32,address)` | `0x09ea14aa` | `NETWORK` | No delay | immediate | No: executes at once | Announces a module; anyone installs it once `moduleDelay()` has passed. An announcement keeps the time it was given if the setting changes. |
 | `removeModule(bytes32)` | `0x4114509b` | `NETWORK` | No delay | immediate | No: executes at once | At once. |
+| `cancelModule(bytes32)` | `0xfbcfb93b` | `NETWORK` | No delay | immediate | No: executes at once |  |
 | `setModuleDelay(uint48)` | `0x6cb67613` | `NETWORK` | No delay | immediate | No: executes at once | A setting of the network: at once, no floor, zero allowed; `ModuleDelaySet` logs the old and the new value. |
 | `setUnclaimedPeriod(uint48)` | `0x6491f888` | `NETWORK` | No delay | immediate | No: executes at once | A setting of the network, at once, zero allowed. The split ledger and the escrow read it when a forfeit or an expiry is attempted, so a change applies to marks and credits already running. |
 | `setRescueDelay(uint48)` | `0x1d2c9862` | `NETWORK` | No delay | immediate | No: executes at once |  |
@@ -250,6 +253,7 @@ Source: [`src/sales/UniformEditionAuction.sol`](../../src/sales/UniformEditionAu
 | `setTarget(address,bool)` | `0x80ffe77f` | `SUCCESSOR_SETTER` | 7 days | 7 days | The network or the scheduler, during the delay; the brake may delay it once | Also a genesis wiring call. |
 | `setLimits(uint256,uint256)` | `0xc4590d3f` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once |  |
 | `adopt(address,uint256,bytes)` | `0x701ad8f1` | `NETWORK` | No delay | immediate | No: executes at once |  |
+| `closeEdition(address,uint256)` | `0x9133f905` | `NETWORK` | No delay | immediate | No: executes at once |  |
 
 ### EconomicsResolver
 
@@ -270,8 +274,6 @@ Source: [`src/economics/AssetAllowlist.sol`](../../src/economics/AssetAllowlist.
 | --- | --- | --- | --- | --- | --- | --- |
 | `setIncrementFloor(address,uint64,uint256)` | `0xad176f96` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once |  |
 | `setOpeningBid(address,uint64,uint256)` | `0x373577fc` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once | The English auction's least first bid in ETH; also a genesis wiring call. |
-| `setDefaultCurrency(bytes32,uint64,address)` | `0xbc27c0e9` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once |  |
-| `deprecateAsset(address)` | `0x41003c89` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once |  |
 
 ### RevenueEscrow
 
@@ -326,7 +328,7 @@ Source: [`src/federated/FederationRegistry.sol`](../../src/federated/FederationR
 | --- | --- | --- | --- | --- | --- | --- |
 | `approveTemplate(address,uint32,uint8)` | `0xae5b7639` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once |  |
 | `revokeTemplate(address)` | `0xdb80bb9a` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once |  |
-| `setAdapter(address,bool)` | `0x332f6465` | `SUCCESSOR_SETTER` | 7 days | 7 days | The network or the scheduler, during the delay; the brake may delay it once |  |
+| `setAdapter(address,uint8,bool)` | `0x8d4fb9dc` | `SUCCESSOR_SETTER` | 7 days | 7 days | The network or the scheduler, during the delay; the brake may delay it once |  |
 | `suspendTemplate(address)` | `0xab4312a9` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once |  |
 | `resumeTemplate(address)` | `0x57ffef55` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once |  |
 | `setStatus(address[],uint8,bytes32)` | `0x565f9c3d` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once |  |
@@ -347,6 +349,7 @@ Source: [`src/federated/FederatedEditionAuction.sol`](../../src/federated/Federa
 | `setConfig((…),(…))` | `0x0b8c383f` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once |  |
 | `setLimits(uint256,uint256)` | `0xc4590d3f` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once |  |
 | `adopt(address,uint256,bytes)` | `0x701ad8f1` | `NETWORK` | No delay | immediate | No: executes at once |  |
+| `closeEdition(address,uint256)` | `0x9133f905` | `NETWORK` | No delay | immediate | No: executes at once |  |
 
 ## Genesis-only bindings
 
@@ -370,8 +373,8 @@ and renounces its installer record; it then proposes the network, which accepts.
 | 1 | PackageRegistry | `setEntropyModule(address,address)` | `address(0)` (ETH), EntropyModule (left out when there is no entropy module) |
 | 2 | UniformEditionAuction | `setTarget(address,bool)` | Editions, `true` |
 | 3 | AssetAllowlist | `setOpeningBid(address,uint64,uint256)` | `address(0)` (ETH), 1, 50000000000000000 (ETH opening bid 0.05 ETH: a 1-wei self-bid cannot keep an unsold work from the museum) |
-| 4 | FederationRegistry | `setAdapter(address,bool)` | EnglishAuction, `true` |
-| 5 | FederationRegistry | `setAdapter(address,bool)` | FederatedEditionAuction, `true` |
+| 4 | FederationRegistry | `setAdapter(address,uint8,bool)` | EnglishAuction, 0, `true` |
+| 5 | FederationRegistry | `setAdapter(address,uint8,bool)` | FederatedEditionAuction, 1, `true` |
 | 6 | FederationRegistry | `approveTemplate(address,uint32,uint8)` | FederatedStreamDeployer, 1, 0 |
 | 7 | FederationRegistry | `approveTemplate(address,uint32,uint8)` | FederatedEditionsDeployer, 1, 1 |
 | 8 | FederationRegistry | `setEntropyModule(address)` | EntropyModule (left out when there is no entropy module) |

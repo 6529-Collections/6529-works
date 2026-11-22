@@ -404,7 +404,7 @@ Properties with no campaign of their own, or tested more directly outside one: b
 | PROP-ECO-3 | Release timing and order do not change payees' totals, and released plus balance equals everything received. | `SplitMath.t.sol` `testFuzz_ReleaseTimingDoesNotChangeTotals` |
 | PROP-ECO-4 | The factory accepts exactly the canonical payee lists. | `SplitMath.t.sol` `testFuzz_ValidationAcceptsExactlyCanonicalLists` |
 | PROP-ECO-5 | Escrow credits and flushes conserve value: credits sum to `totalOwed`, which equals the escrow's balance. | [`RevenueEscrow.t.sol`](../../test/economics/RevenueEscrow.t.sol) `testFuzz_CreditsAndFlushesConserve` |
-| PROP-ECO-6 | Every payment reaches the wallet or becomes its escrow credit. | [`RevenuePayment.t.sol`](../../test/economics/RevenuePayment.t.sol) `testFuzz_PaymentsAlwaysReachTheWalletOrItsCredit` |
+| PROP-ECO-6 | Every payment reaches the wallet or becomes its escrow credit. | [`RevenuePayment.t.sol`](../../test/economics/RevenuePayment.t.sol) `test_PayETHGoesStraightToTheWallet`, `test_PayETHFallsBackToEscrowWhenRefused`, `test_CallerCannotStarveETHPaymentIntoEscrow` |
 | PROP-ECO-7 | Signed partial releases never exceed the entitlement. | [`ReleaseVerifier.t.sol`](../../test/economics/ReleaseVerifier.t.sol) `testFuzz_SignedPartialReleasesNeverExceedEntitlement` |
 | PROP-ECO-8 | The royalty wallet's shares add up to 100,000. | [`EconomicsResolver.t.sol`](../../test/economics/EconomicsResolver.t.sol) `testFuzz_RoyaltySplitSharesAddUp` |
 | PROP-ECO-9 | A predicted wallet address equals the deployed one. | [`SplitFactory.t.sol`](../../test/economics/SplitFactory.t.sol) `testFuzz_PredictionMatchesDeployment` |

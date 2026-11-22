@@ -18,13 +18,8 @@
       },
       {
         "internalType": "address",
-        "name": "artistRegistry_",
+        "name": "directory_",
         "type": "address"
-      },
-      {
-        "internalType": "bytes32",
-        "name": "artistRegistryCodeHash",
-        "type": "bytes32"
       },
       {
         "internalType": "contract IEconomicsResolver",
@@ -35,6 +30,11 @@
         "internalType": "address",
         "name": "entropyModule_",
         "type": "address"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "cc0TextFileId_",
+        "type": "bytes32"
       }
     ],
     "stateMutability": "nonpayable",
@@ -329,6 +329,19 @@
     "type": "function"
   },
   {
+    "inputs": [],
+    "name": "cc0TextFileId",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "inputs": [
       {
         "internalType": "bytes32",
@@ -342,6 +355,19 @@
         "internalType": "bytes32",
         "name": "itemHash",
         "type": "bytes32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "directory",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
       }
     ],
     "stateMutability": "view",

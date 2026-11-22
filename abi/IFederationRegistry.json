@@ -423,6 +423,12 @@
       },
       {
         "indexed": false,
+        "internalType": "enum IFederationRegistry.Form",
+        "name": "form",
+        "type": "uint8"
+      },
+      {
+        "indexed": false,
         "internalType": "uint48",
         "name": "addedAt",
         "type": "uint48"
@@ -504,6 +510,17 @@
     ],
     "name": "TemplateSet",
     "type": "event"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      }
+    ],
+    "name": "AccountCannotAct",
+    "type": "error"
   },
   {
     "inputs": [

@@ -958,6 +958,11 @@
             "internalType": "uint48",
             "name": "removedAt",
             "type": "uint48"
+          },
+          {
+            "internalType": "enum IFederationRegistry.Form",
+            "name": "form",
+            "type": "uint8"
           }
         ],
         "internalType": "struct IFederationRegistry.SaleContract",
@@ -997,6 +1002,11 @@
         "internalType": "address",
         "name": "adapter",
         "type": "address"
+      },
+      {
+        "internalType": "enum IFederationRegistry.Form",
+        "name": "form",
+        "type": "uint8"
       },
       {
         "internalType": "bool",
@@ -1134,25 +1144,6 @@
         "internalType": "struct IFederationRegistry.Template",
         "name": "t",
         "type": "tuple"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "minter",
-        "type": "address"
-      }
-    ],
-    "name": "wasMinter",
-    "outputs": [
-      {
-        "internalType": "bool",
-        "name": "",
-        "type": "bool"
       }
     ],
     "stateMutability": "view",
@@ -1406,6 +1397,12 @@
       },
       {
         "indexed": false,
+        "internalType": "enum IFederationRegistry.Form",
+        "name": "form",
+        "type": "uint8"
+      },
+      {
+        "indexed": false,
         "internalType": "uint48",
         "name": "addedAt",
         "type": "uint48"
@@ -1524,6 +1521,17 @@
       }
     ],
     "name": "AccessManagedUnauthorized",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      }
+    ],
+    "name": "AccountCannotAct",
     "type": "error"
   },
   {

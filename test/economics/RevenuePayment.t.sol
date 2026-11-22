@@ -99,5 +99,4 @@ contract RevenuePaymentTest is EconomicsBase {
         assertGt(okCount, 0);
         assertEq(escrowedCount, 0, "caller forced the escrow route");
     }
-
 }

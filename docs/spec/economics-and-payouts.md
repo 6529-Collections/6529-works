@@ -119,10 +119,10 @@ only when; the amounts are never more than the money that has itself waited.
 | ECO-20 | A signed release works once per nonce, only in the vault, chain and ledger it names, before its deadline. | `test_ReplayAndRevokedNoncesRevert`, `test_ExpiredAuthorizationReverts` |
 | ECO-21 | Replay protection is keyed on the nonce; one revocation covers every vault. | `test_ReplayIsKeyedOnTheNonceNotTheSignatureBytes`, `test_OneRevocationCoversEveryWallet` |
 | ECO-22 | A failed signed release keeps its nonce. | `test_FailedPaymentRollsBackNonce` |
-| ECO-23 | Every ERC-20 move in the ledger and escrow changes both balances by exactly the amount. | `test_FeeOnTransfer_PaymentRevertsAtomically`, `test_NoReturn_ReleasePaysEachPayeeInFull` |
+| ECO-23 | Every ERC-20 move in the ledger and escrow changes both balances by exactly the amount. | `test_FeeOnTransfer_EscrowDepositReverts`, `test_NoReturn_ReleasePaysEachPayeeInFull` |
 | ECO-24 | An ERC-20 whose balance shrinks below the recorded mark freezes that asset's releases without loss. | `test_ShrinkingBalanceFailsClosedUntilRecovered` |
-| ECO-25 | Withdrawals never read the allowlist. | `test_DeprecatedAndNeverAdmittedAssetsStayWithdrawable` |
-| ECO-26 | A payment reaches the vault or a credit under it, never anywhere else. | `testFuzz_PaymentsAlwaysReachTheWalletOrItsCredit` |
+| ECO-25 | Withdrawals never read the allowlist. | `test_NeverAdmittedAssetsStayWithdrawable` |
+| ECO-26 | A payment reaches the vault or a credit under it, never anywhere else. | `test_PayETHGoesStraightToTheWallet`, `test_PayETHFallsBackToEscrowWhenRefused`, `test_CallerCannotStarveETHPaymentIntoEscrow` |
 | ECO-27 | The escrow is solvent per asset; a flush pays only the credited wallet. | `invariant_EscrowIsSolventAndMatchesTheModel`, `check_flush_paysOnlyTheCreditedWallet` |
 | ECO-28 | `recover` moves a vault's credit only to an equivalent vault, and the network's own credit anywhere but zero, the escrow or itself. | `test_RecoverMovesCreditsToAnEquivalentReplacement`, `test_TheNetworkCannotMoveAnotherAccountsCredit` |
 | ECO-29 | The claim router keeps no funds and cannot redirect a release. | `invariant_IntermediariesHoldNothing` |
@@ -134,7 +134,7 @@ only when; the amounts are never more than the money that has itself waited.
 | ECO-35 | A CC0 default license names the CC0 text the resolver was deployed with. | `test_ACc0DefaultLicenseNamesThePinnedText` |
 | ECO-36 | Retired: no ERC-20 settlement payouts. | |
 | ECO-37 | The museum is set at deployment, never zero or a protocol contract; changed by the network compare-and-set. | `test_Museum_SetAtDeployment`, `test_SetMuseum_IsCompareAndSet` |
-| ECO-38 | ETH is never deprecated. | `test_DeprecateAsset_RefusesEth` |
+| ECO-38 | ETH is always active: no function deprecates it, and no other asset can be admitted. | `test_NoOtherAssetCanBeAdmitted` |
 | ECO-39 | A split vault is the 66-byte code and obeys only its ledger. | `test_RuntimeIsTheDocumentedSixtySixBytes`, `check_vault_obeysOnlyItsLedger` |
 | ECO-40 | `sweepExcess` moves only what nobody is owed. | `test_SweepExcess_TakesOnlyWhatNobodyIsOwed`, `invariant_EscrowExcessIsExactlyTheUnowed` |
 | ECO-41 | A governed vault moves what it holds only to its destination, which only the network changes. | `test_AnyoneForwardsETHToTheDestinationOnly`, `invariant_HoldingsLeaveOnlyToTheDestination` |

@@ -86,7 +86,6 @@ contract IntegrationGasReport is GasBase {
     address internal constant ALL_COLLECTIONS = 0x8888888888888888888888888888888888888888;
     uint256 internal constant CONSOLIDATION = 999;
 
-
     /// @dev One measured transaction.
     struct Row {
         string label;
@@ -191,9 +190,7 @@ contract IntegrationGasReport is GasBase {
         _growthIs(r, slots, 0);
         if (pass != Pass.BOTH) return;
         _logGrowth(r);
-        assertLe(
-            r.growth.slots, VRF_START_MAX_SLOTS, string.concat(r.label, ": over 9 new slots")
-        );
+        assertLe(r.growth.slots, VRF_START_MAX_SLOTS, string.concat(r.label, ": over 9 new slots"));
     }
 
     function _logGrowth(Row memory r) internal view {

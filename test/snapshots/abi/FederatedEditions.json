@@ -990,6 +990,27 @@
     "type": "function"
   },
   {
+    "id": "0x131b7800",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "minterRemovedAt",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "signature": "minterRemovedAt(address)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "id": "0x31b4a958",
     "inputs": [
       {

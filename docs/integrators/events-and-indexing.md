@@ -320,7 +320,6 @@ Deployed twice: `FeeRecipientVault` and `MuseumVault`.
 | Event | topic0 |
 | --- | --- |
 | `AssetStatusChanged(address indexed asset, Status previous, Status current, uint64 revision)` | `0xd5701084de76fb29c872a1a80df02ce3534cfe6bb1437ad174219a1dd3626c0c` |
-| `DefaultCurrencyChanged(bytes32 indexed product, address previous, address current, uint64 revision)` | `0x067a63345dbae6001939bc0d94813caee97a817779e5a2f7b1f80f88a1d12b98` |
 | `IncrementFloorChanged(address indexed asset, uint256 previous, uint256 current, uint64 revision)` | `0x866085d802dfc753eb059bc39bdea997aaaefc005a15744952a21ae167284f43` |
 | `OpeningBidSet(address indexed asset, uint256 previous, uint256 current, uint64 revision)` | `0x1d028eb330db5a5432221d450b43b0c134b8ce8c37f5ee1ee007d67b57690e0d` |
 

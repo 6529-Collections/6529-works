@@ -29,6 +29,7 @@ library RevenuePayment {
 
     /// @notice The caller cannot forward `gasLimit` to the wallet in full.
     error PaymentInsufficientGas(uint256 gasLimit);
+
     /// @notice Pays `amount` wei to `wallet`, forwarding exactly `gasLimit` gas, or credits the
     ///         escrow if the wallet refuses.
     /// @dev Reverts unless the wallet gets its full `gasLimit`, so a caller cannot force the

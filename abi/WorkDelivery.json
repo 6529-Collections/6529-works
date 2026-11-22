@@ -20,11 +20,6 @@
         "internalType": "address",
         "name": "directory_",
         "type": "address"
-      },
-      {
-        "internalType": "address",
-        "name": "predecessor_",
-        "type": "address"
       }
     ],
     "stateMutability": "nonpayable",
@@ -310,19 +305,6 @@
     "name": "markLocatorDead",
     "outputs": [],
     "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "predecessor",
-    "outputs": [
-      {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
-      }
-    ],
-    "stateMutability": "view",
     "type": "function"
   },
   {

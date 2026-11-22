@@ -15,7 +15,7 @@ with `--artifacts out --update` to refresh them. No audit has taken place.
 | --- | --- |
 | Language and compiler | Solidity 0.8.37, EVM `prague`, optimizer on (200 runs), `via_ir` off ([`foundry.toml`](../../foundry.toml)) |
 | Dependencies | OpenZeppelin Contracts 5.7.0 and forge-std 1.17.0, as git submodules in `lib/` |
-| Source lines | 13,975 non-blank, non-comment lines in 121 files under `src/` (budget: 17,000) |
+| Source lines | 13,924 non-blank, non-comment lines in 121 files under `src/` (budget: 17,000) |
 | Deployed contracts | Every contract `script/DeployCore.sol` deploys: the permanent core, the money contracts, the modules, the governance pair and the two federated deployers (the deploy order is in the [runbook](../../script/README.md#how-a-deployment-is-built)) |
 | Linked libraries | None: every library function is `internal` |
 | Proxies and `delegatecall` | None in `src/`. The one exception is OpenZeppelin `Multicall` inside `AccessManager` ([ADR 0002](../adr/0002-access-manager-hardening.md)) |
@@ -33,17 +33,17 @@ Deployed once and never replaced ([ADR 0010](../adr/0010-plain-permanent-core.md
 
 | Contract | Source | nSLOC | Runtime (bytes) | Initcode (bytes) | EIP-170 margin |
 | --- | --- | ---: | ---: | ---: | ---: |
-| `Stream` (on `StreamBase`) | [`src/core/Stream.sol`](../../src/core/Stream.sol) | 46 | 14,148 | 15,820 | 10,428 |
-| `Editions` (on `EditionsBase`) | [`src/core/Editions.sol`](../../src/core/Editions.sol) | 41 | 12,717 | 14,274 | 11,859 |
-| `WorkFacts` | [`src/core/WorkFacts.sol`](../../src/core/WorkFacts.sol) | 163 | 9,388 | 9,593 | 15,188 |
-| `Directory` | [`src/core/Directory.sol`](../../src/core/Directory.sol) | 43 | 2,938 | 3,648 | 21,638 |
-| `StreamBase` (abstract) | [`src/core/StreamBase.sol`](../../src/core/StreamBase.sol) | 214 |  |  |  |
-| `EditionsBase` (abstract) | [`src/core/EditionsBase.sol`](../../src/core/EditionsBase.sol) | 148 |  |  |  |
-| `Modules`, `ModuleSlots` (abstract) | [`src/core/Modules.sol`](../../src/core/Modules.sol) | 88 |  |  |  |
-| `FederatedStream` (each artist deploys a full copy) | [`src/federated/FederatedStream.sol`](../../src/federated/FederatedStream.sol) | 104 | 13,746 | 15,437 | 10,830 |
-| `FederatedEditions` (the pair's ERC-1155) | [`src/federated/FederatedEditions.sol`](../../src/federated/FederatedEditions.sol) | 47 | 11,085 | 12,279 | 13,491 |
+| `Stream` (on `StreamBase`) | [`src/core/Stream.sol`](../../src/core/Stream.sol) | 46 | 14,773 | 16,566 | 9,803 |
+| `Editions` (on `EditionsBase`) | [`src/core/Editions.sol`](../../src/core/Editions.sol) | 41 | 13,236 | 14,914 | 11,340 |
+| `WorkFacts` | [`src/core/WorkFacts.sol`](../../src/core/WorkFacts.sol) | 166 | 9,533 | 9,738 | 15,043 |
+| `Directory` | [`src/core/Directory.sol`](../../src/core/Directory.sol) | 43 | 3,165 | 3,875 | 21,411 |
+| `StreamBase` (abstract) | [`src/core/StreamBase.sol`](../../src/core/StreamBase.sol) | 219 |  |  |  |
+| `EditionsBase` (abstract) | [`src/core/EditionsBase.sol`](../../src/core/EditionsBase.sol) | 155 |  |  |  |
+| `Modules`, `ModuleSlots` (abstract) | [`src/core/Modules.sol`](../../src/core/Modules.sol) | 92 |  |  |  |
+| `FederatedStream` (each artist deploys a full copy) | [`src/federated/FederatedStream.sol`](../../src/federated/FederatedStream.sol) | 115 | 14,092 | 15,790 | 10,484 |
+| `FederatedEditions` (the pair's ERC-1155) | [`src/federated/FederatedEditions.sol`](../../src/federated/FederatedEditions.sol) | 47 | 11,140 | 12,334 | 13,436 |
 | `FederatedMembership` (abstract, both templates) | [`src/federated/FederatedMembership.sol`](../../src/federated/FederatedMembership.sol) | 46 |  |  |  |
-| `SplitLedger` (deployed under the name `SplitFactory`) | [`src/economics/SplitLedger.sol`](../../src/economics/SplitLedger.sol) | 372 | 11,203 | 12,208 | 13,373 |
+| `SplitLedger` (deployed under the name `SplitFactory`) | [`src/economics/SplitLedger.sol`](../../src/economics/SplitLedger.sol) | 362 | 11,299 | 12,304 | 13,277 |
 | `SplitVault` (the 66-byte wallet; raw bytecode constants) | [`src/economics/SplitVault.sol`](../../src/economics/SplitVault.sol) | 8 |  |  |  |
 | `RevenueEscrow` | [`src/economics/RevenueEscrow.sol`](../../src/economics/RevenueEscrow.sol) | 199 | 8,338 | 8,804 | 16,238 |
 | `ContentStore` | [`src/content/ContentStore.sol`](../../src/content/ContentStore.sol) | 451 | 11,855 | 11,883 | 12,721 |
@@ -52,31 +52,31 @@ Deployed once and never replaced ([ADR 0010](../adr/0010-plain-permanent-core.md
 
 | Contract | Source | nSLOC | Runtime (bytes) | Initcode (bytes) | EIP-170 margin |
 | --- | --- | ---: | ---: | ---: | ---: |
-| `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) | 593 | 20,506 | 22,765 | 4,070 |
-| `UniformEditionAuction` | [`src/sales/UniformEditionAuction.sol`](../../src/sales/UniformEditionAuction.sol) | 903 | 22,707 | 27,182 | 1,869 |
-| `UniformEditionAuctionLens` | [`src/sales/UniformEditionAuctionLens.sol`](../../src/sales/UniformEditionAuctionLens.sol) | 949 | 22,562 | 23,034 | 2,014 |
-| `FederatedEditionAuction` | [`src/federated/FederatedEditionAuction.sol`](../../src/federated/FederatedEditionAuction.sol) | 75 | 23,040 | 26,999 | 1,536 |
-| `FederatedEditionAuctionLens` | [`src/federated/FederatedEditionAuctionLens.sol`](../../src/federated/FederatedEditionAuctionLens.sol) | 106 | 23,222 | 23,553 | 1,354 |
+| `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) | 601 | 21,211 | 23,477 | 3,365 |
+| `UniformEditionAuction` | [`src/sales/UniformEditionAuction.sol`](../../src/sales/UniformEditionAuction.sol) | 919 | 23,331 | 27,806 | 1,245 |
+| `UniformEditionAuctionLens` | [`src/sales/UniformEditionAuctionLens.sol`](../../src/sales/UniformEditionAuctionLens.sol) | 951 | 22,631 | 23,103 | 1,945 |
+| `FederatedEditionAuction` | [`src/federated/FederatedEditionAuction.sol`](../../src/federated/FederatedEditionAuction.sol) | 75 | 23,702 | 27,661 | 874 |
+| `FederatedEditionAuctionLens` | [`src/federated/FederatedEditionAuctionLens.sol`](../../src/federated/FederatedEditionAuctionLens.sol) | 107 | 23,511 | 23,842 | 1,065 |
 | `SaleStarter` (stateless helper for the keeper) | [`src/sales/SaleStarter.sol`](../../src/sales/SaleStarter.sol) | 35 | 5,954 | 5,982 | 18,622 |
 
 ### Modules
 
 | Contract | Source | nSLOC | Runtime (bytes) | Initcode (bytes) | EIP-170 margin |
 | --- | --- | ---: | ---: | ---: | ---: |
-| `PackageRegistry` (the mint policy) | [`src/curation/PackageRegistry.sol`](../../src/curation/PackageRegistry.sol) | 500 | 19,098 | 20,781 | 5,478 |
+| `PackageRegistry` (the mint policy) | [`src/curation/PackageRegistry.sol`](../../src/curation/PackageRegistry.sol) | 514 | 19,791 | 21,437 | 4,785 |
 | `Eip712CurationVerifier` | [`src/curation/Eip712CurationVerifier.sol`](../../src/curation/Eip712CurationVerifier.sol) | 117 | 5,835 | 6,526 | 18,741 |
-| `StreamTerms` (TERMS) | [`src/terms/StreamTerms.sol`](../../src/terms/StreamTerms.sol) | 120 | 5,820 | 6,577 | 18,756 |
-| `WorkRules` (RECORDS) | [`src/records/WorkRules.sol`](../../src/records/WorkRules.sol) | 389 | 15,881 | 16,824 | 8,695 |
-| `WorkDelivery` | [`src/stream/WorkDelivery.sol`](../../src/stream/WorkDelivery.sol) | 259 | 10,222 | 10,622 | 14,354 |
-| `Renderer` (RENDERER) | [`src/content/Renderer.sol`](../../src/content/Renderer.sol) | 723 | 24,045 | 24,360 | 531 |
+| `StreamTerms` (TERMS) | [`src/terms/StreamTerms.sol`](../../src/terms/StreamTerms.sol) | 139 | 6,572 | 7,350 | 18,004 |
+| `WorkRules` (RECORDS) | [`src/records/WorkRules.sol`](../../src/records/WorkRules.sol) | 388 | 15,757 | 16,700 | 8,819 |
+| `WorkDelivery` | [`src/stream/WorkDelivery.sol`](../../src/stream/WorkDelivery.sol) | 253 | 10,172 | 10,541 | 14,404 |
+| `Renderer` (RENDERER) | [`src/content/Renderer.sol`](../../src/content/Renderer.sol) | 724 | 24,057 | 24,372 | 519 |
 | `Accounts` (ACCOUNTS) | [`src/identity/Accounts.sol`](../../src/identity/Accounts.sol) | 525 | 15,615 | 17,296 | 8,961 |
 | `ConsolidationAdapter` | [`src/identity/ConsolidationAdapter.sol`](../../src/identity/ConsolidationAdapter.sol) | 52 | 1,335 | 1,646 | 23,241 |
-| `FederationRegistry` (FEDERATION) | [`src/federated/FederationRegistry.sol`](../../src/federated/FederationRegistry.sol) | 493 | 23,627 | 24,451 | 949 |
+| `FederationRegistry` (FEDERATION) | [`src/federated/FederationRegistry.sol`](../../src/federated/FederationRegistry.sol) | 493 | 24,056 | 24,880 | 520 |
 | `FederatedDeployer` (one per template, ownerless) | [`src/federated/FederatedDeployer.sol`](../../src/federated/FederatedDeployer.sol) | 49 | 1,425 | 2,398 | 23,151 |
 | `StatementLog` | [`src/records/StatementLog.sol`](../../src/records/StatementLog.sol) | 313 | 11,125 | 12,386 | 13,451 |
 | `VrfEntropyModule` (optional) | [`src/entropy/VrfEntropyModule.sol`](../../src/entropy/VrfEntropyModule.sol) | 360 | 12,511 | 14,457 | 12,065 |
-| `EconomicsResolver` | [`src/economics/EconomicsResolver.sol`](../../src/economics/EconomicsResolver.sol) | 212 | 8,940 | 12,074 | 15,636 |
-| `AssetAllowlist` | [`src/economics/AssetAllowlist.sol`](../../src/economics/AssetAllowlist.sol) | 133 | 3,881 | 4,897 | 20,695 |
+| `EconomicsResolver` | [`src/economics/EconomicsResolver.sol`](../../src/economics/EconomicsResolver.sol) | 197 | 8,372 | 11,492 | 16,204 |
+| `AssetAllowlist` | [`src/economics/AssetAllowlist.sol`](../../src/economics/AssetAllowlist.sol) | 70 | 2,493 | 3,049 | 22,083 |
 | `ClaimRouter` | [`src/economics/ClaimRouter.sol`](../../src/economics/ClaimRouter.sol) | 148 | 4,102 | 4,421 | 20,474 |
 | `GovernedVault` (deployed twice: `FeeRecipientVault`, `MuseumVault`) | [`src/economics/GovernedVault.sol`](../../src/economics/GovernedVault.sol) | 114 | 5,437 | 5,985 | 19,139 |
 | `DependencyRegistry` | [`src/content/DependencyRegistry.sol`](../../src/content/DependencyRegistry.sol) | 66 | 2,988 | 3,433 | 21,588 |
@@ -86,7 +86,7 @@ Deployed once and never replaced ([ADR 0010](../adr/0010-plain-permanent-core.md
 | Contract | Source | nSLOC | Runtime (bytes) | Initcode (bytes) | EIP-170 margin |
 | --- | --- | ---: | ---: | ---: | ---: |
 | `WorksAccessManager` | [`src/governance/WorksAccessManager.sol`](../../src/governance/WorksAccessManager.sol) | 100 | 12,506 | 14,049 | 12,070 |
-| `GovernanceConfigurator` | [`src/governance/GovernanceConfigurator.sol`](../../src/governance/GovernanceConfigurator.sol) | 43 | 9,999 | 24,350 | 14,577 |
+| `GovernanceConfigurator` | [`src/governance/GovernanceConfigurator.sol`](../../src/governance/GovernanceConfigurator.sol) | 43 | 9,972 | 24,323 | 14,604 |
 
 `WorksAccessManager` extends OpenZeppelin's `AccessManager`, whose code is part of what it
 deploys. `GovernanceConfigurator`'s initcode includes the manager it deploys.
@@ -99,10 +99,10 @@ Compiled into the contracts that use them; none is deployed or linked.
 | --- | --- | ---: | --- |
 | `AgedCredits` | [`src/libraries/AgedCredits.sol`](../../src/libraries/AgedCredits.sol) | 32 | `EnglishAuction`, `UniformEditionAuction` (the one credit rule of both auctions) |
 | `JsonScan` | [`src/content/JsonScan.sol`](../../src/content/JsonScan.sol) | 444 | `Renderer` |
-| `GovernanceConfig` | [`src/governance/GovernanceConfig.sol`](../../src/governance/GovernanceConfig.sol) | 219 | `GovernanceConfigurator` |
+| `GovernanceConfig` | [`src/governance/GovernanceConfig.sol`](../../src/governance/GovernanceConfig.sol) | 218 | `GovernanceConfigurator` |
 | `Utf8` | [`src/libraries/Utf8.sol`](../../src/libraries/Utf8.sol) | 152 | `Renderer`, `JsonScan`, `StatementLog` |
 | `UniformClearing` | [`src/sales/UniformClearing.sol`](../../src/sales/UniformClearing.sol) | 149 | The edition auctions and their lenses |
-| `TokenTransfer` | [`src/economics/TokenTransfer.sol`](../../src/economics/TokenTransfer.sol) | 149 | `SplitLedger`, `RevenueEscrow`, the sale contracts |
+| `TokenTransfer` | [`src/economics/TokenTransfer.sol`](../../src/economics/TokenTransfer.sol) | 128 | `SplitLedger`, `RevenueEscrow`, the sale contracts |
 | `JsonEscape` | [`src/libraries/JsonEscape.sol`](../../src/libraries/JsonEscape.sol) | 129 | `Renderer` |
 | `BoundedCall` | [`src/libraries/BoundedCall.sol`](../../src/libraries/BoundedCall.sol) | 202 | Modules that call other contracts |
 | `HtmlScript` | [`src/content/HtmlScript.sol`](../../src/content/HtmlScript.sol) | 84 | `Renderer` |
@@ -111,8 +111,8 @@ Compiled into the contracts that use them; none is deployed or linked.
 | `SSTORE2` | [`src/libraries/SSTORE2.sol`](../../src/libraries/SSTORE2.sol) | 88 | `ContentStore`, `Renderer`, `FederatedDeployer` |
 | `Roles` | [`src/governance/Roles.sol`](../../src/governance/Roles.sol) | 53 | Governance |
 | `SignatureVerifier` | [`src/libraries/SignatureVerifier.sol`](../../src/libraries/SignatureVerifier.sol) | 49 | `PackageRegistry`, `Eip712CurationVerifier`, `Accounts`, `StatementLog`, `SplitLedger` |
-| `Splits` | [`src/economics/Splits.sol`](../../src/economics/Splits.sol) | 42 | The money contracts and the terms |
-| `RevenuePayment` | [`src/economics/RevenuePayment.sol`](../../src/economics/RevenuePayment.sol) | 43 | The sale contracts |
+| `Splits` | [`src/economics/Splits.sol`](../../src/economics/Splits.sol) | 56 | The money contracts and the terms |
+| `RevenuePayment` | [`src/economics/RevenuePayment.sol`](../../src/economics/RevenuePayment.sol) | 23 | The sale contracts |
 | `Dependency` | [`src/libraries/Dependency.sol`](../../src/libraries/Dependency.sol) | 32 | Every install and code-hash pin of a module |
 | `SpdxId` | [`src/stream/SpdxId.sol`](../../src/stream/SpdxId.sol) | 26 | `PackageRegistry`, `FederationRegistry`, `WorkFacts` |
 | `ProtocolContracts` | [`src/libraries/ProtocolContracts.sol`](../../src/libraries/ProtocolContracts.sol) | 26 | `Accounts`, `EconomicsResolver` |
@@ -124,7 +124,7 @@ The "Used by" column is a reading aid; the import graph is authoritative.
 
 ### Interfaces and shared types
 
-2,471 nSLOC in [`src/interfaces/`](../../src/interfaces/) (with `core/`, `types/` and `external/`) and
+2,452 nSLOC in [`src/interfaces/`](../../src/interfaces/) (with `core/`, `types/` and `external/`) and
 [`src/economics/interfaces/`](../../src/economics/interfaces/), plus the Chainlink interfaces in
 [`src/entropy/`](../../src/entropy/). The frozen interfaces of the permanent core are in
 `src/interfaces/core/`. They count toward the line budget and are in scope: an error in a

@@ -1047,6 +1047,33 @@
   },
   {
     "anonymous": false,
+    "id": "0x682f29f05d525910152785bc73ea26234c6ee1edb087290761fc1ad8390a246d",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "saleId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "id",
+        "type": "uint256"
+      }
+    ],
+    "name": "EditionClosed",
+    "signature": "EditionClosed(uint256,address,uint256)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
     "id": "0x2a00ae88790916c355d74c47251101f6daa7fe1b163c26b2add418af558d8080",
     "inputs": [
       {
@@ -1441,6 +1468,26 @@
       }
     ],
     "signature": "claimBidFor(uint256,uint256)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x9133f905",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "id",
+        "type": "uint256"
+      }
+    ],
+    "name": "closeEdition",
+    "outputs": [],
+    "signature": "closeEdition(address,uint256)",
     "stateMutability": "nonpayable",
     "type": "function"
   },
