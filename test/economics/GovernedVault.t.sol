@@ -104,6 +104,16 @@ contract GovernedVaultTest is EconomicsBase {
         assertTrue(vault.supportsInterface(type(IERC1155Receiver).interfaceId));
         assertTrue(vault.supportsInterface(type(IGovernedVault).interfaceId));
         assertTrue(vault.supportsInterface(type(IERC165).interfaceId));
+        bytes4[4] memory ids = [
+            type(IERC721Receiver).interfaceId,
+            type(IERC1155Receiver).interfaceId,
+            type(IGovernedVault).interfaceId,
+            type(IERC165).interfaceId
+        ];
+        for (uint256 i; i < ids.length; ++i) {
+            assertFalse(vault.supportsInterface(bytes4(uint32(ids[i]) - 1)));
+            assertFalse(vault.supportsInterface(bytes4(uint32(ids[i]) + 1)));
+        }
     }
 
     /// @dev The resolver refuses recognised protocol contracts as fee recipient or museum; the

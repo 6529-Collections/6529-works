@@ -1579,7 +1579,15 @@ contract StreamTest is StreamFixture, GasRuleAssertions {
             mstore(name, 256)
         }
         vm.prank(platform);
-        stream.createCollection(string(name), bytes32(0));
+        uint256 id = stream.createCollection(string(name), bytes32(0));
+        // A long name (stored out of place) reads back whole, at its exact length.
+        assertEq(IStreamViews(address(stream)).collection(id).name, string(name));
+        assembly ("memory-safe") {
+            mstore(name, 33)
+        }
+        vm.prank(platform);
+        id = stream.createCollection(string(name), bytes32(0));
+        assertEq(IStreamViews(address(stream)).collection(id).name, string(name));
     }
 
     // ----------------------------------------------------------------------------- royalty

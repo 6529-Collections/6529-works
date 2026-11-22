@@ -29,6 +29,9 @@ contract FederatedDeployerTest is Test {
         FederatedDeployer d = new FederatedDeployer(code);
         assertEq(d.creationHash(), keccak256(code));
         address token = d.deploy(bytes32(uint256(1)), "");
+        // CREATE2 from the deployer, salted by the caller and its salt (`abi.encode`).
+        bytes32 key = keccak256(abi.encode(address(this), bytes32(uint256(1))));
+        assertEq(token, vm.computeCreate2Address(key, keccak256(code), address(d)));
         assertEq(token.code, hex"01");
         assertTrue(d.deployed(token));
     }
