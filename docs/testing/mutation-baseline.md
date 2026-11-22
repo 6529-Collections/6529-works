@@ -1,5 +1,13 @@
 # Mutation testing baseline
 
+> **Historical record.** This page measured the contracts as they were before the plain-core
+> restructuring ([ADR 0010](../adr/0010-plain-permanent-core.md)): many of the files, tests and
+> floors it names no longer exist. It is kept as the record of those campaigns and is not
+> updated. The current floors are in
+> [`tools/mutation-floors.json`](../../tools/mutation-floors.json); how to run a campaign is in
+> the [testing guide](README.md#mutation-testing). Test function names below are plain text,
+> because most of those tests were removed with the code they tested.
+
 The first full mutation campaign over `src/`, with every surviving mutant triaged, and a second
 campaign (21 to 22 November 2026) over the files the permanence passes added or rewrote,
 [below](#second-campaign-21-to-22-november-2026), and a [third batch](#third-batch-22-november-2026)
@@ -676,8 +684,8 @@ Each survivor is one of:
 | 113 | SBR | `uint256 size;` to `uint128 size;` | Equivalent | return data never reaches 2**128 bytes |
 | 115 | ROR | `if (wallet.code.length == 0) {` to `if (wallet.code.length <= 0) {` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 122 | ROR | `if (item.keepGoing && callGas < item.minGas) {` to `if (item.keepGoing && item.keepGoing && callGas <= item.minGas) {` | Gas margin | `callGas` exactly equal to the item's minimum is not observable without an exact-gas harness |
-| 147 | ROR | `item.keepGoing && callGas < SHORTFALL_REVERT_CEILING` to `item.keepGoing && item.keepGoing && callGas <= SHORTFALL_REVERT_CEI...` | Gas margin | `<=` at the ceiling and `>=` on the spent gas are exact-gas boundaries (the third mutant here, an error selector above the shortfall's, is killed by `test_ContinueModeSkipsAnItemFailingWithAHighSelector`) |
-| 147 | ROR | `&& (spent > callGas - callGas / 64` to `&& (item.keepGoing && callGas < SHORTFALL_REVERT_CEILING && (spent ...` | Gas margin | `<=` at the ceiling and `>=` on the spent gas are exact-gas boundaries (the third mutant here, an error selector above the shortfall's, is killed by `test_ContinueModeSkipsAnItemFailingWithAHighSelector`) |
+| 147 | ROR | `item.keepGoing && callGas < SHORTFALL_REVERT_CEILING` to `item.keepGoing && item.keepGoing && callGas <= SHORTFALL_REVERT_CEI...` | Gas margin | `<=` at the ceiling and `>=` on the spent gas are exact-gas boundaries (the third mutant here, an error selector above the shortfall's, is killed by test_ContinueModeSkipsAnItemFailingWithAHighSelector) |
+| 147 | ROR | `&& (spent > callGas - callGas / 64` to `&& (item.keepGoing && callGas < SHORTFALL_REVERT_CEILING && (spent ...` | Gas margin | `<=` at the ceiling and `>=` on the spent gas are exact-gas boundaries (the third mutant here, an error selector above the shortfall's, is killed by test_ContinueModeSkipsAnItemFailingWithAHighSelector) |
 
 </details>
 
@@ -1169,8 +1177,8 @@ Each survivor is one of:
 | 589 | ROR | `if (p.kind == ChangeKind.NONE) revert NoPendingChange(artistId` to `if (p.kind <= ChangeKind.NONE) revert NoPendingChange(artistId` | Equivalent | `NONE` is the enum's first value, so the order test is the equality test |
 | 613 | ROR | `return artistIdOf[account] != 0 \|\| (reserved != 0 && reserved` to `return artistIdOf[account] > 0 \|\| (reserved != 0 && reserved` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 613 | ROR | `artistIdOf[account] != 0 \|\| (reserved != 0 && reserved != artistId);` to `artistIdOf[account] != 0 \|\| (reserved > 0 && reserved != artistId);` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
-| 632 | ROR | `if (address(source).codehash != consolidationSourceCodeHash)` to `if (address(source).codehash < consolidationSourceCodeHash)` | Moved | #66 moved the comparison into `Dependency.checkUnchanged`, shared by every pinned dependency; there both directions are killed by `test_CheckUnchanged_RefusesCodeOnEitherSideOfThePin` and, in the whole suite, `test_pinnedRenderer_refusesMovedCodeEitherWay` |
-| 640 | ROR | `target.codehash != codeHash \|\| DelegatedEOA.isDelegated(target` to `target.codehash > codeHash \|\| DelegatedEOA.isDelegated(target` | Moved | #66 moved the comparison into `Dependency.checkPinned`; there both directions are killed by `test_CheckPinned_RefusesAPinOnEitherSideOfTheCodeHash` and, in the whole suite, `test_setDefaultRenderer_refusesAWrongHashEitherWay` |
+| 632 | ROR | `if (address(source).codehash != consolidationSourceCodeHash)` to `if (address(source).codehash < consolidationSourceCodeHash)` | Moved | #66 moved the comparison into `Dependency.checkUnchanged`, shared by every pinned dependency; there both directions are killed by test_CheckUnchanged_RefusesCodeOnEitherSideOfThePin and, in the whole suite, test_pinnedRenderer_refusesMovedCodeEitherWay |
+| 640 | ROR | `target.codehash != codeHash \|\| DelegatedEOA.isDelegated(target` to `target.codehash > codeHash \|\| DelegatedEOA.isDelegated(target` | Moved | #66 moved the comparison into `Dependency.checkPinned`; there both directions are killed by test_CheckPinned_RefusesAPinOnEitherSideOfTheCodeHash and, in the whole suite, test_setDefaultRenderer_refusesAWrongHashEitherWay |
 | 648 | ROR | `target.code.length == 0 \|\| DelegatedEOA.isDelegated(target` to `target.code.length <= 0 \|\| DelegatedEOA.isDelegated(target` | Equivalent | `!= 0` and `> 0` (and `== 0` and `<= 0`) are the same unsigned tests |
 | 648 | ROR | `\|\| (interfaceId != 0 && !ERC165Checker.supportsInterface(target,` to `\|\| (interfaceId > 0 && !ERC165Checker.supportsInterface(target,` | Equivalent | `!= 0` and `> 0` (and `== 0` and `<= 0`) are the same unsigned tests |
 | 675 | ROR | `for (uint256 i; i < snapshot.length; ++i) {` to `for (uint256 i; i != snapshot.length; ++i) {` | Equivalent | a loop counter that steps by one: `<` and `!=` stop at the same point |
@@ -1504,7 +1512,7 @@ Each survivor is one of:
 | 95 | CONST | `internal constant DELIVERY_RESERVE = 50_000;` to `internal constant DELIVERY_RESERVE = 49999;` | Gas margin | the delivery reserve keeps tens of thousands of gas back for the transfer; one unit either way changes nothing |
 | 99 | CONST | `constant _ERC20_PAYOUT_GAS = 1_000_000;` to `constant _ERC20_PAYOUT_GAS = 1000001;` | Gas margin | a token payout needs far less than 1,000,000 gas; one unit either way changes nothing |
 | 99 | CONST | `private constant _ERC20_PAYOUT_GAS = 1_000_000;` to `private constant _ERC20_PAYOUT_GAS = 999999;` | Gas margin | a token payout needs far less than 1,000,000 gas; one unit either way changes nothing |
-| 216 | CR | `_requireContract(address(economicsResolver_` to `//_requireContract(address(economicsResolver_` | Moved | #66 merged this and the ERC-165 check into `Dependency.check(resolver, IEconomicsResolver)`; commenting that out is killed by `test_Constructor_RejectsAnUnfitResolver`, and the delegation refusal inside `Dependency` by `test_Constructor_ChecksStreamInstall` |
+| 216 | CR | `_requireContract(address(economicsResolver_` to `//_requireContract(address(economicsResolver_` | Moved | #66 merged this and the ERC-165 check into `Dependency.check(resolver, IEconomicsResolver)`; commenting that out is killed by test_Constructor_RejectsAnUnfitResolver, and the delegation refusal inside `Dependency` by test_Constructor_ChecksStreamInstall |
 | 230 | ROR | `for (uint256 i; i < targets.length; ++i) {` to `for (uint256 i; i != targets.length; ++i) {` | Equivalent | a loop counter that steps by one: `<` and `!=` stop at the same point |
 | 230 | UOR | `uint256 i; i < targets.length; ++i) {` to `uint256 i; i < targets.length; i++) {` | Equivalent | pre- or post-increment of a loop counter |
 | 258 | MIA | `bytes32 witness = payment.method != PaymentMethod.PERMIT2` to `bytes32 witness = false` | Equivalent | the witness is read only on the Permit2 path, so computing it for other payments changes nothing |
@@ -1521,7 +1529,7 @@ Each survivor is one of:
 | 467 | ROR | `if (_settings.pausedAt != 0) revert SalePaused();` to `if (_settings.pausedAt > 0) revert SalePaused();` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 476 | ROR | `if (pausedAt == 0) revert NotPaused();` to `if (pausedAt <= 0) revert NotPaused();` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 484 | ROR | `return _settings.pausedAt != 0;` to `return _settings.pausedAt > 0;` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
-| 498 | CR | `_requireContract(next);` to `//_requireContract(next);` | Moved | #66 merged this and the ERC-165 check into `Dependency.check(next, IFederationRegistry)`; commenting that out is killed by `test_Federation_SetterIsRestrictedAndChecksCode`, and the delegation refusal inside `Dependency` by `test_Constructor_ChecksStreamInstall` |
+| 498 | CR | `_requireContract(next);` to `//_requireContract(next);` | Moved | #66 merged this and the ERC-165 check into `Dependency.check(next, IFederationRegistry)`; commenting that out is killed by test_Federation_SetterIsRestrictedAndChecksCode, and the delegation refusal inside `Dependency` by test_Constructor_ChecksStreamInstall |
 | 504 | MIA | `federationRegistryCodeHash = next == address(0) ? bytes32(0) : next...` to `federationRegistryCodeHash = false ? bytes32(0) : next.codehash;` | Equivalent | the stored hash is checked only while a registry is set |
 | 548 | ROR | `if (a.state == AuctionState.NONE) revert UnknownSale(saleId` to `if (a.state <= AuctionState.NONE) revert UnknownSale(saleId` | Equivalent | `NONE` is the enum's first value, so `<=` is `==` |
 | 562 | ROR | `if (a.pausedAt != 0 && block.timestamp > a.pausedAt` to `if (a.pausedAt > 0 && block.timestamp > a.pausedAt` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
@@ -1746,7 +1754,7 @@ Each survivor is one of:
 
 | Line | Rule | Mutation | Verdict | Why |
 | ---: | --- | --- | --- | --- |
-| 125 | CR | `_requireContract(stream_);` to `//_requireContract(stream_);` | Moved | #66 merged this and the ERC-165 check into `Dependency.check(stream_, IStream)`; commenting that out is killed by `test_constructor_rejects`, and the delegation refusal inside `Dependency` by `test_Constructor_ChecksStreamInstall` |
+| 125 | CR | `_requireContract(stream_);` to `//_requireContract(stream_);` | Moved | #66 merged this and the ERC-165 check into `Dependency.check(stream_, IStream)`; commenting that out is killed by test_constructor_rejects, and the delegation refusal inside `Dependency` by test_Constructor_ChecksStreamInstall |
 | 131 | ROR | `contentStore_).sha256Of(cc0.textFileId) == 0` to `contentStore_).sha256Of(cc0.textFileId) <= 0` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 142 | CR | `_cc0SpdxId = cc0.spdxId;` to `//_cc0SpdxId = cc0.spdxId;` | Equivalent | every CC0 license is then stored as a custom one with the same values, so every read is unchanged |
 | 166 | ROR | `_itemHashOf(tokenId) \|\| files == 0` to `_itemHashOf(tokenId) \|\| files <= 0` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
@@ -1919,14 +1927,14 @@ with the assertion that kills it); each was run against its mutant.
 
 32 survivors: 9 killed by new tests, 23 equivalent.
 
-- **Killed.** L99 CR, the network's dependency check: `test_ConstructorRejectsANetworkWithoutCode`.
+- **Killed.** L99 CR, the network's dependency check: test_ConstructorRejectsANetworkWithoutCode.
   L181, L208, L228, L276 CR, the wallet's lock in a signed release, `mark`, `forfeit` and
-  `observed`: `test_ReentryDuringASignedReleaseIsBlocked`, `test_MarkDuringReleaseIsBlocked`,
-  `test_ReentryDuringAForfeitIsBlocked`, `test_ObservedRevertsDuringRelease` (without the lock
+  `observed`: test_ReentryDuringASignedReleaseIsBlocked, test_MarkDuringReleaseIsBlocked,
+  test_ReentryDuringAForfeitIsBlocked, test_ObservedRevertsDuringRelease (without the lock
   the outer release still fails its balance check: the ledger stays closed either way). L393
-  MIA and ROR, a push with nothing due: `test_ReleaseWithNothingDueToTheNetworkLogsThePayeeOnly`.
-  L398 ROR: `test_APushRefusedThatChangedTheWalletBalanceRevertsTheRelease`. L439 ROR, the
-  recipient's delta: `test_AReleaseThatCreditsTheRecipientMoreReverts`.
+  MIA and ROR, a push with nothing due: test_ReleaseWithNothingDueToTheNetworkLogsThePayeeOnly.
+  L398 ROR: test_APushRefusedThatChangedTheWalletBalanceRevertsTheRelease. L439 ROR, the
+  recipient's delta: test_AReleaseThatCreditsTheRecipientMoreReverts.
 - **Equivalent.** L113, L126, L209, L503 ROR: a `bytes32` compared with zero (`!=` and `>`,
   `==` and `<=` agree). L216 ROR `previous != 0` to `>=`: with no mark, `done < 0` is false
   anyway. L313 ROR `== max` to `>=`. L319 ROR `!=` to `>` and `>=`: `_due` has just reverted for
@@ -1946,8 +1954,8 @@ with the assertion that kills it); each was run against its mutant.
 11 survivors: 8 killed by new tests, 3 equivalent.
 
 - **Killed.** L151 ROR (six), one-sided interface IDs:
-  `test_ReceivesWorksThroughSafeTransfers`. L29 CONST `_MAX_ANSWER` one up and one down:
-  `test_ReleaseToDestinationBoundsTheLedgersAnswer` (a 1,024-byte refusal kept whole, a
+  test_ReceivesWorksThroughSafeTransfers. L29 CONST `_MAX_ANSWER` one up and one down:
+  test_ReleaseToDestinationBoundsTheLedgersAnswer (a 1,024-byte refusal kept whole, a
   1,025-byte one not). L90 CR (an ERC-1155 forward's log) was killed by the re-check; the
   forward test now asserts it too.
 - **Equivalent.** L66 ROR `== max` to `>=`. L29 SBR `immutable` and `uint128`.
@@ -1957,22 +1965,22 @@ with the assertion that kills it); each was run against its mutant.
 68 survivors: 58 killed by new tests (most in `test/federated/FederatedEditionsRules.t.sol`), 10
 equivalent.
 
-- **Killed.** L76 CR partner check: `test_Constructor_RefusesAPartnerWithoutCode`. L98, L99 CR
-  creation logs and L97 ROR and MIA, the maximum: `test_Create_LogsAndKeepsTheMastersMaximum`.
+- **Killed.** L76 CR partner check: test_Constructor_RefusesAPartnerWithoutCode. L98, L99 CR
+  creation logs and L97 ROR and MIA, the maximum: test_Create_LogsAndKeepsTheMastersMaximum.
   L113 CR, the master check on binding, and L297 ROR (an item hash on either side):
-  `test_Bind_RefusesAnItemThatIsNotTheMasters`; L297 ROR `kind != MASTER` to `>`:
-  `test_Bind_RefusesAWorkThatIsNotAMaster`. L114 ROR, the sale kind:
-  `test_Bind_RefusesAnAdapterOfAnotherSaleKind`. L112 ROR and MIA, L119 MIA, L121 MIA:
-  `test_Bind_ACreatedEditionKeepsTheTermsItWasCreatedWith`. L120 CR and SBR (`tx.origin`), the
-  binding log: `test_Bind_RefusesAnItemThatIsNotTheMasters`. L142 ROR (exact data), L145 AOR
+  test_Bind_RefusesAnItemThatIsNotTheMasters; L297 ROR `kind != MASTER` to `>`:
+  test_Bind_RefusesAWorkThatIsNotAMaster. L114 ROR, the sale kind:
+  test_Bind_RefusesAnAdapterOfAnotherSaleKind. L112 ROR and MIA, L119 MIA, L121 MIA:
+  test_Bind_ACreatedEditionKeepsTheTermsItWasCreatedWith. L120 CR and SBR (`tx.origin`), the
+  binding log: test_Bind_RefusesAnItemThatIsNotTheMasters. L142 ROR (exact data), L145 AOR
   (the remaining supply after partial mints), L148 ASOR (the running count), L149 CR (the
   terms' sale kind), L150 CR (the mint log), L143 SBR (a full-word unit price), L162 ROR and
-  L167 CR (seals): `test_Mint_ExactDataTheRunningCountTheTermsAndTheLog` and
-  `test_Pair_MintBeyondTheRemainingSealedSupplyIsRefused`. L141 MIA:
-  `test_Mint_AnUnsealedMintNeedsTheAdapterStillAdmitted`. L224, L225 CR (the edition view),
+  L167 CR (seals): test_Mint_ExactDataTheRunningCountTheTermsAndTheLog and
+  test_Pair_MintBeyondTheRemainingSealedSupplyIsRefused. L141 MIA:
+  test_Mint_AnUnsealedMintNeedsTheAdapterStillAdmitted. L224, L225 CR (the edition view),
   L244 CR, L309 MVIE, L310 CR, ROR and MIA, L312 CR (the lock and its log):
-  `test_Create_LogsAndKeepsTheMastersMaximum`, `test_Create_AtAZeroShareTheRoyaltyReceiverIsTheSellerVault`.
-  L267 CR: `test_Uri_RefusesAnUnknownEdition`. L283 to L287 ROR (22): `test_SupportsInterface_OnlyTheExactIds`.
+  test_Create_LogsAndKeepsTheMastersMaximum, test_Create_AtAZeroShareTheRoyaltyReceiverIsTheSellerVault.
+  L267 CR: test_Uri_RefusesAnUnknownEdition. L283 to L287 ROR (22): test_SupportsInterface_OnlyTheExactIds.
 - **Equivalent.** L85, L112 (`<=`), L211, L217, L326 ROR: a `bytes32` compared with zero. L91
   ROR `!= SOLD` to `>`: NONE cannot reach it, `_checkMaster` above requires a settled sale.
   L297 ROR `kind !=` to `<` (kinds are 0 and 1). L190 CR `return nothing` (the named return is
@@ -1997,10 +2005,10 @@ equivalent.
 12 survivors: 6 killed by new tests, 6 equivalent.
 
 - **Killed.** L52 ASOR (three: `done =`, `|=`, `^=`), reachable only above two chunks:
-  `test_Deploy_ACreationCodeOfThreeChunksIsReassembledInOrder` (an init code of the EIP-3860
+  test_Deploy_ACreationCodeOfThreeChunksIsReassembledInOrder (an init code of the EIP-3860
   maximum that jumps into its third chunk). L54 SBR (`encodePacked` salt): the same test, which
-  now checks the CREATE2 address. L32 ROR: `test_Constructor_AnExactChunkIsOnePointer`. L42 CR:
-  `test_Constructor_LogsTheStoredCode`.
+  now checks the CREATE2 address. L32 ROR: test_Constructor_AnExactChunkIsOnePointer. L42 CR:
+  test_Constructor_LogsTheStoredCode.
 - **Equivalent.** L33 ROR `<` to `<=` (a full last chunk is the chunk either way); L51 ROR, UOR
   and SBR (loop forms); L47 SBR `memory` to `storage` (read only).
 
@@ -2019,10 +2027,10 @@ equivalent.
 24 survivors: 10 killed by new tests, 14 equivalent.
 
 - **Killed.** L34 RR and the interface RR: `test/stream/StreamViews.t.sol`. L32 MWA and ROR
-  (three: the name loop): `test_IsValidCollectionName_AnswersEveryNameWithoutReverting`. L111
-  BOR `& 5`: `test_createCollection_nameLengthBoundIsExact` (a long name read back whole). L52,
+  (three: the name loop): test_IsValidCollectionName_AnswersEveryNameWithoutReverting. L111
+  BOR `& 5`: test_createCollection_nameLengthBoundIsExact (a long name read back whole). L52,
   L72, L80 SBR (`uint16` serial and count, `uint32` supply counters):
-  `test_views_readCountsAndSerialsAbove16Bits`.
+  test_views_readCountsAndSerialsAbove16Bits.
 - **Equivalent.** L110 AOR (two): a long string's head is odd, so the shift drops the 1 either
   way. L111 AOR `* 31` and BOR `| 5`, `<< 5`, `^ 5` (four), L111 SBR `encodePacked`: they read
   more words than the name holds and copy them past its end into free memory; the bytes
@@ -2044,9 +2052,9 @@ mutants: two `bytes` constants, and type declarations.
 
 8 survivors: 3 killed by new tests, 5 equivalent.
 
-- **Killed.** L147 CR, `sweepExcess`'s guard: `test_SweepExcess_ReentryIsBlocked`. L173 ROR:
-  `test_SupportsInterface`. L202 ROR, the network's own accounts:
-  `test_RecoverTreatsOnlyTheExactAuthorityAsTheNetworks`.
+- **Killed.** L147 CR, `sweepExcess`'s guard: test_SweepExcess_ReentryIsBlocked. L173 ROR:
+  test_SupportsInterface. L202 ROR, the network's own accounts:
+  test_RecoverTreatsOnlyTheExactAuthorityAsTheNetworks.
 - **Equivalent.** L104 CR `nonReentrant` on `recover`: it makes only static reads (`configOf`,
   `authority()`), so nothing can re-enter it. L108 ROR (`bytes32`). L186 ROR (`old + amount`
   is never below `amount`). L40 SBR (two).
@@ -2055,26 +2063,26 @@ mutants: two `bytes` constants, and type declarations.
 
 70 survivors: 48 killed by new tests, 20 equivalent, 2 gas margins.
 
-- **Killed.** Operators: L221 (`test_Register_Refusals`), L508 (`test_IsArtist_NoStreamBoundIsNo`),
-  L516 (`test_IsArtist_AnEditionOfAnotherMasterIsNo`), L690 (`test_IsWallet_AnIdAbove160BitsNeverAliasesARoot`).
-  Conditions: L267 and L323 (no stray `ChangeCancelled`: `test_Replacement_FourteenDaysThenExecutes`,
-  `test_Contest_UpheldByAVoteRecordedAfterIt`), L442, L725, L799
-  (`test_IsWallet_UnregisteredAccountIsItsOwnWallet`, `test_IsWallet_ASourceWhoseCodeChangedConsolidatesNobody`,
-  `test_OwnChange_ReservesOnlyANewRoot`), and the operator lines again. Relations: L164 (a log
-  naming another resolver, on both sides), L286 (`test_Contest_WindowClosesWithTheNotice`), L314
-  (`test_ResolveContested_RefusesOutcomesEitherSideOfTheLatest`), L317 and L319
-  (`test_Contest_UpheldLateByAVoteBelowThePriorOutcome`), L342 (`test_OwnChange_ExecutesLaterThanDue`),
-  L445 and L690, L547 (five, `test_SupportsInterface`), L725 (two, both sides of the pin),
-  L744 (four: `test_OwnChange_RefusesRootsOfAccountsEitherSideOfThisOne`,
-  `test_OwnChange_RefusesRootsOthersReserveEitherSideOfThisOne`), L839
-  (`test_Contest_StaysLapsedAfterNinetyDays`). Statements: L107
-  (`test_Constructor_ChecksTheSourceAgainstItsPin`), L117, L131, L137, L779
-  (`test_Bindings_CheckTheTargetFirstAndLog`), L182, L243 and L263
-  (`test_Deadlines_ExpiredChangeAndAcceptanceAreRefused`), L266, L800, L821, L823
-  (`test_Replacement_LogsAndAppliesTheWholeIdentity`), L310 `restricted` on `resolveContested`
-  (`test_ResolveContested_IsRestricted`), L332 (`test_ExpireContest_Logs`), L516, L517, L520
-  (`test_IsArtist_AnEditionResolvesToTheWorkItsMasterNames`, `test_IsArtist_AnUnknownEditionWithTheIdOfAWorkIsNo`),
-  L527 (`test_IsArtist_AStreamShortfallReverts`).
+- **Killed.** Operators: L221 (test_Register_Refusals), L508 (test_IsArtist_NoStreamBoundIsNo),
+  L516 (test_IsArtist_AnEditionOfAnotherMasterIsNo), L690 (test_IsWallet_AnIdAbove160BitsNeverAliasesARoot).
+  Conditions: L267 and L323 (no stray `ChangeCancelled`: test_Replacement_FourteenDaysThenExecutes,
+  test_Contest_UpheldByAVoteRecordedAfterIt), L442, L725, L799
+  (test_IsWallet_UnregisteredAccountIsItsOwnWallet, test_IsWallet_ASourceWhoseCodeChangedConsolidatesNobody,
+  test_OwnChange_ReservesOnlyANewRoot), and the operator lines again. Relations: L164 (a log
+  naming another resolver, on both sides), L286 (test_Contest_WindowClosesWithTheNotice), L314
+  (test_ResolveContested_RefusesOutcomesEitherSideOfTheLatest), L317 and L319
+  (test_Contest_UpheldLateByAVoteBelowThePriorOutcome), L342 (test_OwnChange_ExecutesLaterThanDue),
+  L445 and L690, L547 (five, test_SupportsInterface), L725 (two, both sides of the pin),
+  L744 (four: test_OwnChange_RefusesRootsOfAccountsEitherSideOfThisOne,
+  test_OwnChange_RefusesRootsOthersReserveEitherSideOfThisOne), L839
+  (test_Contest_StaysLapsedAfterNinetyDays). Statements: L107
+  (test_Constructor_ChecksTheSourceAgainstItsPin), L117, L131, L137, L779
+  (test_Bindings_CheckTheTargetFirstAndLog), L182, L243 and L263
+  (test_Deadlines_ExpiredChangeAndAcceptanceAreRefused), L266, L800, L821, L823
+  (test_Replacement_LogsAndAppliesTheWholeIdentity), L310 `restricted` on `resolveContested`
+  (test_ResolveContested_IsRestricted), L332 (test_ExpireContest_Logs), L516, L517, L520
+  (test_IsArtist_AnEditionResolvesToTheWorkItsMasterNames, test_IsArtist_AnUnknownEditionWithTheIdOfAWorkIsNo),
+  L527 (test_IsArtist_AStreamShortfallReverts).
 - **Equivalent.** L240, L387, L410 (two), L431, L497, L541, L703 ROR: `ChangeKind` or
   `FederationStatus` compared with NONE, its first value. L257, L314 (`== 0`), L516 ROR: a
   `bytes32` with zero. L260, L793 ROR `== REPLACEMENT` to `>=` and L297 `!=` to `<`
@@ -2090,10 +2098,10 @@ mutants: two `bytes` constants, and type declarations.
 24 survivors: 9 killed by new tests, 15 equivalent.
 
 - **Killed.** L268, L270, L271, L288, L289 CR (the quote's and record's fields):
-  `test_previewAndAuthorize_carryTheItemsOwnFields`. L234 ROR:
-  `test_acceptPackage_revertsWhenTheArtistRegistryAnswersALowerId`. L356 ROR:
-  `test_isApprovedItem_aProofAtTheMaximumDepth`. L468 ROR (a head below 32):
-  `test_authorize_revertsMalformedRequest`. L508 ROR: `test_authorize_revertsInvalidWorkTerms`.
+  test_previewAndAuthorize_carryTheItemsOwnFields. L234 ROR:
+  test_acceptPackage_revertsWhenTheArtistRegistryAnswersALowerId. L356 ROR:
+  test_isApprovedItem_aProofAtTheMaximumDepth. L468 ROR (a head below 32):
+  test_authorize_revertsMalformedRequest. L508 ROR: test_authorize_revertsInvalidWorkTerms.
 - **Equivalent.** L567, L571, L597 UOR (loop counters). L602 CR (the default return). L90 CONST
   `NONCES_PER_WORD` 255 to 254 (another one-to-one packing of nonces into words below the
   sentinel bit; only the storage layout differs). L175, L192, L257, L386, L487 (`== VRF`) ROR
@@ -2101,18 +2109,18 @@ mutants: two `bytes` constants, and type declarations.
   ROR `length < 160` to `<=` (a 160-byte request cannot hold the struct's tails, so it is
   refused either way; only the error differs). L523 ROR (a package's epoch never exceeds the
   current one). The re-check killed L487's `== ARTIST` to `>=`; the new
-  `test_preview_aVrfItemWithoutASeed` kills it in the module's own tests.
+  test_preview_aVrfItemWithoutASeed kills it in the module's own tests.
 
 #### `src/stream/WorkDelivery.sol`
 
 61 survivors: 8 killed by new tests, 53 equivalent.
 
 - **Killed.** L142, L251 CR (a file of another work, refused by name):
-  `test_delivery_refusesAFileNotInTheWork`. L233 ROR (two): `test_delivery_supportsOnlyTheExactIds`.
-  L157 BOR (the first live locator): `test_preferredLocator_theFirstLiveAfterTwoDead`. L253 BOR
-  (two, the dead bit): `test_delivery_theDeadCheckReadsTheLocatorsOwnBit`. L104 SBR (`uint8`
-  bit): `test_delivery_recordsTheArtistsLocatorAtAHighIndex`. The re-check killed L279's
-  one-sided IPFS prefix comparisons; `test_delivery_ipfsLocatorsNeedAFixedPrefix` kills them in
+  test_delivery_refusesAFileNotInTheWork. L233 ROR (two): test_delivery_supportsOnlyTheExactIds.
+  L157 BOR (the first live locator): test_preferredLocator_theFirstLiveAfterTwoDead. L253 BOR
+  (two, the dead bit): test_delivery_theDeadCheckReadsTheLocatorsOwnBit. L104 SBR (`uint8`
+  bit): test_delivery_recordsTheArtistsLocatorAtAHighIndex. The re-check killed L279's
+  one-sided IPFS prefix comparisons; test_delivery_ipfsLocatorsNeedAFixedPrefix kills them in
   the module's own tests.
 - **Equivalent.** L96 ROR (a count rises by one per locator and stops at its quota). L164,
   L195, L198 ROR `== NONE` to `>=` (the largest `uint256`). L284 ROR (an empty character set
@@ -2129,10 +2137,10 @@ mutants: two `bytes` constants, and type declarations.
 
 8 survivors: 4 killed by new tests, 2 equivalent, 1 gas margin, 1 defensive.
 
-- **Killed.** L110 CR (the master the opening logs): `test_Pair_TheOpeningLogsTheMaster`. L131 CR
-  (the edition ID in the abandonment's seal): `test_Abandon_AFederatedSaleAfterARefusedMaster`.
-  L83 LOR (a served sale mid-scan voided): `test_Pair_AServedSaleMidScanSettlesNormally`. L83
-  ROR `== SETTLING` to `>=` (a void sale voided again): `test_Pair_ADelistingMidScanVoidsBeforeAnyPayout`.
+- **Killed.** L110 CR (the master the opening logs): test_Pair_TheOpeningLogsTheMaster. L131 CR
+  (the edition ID in the abandonment's seal): test_Abandon_AFederatedSaleAfterARefusedMaster.
+  L83 LOR (a served sale mid-scan voided): test_Pair_AServedSaleMidScanSettlesNormally. L83
+  ROR `== SETTLING` to `>=` (a void sale voided again): test_Pair_ADelistingMidScanVoidsBeforeAnyPayout.
 - **Equivalent.** L83 ROR `<=` and `_scans != 0` to `>=`: scans exist only while SETTLING, and
   `settle` voids an unserved sale on its first call anyway.
 - **Gas margin.** L135 ROR (the shortfall boundary).
@@ -2147,30 +2155,30 @@ final federated module tests (`test/federated/`), not the whole suite, which is 
 equivalents are the one set not re-checked against every test.
 
 - **Killed (access).** L366 `_onlyArtist()` in `setLocator` and L393 in `setDefaultRenderer`:
-  `test_OnlyTheArtist_SetsLocatorsAndTheDefaultRenderer`. Neither check was pinned by a test.
+  test_OnlyTheArtist_SetsLocatorsAndTheDefaultRenderer. Neither check was pinned by a test.
 - **Killed (effects and logs).** L145 CR (store check), L159 CR, L216 CR and SBR, L258 CR,
   L332, L345, L347, L359, L361, L371, L372, L384, L385 CR, L568 CR, L342, L602, L820 CR (renderer
   pins): `test/federated/FederatedStreamEffects.t.sol`; L57, L58 CONST (flag values) and L344,
   L383 ASOR, L382 MIA, ROR and BOR, L599 MIA, ROR and BOR, L710 BOR:
-  `test_SyncOnChainAndFinalize_KeepEachOthersFlag`, `test_SyncOnChain_LeavesAnOpenWorkOpen`,
-  `test_SyncOnChain_LogsOnce`, `test_RendererOf_AFinalizedWorkKeepsItsPin`; L396 MVIE and L397
-  MIA and ROR: `test_SetDefaultRenderer_RefreshesOnlyMintedTokens`.
-- **Killed (items and mints).** L165 BOR (eight): `test_RevokeItem_AfterAMintKeepsTheWorkForARestart`.
-  L184, L285 ROR (zero amounts), L245, L252 ROR (outcomes): `test_Mint_RefusesARequestNotForTheAdaptersOwnCustody`,
-  `test_Burn_OnlyTheMintingAdapterBeforeSettlement`, `test_SettlePrimary_RefusesAMalformedOutcome`.
-  L248 MIA and ROR (the stored price cap): `test_SettlePrimary_RecordsAPriceAboveTheStoredWidthAsTheCap`.
-  L298 LOR and ROR, L316 ROR (reclaim and the receiver): `test_Reclaim_RefusesATokenItsAdapterBurned`,
-  `test_Reclaim_ASoldTokenAwaitingDeliveryIsNotTheTemplates`, `test_Reclaim_RefusesATokenNeverMinted`.
-  L212, L214 SBR (IDs above 16 bits): `test_Mint_IdsAbove16BitsAreStoredWhole`. L669, L679 SBR
-  (a share above 16 bits): `test_Mint_AShareAbove16BitsIsKeptWhole`. L666 MIA and ROR:
-  `test_SeedOf_ASeedWithoutTheArtistPolicyIsNotKept`. L747 AOR, L742, L743 ROR, L754 SBR:
-  `test_Collaborators_EachPartyConsentsInItsOwnPosition`, `test_Collaborators_PartiesAndConsentsAreCountedExactly`,
-  `test_Collaborators_TheFirstPartyIsTheArtist`, `test_Collaborators_AnArtistPayeeMustBeAParty`.
+  test_SyncOnChainAndFinalize_KeepEachOthersFlag, test_SyncOnChain_LeavesAnOpenWorkOpen,
+  test_SyncOnChain_LogsOnce, test_RendererOf_AFinalizedWorkKeepsItsPin; L396 MVIE and L397
+  MIA and ROR: test_SetDefaultRenderer_RefreshesOnlyMintedTokens.
+- **Killed (items and mints).** L165 BOR (eight): test_RevokeItem_AfterAMintKeepsTheWorkForARestart.
+  L184, L285 ROR (zero amounts), L245, L252 ROR (outcomes): test_Mint_RefusesARequestNotForTheAdaptersOwnCustody,
+  test_Burn_OnlyTheMintingAdapterBeforeSettlement, test_SettlePrimary_RefusesAMalformedOutcome.
+  L248 MIA and ROR (the stored price cap): test_SettlePrimary_RecordsAPriceAboveTheStoredWidthAsTheCap.
+  L298 LOR and ROR, L316 ROR (reclaim and the receiver): test_Reclaim_RefusesATokenItsAdapterBurned,
+  test_Reclaim_ASoldTokenAwaitingDeliveryIsNotTheTemplates, test_Reclaim_RefusesATokenNeverMinted.
+  L212, L214 SBR (IDs above 16 bits): test_Mint_IdsAbove16BitsAreStoredWhole. L669, L679 SBR
+  (a share above 16 bits): test_Mint_AShareAbove16BitsIsKeptWhole. L666 MIA and ROR:
+  test_SeedOf_ASeedWithoutTheArtistPolicyIsNotKept. L747 AOR, L742, L743 ROR, L754 SBR:
+  test_Collaborators_EachPartyConsentsInItsOwnPosition, test_Collaborators_PartiesAndConsentsAreCountedExactly,
+  test_Collaborators_TheFirstPartyIsTheArtist, test_Collaborators_AnArtistPayeeMustBeAParty.
   L639 to L641 and L655 ROR (commitments on both sides, an empty media list):
-  `test_Mint_TheContentAndMediaCommitmentsAreExact`. L780 MIA and L73 CONST (the locator bound
-  and a NUL byte): `test_Locator_OnlyPrintableAsciiWithinTheBound`. L364, L497, L548, L549, L587,
-  L590, L614 ROR: `test_Locator_TheArtistPointsEachFileSomewhere`, `test_collection_OnlyTheOne`,
-  `test_SupportsInterface_OnlyTheExactIds`.
+  test_Mint_TheContentAndMediaCommitmentsAreExact. L780 MIA and L73 CONST (the locator bound
+  and a NUL byte): test_Locator_OnlyPrintableAsciiWithinTheBound. L364, L497, L548, L549, L587,
+  L590, L614 ROR: test_Locator_TheArtistPointsEachFileSomewhere, test_collection_OnlyTheOne,
+  test_SupportsInterface_OnlyTheExactIds.
 - **Equivalent.** L344, L383 ASOR and BOR `+=` and `^=` (a flag set once, or only while clear);
   L659 ASOR and BOR, L202, L249 BOR (disjoint bit fields); L64 CONST `APPROVED` 1 to 2 (any bit
   below the rate's works); loop counters (UOR, ROR `<` to `!=`, SBR `uint128`); L244, L287 ROR
@@ -2180,8 +2188,8 @@ equivalents are the one set not re-checked against every test.
   `uint128`, of locals bounded by 32-bit counters, of read-only `storage` references (L273, L284,
   L414) and of the store's small answer words (L802, L803).
 - **Relations.** Killed by the tests above, or by
-  `test_Collaborators_APayeeSortingBelowAPartyMustStillBeAParty` (L754 `!=` to `<`: the party
-  search must compare accounts for equality) and `test_Collaborators_ExactlyMaxPayeesMint` (the
+  test_Collaborators_APayeeSortingBelowAPartyMustStillBeAParty (L754 `!=` to `<`: the party
+  search must compare accounts for equality) and test_Collaborators_ExactlyMaxPayeesMint (the
   payee bound `>` to `>=`). Equivalent: L248 `<` to `<=` (the cap and the price are equal there);
   L639 `contentHash == 0` to `<` and `<=` (a zero hash then has to equal the first file's
   SHA-256, and the store never answers a zero digest); the `kind >= EDITION_MASTER` form (larger
@@ -2193,22 +2201,22 @@ equivalents are the one set not re-checked against every test.
 56 survivors: 28 killed by new tests, 28 equivalent. As for `FederatedStream`, the 35 relations
 survivors were run against the final federated module tests rather than the whole suite.
 
-- **Killed.** L202 `restricted` on `setStatus` (a delisting): `test_SetStatus_IsRestricted`; the
+- **Killed.** L202 `restricted` on `setStatus` (a delisting): test_SetStatus_IsRestricted; the
   check was not pinned by any test. L116 to L118 CR (constructor checks):
-  `test_Constructor_ChecksItsDependencies`. L142 CR (the deployer check, a delegated account
-  included), L145, L172, L190, L244 CR (logs): `test_Templates_DeployerCheckedAndEveryChangeLogged`.
-  L188 MIA: `test_Adapters_RemovalChecksNothing`. L255 MIA (a replaced registry forwards its
-  reads) and L391 MIA (an unbound one answers for itself): `test_Replacement_TheOldRegistryForwardsItsReads`,
-  `test_Registry_AnswersItselfBeforeItIsBound`.
+  test_Constructor_ChecksItsDependencies. L142 CR (the deployer check, a delegated account
+  included), L145, L172, L190, L244 CR (logs): test_Templates_DeployerCheckedAndEveryChangeLogged.
+  L188 MIA: test_Adapters_RemovalChecksNothing. L255 MIA (a replaced registry forwards its
+  reads) and L391 MIA (an unbound one answers for itself): test_Replacement_TheOldRegistryForwardsItsReads,
+  test_Registry_AnswersItselfBeforeItIsBound.
 - **Killed (relations).** L139 on the form and the code hash:
-  `test_Templates_RefuseThePairFormAndAZeroCodeHash`. L229 on the status and the fee share:
-  `test_Register_OnlyAnApprovedTemplateOnTheProductsTerms`. L238 `artistIdOf(account) !=
-  x.artistId` to `<`: `test_Register_AnAccountThatIsAnotherArtistsRootIsTaken`. L328 (two):
-  `test_SupportsInterface_OnlyTheExactIds`. L373 on the partner's template status and artist:
-  `test_Register_AnEditionsPartnerOfTheSameArtistOnAnApprovedTemplate`; on a partner with no
-  template and its fee share either side: `test_Register_AnEditionsPartnerOnATemplateWithTheSameFeeShare`;
-  on a delisted partner: `test_Register_AStreamWhoseEditionsPartnerIsDelistedIsRefused`. L403
-  (a status move from a later status): `test_TemplateMoves_OnlyFromTheirOwnStatus`.
+  test_Templates_RefuseThePairFormAndAZeroCodeHash. L229 on the status and the fee share:
+  test_Register_OnlyAnApprovedTemplateOnTheProductsTerms. L238 `artistIdOf(account) !=
+  x.artistId` to `<`: test_Register_AnAccountThatIsAnotherArtistsRootIsTaken. L328 (two):
+  test_SupportsInterface_OnlyTheExactIds. L373 on the partner's template status and artist:
+  test_Register_AnEditionsPartnerOfTheSameArtistOnAnApprovedTemplate; on a partner with no
+  template and its fee share either side: test_Register_AnEditionsPartnerOnATemplateWithTheSameFeeShare;
+  on a delisted partner: test_Register_AStreamWhoseEditionsPartnerIsDelistedIsRefused. L403
+  (a status move from a later status): test_TemplateMoves_OnlyFromTheirOwnStatus.
 - **Equivalent.** L206 UOR and SBR (loop counter), L90 SBR (two: the value fits), L225, L259,
   L295, L368 SBR `storage` and `memory` (read only). Relations: first or last enum values (L139
   status `!=` to `>`, L139 and L231 form against `PAIR`, which no template has, L268 against
@@ -2232,7 +2240,7 @@ The [third batch](#third-batch-22-november-2026) has since measured every file b
   `UniformEditionAuction`, `UniformEditionAuctionLens`), `GovernanceConfigurator`, `Roles`,
   `WorksAccessManager` and `BoundedParameter`. Their floors are the first campaign's, unchanged.
 - **Reached in part.** `src/stream/Stream.sol`: its operators shard finished (45 mutants, one gap,
-  now killed by `test_Terms_EconomicsChangeAffectsOnlyNewWorks`); the statements, relations and
+  now killed by test_Terms_EconomicsChangeAffectsOnlyNewWorks); the statements, relations and
   conditions shards were stopped at the cutoff. `src/governance/GovernanceConfig.sol`: its
   statements and operators shards finished (136 mutants: 14 loop-counter and 2 default-return
   equivalents, 1 defensive: `verify` re-runs `validate` on a configuration `apply` already
@@ -2308,8 +2316,8 @@ gas and defensive survivors are counted under "Deferred" and listed with their r
 
 `UniformEditionAuction`'s batch rate, 88.6%, is below its floor of 91, which was set on rc.2's
 1,142 mutants before the file shrank to 44. The floor stays: two tests kill all five survivors,
-`test_Abandon_ARefusalOfExactly1024BytesIsPassedOn` (`_MAX_REVERT`) and
-`test_SetLimits_TheBoundsAreExact` (the payout-gas limit bounds). Unlike the other tests kept in
+test_Abandon_ARefusalOfExactly1024BytesIsPassedOn (`_MAX_REVERT`) and
+test_SetLimits_TheBoundsAreExact (the payout-gas limit bounds). Unlike the other tests kept in
 the deferred files, these two pin current internals (constants), and will be replaced when the
 auction is restructured.
 
@@ -2354,21 +2362,21 @@ was run against its mutant.
 64 survivors: 22 killed by new tests, 40 equivalent, 2 gas.
 
 - **Killed.** L547 MIA `if ok` to `if true` and L547 LOR `&&` to `||` (a source that reverts
-  with the chunk's exact encoding counted as serving it): `test_Source_ARefusalCarryingTheChunkIsNotServed`.
+  with the chunk's exact encoding counted as serving it): test_Source_ARefusalCarryingTheChunkIsNotServed.
   L547 AOR `0x40 / expected`, `0x40 % expected` and L547 CR (the answer-length check removed: an
-  answer one byte short was served): `test_Source_AnAnswerOneByteShortIsNotServed`. L547 ROR `>=`
-  to `>`: `test_Source_AnUnpaddedAnswerOfTheExactLengthIsServed`. L208 ROR `<` to `!=`:
-  `test_FirstMissing_ARangeStartingPastItsEndIsEmpty`. L371 AOR `/ per` to `* per`:
-  `test_List_RefusesTooManyListsOfTwoBeforeReadingThem`. L56 AOR (three, `MAX_HASHES_PER_LIST`):
-  `test_List_RefusesAStrideAboveAFullListChunk`. L380 ROR `n != per * 32` to `<`:
-  `test_List_RefusesAMiddleListChunkLongerThanTheStride`. L386 MIA and AOR `%` (the early count
+  answer one byte short was served): test_Source_AnAnswerOneByteShortIsNotServed. L547 ROR `>=`
+  to `>`: test_Source_AnUnpaddedAnswerOfTheExactLengthIsServed. L208 ROR `<` to `!=`:
+  test_FirstMissing_ARangeStartingPastItsEndIsEmpty. L371 AOR `/ per` to `* per`:
+  test_List_RefusesTooManyListsOfTwoBeforeReadingThem. L56 AOR (three, `MAX_HASHES_PER_LIST`):
+  test_List_RefusesAStrideAboveAFullListChunk. L380 ROR `n != per * 32` to `<`:
+  test_List_RefusesAMiddleListChunkLongerThanTheStride. L386 MIA and AOR `%` (the early count
   check; `_record` repeats it with the same error, so only the cost differs, about 9K gas against
-  560K): `test_List_RefusesMoreThanMaxChunksForTheCostOfItsListReads`. L524 ROR `==` to `>=`:
-  `test_Link_ALinkedChunkLongerThanItsPlaceNeverCompletes`. L505 ROR `filled != length` to `>`:
-  `test_Link_ReadsDetectAPartThatLostItsLastByte`. L505 ROR `keccak256(data) != hash` to `<`:
-  `test_Link_ReadsDetectTamperedPartsEitherSideOfTheHash`. L593 ROR (three, the MIME ranges'
-  ends): `test_RegisterManifest_MimeAcceptsTheEndsOfEachRange`. L270 ROR (two, encoding IDs above
-  the Base64 ones): `test_Attest_RefusesEncodingIdsAboveTheBase64Ones`.
+  560K): test_List_RefusesMoreThanMaxChunksForTheCostOfItsListReads. L524 ROR `==` to `>=`:
+  test_Link_ALinkedChunkLongerThanItsPlaceNeverCompletes. L505 ROR `filled != length` to `>`:
+  test_Link_ReadsDetectAPartThatLostItsLastByte. L505 ROR `keccak256(data) != hash` to `<`:
+  test_Link_ReadsDetectTamperedPartsEitherSideOfTheHash. L593 ROR (three, the MIME ranges'
+  ends): test_RegisterManifest_MimeAcceptsTheEndsOfEachRange. L270 ROR (two, encoding IDs above
+  the Base64 ones): test_Attest_RefusesEncodingIdsAboveTheBase64Ones.
 - **Equivalent.** UOR loop counters (L105, L164, L184, L193, L208, L219, L376, L435, L502, L588,
   L592). ROR `<` to `!=` on loops that step by one from their start (L105, L114, L122, L164,
   L184, L193, L219, L376, L389, L435, L502, L588). L417 MIA and ROR `>=`, L310 AOR `length +
@@ -2386,10 +2394,10 @@ was run against its mutant.
 32 survivors: 8 killed by new tests, 22 equivalent, 2 defensive.
 
 - **Killed.** L380 LOR and MIA (a contract answering true to every call is no token subject):
-  `test_DisputeOutcome_ATokenAnsweringTrueToEveryCallIsUnchecked`. L160 ROR (a kind above the
-  governance kind): `test_GovernanceManifest_RefusesAKindAboveTheGovernanceKind`. L257 ROR (four:
-  only an exact `UnknownWork` reads as no work): `test_LatestDisputeOutcome_OnlyAnExactUnknownWorkReadsZero`.
-  L409 ROR `delay == 0` to `>= 0`: `test_Relay_AnImmediateAnswerWithADelayDoesNotAuthorize`.
+  test_DisputeOutcome_ATokenAnsweringTrueToEveryCallIsUnchecked. L160 ROR (a kind above the
+  governance kind): test_GovernanceManifest_RefusesAKindAboveTheGovernanceKind. L257 ROR (four:
+  only an exact `UnknownWork` reads as no work): test_LatestDisputeOutcome_OnlyAnExactUnknownWorkReadsZero.
+  L409 ROR `delay == 0` to `>= 0`: test_Relay_AnImmediateAnswerWithADelayDoesNotAuthorize.
 - **Equivalent.** L241, L357, L362, L363, L368, L369, L387, L426 ROR (`bytes32` with zero). L241
   ROR `code.length < 0` (a codeless account then fails the ERC-165 check and reads zero). L252 ROR
   (a successful answer is at most the 192 bytes copied). L312, L359, L404 (two), L405 ROR (roles
@@ -2415,7 +2423,7 @@ reads `_grantRole`'s result).
 18 survivors: 1 killed by a new test, 17 equivalent.
 
 - **Killed.** L113 ROR `role == CURATOR` to `>=` (IDs past the table labelled `CURATOR`):
-  `test_LabelsNameEachRoleAndNothingPastTheTable`.
+  test_LabelsNameEachRoleAndNothingPastTheTable.
 - **Equivalent.** L36 to L67 SBR (thirteen `uint64` constants as `uint32`, which still hold
   them). L87 ROR `<= ADMIN` and `<= NETWORK`, L95 ROR `<= ADMIN` (the roles they add are already
   listed). L98 CR `return 0` (the default return).
@@ -2425,12 +2433,12 @@ reads `_grantRole`'s result).
 39 survivors (relations and conditions): 8 killed by new tests, 31 equivalent.
 
 - **Killed.** L189, L190 ROR `< 4` to `<= 4` (a wiring call of exactly four bytes):
-  `test_AFourByteWiringCallIsValidatedByItsSelector`. L256 ROR `getRoleAdmin != admin` to `<` and
-  `>`: `test_ReadbackDetectsARoleAdminMovedEitherWay`. L256 ROR `getRoleGrantDelay != 0` to `< 0`:
-  `test_ReadbackDetectsARoleGivenAGrantDelay`. L266 ROR `actual != fn.role` to `<`:
-  `test_ReadbackDetectsASelectorRemappedToAHigherRole`. L309 ROR `role ==` to `>=`:
-  `test_OneKeyMayHoldALowerRoleAfterAHigherOne`. L239 MIA `cfg.brake != address(0)` to `true` (an
-  install without a brake logged `BrakeSet(0, 0)`): `test_NoBrakeLogsNoBrakeChange`.
+  test_AFourByteWiringCallIsValidatedByItsSelector. L256 ROR `getRoleAdmin != admin` to `<` and
+  `>`: test_ReadbackDetectsARoleAdminMovedEitherWay. L256 ROR `getRoleGrantDelay != 0` to `< 0`:
+  test_ReadbackDetectsARoleGivenAGrantDelay. L266 ROR `actual != fn.role` to `<`:
+  test_ReadbackDetectsASelectorRemappedToAHigherRole. L309 ROR `role ==` to `>=`:
+  test_OneKeyMayHoldALowerRoleAfterAHigherOne. L239 MIA `cfg.brake != address(0)` to `true` (an
+  install without a brake logged `BrakeSet(0, 0)`): test_NoBrakeLogsNoBrakeChange.
 - **Equivalent.** ROR `<` to `!=` on loops that step by one from 0 (L118, L123, L184, L215, L225,
   L228, L234, L260, L263, L271, L295, L302, L308, L317, L323). L209, L252 ROR `<=` and `!=` (role
   13 is not known and is skipped). L142, L195 `== 0` ROR (`bytes4` with zero). L195 `iface !=
@@ -2449,9 +2457,9 @@ No survivor.
 
 86 survivors: 2 killed by behaviour tests, 84 deferred.
 
-- **Killed.** L695 CR (a refresh of a token with no record): `test_refreshMetadata_refusesATokenWithNoRecord`.
+- **Killed.** L695 CR (a refresh of a token with no record): test_refreshMetadata_refusesATokenWithNoRecord.
   L953 ROR (an added store whose code changed, either way):
-  `test_syncOnChain_aStoreWhoseCodeChangedEitherWayIsRefused`.
+  test_syncOnChain_aStoreWhoseCodeChangedEitherWayIsRefused.
 - **Deferred, layout and packing** (the per-work store cursor and its resumption): L357 ROR
   (four), MIA and LOR, L358, L379 and L987 CR, L974 ROR (two) and MIA.
 - **Deferred, decoder** (the delivery satellite's locator answer): L76 CONST, L1029 ROR, L1037 CR,
@@ -2475,12 +2483,12 @@ No survivor.
 
 41 survivors: 6 killed by behaviour tests, 35 deferred.
 
-- **Killed.** L414 MIA (removing a minter checks nothing): `test_setAdmittedMinter_removalChecksNothing`.
-  L451 ROR (only SOLD settles a sale): `test_settlePrimary_refusesNoneWithABuyer`. L486 ROR (a
-  rescue needs the work's own minting adapter): `test_rescueToMuseum_refusesAWorkHeldByAnotherAdapter`.
+- **Killed.** L414 MIA (removing a minter checks nothing): test_setAdmittedMinter_removalChecksNothing.
+  L451 ROR (only SOLD settles a sale): test_settlePrimary_refusesNoneWithABuyer. L486 ROR (a
+  rescue needs the work's own minting adapter): test_rescueToMuseum_refusesAWorkHeldByAnotherAdapter.
   L874 ROR and MIA (the mint policy is told the current economics resolver):
-  `test_MP1_TheContextNamesAReplacedEconomicsResolver`. L970 ROR (a fee share above the
-  denominator): `test_MP1_AFeeShareAboveTheDenominatorIsRefused`.
+  test_MP1_TheContextNamesAReplacedEconomicsResolver. L970 ROR (a fee share above the
+  denominator): test_MP1_AFeeShareAboveTheDenominatorIsRefused.
 - **Deferred, decoder:** the mint policy's answer and the context Stream sends it (L803 ROR; L873,
   L898, L919, L933 and L934 CR; L917 MIA (two), L922 MIA); the `authority()` answer word (L716
   ROR).
@@ -2498,11 +2506,11 @@ No survivor.
 
 46 survivors: 6 killed by behaviour tests, 40 deferred.
 
-- **Killed.** L288 MIA (removing a minter checks nothing): `test_SetAdmittedMinter_RemovalChecksNothing`.
+- **Killed.** L288 MIA (removing a minter checks nothing): test_SetAdmittedMinter_RemovalChecksNothing.
   L423 ROR (two) and L637 ROR (only a master of the exact item and kind takes an edition):
-  `test_BindMinter_RefusesAWorkOfAKindAboveTheMaster`, `test_BindMinter_RefusesAnItemHashingAboveTheMasters`.
+  test_BindMinter_RefusesAWorkOfAKindAboveTheMaster, test_BindMinter_RefusesAnItemHashingAboveTheMasters.
   L735 ROR (two: a receiver accepts only with the exact selector word):
-  `test_Receiver_AcceptanceIsExactlyTheSelectorWord`.
+  test_Receiver_AcceptanceIsExactlyTheSelectorWord.
 - **Deferred, bounds on encoded data:** L120 CONST (two, `_MAX_ANSWER`).
 - **Deferred, decoder:** the receiver hook's operator and batch encoding (L725 and L728 MIA, L728
   SBR).
@@ -2520,18 +2528,18 @@ No survivor.
 64 survivors: 5 killed by the late re-check, 19 killed by behaviour tests, 40 deferred.
 
 - **Killed.** L587 MIA, AOR (three) and ROR (an outcome recorded before the pause cannot cancel):
-  `test_Cancel_RefusesTheLatestOutcomeWhenItPredatesThePause`. L666 CR (`nonReentrant` on
-  `expireCredit`): `test_ExpireCredit_AReentrantRecipientIsBlocked`. L726 and L728 MIA (removing
+  test_Cancel_RefusesTheLatestOutcomeWhenItPredatesThePause. L666 CR (`nonReentrant` on
+  `expireCredit`): test_ExpireCredit_AReentrantRecipientIsBlocked. L726 and L728 MIA (removing
   the registry checks nothing and clears its pin):
-  `test_SetFederationRegistry_RemovalChecksNothingAndClearsThePin`. L864 MIA and RR (a listed
-  token is a target whatever the registry says): `test_Bid_AFederatedSaleOfATokenListedSinceStillTakesBids`.
-  L866 ROR (two, a registry whose code changed): `test_Start_ARegistryWhoseCodeChangedEitherWayStartsNothing`.
+  test_SetFederationRegistry_RemovalChecksNothingAndClearsThePin. L864 MIA and RR (a listed
+  token is a target whatever the registry says): test_Bid_AFederatedSaleOfATokenListedSinceStillTakesBids.
+  L866 ROR (two, a registry whose code changed): test_Start_ARegistryWhoseCodeChangedEitherWayStartsNothing.
   L890 and L1007 ROR (a fee share of exactly the denominator):
-  `test_Settle_AFeeShareOfTheWholePricePaysItAllToTheFeeRecipient`. L963 ROR:
-  `test_Start_AFederatedFeeShareOfTheWholePriceSells`. L1007 MIA and L1008 CR (a settlement share
-  above the denominator): `test_Settle_RefusesASettlementFeeShareAboveTheDenominator`. L1149 MIA
-  (a zero payout skipped): `test_Settle_AZeroFeeWithNoFeeRecipientPaysOnlyTheSeller`. L1452 MIA
-  (delisting checks nothing): `test_SetTarget_DelistingChecksNothing`.
+  test_Settle_AFeeShareOfTheWholePricePaysItAllToTheFeeRecipient. L963 ROR:
+  test_Start_AFederatedFeeShareOfTheWholePriceSells. L1007 MIA and L1008 CR (a settlement share
+  above the denominator): test_Settle_RefusesASettlementFeeShareAboveTheDenominator. L1149 MIA
+  (a zero payout skipped): test_Settle_AZeroFeeWithNoFeeRecipientPaysOnlyTheSeller. L1452 MIA
+  (delisting checks nothing): test_SetTarget_DelistingChecksNothing.
 - **Deferred, bounds on encoded data:** the refusal-gas constructor bounds (L137 CONST (two), L141
   CONST, L1465 ROR).
 - **Deferred, gas:** L101, L107, L109 and L113 CONST (two each: the payout, delivery, reserve and
@@ -2559,8 +2567,8 @@ No survivor.
 
 `UniformEditionAuction`: 5 survivors, 5 killed by new tests that pin current internals (kept so
 the file holds its floor of 91; to be replaced in the restructure). L93 CONST (two, `_MAX_REVERT`
-1,024 one up and one down): `test_Abandon_ARefusalOfExactly1024BytesIsPassedOn`. L107 CONST (two,
-`_MIN_PAYOUT_GAS`) and L108 CONST (`_MAX_PAYOUT_GAS`): `test_SetLimits_TheBoundsAreExact`.
+1,024 one up and one down): test_Abandon_ARefusalOfExactly1024BytesIsPassedOn. L107 CONST (two,
+`_MIN_PAYOUT_GAS`) and L108 CONST (`_MAX_PAYOUT_GAS`): test_SetLimits_TheBoundsAreExact.
 `UniformEditionAuctionLens`: 1 survivor, deferred and argued equivalent (L1153 CR, the default
 return).
 

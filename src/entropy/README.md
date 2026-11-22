@@ -66,7 +66,7 @@ under [VrfEntropyModule events](../../docs/integrators/events-and-indexing.md#vr
   [coordinator change](../../docs/spec/entropy.md#coordinator-change) and the
   [runbook, step 7](../../script/README.md#4-after-the-broadcast).
 - **Bytecode:** wide margin; figures in the
-  [audit scope](../../docs/audit/scope.md#curation-identity-and-records).
+  [audit scope](../../docs/audit/scope.md#modules).
 - **Tests:** `forge test --match-path 'test/entropy/**'`: unit, fuzz, the invariant suite,
   governance and `VrfEntropyManaged.t.sol`, which installs the module under the real
   `GovernanceConfigurator`. End to end: `VrfWork.t.sol`.

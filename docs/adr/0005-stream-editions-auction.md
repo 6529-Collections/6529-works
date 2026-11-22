@@ -400,7 +400,7 @@ and amends the decision 15 note under [Open items](#open-items).
   artist as the buyer of a work nobody bought: Stream cannot tell a false sale from a true one,
   and refusing the artist as a buyer would block an artist buying their own work. An adapter
   can also bypass the call: Stream lets a holder transfer an unsettled work
-  (`test_transfersDoNotSettle`) and the minting adapter burn one, so an adapter that never
+  (test_transfersDoNotSettle) and the minting adapter burn one, so an adapter that never
   settles can hand an unsold work to anyone; such a work stays NONE in `primarySale` and its
   edition can never be created. Refusing transfers of unsettled works would cost about 2,100 gas
   on every later transfer of every work, so it is left to the admission review.
@@ -415,7 +415,7 @@ and amends the decision 15 note under [Open items](#open-items).
   in the 30-day review before `Stream.setAdmittedMinter(adapter, true)` executes, with the three
   cases on-chain enforcement leaves to it (a false SOLD, a work moved without settling, a burn
   outside a cancel); a guardian vetoes an admission that does not hold it.
-  `StreamSaleMethods.t.sol` (`test_ASecondAdapterSendsAnUnbidWorkToTheMuseum`) shows a second
+  `StreamSaleMethods.t.sol` (test_ASecondAdapterSendsAnUnbidWorkToTheMuseum) shows a second
   adapter's unbid work landing in the museum without the adapter moving it.
   *Amended 1 November 2026 (owner decision 20):* the adapter must also complete a sale whose
   work Stream reports as rescued (`primarySale` not NONE before the adapter settled it): with
@@ -489,8 +489,8 @@ after the rc.2 seven-lens review.
   `params = abi.encode(keccak256(extra))` with `open`'s `data = abi.encode(item, extra)`.
   Once the edition exists, the hash is the one it records (`edition(id).terms.params`), never
   the caller's copy of the item: `bindMinter` checks a caller's item against 6529 Stream only
-  before the edition exists. `test_F10_AnAdapterTakesLongParamsByHash` and
-  `test_F10_TheRecordedHashGovernsOnceTheEditionExists` prove the path with a mock adapter.
+  before the edition exists. test_F10_AnAdapterTakesLongParamsByHash and
+  test_F10_TheRecordedHashGovernsOnceTheEditionExists prove the path with a mock adapter.
 
 ### 13. Amendment (6 November 2026): explicit Stream state machines (owner decision 28, rc.3)
 
@@ -759,7 +759,7 @@ before each merge.
   - and governance checks both in the 30-day review before `Stream.setAdmittedMinter(adapter,
     true)` executes; a guardian vetoes an admission that does not hold them.
 
-  `StreamSaleMethods.t.sol` (`test_ASecondAdapterSendsAnUnbidWorkToTheMuseum`) shows a second
+  `StreamSaleMethods.t.sol` (test_ASecondAdapterSendsAnUnbidWorkToTheMuseum) shows a second
   adapter sending a work that ends unbid to the museum; its mock has no currency-freeze exit,
   so the test does not show that branch.
 

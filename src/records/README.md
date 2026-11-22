@@ -67,7 +67,7 @@ events in [StatementLog events](../../docs/integrators/events-and-indexing.md#st
 - **Gas:** `test_Gas_PerAppend` in [`StatementLog.t.sol`](../../test/records/StatementLog.t.sol)
   prints each path's execution gas; the spec holds the gated figure.
 - **Bytecode:** wide margin; figures in the
-  [audit scope](../../docs/audit/scope.md#curation-identity-and-records).
+  [audit scope](../../docs/audit/scope.md#modules).
 - **Tests:** `forge test --match-path 'test/records/**'`: unit, policy, gas rule, golden vectors and a
   handler-based invariant suite whose model ([`StatementModel.sol`](../../test/records/StatementModel.sol))
   rebuilds hashes and heads from events. Dispute paths end to end:

@@ -62,7 +62,7 @@ are under [Flows](../../docs/spec/curation.md#flows).
   roots; the verifier's code hash is re-checked at every registration; a retired verifier can
   never be reinstalled. Each is a rule above; keep the tests that pin them.
 - **Bytecode:** comfortable margin; figures in the
-  [audit scope](../../docs/audit/scope.md#curation-identity-and-records).
+  [audit scope](../../docs/audit/scope.md#modules).
 - **Tests:** `forge test --match-path 'test/curation/**'` (unit, the registry invariant suite and
   `PackageRegistryGas.t.sol`, which measures `authorize` cold, directly and as Stream calls it);
   Halmos proofs of the signer-epoch encoding in `test/symbolic/` ([Testing](../../docs/testing/README.md)); end to end,

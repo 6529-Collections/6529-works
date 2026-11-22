@@ -71,7 +71,7 @@ Integrators start at [Reading a work](../../docs/integrators/reading-a-work.md) 
   answers (WS-52), open encoding ids (WS-54), degraded versus reverting metadata (RND-9,
   RND-16), and the part-count limit (RND-26, LIM-CNT-22).
 - **Bytecode: `Renderer` is the second-tightest contract**, barely under EIP-170 (current
-  margin in the [audit scope](../../docs/audit/scope.md#content-and-rendering)). New features
+  margin in the [audit scope](../../docs/audit/scope.md#modules)). New features
   belong in a later renderer, which works pin per work.
 - **Tests:** `forge test --match-path 'test/content/**'`: the store, the dependency registry,
   the renderer and the uploader's golden and CID vectors. Halmos proofs of `Base64Validator`,

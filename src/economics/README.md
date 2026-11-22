@@ -59,7 +59,7 @@ Payment, release and recovery sequences are under
   NatSpec). Its bytes are pinned by `test_Golden_InitCodeHashAndRuntime`.
 - **Transaction cap.** Rerun [`GasCap.t.sol`](../../test/economics/GasCap.t.sol) after changing a
   batch bound, a per-item minimum or the continue-mode signature bound (ECO-31, LIM-GAS-6).
-- **Bytecode:** [audit scope](../../docs/audit/scope.md#economics); gas:
+- **Bytecode:** [audit scope](../../docs/audit/scope.md#the-permanent-core); gas:
   [ADR 0004](../../docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table).
 - **Tests:** `forge test --match-path 'test/economics/**'`; Halmos proofs of `Splits` in
   `test/symbolic/` ([Testing](../../docs/testing/README.md)); end to end,
