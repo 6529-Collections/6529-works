@@ -120,9 +120,8 @@ contract IndependentStreamRegistryFixesTest is IndependentStreamFixture {
         ArtistIdentity memory next = ArtistIdentity(vm.addr(newKey), payout, PROFILE, PROFILE_DOC);
         bytes32 evidence = keccak256("evidence");
         uint64 deadline = uint64(block.timestamp + 3 days);
-        bytes memory acceptance = _sign(
-            newKey, accountsModule.replacementDigest(fArtistId, next, evidence, deadline)
-        );
+        bytes memory acceptance =
+            _sign(newKey, accountsModule.replacementDigest(fArtistId, next, evidence, deadline));
         accountsModule.stageReplacement(fArtistId, next, evidence, deadline, acceptance);
     }
 }
