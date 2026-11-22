@@ -12,8 +12,9 @@ import { IFederatedEditions } from "src/interfaces/IFederatedEditions.sol";
 import { IFederatedToken } from "src/interfaces/IFederatedToken.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
-import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
+import { EditionTerms, PackageItem } from "src/interfaces/types/PackageTypes.sol";
 import { PrimaryTerms, SaleKind } from "src/interfaces/types/SaleTypes.sol";
+import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
 import { DeployV1 } from "script/DeployV1.sol";
 import { FedAdapterMock } from "./FederatedStateHandler.sol";
@@ -79,17 +80,48 @@ contract FederatedEditionsRulesTest is FederationBase {
     function test_Bind_RefusesAnItemThatIsNotTheMasters() public {
         Work memory w = _fedMaster(fedArtist, 0);
         (, uint256 tokenId) = _startFed(pairStream, fedArtist, w, RATE);
-        PackageItem memory wrong = abi.decode(abi.encode(w.item), (PackageItem));
-        wrong.contentHash = keccak256("another work");
-        vm.prank(address(fea));
-        vm.expectRevert(
-            abi.encodeWithSelector(IFederatedEditions.NotEditionMaster.selector, tokenId)
-        );
-        pairEditions.bindMinter(tokenId, wrong);
+        // Several other items, so that their hashes fall on both sides of the master's.
+        bytes32 masterHash = _itemHash(w);
+        bool below;
+        bool above;
+        for (uint256 i; i < 8; ++i) {
+            PackageItem memory wrong = abi.decode(abi.encode(w.item), (PackageItem));
+            wrong.contentHash = keccak256(abi.encode("another work", i));
+            bytes32 h = _hashOf(wrong);
+            (below, above) = (below || h < masterHash, above || h > masterHash);
+            vm.prank(address(fea));
+            vm.expectRevert(
+                abi.encodeWithSelector(IFederatedEditions.NotEditionMaster.selector, tokenId)
+            );
+            pairEditions.bindMinter(tokenId, wrong);
+        }
+        assertTrue(below && above, "both sides covered");
         vm.expectEmit(address(pairEditions));
         emit IFederatedEditions.EditionMinterBound(tokenId, address(fea));
         vm.prank(address(fea));
         pairEditions.bindMinter(tokenId, w.item);
+    }
+
+    /// @dev A work of the partner that is not an edition master has no edition.
+    function test_Bind_RefusesAWorkThatIsNotAMaster() public {
+        Work memory w = _fedWork(fedArtist);
+        // Edition terms a master would carry, on an ORIGINAL: the kind alone refuses it.
+        w.item.edition = EditionTerms(0, address(0), SaleKind.UNIFORM_AUCTION, "");
+        (, uint256 tokenId) = _startFed(pairStream, fedArtist, w, RATE);
+        vm.prank(address(fea));
+        vm.expectRevert(
+            abi.encodeWithSelector(IFederatedEditions.NotEditionMaster.selector, tokenId)
+        );
+        pairEditions.bindMinter(tokenId, w.item);
+    }
+
+    function test_Uri_RefusesAnUnknownEdition() public {
+        vm.expectRevert(abi.encodeWithSelector(IFederatedEditions.UnknownEdition.selector, 7));
+        pairEditions.uri(7);
+    }
+
+    function _hashOf(PackageItem memory item) internal pure returns (bytes32) {
+        return WorksHashing.itemHash(item);
     }
 
     /// @dev An adapter whose sale kind is not the master's edition terms' kind cannot bind it,
