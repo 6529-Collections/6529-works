@@ -175,6 +175,26 @@ keeps the ready time it was given.
 The launch values are in `config/genesis.core.example.json` (`settings`) and read back by
 `VerifyCore`. On Sepolia every network call goes through the Safe (`flows.ps1 -Step safeCall`).
 
+### Points of care
+
+- **Federated tokens.** Their `rescue`, `setRescueDelay`, `rebind` and `setRebindDelay` pass only
+  for a role member calling directly with no delay (the token asks the manager whether the caller
+  may call the matching `Directory` function immediately). Keep those `Directory` roles at no
+  delay: adding one would lock these functions, scheduled calls included.
+- **Editions.** A sale contract can close a work's edition for good by sealing it at zero
+  (`Editions.seal(editionId, 0)` with no copies minted). Add only sale contracts that seal at the
+  count sold.
+- **Replacing modules.** A replacement accounts module must carry the existing artists over
+  (IDs, wallets, payout addresses). A replacement mint policy must carry over the barred items
+  and the content releases of the one it replaces. *(Pending the fix to `src/`: the integrator
+  adjusts this line at the final merge.)*
+- **Media locations.** A finalized work's content hashes are permanent in `WorkFacts`; where its
+  off-chain copies are served from comes from the replaceable delivery module
+  (`WorkRules.setDelivery`).
+- **Unclaimed shares.** An artist payee who cannot release (a frozen account, or one whose payout
+  address does not resolve) can still be marked, and the share forfeited to the network after
+  `unclaimedPeriod`.
+
 ### Pauses and disputes
 
 - A pauser pauses at once; the network unpauses at once.
