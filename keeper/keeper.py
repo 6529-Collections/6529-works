@@ -16,15 +16,18 @@ The steps (script/README.md, "Operating procedures"). Sales are in ETH only (ADR
 unclaimed period is the network's setting `Directory.unclaimedPeriod()` (180 days at launch),
 read on every run, never a constant here:
   start       start each 1/1 in --starts through SaleStarter (vaults and record in one call);
-              when someone started it directly first, deploy its seller vault and open its
-              record in WorkFacts
-  open        open the edition sale of every EDITION_MASTER 1/1 that has none yet (the edition
-              sale creates the edition itself, in the same call)
+              when someone started it directly first, deploy its vaults and open its record
+              in WorkFacts
+  open        open the edition sale of every EDITION_MASTER 1/1 that has none yet (the open
+              creates the edition, in the same call)
   settle      settle every ended 1/1
-  editions    settle every closed edition sale, with the keeper's own settlement order
+  editions    settle every closed edition sale, with the keeper's own settlement order (the
+              settlement seals the edition at the count sold)
   abandon     abandon every edition sale that has become abandonable (21 days after close)
-  finalize    finalize every work whose finalize notice is 14 days old (WorkRules)
-  vaults      deploy any missing seller vault of a 6529 Stream work
+  adopt       report (never send) editions the network moved to the edition auction that
+              have no sale yet: `adopt` is the network's action
+  finalize    finalize every work whose finalize notice has come due (WorkRules)
+  vaults      deploy any missing seller or royalty vault of a 6529 Stream work
   attest      walk the content store's completeness of each opened work's media files
               (attestComplete, in pieces) and then mark the work complete on chain
   expire      send aged credits to the network once they have waited the unclaimed period
@@ -54,7 +57,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.content.keccak import keccak256  # noqa: E402  (the repository's own keccak)
 
-DEFAULT_STEPS = "start,open,settle,editions,abandon,finalize,vaults,attest,expire,forfeit,rescues"
+DEFAULT_STEPS = (
+    "start,open,settle,editions,abandon,adopt,finalize,vaults,attest,expire,forfeit,rescues"
+)
 OPT_IN_STEPS = ("release", "mark", "notice")
 ETH = "0x" + "00" * 20
 EDITION_MASTER = 1
@@ -63,6 +68,8 @@ ENDED, SETTLED_1 = 3, 4
 EA_SETTLED, EA_VOID = 4, 5
 # `Outcome` of a work's first sale (src/interfaces/core/CoreTypes.sol).
 OUTCOME_NONE = 0
+# keccak256("PRODUCT_STREAM") (src/interfaces/types/EconomicsTypes.sol).
+PRODUCT_STREAM = keccak256(b"PRODUCT_STREAM")
 # How many chunks one attestComplete call walks; a large file takes several calls.
 ATTEST_CHUNKS = 512
 
@@ -368,10 +375,11 @@ class Keeper:
                 )
 
     def ensure_vaults(self, token_id: int, payees: Dyn | None, minted: dict) -> None:
-        """Deploy the work's seller vault (its payees from the item) when it is missing. The
-        royalty vault is deployed by the mint policy at the start, and again by the TERMS module
-        whenever the network's share is lowered, so the keeper only reports one it cannot find
-        (its payee list needs the sale's fee terms, which only the sale contract holds)."""
+        """Deploy the work's seller vault (its payees from the item) and its royalty vault when
+        missing. The royalty vault's payees are the seller vault and the network's fee recipient
+        at the sale's fee share (`Splits.royaltyPayees`); the keeper deploys it only when that
+        list derives the work's royalty receiver, and otherwise reports it (the TERMS module
+        sets a new receiver, and deploys it, when the network's share is lowered)."""
         work = self.work(token_id)
         if work is None:
             return  # burned (a sale cancelled after an upheld dispute): no vaults to deploy
@@ -385,8 +393,34 @@ class Keeper:
                 label=f"createWallet seller vault of work {token_id} ({seller})",
             )
         receiver = a(work, 7)
-        if receiver != seller and int(receiver, 16) and self.wallet_missing(receiver):
+        if not seller or receiver == seller or not int(receiver, 16):
+            return
+        if not self.wallet_missing(receiver):
+            return
+        royalty = self.royalty_payees_of(token_id, seller)
+        if royalty is not None and self.wallet_for(royalty).lower() == receiver.lower():
+            self.send(
+                "SplitFactory",
+                f"createWallet({PAYEES},bytes32)",
+                royalty,
+                0,
+                label=f"createWallet royalty vault of work {token_id} ({receiver})",
+            )
+        else:
             print(f"note  royalty receiver {receiver} of work {token_id} is not a deployed vault")
+
+    def royalty_payees_of(self, token_id: int, seller: str) -> Dyn | None:
+        """The royalty vault's payee list of a work sold by the English auction: the seller
+        vault and the network fee recipient now, at the fee share the sale locked."""
+        sig = "saleIdOf(address,uint256)"
+        sale = w(self.view("EnglishAuction", sig, self.c["Stream"], token_id), 0)
+        try:
+            fee_share = w(self.view("EnglishAuction", "auction(uint256)", sale), 3)
+        except Reverted:
+            return None  # not sold by this auction
+        sig = "networkFeeRecipient(bytes32)"
+        fee = a(self.view("EconomicsResolver", sig, PRODUCT_STREAM), 0)
+        return royalty_payees(seller, fee, fee_share)
 
     def wallet_missing(self, wallet: str) -> bool:
         return w(self.view("SplitFactory", "isWallet(address)", wallet), 0) == 0
@@ -458,18 +492,33 @@ class Keeper:
                 ) or done or self.dry_run:
                     break
 
-    def step_abandon(self, works: dict, items: dict) -> None:
+    def step_abandon(self) -> None:
         for sale, _, edition_id in self.sales("UniformEditionAuction"):
-            ok = w(self.view("UniformEditionAuction", "abandonable(uint256)", sale), 0)
-            item = self.item_of(edition_id, works, items)
-            if ok and item is not None:
+            if w(self.view("UniformEditionAuction", "abandonable(uint256)", sale), 0):
                 self.send(
                     "UniformEditionAuction",
-                    "abandon(uint256,bytes)",
+                    "abandon(uint256)",
                     sale,
-                    blob(encode(item)),
                     label=f"abandon edition sale of edition {edition_id}",
                 )
+
+    def step_adopt(self) -> None:
+        """Report editions the network moved to this edition auction (`IEditions.rebind`) that
+        have no sale here yet. `adopt` opens that sale; it is the network's action, because the
+        network chooses when the moved sale runs. The keeper only says it is waiting."""
+        adapter = self.c["UniformEditionAuction"]
+        for log in self.logs("Editions", "EditionRebound(uint256,address,address)"):
+            if topic_address(log, 3).lower() != adapter.lower():
+                continue
+            edition_id = int(log["topics"][1], 16)
+            sig = "saleIdOf(address,uint256)"
+            sale = w(self.view("UniformEditionAuction", sig, self.c["Editions"], edition_id), 0)
+            if self.rpc.ok(adapter, call_data("auction(uint256)", sale), self.sender):
+                continue  # adopted already
+            print(
+                f"due   adopt of edition {edition_id}, moved to the edition auction"
+                " (a network action: UniformEditionAuction.adopt(editions, id, data))"
+            )
 
     def step_finalize(self, works: dict, now: int, notice: bool) -> None:
         due = {}
@@ -528,27 +577,41 @@ class Keeper:
                 )
 
     def step_expire(self, now: int) -> None:
-        """Expire aged credits. Each credit is (total, aged, since): only the `aged` part, which
-        has itself waited the unclaimed period since `since`, can go to the network; money that
-        arrived later is not aged and keeps its own clock."""
+        """Expire aged credits (src/libraries/AgedCredits.sol). An auction credit is
+        (total, aged, since): only `aged`, which has itself waited the unclaimed period since
+        `since`, can go to the network; money that arrived later keeps its own clock. The
+        period is the network's setting now (`Directory.unclaimedPeriod()`). The edition auction
+        answers `creditOf(account)`; the English auction answers `expiresAt(account)`, which is
+        `since` plus that period (zero with no credit). The escrow keeps its own windows and
+        answers what an expiry would move now (`expirableAt`)."""
         period = self.unclaimed_period()
-        sig = "Credited(address,uint256,uint256)"
-        for contract in ("EnglishAuction", "UniformEditionAuction"):
-            for account in sorted({topic_address(g, 1) for g in self.logs(contract, sig)}):
-                credit = self.view(contract, "creditOf(address)", account)
-                if w(credit, 1) and now >= w(credit, 2) + period:
-                    self.send(
-                        contract,
-                        "expireCredit(address)",
-                        account,
-                        label=f"expire {account}'s aged credit on {contract}",
-                    )
+        sig = "Credited(address,address,uint256,uint256)"
+        for account in sorted({topic_address(g, 1) for g in self.logs("EnglishAuction", sig)}):
+            due = w(self.view("EnglishAuction", "expiresAt(address)", account), 0)
+            if due and now >= due:
+                self.send(
+                    "EnglishAuction",
+                    "expireCredit(address)",
+                    account,
+                    label=f"expire {account}'s aged credit on EnglishAuction",
+                )
+        edition_logs = self.logs("UniformEditionAuction", sig)
+        for account in sorted({topic_address(g, 1) for g in edition_logs}):
+            credit = self.view("UniformEditionAuction", "creditOf(address)", account)
+            if w(credit, 1) and now >= w(credit, 2) + period:
+                self.send(
+                    "UniformEditionAuction",
+                    "expireCredit(address,address)",
+                    account,
+                    ETH,
+                    label=f"expire {account}'s aged credit on UniformEditionAuction",
+                )
         escrow_sig = "Credited(address,address,address,uint256,uint256)"
         credits = self.logs("RevenueEscrow", escrow_sig)
         pairs = sorted({(topic_address(g, 1), topic_address(g, 2)) for g in credits})
         for wallet, asset in pairs:
-            credit = self.view("RevenueEscrow", "creditOf(address,address)", wallet, asset)
-            if w(credit, 1) and now >= w(credit, 2) + period:
+            sig = "expirableAt(address,address,uint256)"
+            if w(self.view("RevenueEscrow", sig, wallet, asset, now), 0):
                 label = f"expire the aged escrow credit of {wallet}"
                 self.send("RevenueEscrow", "expire(address,address)", wallet, asset, label=label)
 
@@ -662,7 +725,9 @@ class Keeper:
         if "editions" in steps:
             self.step_editions(now)
         if "abandon" in steps:
-            self.step_abandon(works, items)
+            self.step_abandon()
+        if "adopt" in steps:
+            self.step_adopt()
         if "finalize" in steps or "notice" in steps:
             self.step_finalize(works, now, "notice" in steps)
         if "vaults" in steps:
@@ -682,6 +747,19 @@ class Keeper:
 def _short(exc: Exception) -> str:
     text = str(exc)
     return text if len(text) < 160 else text[:157] + "..."
+
+
+def contracts_of(record: dict) -> dict[str, str]:
+    """Contract name -> address from a deployment record: the flat form
+    `script/DeployCore.s.sol` writes (`{"Stream": "0x..", ...}`), or the nested form
+    (`{"contracts": {"Stream": {"address": "0x.."}}}`)."""
+    if "contracts" in record:
+        return {name: v["address"] for name, v in record["contracts"].items()}
+    return {
+        name: v
+        for name, v in record.items()
+        if isinstance(v, str) and v.startswith("0x") and len(v) == 42
+    }
 
 
 def load_request(path: Path) -> dict:
@@ -738,7 +816,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.password_file:
             signing += ["--password-file", args.password_file]
     record = json.loads(args.deployment.read_text(encoding="utf-8"))
-    contracts = {name: v["address"] for name, v in record["contracts"].items()}
+    contracts = contracts_of(record)
     starts = [load_request(f) for f in sorted(args.starts.glob("*.json"))] if args.starts else []
     steps = set(filter(None, args.steps.split(","))) | {o for o in OPT_IN_STEPS if getattr(args, o)}
     keeper = Keeper(
