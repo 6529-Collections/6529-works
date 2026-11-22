@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 /// @title SplitVault
 /// @notice The split wallet's code: a minimal vault that holds ETH and ERC-20s and moves them only

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 /// @title StepLadder
 /// @notice The fixed price steps of the 6529 Stream Editions auction (ADR 0005), fixed

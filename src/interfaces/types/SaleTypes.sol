@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 /// @title SaleKind
 /// @notice Sale-kind labels carried by package sale terms and reported by each sale adapter

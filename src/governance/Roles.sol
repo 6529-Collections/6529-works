@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 /// @title Roles
 /// @notice Canonical OpenZeppelin 5 `AccessManager` role IDs and delays for every 6529 Works

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 /// @title BoundedCall
 /// @notice External calls whose failure can be told apart from the caller running short of gas.

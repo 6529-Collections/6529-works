@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 /// @title IVRFV2PlusWrapper
 /// @notice The two functions of the Chainlink VRF v2.5 wrapper (direct funding) that the entropy

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 /// @title Utf8
 /// @notice RFC 3629 UTF-8 validation, whole-buffer or streamed across chunks.

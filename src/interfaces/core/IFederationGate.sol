@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 /// @title IFederationGate
 /// @notice What a federated token asks the federation module (replaceable, found through

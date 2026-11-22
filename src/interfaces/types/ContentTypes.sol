@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 /// @notice What a media file is in a work (ADR 0001 section 8).
 /// @dev PRIMARY is the artwork itself: exactly one, first in the media list. PREVIEW is a small

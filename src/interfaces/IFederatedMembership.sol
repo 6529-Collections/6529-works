@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 /// @title IFederatedMembership
 /// @notice What both federated token contracts (`FederatedStream`, `FederatedEditions`) share:

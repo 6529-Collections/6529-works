@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 /// @title ISignatureTransfer
 /// @notice The one Permit2 entry point the shared sale adapters call: a signature transfer whose

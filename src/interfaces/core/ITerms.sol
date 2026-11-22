@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 /// @title ITerms
 /// @notice The TERMS module (replaceable): the royalty policy of existing works. It is the only

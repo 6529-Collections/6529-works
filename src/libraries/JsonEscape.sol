@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 /// @title JsonEscape
 /// @notice Byte-exact escaping for JSON string values. Text placed inside a `<script>` element

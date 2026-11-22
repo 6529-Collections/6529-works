@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 /// @title IArtistPayoutResolver
 /// @notice Resolves an artist's current payout address (ADR 0001 section 11). Split wallets ask it
