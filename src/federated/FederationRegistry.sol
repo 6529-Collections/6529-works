@@ -347,7 +347,9 @@ contract FederationRegistry is IFederationRegistry, IFederationGate, IMintPolicy
 
     /// @inheritdoc IMintPolicy
     /// @dev `request` is `abi.encode(IFederatedStream.FederatedMint)`. The caller must be a sale
-    ///      contract that may mint into `token` now (`canMint`). The item must be approved for
+    ///      contract that may mint into `token` now (`canMint`), and this module must be the one
+    ///      the directory names now: a replaced module authorizes nothing, so its item approvals
+    ///      die with it. The item must be approved for
     ///      `token`, not minted and not barred; it is consumed. Checks: ETH only; one to
     ///      `Limits.MAX_MEDIA_FILES` media files, each registered in the content store with the
     ///      stated SHA-256, the primary first and committed by the item; kind original or edition
@@ -363,7 +365,10 @@ contract FederationRegistry is IFederationRegistry, IFederationGate, IMintPolicy
         external
         returns (MintFacts memory f, MintTerms memory t)
     {
-        if (!canMint(token, msg.sender)) revert NotSaleContract(token, msg.sender);
+        if (
+            !canMint(token, msg.sender)
+                || IModuleSlots(directory).moduleOf(Slots.FEDERATION) != address(this)
+        ) revert NotSaleContract(token, msg.sender);
         IFederatedStream.FederatedMint memory m =
             abi.decode(request, (IFederatedStream.FederatedMint));
         bytes32 itemHash = WorksHashing.itemHash(m.item);
