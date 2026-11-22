@@ -9,8 +9,7 @@ import { VrfEntropyModule } from "src/entropy/VrfEntropyModule.sol";
 import { DeployCore } from "./DeployCore.sol";
 
 /// @title DeployGuards
-/// @notice The off-anvil checks `Deploy.s.sol` runs before anything is broadcast and
-///         `Verify.s.sol` repeats against the chain. Each one exists because the configurator
+/// @notice The off-anvil checks `DeployCore.s.sol` runs before anything is broadcast. Each one exists because the configurator
 ///         renounces its installer record in the genesis transaction: after that, nothing the
 ///         genesis got wrong can be fixed except by the network address it names.
 /// @dev Pure functions of their inputs (the genesis JSON, the committed example JSON, the
@@ -112,15 +111,14 @@ library DeployGuards {
     /// @notice A holder is a contract of this deployment or one of its dependencies.
     error HolderIsADeploymentContract(uint64 role, address account);
     /// @notice The genesis file's governed targets or wiring differ from what the committed
-    ///         `config/genesis.example.json` produces for the same deployment.
+    ///         `config/genesis.core.example.json` produces for the same deployment.
     error PolicyMismatch(string what);
     /// @notice The genesis names something this deployment does not have.
     error DroppedFromGenesis(string what);
-    /// @notice On mainnet, a role (or the network address) is the deployer EOA (owner decision
-    ///         18).
+    /// @notice On mainnet, a role (or the network address) is the deployer EOA.
     error HolderIsTheDeployer(string role, address account);
     /// @notice On mainnet, one account holds roles of two groups that must be held apart: the
-    ///         network address, the pausers and the curation signers (owner decision 18).
+    ///         network address, the pausers and the curation signers.
     error RoleGroupsShareAHolder(address account, string role, string otherRole);
     /// @notice On mainnet, the museum, the marketplace owner or the network fee recipient
     ///         (`name`) is the deployer EOA.
@@ -158,7 +156,7 @@ library DeployGuards {
     }
 
     /// @notice Off-anvil checks of the genesis file alone: not the example itself, and every
-    ///         account reachable (M-1).
+    ///         account reachable.
     ///         - The network address (the single authority; until the TDH bridge exists, one
     ///           6529 Safe) must be a deployed Safe: code, not an EIP-7702 delegated EOA, a
     ///           `getThreshold()` of at least `MIN_THRESHOLD`, a `getOwners()` list of keys
@@ -292,8 +290,8 @@ library DeployGuards {
             || account == SEPOLIA_DELEGATION;
     }
 
-    /// @notice Owner decision 18, at mainnet genesis (`Deploy.s.sol` and `Verify.s.sol` run it
-    ///         on chain 1 only): the deployer EOA is neither the network nor a holder
+    /// @notice At a mainnet genesis (not called by `DeployCore.s.sol`, which deploys to anvil
+    ///         and Sepolia only): the deployer EOA is neither the network nor a holder
     ///         (`HolderIsTheDeployer`), and the network address, the pausers and the curation
     ///         signers ({roleGroup}) are distinct accounts (`RoleGroupsShareAHolder`). The other
     ///         operational roles (STORAGE_OPERATOR, MINTER, KEEPER, PLATFORM, CURATOR) belong to no
@@ -323,12 +321,10 @@ library DeployGuards {
     }
 
     /// @notice On mainnet, the accounts the deployment pins at construction are not the
-    ///         deployer EOA (`Deploy.s.sol` runs it before the broadcast, `Verify.s.sol` against
-    ///         the record): the 6529 Network Museum, the marketplace `owner()` and the network
+    ///         deployer EOA (for a mainnet deploy script; `DeployCore.s.sol` does not call it): the 6529 Network Museum, the marketplace `owner()` and the network
     ///         fee recipient. Each is changed later only by a governed action (the museum vault's
     ///         destination in 7 days, SUCCESSOR_SETTER; the others in 3, FUNDS_SETTER), and the
-    ///         deployer's key, used once to deploy, is not a network-held account (owner decision
-    ///         18).
+    ///         deployer's key, used once to deploy, is not a network-held account.
     function checkRecipients(DeployCore.Params memory p) internal pure {
         if (p.museum == p.deployer) revert RecipientIsTheDeployer("MUSEUM", p.museum);
         if (p.marketOwner == p.deployer) {
@@ -342,8 +338,7 @@ library DeployGuards {
     /// @notice The entropy module's VRF subscription, read from the module's coordinator
     ///         (`getSubscription`, Chainlink v2.5): the module is its only consumer, and on
     ///         `mainnet` its owner is the network address (which moves the module between
-    ///         subscriptions). `Verify.s.sol`
-    ///         runs it off anvil; on mainnet `Deploy.s.sol` runs it before the broadcast,
+    ///         subscriptions). For a mainnet deploy script, run before the broadcast
     ///         against the module the simulation deployed, so the network Safe adds that
     ///         address as a consumer first (Chainlink accepts an address without code). A read
     ///         that fails fails the check, except off mainnet when the coordinator has no such
@@ -374,7 +369,7 @@ library DeployGuards {
         if (mainnet && owner != cfg.network) revert SubscriptionOwner(owner);
     }
 
-    /// @notice The owner decision 18 group of `role`: {NETWORK_GROUP} for ADMIN, NETWORK,
+    /// @notice The group of `role` that `checkRoleGroups` keeps apart: {NETWORK_GROUP} for ADMIN, NETWORK,
     ///         PARAMETER_SETTER, FUNDS_SETTER and SUCCESSOR_SETTER; {PAUSERS} for PAUSER;
     ///         {CURATION_SIGNERS} for CURATION_SIGNER; zero for the other operational roles.
     function roleGroup(string memory role) internal pure returns (uint8) {
@@ -392,7 +387,7 @@ library DeployGuards {
     // ------------------------------------------------------------------ against the deployment
 
     /// @notice Neither the network nor any holder is a contract of `d` or a dependency it was
-    ///         deployed with (M-1).
+    ///         deployed with.
     function checkHoldersAgainst(
         DeployCore.Deployment memory d,
         DeployCore.Params memory p,
@@ -422,7 +417,7 @@ library DeployGuards {
         if (forbidden) revert HolderIsADeploymentContract(role, account);
     }
 
-    /// @notice The genesis file's policy is the committed one (M-2): for the same deployment and
+    /// @notice The genesis file's policy is the committed one: for the same deployment and
     ///         manifest, its governed targets (every selector, role and target) and its wiring
     ///         equal what `example` (config/genesis.core.example.json) produces. Only the
     ///         holders, the network and brake addresses, and addresses that `DeployCore`
