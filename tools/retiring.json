@@ -1,0 +1,20 @@
+{
+  "reason": "ADR 0010: the old contracts and interfaces that the plain core replaces. They stay in src/ while the lanes build the new stack and are deleted at integration; remove each entry with its file, and delete this file when the list is empty.",
+  "files": [
+    "src/editions/Editions.sol",
+    "src/identity/ArtistRegistry.sol",
+    "src/interfaces/IAccounts.sol",
+    "src/interfaces/IEditions.sol",
+    "src/interfaces/IMintPolicy.sol",
+    "src/interfaces/IMintTarget.sol",
+    "src/interfaces/IStream.sol",
+    "src/interfaces/IStreamExtension.sol",
+    "src/interfaces/IStreamViews.sol",
+    "src/interfaces/IWorkRecords.sol",
+    "src/sales/EnglishAuctionLens.sol",
+    "src/stream/Stream.sol",
+    "src/stream/StreamLayout.sol",
+    "src/stream/StreamViews.sol",
+    "src/stream/WorkRecords.sol"
+  ]
+}
