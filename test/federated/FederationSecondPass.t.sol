@@ -330,6 +330,23 @@ contract FederationSecondPassTest is FederationBase {
         assertGt(saleId, 0);
     }
 
+    /// @dev An artist-resolved payee must be one of the parties, however many parties there
+    ///      are: a registered artist named only as a payee is refused.
+    function test_Collaborators_AnArtistPayeeMustBeAParty() public {
+        address third = _actor("thirdArtist");
+        uint64 deadline = uint64(block.timestamp + 1 days);
+        bytes memory sig = _sign(third, artists.registrationDigest(third, 0, 0, deadline));
+        vm.prank(address(fedRegistry));
+        artists.registerFederated(third, 0, 0, deadline, sig);
+        Work memory w = _withCollaborator(_fedWork(fedArtist));
+        w.item.payees[1] = ISplitWallet.Payee(uint160(third), address(0), 60_000);
+        vm.prank(fedArtist);
+        fed.approveItem(_itemHash(w), RATE);
+        bytes memory data = _mintData(w, _consent(collab, address(fed), w));
+        vm.expectRevert(IMintTarget.InvalidMintRequest.selector);
+        auction.start(address(fed), data);
+    }
+
     /// @dev Consent is counted by account: any wallet of the collaborator's consolidated account
     ///      signs (the artist registry answers `isWallet`).
     function test_Collaborators_AnyWalletOfTheAccountConsents() public {
