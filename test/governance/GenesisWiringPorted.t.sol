@@ -109,7 +109,7 @@ contract GenesisWiringPortedTest is GovernanceFixture {
         assertEq(GovernanceConfig.MAX_WIRING_CALLS, 64);
     }
 
-    /// @dev Exactly nine selectors, each scoped to the interface it is admitted for.
+    /// @dev Exactly eight selectors, each scoped to the interface it is admitted for.
     function test_GenesisSelectorsAreExactlyTheAllowList() public pure {
         bytes4[8] memory allowed = [
             IPackageRegistry.bindStream.selector,
@@ -125,7 +125,6 @@ contract GenesisWiringPortedTest is GovernanceFixture {
             type(IPackageRegistry).interfaceId,
             type(IPackageRegistry).interfaceId,
             type(ISaleAdapter).interfaceId,
-            GovernanceConfig.ANY_TARGET,
             GovernanceConfig.ANY_TARGET,
             type(IFederationRegistry).interfaceId,
             type(IFederationRegistry).interfaceId,

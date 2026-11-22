@@ -32,11 +32,11 @@ import { GasBase } from "./GasBase.sol";
 ///           kind, the served one last, so the scan runs to the end), a dear collection name,
 ///           an ARTIST seed and a dispute statement.
 ///         Each row builds its own work, so each test measures one.
-/// @dev Stream no longer checks a collection's name (the PLATFORM role chooses it); the renderer
-///      reads at most `TEXT_RETURN` (4,096) bytes of it and shows any valid UTF-8. The rows use
-///      the dearest 256-byte name the earlier check accepted (`_dearestName`). The name rows
-///      measure the longest name the renderer still shows, of bytes JSON escaping lengthens:
-///      over 8M, an open finding (`test_Budget_LongestShownName_*`).
+/// @dev Stream does not check a collection's name (the PLATFORM role chooses it); the renderer
+///      shows a name of at most `Renderer.MAX_NAME_BYTES` (128) bytes of valid UTF-8 and reads
+///      no longer one. The rows use the dearest name it shows (`_dearestName`). The name rows
+///      measure the longest shown name, of bytes JSON escaping lengthens, and names far over
+///      the bound (`test_Budget_LongestShownName_*`, `test_Budget_NameOverTheBound_*`).
 contract TokenUriBudgetTest is GasBase {
     uint256 internal constant MAX_ATTRIBUTES = 32;
     uint256 internal constant MAX_ESCAPES = 512;
@@ -51,9 +51,8 @@ contract TokenUriBudgetTest is GasBase {
     ///      `Limits.MAX_PREVIEW_BYTES` of weight, an `Identity` byte weighing eight).
     uint256 internal constant PREVIEW_IDENTITY = Limits.MAX_PREVIEW_BYTES / 8;
     uint256 internal constant PREVIEW_BASE64 = Limits.MAX_PREVIEW_BYTES;
-    /// @dev The longest collection name the renderer reads (`TEXT_RETURN` bytes of name in the
-    ///      `collectionOf` answer).
-    uint256 internal constant LONGEST_SHOWN_NAME = 4_096;
+    /// @dev The longest collection name the renderer shows (`Renderer.MAX_NAME_BYTES`).
+    uint256 internal constant LONGEST_SHOWN_NAME = 128;
 
     /// @dev A work's metadata measured at or over the 8M budget (an open finding).
     error OverTokenUriBudget(uint256 used);
@@ -73,6 +72,8 @@ contract TokenUriBudgetTest is GasBase {
     uint256 internal linkParts;
     /// @dev The collection name the next `_build` uses (`_dearestName` when empty).
     bytes internal nextName;
+    /// @dev The token `_namedRow` built last.
+    uint256 internal lastTokenId;
 
     function setUp() public override {
         super.setUp();
@@ -189,10 +190,10 @@ contract TokenUriBudgetTest is GasBase {
 
     // ------------------------------------------------------------------ the work
 
-    /// @dev The dearest 256-byte collection name the old name check accepted: U+2028 three
-    ///      bytes at a time, escaped to six (a JSON `u2028` escape), and a `#` to fill the 256 bytes.
+    /// @dev The dearest collection name the renderer shows: U+2028 three bytes at a time,
+    ///      escaped to six (a JSON `u2028` escape), and `#x` to fill the 128 bytes.
     function _dearestName() internal pure returns (string memory) {
-        return string(bytes.concat(_fill(hex"e280a8", 255), "#"));
+        return string(bytes.concat(_fill(hex"e280a8", LONGEST_SHOWN_NAME - 2), "#x"));
     }
 
     struct Built {
@@ -417,70 +418,57 @@ contract TokenUriBudgetTest is GasBase {
     function _namedRow(bytes memory name) internal returns (uint256) {
         nextName = name;
         Built memory b = _build(_worstRecord(BEFORE, ZEROS), false, false);
+        lastTokenId = b.tokenId;
         assertFalse(_contains(stream.tokenURI(b.tokenId), "record_status"), "record accepted");
         return _cold(address(stream), abi.encodeCall(stream.tokenURI, (b.tokenId)));
     }
 
-    /// @dev The intended behaviour: whatever name the PLATFORM role gives a collection, a work
-    ///      in it renders within 8M.
+    /// @dev Whatever name the PLATFORM role gives a collection, a work in it renders within 8M.
     function _checkNamedWithinBudget(bytes memory name) internal {
         uint256 used = _namedRow(name);
         console2.log("tokenURI with a long collection name:", used);
         if (used >= TOKEN_URI_BUDGET) revert OverTokenUriBudget(used);
     }
 
-    function check_LongestShownName_ControlBytes() external {
-        _checkNamedWithinBudget(_fill(hex"01", LONGEST_SHOWN_NAME));
-    }
-
-    function check_LongestShownName_Quotes() external {
-        _checkNamedWithinBudget(_fill('"', LONGEST_SHOWN_NAME));
-    }
-
-    function check_LongestShownName_LineSeparators() external {
-        _checkNamedWithinBudget(bytes.concat(_fill(hex"e280a8", LONGEST_SHOWN_NAME - 1), "#"));
-    }
-
-    /// @dev Stream no longer checks a collection's name, and the renderer shows up to 4,096
-    ///      bytes of it, in the work's name and again in its Collection trait. A name of bytes
-    ///      JSON escaping lengthens takes the dearest work past 8M (measured 15,664,777 for
-    ///      control bytes, 14,569,385 for quotes, 11,665,599 for U+2028).
+    /// @dev The longest names the renderer shows, of the bytes JSON escaping lengthens most
+    ///      (a control byte becomes six, a quote two, U+2028 six for three): each is shown, in
+    ///      the work's name and in its Collection trait, inside the budget.
     function test_Budget_LongestShownName_ControlBytes() public {
-        _expectFailure(
-            abi.encodeCall(this.check_LongestShownName_ControlBytes, ()),
-            OverTokenUriBudget.selector,
-            "a collection name of 4,096 control bytes takes tokenURI over 8M"
-        );
+        bytes memory name = _fill(hex"01", LONGEST_SHOWN_NAME);
+        _checkNamedWithinBudget(name);
+        assertTrue(_contains(stream.tokenURI(lastTokenId), "\\u0001\\u0001"), "name shown");
     }
 
     function test_Budget_LongestShownName_Quotes() public {
-        _expectFailure(
-            abi.encodeCall(this.check_LongestShownName_Quotes, ()),
-            OverTokenUriBudget.selector,
-            "a collection name of 4,096 quotes takes tokenURI over 8M"
-        );
+        _checkNamedWithinBudget(_fill('"', LONGEST_SHOWN_NAME));
+        assertTrue(_contains(stream.tokenURI(lastTokenId), '\\"\\"\\"'), "name shown");
     }
 
     function test_Budget_LongestShownName_LineSeparators() public {
-        _expectFailure(
-            abi.encodeCall(this.check_LongestShownName_LineSeparators, ()),
-            OverTokenUriBudget.selector,
-            "a collection name of 4,096 bytes of U+2028 takes tokenURI over 8M"
-        );
+        _checkNamedWithinBudget(bytes(_dearestName()));
+        assertTrue(_contains(stream.tokenURI(lastTokenId), "\\u2028\\u2028"), "name shown");
     }
 
-    /// @dev The 256-byte names the earlier name check refused (control bytes, quotes, `<`):
-    ///      each now accepted, and measured.
-    function test_Budget_Name256_ControlBytes() public {
-        uint256 used = _namedRow(_fill(hex"01", 256));
-        console2.log("256 control bytes as the collection name:", used);
-        assertLt(used, TOKEN_URI_BUDGET);
-    }
-
-    function test_Budget_Name256_Quotes() public {
-        uint256 used = _namedRow(_fill('"', 256));
-        console2.log("256 quotes as the collection name:", used);
-        assertLt(used, TOKEN_URI_BUDGET);
+    /// @dev A name over the bound is refused by its length alone, so what it holds costs
+    ///      nothing: 4,096 control bytes, quotes or bytes that are not UTF-8 render the work
+    ///      without a collection name for no more gas than the longest shown name. (Before the
+    ///      bound, 4,096 control bytes took this work to 15.7M gas.)
+    function test_Budget_NameOverTheBound_CostsNoMoreThanAShownName() public {
+        uint256 shown = _namedRow(_fill(hex"01", LONGEST_SHOWN_NAME));
+        bytes[4] memory names = [
+            _fill(hex"01", 4_096),
+            _fill('"', 4_096),
+            _fill(hex"ff", 4_096),
+            _fill(hex"01", LONGEST_SHOWN_NAME + 1)
+        ];
+        for (uint256 i; i < names.length; ++i) {
+            uint256 used = _namedRow(names[i]);
+            string memory uri = stream.tokenURI(lastTokenId);
+            assertFalse(_contains(uri, "\\u0001\\u0001"), "the name is not shown");
+            assertFalse(_contains(uri, '\\"\\"\\"'), "the name is not shown");
+            assertLt(used, TOKEN_URI_BUDGET);
+            assertLt(used, shown, "an unread name costs less than a shown one");
+        }
     }
 
     /// @dev A name longer than the renderer reads is no name: the work still renders, with its

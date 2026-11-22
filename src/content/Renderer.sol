@@ -149,9 +149,15 @@ contract Renderer is IRenderer {
     /// @inheritdoc IRenderer
     uint256 public immutable inlineThreshold;
 
-    /// @dev Return-size caps in bytes: a text, a locator, a `Work` (eleven words) and a `Facts`
-    ///      (twelve head words, the license ID and the media list, with room to spare).
-    uint256 private constant TEXT_RETURN = 4_096;
+    /// @notice The longest collection name shown, in bytes. A longer name is not read: the work
+    ///         renders without a collection name. The token contract sets no limit on a name;
+    ///         this bound keeps `tokenURI` inside its gas budget whatever the name holds.
+    uint256 internal constant MAX_NAME_BYTES = 128;
+
+    /// @dev Return-size caps in bytes: a collection (five head words, the name's length word and
+    ///      the name), a locator, a `Work` (eleven words) and a `Facts` (twelve head words, the
+    ///      license ID and the media list, with room to spare).
+    uint256 private constant NAME_RETURN = MAX_NAME_BYTES + 192;
     uint256 private constant LOCATOR_RETURN = Limits.MAX_URI_BYTES + 256;
     uint256 private constant WORK_RETURN = 352;
     uint256 private constant FACTS_RETURN =
@@ -284,8 +290,9 @@ contract Renderer is IRenderer {
     ///      ERC-1155 token is an editions token: the edition's ID is its master's token ID in
     ///      `IEditions.stream()`, which supplies the work. `workOf` (a work that was never minted
     ///      fails the read; a burned master keeps its record, so its editions still render),
-    ///      the collection's name from `collectionOf` (a name that cannot be read within the text
-    ///      cap, or is not UTF-8, is no name: the work still renders), and the permanent record
+    ///      the collection's name from `collectionOf` (a name over `MAX_NAME_BYTES`, which is
+    ///      refused by its length before anything is checked, or one that is not UTF-8, is no
+    ///      name: the work still renders), and the permanent record
     ///      from `IWorkFacts.factsOf` on the token's `facts()`, in one read.
     function _load(Ctx memory c) private view {
         (bool ok, bytes memory ret) = BoundedCall.tryReadAll(
@@ -304,7 +311,7 @@ contract Renderer is IRenderer {
             (ok, ret) = BoundedCall.tryReadAll(
                 c.stream,
                 abi.encodeWithSelector(IStream.collectionOf.selector, c.work.collectionId),
-                TEXT_RETURN + 192
+                NAME_RETURN
             );
             if (ok) {
                 string memory name = abi.decode(ret, (Collection)).name;

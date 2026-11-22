@@ -44,7 +44,7 @@ contract GenesisWiringTest is IntegrationBase {
 
     // ------------------------------------------------------------------ the list
 
-    function test_GenesisWiring_TheGenesisSelectorsAreExactlyTheNine() public view {
+    function test_GenesisWiring_TheGenesisSelectorsAreExactlyTheEight() public view {
         bytes4[8] memory sels = _genesisSelectors();
         bytes4[8] memory ifaces = [
             type(IPackageRegistry).interfaceId,
@@ -54,10 +54,9 @@ contract GenesisWiringTest is IntegrationBase {
             type(IFederationRegistry).interfaceId,
             type(IFederationRegistry).interfaceId,
             GovernanceConfig.ANY_TARGET,
-            GovernanceConfig.ANY_TARGET,
             GovernanceConfig.ANY_TARGET
         ];
-        for (uint256 i; i < 9; ++i) {
+        for (uint256 i; i < sels.length; ++i) {
             assertEq(GovernanceConfig.genesisInterface(sels[i]), ifaces[i]);
         }
         // No other selector of the role map, and no core module or minter function, is one.
