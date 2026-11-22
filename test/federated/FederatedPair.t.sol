@@ -145,6 +145,31 @@ contract FederatedPairTest is FederationBase {
         assertEq(address(fea).balance, fl.claimable(b, address(0)), "only b's credited refund");
     }
 
+    /// @dev The supply check counts what was already minted: once some copies of a sealed
+    ///      edition exist, the bound adapter cannot mint one more than the rest.
+    function test_Pair_MintBeyondTheRemainingSealedSupplyIsRefused() public {
+        (Work memory w, uint256 oneSaleId, uint256 tokenId, uint256 saleId) = _openPair(0);
+        address a = makeAddr("a");
+        _editionBidFed(saleId, a, 100, 3);
+        _ethBid(oneSaleId, collector, 1 ether);
+        _settleAtEnd(oneSaleId);
+        pairEditions.createEdition(tokenId, w.item);
+        vm.warp(fl.endTimes(saleId).endTime);
+        assertTrue(fea.settle(saleId, new uint256[](0)));
+        uint256 count = fl.settlement(saleId).count;
+        vm.prank(a);
+        (uint256 won,) = fea.claimBid(saleId, 1, a);
+        assertGt(won, 0);
+        assertEq(pairEditions.edition(tokenId).maxSupply, count);
+        bytes memory data = abi.encode(address(0), uint256(1 ether));
+        uint256 rest = count - won;
+        vm.prank(address(fea));
+        vm.expectRevert(
+            abi.encodeWithSelector(IFederatedEditions.EditionUnavailable.selector, tokenId)
+        );
+        pairEditions.mint(collector, tokenId, rest + 1, data);
+    }
+
     function test_Pair_ADelistingVoidsTheRunningEditionSaleWithRefunds() public {
         (,,, uint256 saleId) = _openPair(0);
         address a = makeAddr("a");

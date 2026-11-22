@@ -50,6 +50,11 @@ contract ArtistRegistryTest is IdentityFixture {
         _register(artist);
         vm.expectRevert(IArtistRegistry.InvalidIdentity.selector);
         _register(address(0));
+        // A root that may not be paid (here a protocol contract) is refused as well.
+        vm.expectRevert(IArtistRegistry.InvalidIdentity.selector);
+        _register(packageRegistry);
+        vm.expectRevert(IArtistRegistry.InvalidIdentity.selector);
+        _register(address(registry));
         vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.UnboundCaller.selector, stranger));
         vm.prank(stranger);
         registry.register(stranger, PROFILE, PROFILE_DOC);
@@ -98,6 +103,16 @@ contract ArtistRegistryTest is IdentityFixture {
         assertTrue(registry.isWallet(id, outsider));
         assertFalse(registry.isWallet(id, wallet));
         assertFalse(registry.isWallet(uint256(type(uint160).max) + 1, address(1)));
+    }
+
+    /// @dev An account ID above 160 bits is never read as the address in its low bits: it names
+    ///      no registered account, whoever's root those bits spell.
+    function test_IsWallet_AnIdAbove160BitsNeverAliasesARoot() public view {
+        uint256 alias_ = (uint256(1) << 160) | uint160(artist);
+        assertTrue(registry.isWallet(artistId, artist));
+        assertFalse(registry.isWallet(alias_, artist));
+        assertFalse(registry.isWallet(alias_, wallet));
+        assertEq(registry.frozenUntil(alias_), 0);
     }
 
     /// @dev The account may be named by any address that is or was its root.
@@ -736,6 +751,23 @@ contract ArtistRegistryTest is IdentityFixture {
         assertFalse(registry.isArtist(address(other), 1, artist), "not the bound Editions");
         assertFalse(registry.isArtist(address(editions), 2, artist), "unknown edition");
         assertTrue(registry.isArtist(address(editions), 1, artist));
+    }
+
+    /// @dev An edition whose master is not the bound Stream is "no", even when the work ID it
+    ///      names is one of the artist's works.
+    function test_IsArtist_AnEditionOfAnotherMasterIsNo() public {
+        (StreamMock stream, EditionsMastersMock editions) = _wireStream();
+        assertTrue(registry.isArtist(address(editions), 1, artist));
+        editions.setEdition(1, stranger);
+        assertFalse(registry.isArtist(address(editions), 1, artist));
+        assertTrue(registry.isArtist(address(stream), 1, artist), "the work itself still answers");
+    }
+
+    /// @dev Before a Stream is bound every subject is "no", without calling anything.
+    function test_IsArtist_NoStreamBoundIsNo() public {
+        assertEq(registry.stream(), address(0));
+        assertFalse(registry.isArtist(makeAddr("token"), 1, artist));
+        assertFalse(registry.isArtist(address(0), 1, artist));
     }
 
     /// @dev Gas rule: an Editions `masterOf` that runs out of the gas forwarded to it reverts
