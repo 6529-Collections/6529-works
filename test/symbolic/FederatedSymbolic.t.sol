@@ -1,345 +1,362 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { ContentStore } from "src/content/ContentStore.sol";
-import { SplitLedger } from "src/economics/SplitLedger.sol";
-import { IArtistPayoutResolver } from "src/economics/interfaces/IArtistPayoutResolver.sol";
-import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
+import { Test } from "forge-std/Test.sol";
 import { FederatedStream } from "src/federated/FederatedStream.sol";
-import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
-import { IContentStore } from "src/interfaces/IContentStore.sol";
-import { IFederatedStream } from "src/interfaces/IFederatedStream.sol";
-import { IFederatedToken } from "src/interfaces/IFederatedToken.sol";
+import { FederationRegistry } from "src/federated/FederationRegistry.sol";
 import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
-import { IMintTarget } from "src/interfaces/IMintTarget.sol";
-import { IStream } from "src/interfaces/IStream.sol";
-import { MediaFile } from "src/interfaces/types/ContentTypes.sol";
-import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
-import { License, PackageItem, Party, SaleTerms } from "src/interfaces/types/PackageTypes.sol";
-import { PrimaryOutcome, PrimaryTerms, SaleKind } from "src/interfaces/types/SaleTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
-import { MockRenderer, MockSaleAdapter } from "../mocks/stream/StreamMocks.sol";
-import { SymHelpers, SymSink } from "./LedgerSymbolic.t.sol";
+import { MintFacts, Slots } from "src/interfaces/core/CoreTypes.sol";
+import { IStream } from "src/interfaces/core/IStream.sol";
 
-/// @dev The artist registry as a federated template reads it: one artist with one wallet, the
-///      listing the federation registry writes, the network's recorded share for the token, and
-///      every consent accepted.
-contract SymFedAccounts is IArtistPayoutResolver {
-    uint256 public immutable artistId;
-    address public immutable wallet;
-    address public federationRegistry;
-    uint32 public recordedShare = type(uint32).max;
-    mapping(address token => uint256) internal _listed;
+/// @dev The directory as a federated token and the federation module read it: settable slots and
+///      an AccessManager whose only immediate caller is `network`.
+contract SymDirectory {
+    mapping(bytes32 => address) public moduleOf;
+    address public authority;
 
-    constructor(uint256 artistId_, address wallet_) {
-        (artistId, wallet) = (artistId_, wallet_);
+    constructor(address manager) {
+        authority = manager;
     }
 
-    function setFederationRegistry(address registry) external {
-        federationRegistry = registry;
+    function set(bytes32 slot, address module) external {
+        moduleOf[slot] = module;
+    }
+}
+
+/// @dev An AccessManager (and an `IAuthority`) that lets `network` call anything at once.
+contract SymManager {
+    address public immutable network;
+
+    constructor(address network_) {
+        network = network_;
     }
 
-    function setRecordedShare(uint32 share) external {
-        recordedShare = share;
+    function canCall(address caller, address, bytes4) external view returns (bool, uint32) {
+        return (caller == network, 0);
+    }
+}
+
+/// @dev A federation gate whose answers the proof makes symbolic.
+contract SymGate {
+    bool public answer = true;
+    uint256 public removedAt;
+
+    function set(bool answer_, uint256 removedAt_) external {
+        (answer, removedAt) = (answer_, removedAt_);
     }
 
-    function list(address token) external {
-        _listed[token] = 1;
+    function canMint(address, address) external view returns (bool) {
+        return answer;
     }
 
-    function isWallet(uint256 accountId, address account) external view returns (bool) {
-        return accountId == artistId && account == wallet;
+    function minterRemovedAt(address) external view returns (uint256) {
+        return removedAt;
+    }
+}
+
+/// @dev An accounts module that says every caller is a wallet of every account.
+contract SymEveryoneIsTheArtist {
+    function isWallet(uint256, address) external pure returns (bool) {
+        return true;
+    }
+}
+
+/// @dev A sale contract the proof drives.
+contract SymMinter {
+    function mintTo(address token, address to, MintFacts calldata f) external returns (uint256) {
+        return IStream(token).mint(to, f);
     }
 
-    function federatedListing(address token)
+    function record(address token, uint256 id) external {
+        IStream(token).recordPrimarySale(id, false, address(0), 0);
+    }
+}
+
+/// @dev The economics resolver as the federation module's constructor reads it.
+contract SymEconomics {
+    function splitFactory() external pure returns (address) {
+        return address(0x5917);
+    }
+}
+
+/// @dev A predecessor federation module whose answers the proof makes symbolic, so the module
+///      under proof inherits one listing, one template, one sale contract and one account flag.
+contract SymPrevious {
+    IFederationRegistry.Listing internal _listing;
+    IFederationRegistry.Template internal _template;
+    IFederationRegistry.SaleContract internal _sale;
+    bool public delisted;
+
+    function set(
+        IFederationRegistry.Listing memory l,
+        IFederationRegistry.Template memory t,
+        IFederationRegistry.SaleContract memory s,
+        bool delisted_
+    ) external {
+        (_listing, _template, _sale, delisted) = (l, t, s, delisted_);
+    }
+
+    function entropyModule() external pure returns (address) {
+        return address(0);
+    }
+
+    function listingOf(address) external view returns (IFederationRegistry.Listing memory) {
+        return _listing;
+    }
+
+    function templateOf(address) external view returns (IFederationRegistry.Template memory) {
+        return _template;
+    }
+
+    function saleContractOf(address)
         external
         view
-        returns (uint256, IArtistRegistry.FederationStatus)
+        returns (IFederationRegistry.SaleContract memory)
     {
-        if (_listed[token] == 0) return (0, IArtistRegistry.FederationStatus.NONE);
-        return (artistId, IArtistRegistry.FederationStatus.ACTIVE);
+        return _sale;
     }
 
-    function federatedFeeShare(address) external view returns (uint32) {
-        return recordedShare;
-    }
-
-    function payoutAddress(uint256 id) external view returns (address) {
-        return id == artistId ? wallet : address(0);
-    }
-
-    function requireConsent(uint256, bytes32, bytes calldata) external view returns (address) {
-        return wallet;
+    function isAccountDelisted(uint256) external view returns (bool) {
+        return delisted;
     }
 }
 
-/// @dev The federation registry as a template reads it: `register` lists the caller, and an
-///      adapter may mint once the test admits it.
-contract SymFederation {
-    SymFedAccounts internal immutable _accounts;
-    mapping(address adapter => bool) public admitted;
-
-    constructor(SymFedAccounts accounts) {
-        _accounts = accounts;
-    }
-
-    function admit(address adapter) external {
-        admitted[adapter] = true;
-    }
-
-    function register(IFederationRegistry.Join calldata) external {
-        _accounts.list(msg.sender);
-    }
-
-    function canMint(address, address adapter) external view returns (bool) {
-        return admitted[adapter];
-    }
-}
-
-/// @notice Halmos proofs of a federated template's rules on the real `FederatedStream`, with the
-///         real `SplitLedger` and `ContentStore` and stand-ins for the artist and federation
-///         registries (docs/testing/README.md, "Symbolic").
-/// @dev The template is deployed directly, as its deployer would, with a 10% share fixed at
-///      deployment. Proofs that need a token join and mint one through `adapter`.
-contract FederatedSymbolicTest is SymHelpers {
-    uint256 internal constant ARTIST_ID = 0xA471;
-    address internal constant ARTIST = address(0xA471);
-    address internal constant FEE = address(0xFEE5);
+/// @notice Halmos proofs of the federated token's gate rules on the real `FederatedStream`, and of
+///         two rules of the real `FederationRegistry` (docs/testing/README.md, "Symbolic"). Each
+///         `check_` is also a Forge fuzz test through its `testFuzz_` twin.
+contract FederatedSymbolicTest is Test {
     address internal constant NETWORK = address(0x6529);
-    uint32 internal constant SHARE = 10_000;
-    uint32 internal constant RATE = 7_500;
+    address internal constant COLLECTOR = address(0xC011);
+    address internal constant TOKEN = address(0x70CE);
+    uint256 internal constant D = 100_000;
 
-    SymFedAccounts internal accounts;
-    SymFederation internal federation;
-    ContentStore internal store;
-    MockRenderer internal renderer;
+    SymDirectory internal directory;
+    SymGate internal gate;
+    SymMinter internal minter;
     FederatedStream internal fed;
-    MockSaleAdapter internal adapter;
-    MockSaleAdapter internal other;
-    bytes internal mintData;
-    bytes32 internal itemHash;
+    FederationRegistry internal registry;
+    SymPrevious internal previous;
 
     function setUp() public {
-        accounts = new SymFedAccounts(ARTIST_ID, ARTIST);
-        federation = new SymFederation(accounts);
-        accounts.setFederationRegistry(address(federation));
-        store = new ContentStore();
-        renderer = new MockRenderer("default");
-        SplitLedger ledger = new SplitLedger(accounts, address(new SymSink()));
-        bytes32 cc0Text = _file("CC0 1.0 Universal", "text/plain");
+        SymManager manager = new SymManager(NETWORK);
+        directory = new SymDirectory(address(manager));
+        gate = new SymGate();
+        minter = new SymMinter();
+        directory.set(Slots.FEDERATION, address(gate));
+        directory.set(Slots.ACCOUNTS, address(new SymEveryoneIsTheArtist()));
+        directory.set(Slots.FEDERATED_TERMS, address(this));
         fed = new FederatedStream(
-            IFederatedStream.Config({
-                name: "Artist",
-                symbol: "ART",
-                artistRegistry: address(accounts),
-                splitLedger: address(ledger),
-                contentStore: address(store),
-                artistId: ARTIST_ID,
-                feeShare: SHARE,
-                feeRecipient: FEE,
-                renderer: address(renderer),
-                rendererCodeHash: address(renderer).codehash,
-                owner: ARTIST
-            })
+            "Artist", "ART", address(0xFAC7), address(directory), 0xA471, address(1), address(0)
         );
-        adapter = new MockSaleAdapter(SaleKind.ENGLISH_AUCTION);
-        other = new MockSaleAdapter(SaleKind.ENGLISH_AUCTION);
-        federation.admit(address(adapter));
-        federation.admit(address(other));
-
-        MediaFile[] memory media = new MediaFile[](1);
-        media[0] = MediaFile(_file("the media", "image/png"), keccak256("the media"), 0);
-        PackageItem memory item;
-        item.contentHash = keccak256("the media");
-        item.mediaHash = WorksHashing.mediaHash(media);
-        item.recordFileId = _file('{"name":"work"}', "application/json");
-        item.parties = new Party[](1);
-        item.parties[0] = Party(ARTIST, 0);
-        item.payees = new ISplitWallet.Payee[](1);
-        item.payees[0] = ISplitWallet.Payee(ARTIST_ID, address(0), 100_000);
-        item.license = License("CC0-1.0", cc0Text);
-        item.sale = SaleTerms(SaleKind.ENGLISH_AUCTION, CURRENCY_ETH, "");
-        itemHash = WorksHashing.itemHash(item);
-        mintData = abi.encode(IFederatedStream.FederatedMint(item, media, new bytes[](0)));
+        previous = new SymPrevious();
+        registry = new FederationRegistry(
+            address(manager),
+            address(directory),
+            address(0xFAC7),
+            address(new SymEconomics()),
+            address(0xC0DE),
+            address(previous)
+        );
     }
 
-    // ---------------------------------------------------------------------------------------
-    // FED-4, FED-5
-    // ---------------------------------------------------------------------------------------
+    function _facts(uint256 n, uint24 rate) internal pure returns (MintFacts memory f) {
+        f.itemHash = keccak256(abi.encode("item", n));
+        f.contentHash = keccak256(abi.encode("content", n));
+        f.artistId = 0xA471;
+        f.collectionId = 1;
+        f.royaltyReceiver = address(0xFEE);
+        f.royaltyRate = rate;
+    }
 
-    /// @notice FED-4: a template has no restricted function: no `authority()`, and every write
-    ///         that is not a sale adapter's refuses any caller that is not a wallet of the
-    ///         artist's account, the network included; `setAdmittedMinter` refuses everyone.
-    /// @dev Bounds: any caller but the artist's wallet; the template's eleven artist writes and
-    ///      `setAdmittedMinter`, with any word as their argument.
-    function check_noRestrictedFunction_onATemplate(address caller, uint8 action, bytes32 word)
+    /// @notice Only an account that minted here records or burns, whatever the gate answers: a
+    ///         caller that never minted reaches neither the minter's token nor one it holds.
+    function check_recordOrBurn_onlyAnAccountThatMinted(
+        address caller,
+        bool answer,
+        uint256 removedAt,
+        bool burn
+    ) public {
+        vm.assume(caller != address(minter) && caller != address(0));
+        uint256 held = minter.mintTo(address(fed), address(minter), _facts(1, 0));
+        uint256 own = minter.mintTo(address(fed), caller, _facts(2, 0));
+        gate.set(answer, removedAt);
+        assert(!fed.hasMinted(caller));
+        bytes memory a = burn
+            ? abi.encodeCall(IStream.burn, (held))
+            : abi.encodeCall(IStream.recordPrimarySale, (held, true, caller, 1));
+        bytes memory b = burn
+            ? abi.encodeCall(IStream.burn, (own))
+            : abi.encodeCall(IStream.recordPrimarySale, (own, true, caller, 1));
+        vm.prank(caller);
+        (bool okA,) = address(fed).call(a);
+        vm.prank(caller);
+        (bool okB,) = address(fed).call(b);
+        assert(!okA && !okB);
+        // The minter still finishes its own sale.
+        minter.record(address(fed), held);
+    }
+
+    /// @notice The rescue predicate: a token an account that never minted holds is never
+    ///         rescuable, whatever removal time the gate reports; a token the minter holds is
+    ///         rescuable exactly when the gate reports a removal at least `rescueDelay` ago.
+    function check_rescue_onlyFromAnAccountThatMinted(
+        uint48 removedAt,
+        uint48 delay,
+        uint32 elapsed
+    ) public {
+        uint256 held = minter.mintTo(address(fed), address(minter), _facts(1, 0));
+        uint256 collectors = minter.mintTo(address(fed), COLLECTOR, _facts(2, 0));
+        gate.set(false, removedAt);
+        vm.prank(NETWORK);
+        fed.setRescueDelay(delay);
+        vm.warp(block.timestamp + elapsed);
+        vm.prank(NETWORK);
+        (bool okCollector,) =
+            address(fed).call(abi.encodeCall(IStream.rescue, (collectors, NETWORK)));
+        assert(!okCollector);
+        vm.prank(NETWORK);
+        (bool okHeld,) = address(fed).call(abi.encodeCall(IStream.rescue, (held, NETWORK)));
+        bool due = removedAt != 0 && block.timestamp >= uint256(removedAt) + delay;
+        assert(okHeld == due);
+    }
+
+    /// @notice Only the shared TERMS module (the directory's `FEDERATED_TERMS`, here this
+    ///         contract) sets a royalty, never above 100,000, and a locked rate never changes. The
+    ///         amount `royaltyInfo` answers is proved by fuzzing (`testFuzz_royaltyInfo`): the
+    ///         solver times out on the 512-bit product.
+    function check_royalty_onlyTermsAndALockedRateHolds(
+        address caller,
+        uint24 first,
+        uint24 second,
+        bool lock
+    ) public {
+        uint256 id = minter.mintTo(address(fed), COLLECTOR, _facts(1, 0));
+        vm.assume(caller != address(this));
+        vm.prank(caller);
+        (bool byOther,) = address(fed).call(abi.encodeCall(IStream.setRoyalty, (id, caller, first)));
+        assert(!byOther);
+        (bool ok1,) =
+            address(fed).call(abi.encodeCall(IStream.setRoyalty, (id, address(0xA), first)));
+        assert(ok1 == (first <= D));
+        uint24 rate = ok1 ? first : 0;
+        if (lock) fed.lockRoyaltyRate(id);
+        (bool ok2,) =
+            address(fed).call(abi.encodeCall(IStream.setRoyalty, (id, address(0xB), second)));
+        assert(ok2 == (second <= D && (!lock || second == rate)));
+        assert(fed.workOf(id).royaltyRate == (ok2 ? second : rate));
+    }
+
+    /// @notice A federated token has one collection: `createCollection` reverts for every
+    ///         caller, the artist (here: everyone) and the network included.
+    function check_createCollection_alwaysReverts(address caller, bytes32 metadataHash) public {
+        vm.prank(caller);
+        (bool ok,) =
+            address(fed).call(abi.encodeCall(IStream.createCollection, ("second", metadataHash)));
+        assert(!ok);
+        assert(fed.collectionCount() == 1);
+    }
+
+    /// @notice The network's share of a listed contract never rises: a lowering succeeds exactly
+    ///         when the new share is below the current one, and the share after is never above.
+    function check_lowerFeeShare_neverRaises(uint32 first, uint32 second) public {
+        previous.set(
+            IFederationRegistry.Listing(
+                1,
+                IFederationRegistry.Status.ACTIVE,
+                IFederationRegistry.Form.ERC721,
+                first,
+                address(0xDE),
+                address(0)
+            ),
+            IFederationRegistry.Template(
+                1, IFederationRegistry.Form.ERC721, IFederationRegistry.TemplateStatus.APPROVED
+            ),
+            IFederationRegistry.SaleContract(1, 0),
+            false
+        );
+        vm.prank(NETWORK);
+        (bool ok,) = address(registry).call(abi.encodeCall(registry.lowerFeeShare, (TOKEN, second)));
+        assert(ok == (second < first));
+        uint32 now_ = registry.feeShareOf(TOKEN);
+        assert(now_ == (ok ? second : first));
+        assert(now_ <= first);
+    }
+
+    /// @notice `canMint` is false unless the sale contract is added and not removed, the listing
+    ///         is ACTIVE, its account is not delisted and its template version is APPROVED.
+    function check_canMint_onlyAnActiveListingAndAnAddedSaleContract(
+        uint48 addedAt,
+        uint48 removedAt,
+        uint8 status,
+        uint8 templateStatus,
+        bool delisted
+    ) public {
+        vm.assume(status < 3 && templateStatus < 4);
+        previous.set(
+            IFederationRegistry.Listing(
+                1,
+                IFederationRegistry.Status(status),
+                IFederationRegistry.Form.ERC721,
+                0,
+                address(0xDE),
+                address(0)
+            ),
+            IFederationRegistry.Template(
+                1,
+                IFederationRegistry.Form.ERC721,
+                IFederationRegistry.TemplateStatus(templateStatus)
+            ),
+            IFederationRegistry.SaleContract(addedAt, removedAt),
+            delisted
+        );
+        bool can = registry.canMint(TOKEN, address(minter));
+        bool expected = addedAt != 0 && removedAt == 0
+            && status == uint8(IFederationRegistry.Status.ACTIVE) && !delisted
+            && templateStatus == uint8(IFederationRegistry.TemplateStatus.APPROVED);
+        assert(can == expected);
+    }
+
+    // ------------------------------------------------------------- the same, under Forge
+
+    function testFuzz_recordOrBurn(address caller, bool answer, uint256 removedAt, bool burn)
         public
     {
-        vm.assume(caller != ARTIST);
-        _joinAndMint();
-        (bool hasAuthority,) = address(fed).staticcall(abi.encodeWithSignature("authority()"));
-        assert(!hasAuthority);
-        bytes memory data;
-        if (action == 0) {
-            data = abi.encodeCall(fed.approveItem, (word, 1));
-        } else if (action == 1) {
-            data = abi.encodeCall(fed.revokeItem, (word));
-        } else if (action == 2) {
-            data = abi.encodeCall(fed.setRecord, (1, word));
-        } else if (action == 3) {
-            data = abi.encodeCall(fed.finalize, (1));
-        } else if (action == 4) {
-            data = abi.encodeCall(fed.setRoyaltyRate, (1, 0));
-        } else if (action == 5) {
-            data = abi.encodeCall(fed.setLocator, (1, 0, 1, "ar://x"));
-        } else if (action == 6) {
-            data = abi.encodeCall(
-                fed.setDefaultRenderer, (address(renderer), address(renderer), word)
-            );
-        } else if (action == 7) {
-            data = abi.encodeCall(fed.linkEditions, (address(renderer)));
-        } else if (action == 8) {
-            data = abi.encodeCall(fed.setContractURI, ("x"));
-        } else if (action == 9) {
-            data = abi.encodeCall(fed.setOwner, (address(uint160(uint256(word)))));
-        } else if (action == 10) {
-            data = abi.encodeCall(fed.joinFederation, (_noJoin()));
-        } else {
-            data = abi.encodeCall(fed.setAdmittedMinter, (address(uint160(uint256(word))), true));
-        }
-        (bool ok, bytes4 err) = _call(caller, address(fed), data);
-        assert(!ok);
-        if (action < 11) assert(err == IFederatedToken.NotArtist.selector);
-        else assert(err == IFederatedToken.FederationStateInvalid.selector);
+        check_recordOrBurn_onlyAnAccountThatMinted(caller, answer, removedAt, burn);
     }
 
-    /// @notice FED-5: before the template joins, no address is an admitted minter and every
-    ///         mint reverts, even an approved item by an adapter the federation registry admits;
-    ///         `setAdmittedMinter` always reverts, for the artist too.
-    /// @dev Bounds: any caller and probe address; the approved item.
-    function check_beforeJoining_nothingMints(address caller, address probe, bool asArtist) public {
-        vm.prank(ARTIST);
-        fed.approveItem(itemHash, RATE);
-        assert(!fed.isAdmittedMinter(probe));
-        (bool ok, bytes4 err) = _call(
-            caller,
-            address(fed),
-            abi.encodeCall(fed.mint, (caller, uint256(0), uint256(1), mintData))
-        );
-        assert(!ok && err == IMintTarget.NotAdmittedMinter.selector);
-        (ok,) = address(adapter)
-            .call(abi.encodeCall(adapter.start, (IMintTarget(address(fed)), mintData)));
-        assert(!ok);
-        (ok, err) = _call(
-            asArtist ? ARTIST : caller,
-            address(fed),
-            abi.encodeCall(fed.setAdmittedMinter, (probe, true))
-        );
-        assert(!ok && err == IFederatedToken.FederationStateInvalid.selector);
-        assert(!fed.federationState());
+    function testFuzz_rescue(uint48 removedAt, uint48 delay, uint32 elapsed) public {
+        check_rescue_onlyFromAnAccountThatMinted(removedAt, delay, elapsed);
     }
 
-    // ---------------------------------------------------------------------------------------
-    // FED-16, FED-24, FED-73
-    // ---------------------------------------------------------------------------------------
+    function testFuzz_royalty(address caller, uint24 first, uint24 second, bool lock) public {
+        check_royalty_onlyTermsAndALockedRateHolds(caller, first, second, lock);
+    }
 
-    /// @notice FED-16: only the adapter that minted a token settles it, once; SOLD needs a
-    ///         buyer; any other caller, an admitted adapter included, is refused.
-    /// @dev Bounds: any caller, outcome byte, buyer and price.
-    function check_settle_onlyTheMintingAdapterOnce(
-        address caller,
-        uint8 outcome,
-        address buyer,
-        uint256 price
+    /// @notice `royaltyInfo` is exactly floor(price * rate / 100,000) for any price and rate.
+    function testFuzz_royaltyInfo(uint256 price, uint24 rate) public {
+        rate = uint24(bound(rate, 0, D));
+        uint256 id = minter.mintTo(address(fed), COLLECTOR, _facts(1, rate));
+        (, uint256 amount) = fed.royaltyInfo(id, price);
+        assertEq(amount, (price / D) * rate + (price % D) * rate / D);
+    }
+
+    function testFuzz_createCollection(address caller, bytes32 metadataHash) public {
+        check_createCollection_alwaysReverts(caller, metadataHash);
+    }
+
+    function testFuzz_lowerFeeShare(uint32 first, uint32 second) public {
+        check_lowerFeeShare_neverRaises(first, second);
+    }
+
+    function testFuzz_canMint(
+        uint48 addedAt,
+        uint48 removedAt,
+        uint8 status,
+        uint8 templateStatus,
+        bool delisted
     ) public {
-        uint256 tokenId = _joinAndMint();
-        bytes memory data = abi.encodeWithSelector(
-            fed.settlePrimary.selector, tokenId, uint256(outcome), buyer, address(0), price
+        check_canMint_onlyAnActiveListingAndAnAddedSaleContract(
+            addedAt, removedAt, status % 3, templateStatus % 4, delisted
         );
-        (bool ok, bytes4 err) = _call(caller, address(fed), data);
-        assert(fed.primarySaleSettled(tokenId) == ok);
-        if (caller != address(adapter)) {
-            assert(!ok);
-            if (outcome <= uint8(PrimaryOutcome.RESCUED)) {
-                assert(err == IFederatedStream.NotMintingAdapter.selector);
-            }
-            return;
-        }
-        bool sold = _and(outcome == uint8(PrimaryOutcome.SOLD), buyer != address(0));
-        bool unsold = _and(
-            _or(
-                outcome == uint8(PrimaryOutcome.UNBID), outcome == uint8(PrimaryOutcome.FROZEN_OUT)
-            ),
-            _and(buyer == address(0), price == 0)
-        );
-        assert(ok == _or(sold, unsold));
-        if (ok) {
-            (bool again, bytes4 err2) = _call(caller, address(fed), data);
-            assert(!again && err2 == IFederatedStream.SaleAlreadySettled.selector);
-        }
-    }
-
-    /// @notice FED-24: a work's royalty rate only falls: the artist's change succeeds exactly
-    ///         when the new rate is below the current one, twice in a row.
-    /// @dev Bounds: any two rates.
-    function check_royaltyRate_onlyFalls(uint32 first, uint32 second) public {
-        uint256 tokenId = _joinAndMint();
-        vm.prank(ARTIST);
-        (bool ok1,) = address(fed).call(abi.encodeCall(fed.setRoyaltyRate, (tokenId, first)));
-        assert(ok1 == (first < RATE));
-        uint32 current = ok1 ? first : RATE;
-        assert(_rate(tokenId) == current);
-        vm.prank(ARTIST);
-        (bool ok2,) = address(fed).call(abi.encodeCall(fed.setRoyaltyRate, (tokenId, second)));
-        assert(ok2 == (second < current));
-        assert(_rate(tokenId) == (ok2 ? second : current));
-        assert(_rate(tokenId) <= RATE);
-    }
-
-    /// @notice FED-73: the share in force is the smaller of the share fixed at deployment and the
-    ///         share the artist registry records for the token: a mint and `primaryTerms` both
-    ///         report it, so no recorded share can raise it, and a lower one is used.
-    /// @dev Bounds: any recorded share, before the mint and changed again after it.
-    function check_feeShareInForce_isTheMinimum(uint32 atMint, uint32 later) public {
-        accounts.setRecordedShare(atMint);
-        vm.prank(ARTIST);
-        fed.joinFederation(_noJoin());
-        vm.prank(ARTIST);
-        fed.approveItem(itemHash, RATE);
-        (uint256 tokenId, PrimaryTerms memory terms) =
-            adapter.start(IMintTarget(address(fed)), mintData);
-        assert(terms.feeShare == (atMint < SHARE ? atMint : SHARE));
-        assert(terms.feeShare <= SHARE && terms.feeRecipient == FEE);
-        accounts.setRecordedShare(later);
-        PrimaryTerms memory now_ = fed.primaryTerms(tokenId, "");
-        assert(now_.feeShare == (later < SHARE ? later : SHARE));
-    }
-
-    // ---------------------------------------------------------------------------------------
-    // Helpers
-    // ---------------------------------------------------------------------------------------
-
-    function _file(bytes memory text, string memory mime) internal returns (bytes32 fileId) {
-        bytes32[] memory hashes = new bytes32[](1);
-        hashes[0] = keccak256(text);
-        fileId = store.registerManifest(
-            hashes, text.length, uint8(IContentStore.Encoding.Identity), mime, keccak256(text)
-        );
-        store.writeChunk(text);
-    }
-
-    function _noJoin() internal pure returns (IFederationRegistry.Join memory j) { }
-
-    /// @dev Joins, approves the item and mints it through `adapter`; returns the token.
-    function _joinAndMint() internal returns (uint256 tokenId) {
-        vm.startPrank(ARTIST);
-        fed.joinFederation(_noJoin());
-        fed.approveItem(itemHash, RATE);
-        vm.stopPrank();
-        (tokenId,) = adapter.start(IMintTarget(address(fed)), mintData);
-    }
-
-    function _rate(uint256 tokenId) internal view returns (uint32 rate) {
-        (,,,,, rate) = fed.coreOf(tokenId);
     }
 }
