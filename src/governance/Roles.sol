@@ -8,11 +8,18 @@ pragma solidity ^0.8.24;
 ///      - Network roles (`ADMIN`, `NETWORK`, `PARAMETER_SETTER`, `FUNDS_SETTER`,
 ///        `SUCCESSOR_SETTER`) are held by one address only, the network
 ///        (`WorksAccessManager.network`). Each is a delay class: the network acts through it
-///        with that role's fixed delay. Nobody can be granted one.
+///        with that role's class delay. Nobody can be granted one.
 ///      - Operational roles (`PAUSER`, `CURATION_SIGNER`, `STORAGE_OPERATOR`, `MINTER`,
 ///        `KEEPER`, `PLATFORM`, `CURATOR`) are ordinary keys the network grants and revokes at
 ///        once: genesis makes `NETWORK` their admin (no delay). They carry no delay.
-///      Every delay here is a compiled constant, not a setting: the number is the guarantee.
+///      The class delays below are the delays the manager is configured with at genesis. They
+///      are the network's, like everything the manager holds: the network can remap a
+///      selector to another class, or change a class's delay, with one action at the 7-day
+///      class, so a class's delay holds until such a remap changes it. They are not
+///      promises. The waiting periods of the permanent contracts (`moduleDelay`,
+///      `rescueDelay`, `rebindDelay`, `unclaimedPeriod`) are not role delays: they are settings
+///      stored in those contracts, with launch values, which the network changes at once
+///      through the NETWORK role (ADR 0010).
 ///      ID 3 is unused (it was a separate unpause role).
 library Roles {
     // ----------------------------------------------------------------------- delays
