@@ -80,8 +80,20 @@ clears it with `expireContest`.
 
 `freeze(accountId)` (the network, no delay) stops the account at once for 14 days: no wallet
 acts, `requireSigned` reverts, the payout reads zero (split wallets hold the money) and no
-pending change executes. `unfreeze` ends it early. A freeze cannot be extended while it runs;
-it can be placed again once it ended.
+pending change executes. `unfreeze` ends it early. A second `freeze` is refused while one runs,
+but `unfreeze` and `freeze` are both immediate, so the network can renew a running freeze at once
+for 14 days from then, with no moment in between; a freeze lasts as long as the network keeps
+renewing it.
+
+**A freeze and the right to contest.** A frozen account cannot contest. A freeze placed with a
+replacement covers the replacement's whole 14-day notice to the second, so the replacement
+becomes executable the moment the freeze ends and no wallet ever had a moment to contest. A
+contest made in time does not bind the network either: it can withdraw the contested replacement
+(`cancelReplacement`, at once), freeze, and stage it again (24 hours, which it can schedule in
+advance), and the new notice runs under the freeze. So the right to contest, and the vote it
+calls for, bind only a network that does not freeze; the network's off-chain process, not the
+contract, is what stands behind them. This is the stolen-key path (freeze, then replace) working
+as intended, and it is also the network's power over any account.
 
 ### Payout validation and the payout freeze
 
@@ -97,7 +109,8 @@ The source is replaceable code that answers, live, which wallets act for a perma
 That departs from the permanent rule that nothing permanent takes instruction from replaceable
 code; it is what the account model needs. Its limits: the root never depends on it (a source
 that reverts, answers anything but `true`, or whose code no longer matches its pinned hash is
-"no" for every other wallet); replacing it is a network action at the 7-day class; a freeze
+"no" for every other wallet); replacing it is a network action at the 7-day class (a role delay,
+which holds until a 7-day remap changes it); a freeze
 stops an account at once. Reads forward all gas: a shortfall reverts, never "no" (ID-9).
 
 ### The consolidation adapter
@@ -189,7 +202,7 @@ Test files: [`ArtistRegistry.t.sol`](../../test/identity/ArtistRegistry.t.sol) (
 | ID-5 | An own change is signed by any wallet, waits 2 days, is cancelled by any wallet or by the network at once, uses a nonce once, and moves the root only to a wallet of the account (re-checked at execution). | `stageChange`, `cancelChange`, `cancelOwnChange`, `_apply` | AR `test_OwnChange_*`, `test_CancelOwnChange_ByTheNetwork`, `test_RevokeNonce_AnyWallet` |
 | ID-6 | A replacement is staged only by the network with the new root's acceptance (used once), changes the root, waits 14 days, replaces an own change, and the network may withdraw it at once. | `stageReplacement`, `cancelReplacement` | AR `test_Replacement_*`, `test_CancelReplacement_ByTheNetwork` |
 | ID-7 | A wallet may contest a replacement only during its notice; a contested replacement runs only if upheld by a vote recorded after the contest, within 90 days; otherwise it lapses and holds nothing. | `cancelChange`, `resolveContested`, `expireContest`, `_lapsed` | AR `test_Contest_*` |
-| ID-8 | A freeze lasts 14 days, stops every wallet, zeroes the payout and holds pending changes; it cannot be extended while it runs. One exception: the network's own `resolveContested` may uphold a contested replacement during a freeze, and the freeze keeps running for the new identity. | `freeze`, `unfreeze`, `_blocked`, `payoutAddress`, `executeChange`, `resolveContested` | AR `test_Freeze_*`, `test_Freeze_AnUpheldContestedReplacementStillExecutes`; IR `test_AFrozenAccountCannotStart` |
+| ID-8 | A freeze lasts 14 days, stops every wallet, zeroes the payout and holds pending changes; a second `freeze` is refused while one runs, but the network can renew it at once with `unfreeze` then `freeze` (both immediate). A frozen account cannot contest, so a freeze and a replacement together leave no moment to contest, and the network can withdraw a contested replacement, freeze and restage it: the right to contest binds only a network that does not freeze. One exception: the network's own `resolveContested` may uphold a contested replacement during a freeze, and the freeze keeps running for the new identity. | `freeze`, `unfreeze`, `_blocked`, `payoutAddress`, `executeChange`, `resolveContested` | AR `test_Freeze_*`, `test_Freeze_AnUpheldContestedReplacementStillExecutes`; IR `test_AFrozenAccountCannotStart`; [`FreezeAndContest.t.sol`](../../test/identity/FreezeAndContest.t.sol) `test_FreezeWithReplacement_LeavesNoMomentToContest`, `test_ContestedReplacement_IsRestagedUnderAFreezeAndExecutesWithoutAVote`, `test_AFreezeIsRenewedWhileItRunsByUnfreezeThenFreeze` |
 | ID-9 | Every read of another contract forwards all gas; a failure that leaves at most 1/8 of the gas held before it reverts with `BoundedCallShortfall`, never "no". | `_consolidated`, `isArtist`, `bindStatementLog`, `ConsolidationAdapter._live` | GR `test_GasRule_*` (the source at 1x to 100x its cost) |
 | ID-10 | A payout is never one that cannot pull, checked at registration, staging and execution; `payoutAddress` is zero while frozen or while a pending change would move it. | `_payoutAllowed`, `_apply`, `payoutAddress` | AR `test_PayoutValidation_*`, `test_OwnChange_AnyWalletStagesAndAnyoneRelays`; RV |
 | ID-11 | `isArtist` is true only for a wallet of a Stream work's lead account, or of an edition's master's. | `isArtist` | AR `test_IsArtist_AnyWalletOfTheLeadAccount` |

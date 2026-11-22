@@ -245,6 +245,7 @@ The v1 templates meet each:
 | The registry is replaced or disappears | Nothing listed is lost (entries are composed) | A new registry approves every template version (with its deployer) and admits the adapters **before** the artist registry's pointer moves, or running sales freeze out with refunds; existing listings then sell with no artist signature |
 | A registry lists a genuine token first, wrongly | The token can never confirm it, so never sells under it; it needs the artist's own consent signature for that token | The artist deploys a new copy and joins with it |
 | A delisted pair's edition sale is running | It voids with full refunds | Relist, open a new sale |
+| The network lowers a token's fee share (`lowerFederatedFeeShare`) | `royaltyInfo` names the royalty vault at the new share, which no one has deployed yet; royalties sent there wait at its address | The network deploys that vault (`SplitLedger.createWallet`) for each seller in use in the same batch as the cut, or a keeper does after it; anyone may deploy it and release (LIM-FED-9) |
 | An edition sale voids while its best-effort seal is refused (a faulty token) | The edition stays bound to that adapter's void sale: no adapter reopens or binds it, and no minter mints it, ever | None needed: no copy can exist |
 
 ## Residual leakage (accepted)

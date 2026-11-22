@@ -39,9 +39,13 @@ import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 ///      permanent account. That departs from the permanent rule that nothing permanent takes
 ///      instruction from replaceable code; it is what the owner's account model needs. Its
 ///      limits: the root never depends on the source; replacing the source is a network action
-///      at the 7-day class; a freeze stops an account at once.
+///      at the 7-day class (a role delay, which holds until a 7-day remap changes it); a freeze
+///      stops an account at once.
 ///
-///      Every waiting period is a compiled constant: the number is the guarantee.
+///      Every waiting period this contract enforces in its own code is a compiled constant: the
+///      number is the guarantee, and no remap changes it. A freeze and a replacement together
+///      leave no moment to contest, so the right to contest binds only a network that does not
+///      freeze (see `IArtistRegistry`).
 contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     /// @notice How long an account's own change waits before it may execute.
     uint48 public constant OWN_CHANGE_DELAY = 2 days;

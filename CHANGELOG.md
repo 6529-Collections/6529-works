@@ -20,6 +20,13 @@
   `CompletenessAttested`; `isComplete` walks only past the prefix, so an attested file is one
   storage read and a 4,096-chunk file can be checked by `syncOnChain` and
   `DependencyRegistry.register` once attested. `IContentStore`'s interface ID changes.
+- Documentation: a freeze and a replacement leave no moment to contest, so the right to contest
+  binds only a network that does not freeze, and ID-8 now says a running freeze can be renewed
+  at once (`unfreeze`, then `freeze`); role delays hold until a 7-day remap changes them, unlike
+  waits enforced in a contract's own code; collaborator consent does not cover the royalty rate;
+  `TokenForwarded` needs the token's own transfer to count; a fee-share cut leaves the new
+  royalty vault to deploy; the auctions' older-clock credit expiry is a known gap until their
+  rewrite (LIM-SAL-22).
 
 - Developer path: a [quickstart](docs/quickstart.md) from clone to a local run, with measured
   build and test times; `script/local/walkthrough.sh`, which deploys on anvil with test accounts,

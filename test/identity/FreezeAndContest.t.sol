@@ -63,11 +63,10 @@ contract FreezeAndContestTest is IdentityFixture {
         assertEq(registry.authorityOf(artistId), newRoot);
     }
 
-    /// @dev The spec (ID-8) says a freeze cannot be extended while it runs. `unfreeze` and
-    ///      `freeze` are both the network's at once, so one batch renews a running freeze for a
-    ///      full 14 days from now. Passes while the finding stands; fails with "finding fixed"
-    ///      once a running freeze cannot be renewed in the same moment.
-    function test_Finding_AFreezeIsRenewedWhileItRunsByUnfreezeThenFreeze() public {
+    /// @dev ID-8: a second `freeze` is refused while one runs, but `unfreeze` and `freeze` are
+    ///      both the network's at once, so one batch renews a running freeze for a full 14 days
+    ///      from now, with no moment in between when the account is unfrozen.
+    function test_AFreezeIsRenewedWhileItRunsByUnfreezeThenFreeze() public {
         vm.prank(network);
         registry.freeze(artistId);
         uint48 first = registry.frozenUntil(artistId);
@@ -76,7 +75,7 @@ contract FreezeAndContestTest is IdentityFixture {
         registry.unfreeze(artistId);
         registry.freeze(artistId);
         vm.stopPrank();
-        assertEq(registry.frozenUntil(artistId), first + 13 days, "finding fixed");
+        assertEq(registry.frozenUntil(artistId), first + 13 days, "renewed from now");
         assertFalse(registry.isWallet(artistId, artist), "never unfrozen in between");
     }
 }
