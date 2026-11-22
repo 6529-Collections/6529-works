@@ -198,8 +198,11 @@ The launch values are in `config/genesis.core.example.json` (`settings`) and rea
 - **Editions.** A sale contract can close a work's edition for good by sealing it at zero
   (`StreamEditions6529.seal(editionId, 0)` with no copies minted). Add only sale contracts that seal
   at the count sold.
-- **Replacing modules.** A replacement accounts module must carry the existing artists over
-  (IDs, wallets, payout addresses). A replacement mint policy starts with no content releases
+- **Replacing modules.** A replacement accounts module must serve every existing account
+  under its existing ID (wallets, payout addresses, freezes), by reading through to the module
+  it replaces or by importing its accounts, and a test must prove this before the module is
+  announced ([`AccountsSuccessor.t.sol`](../test/integration/AccountsSuccessor.t.sol) is the
+  model). A replacement mint policy starts with no content releases
   and no barred items: a burned work's content stays unmintable until the network releases it
   again there. A new instance needs its role-map entries. The checklist is in
   [Replacing a module](../docs/operations/replacing-modules.md).
