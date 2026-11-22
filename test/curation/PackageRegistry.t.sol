@@ -627,6 +627,32 @@ contract PackageRegistryTest is CurationBase {
         assertFalse(registry.isMoveNonceUsed(_id(lead), 1));
     }
 
+    /// @dev The quote and the mint record carry the item's own sale terms, root, media hash and
+    ///      record file, whatever they hold (the registry does not check a currency: the
+    ///      adapter does).
+    function test_previewAndAuthorize_carryTheItemsOwnFields() public {
+        PackageItem memory item = _item(lead, SHA_A);
+        item.sale.currency = makeAddr("someToken");
+        item.sale.params = hex"0102";
+        bytes32 root = WorksHashing.leaf(_hash(item));
+        _register(root);
+        _accept(root, leadKey);
+        MoveAuthorization memory move = _move(leadKey, root, _hash(item), 0);
+        PrimaryTerms memory t = registry.preview(
+            _context(address(_policyStub)),
+            abi.encode(StreamMintRequest(root, item, new bytes32[](0), move))
+        );
+        assertEq(t.currency, item.sale.currency);
+        assertEq(t.params, item.sale.params);
+        IMintPolicy.MintRecord memory rec = _authorize(root, item, new bytes32[](0), move);
+        assertEq(rec.packageRoot, root);
+        assertEq(rec.mediaHash, item.mediaHash);
+        assertEq(rec.recordFileId, item.recordFileId);
+        assertEq(rec.currency, item.sale.currency);
+        assertEq(rec.params, item.sale.params);
+        assertEq(rec.contentHash, SHA_A);
+    }
+
     /// @dev The registry hashes the item from calldata (`WorksHashing.itemHashCalldata`);
     ///      whatever the dynamic fields hold, the result is `WorksHashing.itemHash`.
     /// The license ID is fixed: the policy refuses one outside the `SpdxId` grammar before hashing.
