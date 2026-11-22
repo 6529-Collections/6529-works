@@ -214,6 +214,22 @@ contract PreferredLocationTest is RecordsFixture {
         delivery.preferredLocator(tokenId, file);
     }
 
+    /// @dev An IPFS locator starts with exactly one of the two fixed CID prefixes: a prefix
+    ///      just below either is refused, the prefixes themselves are accepted.
+    function test_delivery_ipfsLocatorsNeedAFixedPrefix() public {
+        (uint256 tokenId, bytes32 file,,) = _workWithLocators(0, 0, 0, false, false);
+        string[2] memory valid = [CA.ipfs("prefix"), CA.ipfsRoot("prefix")];
+        vm.startPrank(platform);
+        for (uint256 i; i < valid.length; ++i) {
+            bytes memory below = abi.encodePacked(valid[i]);
+            below[13] = "h"; // "ipfs://bafkreh" / "ipfs://bafybeh": just below the prefix
+            vm.expectRevert(IWorkLocators.InvalidLocator.selector);
+            delivery.addLocator(tokenId, file, Locator(LocatorKind.IPFS, string(below)));
+            delivery.addLocator(tokenId, file, Locator(LocatorKind.IPFS, valid[i]));
+        }
+        vm.stopPrank();
+    }
+
     function test_delivery_supportsOnlyTheExactIds() public view {
         bytes4[3] memory ids = [
             type(IWorkDelivery).interfaceId,
