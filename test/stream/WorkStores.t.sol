@@ -723,4 +723,31 @@ contract WorkStoresTest is RecordsFixture, GasRuleAssertions {
         _syncAs(artist, tokenId, id, 10);
         assertTrue(records.record(tokenId).onChainComplete);
     }
+
+    /// @dev A store whose code changed since it was added is refused whichever way its code hash
+    ///      moved (below or above the pinned one).
+    function test_syncOnChain_aStoreWhoseCodeChangedEitherWayIsRefused() public {
+        uint256 id = _addStore(address(source));
+        (bytes32 file, bytes[] memory chunks) = _bigFile(90, 1);
+        source.put(chunks[0]);
+        uint256 tokenId = _workOf(90, _one(file));
+        bytes memory code = address(source).code;
+        bytes32 pinned = address(source).codehash;
+        bool below;
+        bool above;
+        for (uint256 i; i < 64 && !(below && above); ++i) {
+            bytes memory changed = bytes.concat(code, bytes1(uint8(i)));
+            bool lower = keccak256(changed) < pinned;
+            if (lower ? below : above) continue;
+            vm.etch(address(source), changed);
+            vm.expectRevert(abi.encodeWithSelector(IWorkRecords.UnknownStore.selector, id));
+            _syncAs(artist, tokenId, id, 10);
+            if (lower) below = true;
+            else above = true;
+        }
+        assertTrue(below && above);
+        vm.etch(address(source), code);
+        _syncAs(artist, tokenId, id, 10);
+        assertTrue(records.record(tokenId).onChainComplete);
+    }
 }

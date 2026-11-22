@@ -80,6 +80,17 @@ contract RolesTest is Test {
         harness.label(Roles.ADMIN);
     }
 
+    /// @dev Every defined role has its own name, and IDs past the table have none.
+    function test_LabelsNameEachRoleAndNothingPastTheTable() public {
+        assertEq(harness.label(Roles.CURATOR), "CURATOR");
+        assertEq(harness.label(Roles.SUCCESSOR_SETTER), "SUCCESSOR_SETTER");
+        uint64[2] memory past = [Roles.COUNT, Roles.PUBLIC];
+        for (uint256 i; i < past.length; ++i) {
+            vm.expectRevert(abi.encodeWithSelector(Roles.UnknownRole.selector, past[i]));
+            harness.label(past[i]);
+        }
+    }
+
     /// @dev ID 3 was the separate unpause role; it is no longer defined.
     function test_TheFormerUnpauseIdIsUnknown() public {
         assertFalse(Roles.isKnown(3));

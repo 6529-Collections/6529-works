@@ -11,7 +11,12 @@ import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { IStream } from "src/interfaces/IStream.sol";
 import { PrimaryOutcome, PrimaryTerms, SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { Stream } from "src/stream/Stream.sol";
-import { MockPackageRegistry, MockSaleAdapter } from "../mocks/stream/StreamMocks.sol";
+import {
+    MockEconomics,
+    MockPackageRegistry,
+    MockSaleAdapter
+} from "../mocks/stream/StreamMocks.sol";
+import { RawAnswerPolicy } from "../mocks/stream/StreamMutationMocks.sol";
 import { StreamFixture } from "./StreamFixture.sol";
 import { HandlerReach } from "../helpers/HandlerReach.sol";
 
@@ -296,6 +301,37 @@ contract StreamPolicySafetyTest is StreamFixture {
         hostile.setRecord(r);
         vm.expectRevert(why);
         auction.start(stream, data);
+    }
+
+    /// @dev A fee share above the denominator is refused, like one equal to it.
+    function test_MP1_AFeeShareAboveTheDenominatorIsRefused() public {
+        IMintPolicy.MintRecord memory r = _record(3);
+        r.feeShare = 100_001;
+        _expectRefused(
+            r, _request(_item(96)), abi.encodeWithSelector(IStream.InvalidWorkTerms.selector)
+        );
+    }
+
+    /// @dev Once governance replaces the economics resolver, the context names the replacement.
+    function test_MP1_TheContextNamesAReplacedEconomicsResolver() public {
+        MockEconomics next = new MockEconomics(_defaultTerms(), address(splitFactory));
+        vm.prank(governor);
+        stream.setDependency("ECONOMICS", address(econ), address(next));
+        RawAnswerPolicy raw = _useRaw();
+        raw.setAnswer(abi.encode(_record(94)));
+        bytes memory data = hex"01";
+        auction.start(stream, data);
+        IMintPolicy.MintContext memory c = IMintPolicy.MintContext(
+            address(auction), address(next), address(entropy), address(splitFactory)
+        );
+        assertEq(raw.lastInput(), abi.encodeCall(IMintPolicy.authorize, (c, data)));
+    }
+
+    /// @dev Replaces the hostile policy with one that answers raw bytes.
+    function _useRaw() internal returns (RawAnswerPolicy raw) {
+        raw = new RawAnswerPolicy(address(artists));
+        vm.prank(governor);
+        stream.setDependency("PACKAGE_REGISTRY", address(hostile), address(raw));
     }
 
     /// @dev I-4 (review A): the bounds of the answer's `params` are checked without addition, so

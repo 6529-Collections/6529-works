@@ -382,6 +382,16 @@ contract ContentStoreTest is ContentBase {
         }
     }
 
+    /// @dev The ends of each allowed character range, `a` to `z` and `0` to `9`, are accepted.
+    function test_RegisterManifest_MimeAcceptsTheEndsOfEachRange() public {
+        bytes32[] memory one = new bytes32[](1);
+        string[3] memory good = ["application/zip", "a0/b", "x9/y"];
+        for (uint256 i; i < good.length; ++i) {
+            bytes32 id = store.registerManifest(one, 10, IDENTITY, good[i], DIGEST);
+            assertEq(store.fileInfo(id).mimeType, good[i]);
+        }
+    }
+
     function testFuzz_RegisterManifest_RejectsMimeWithForbiddenByte(uint8 bad, uint8 position)
         public
     {

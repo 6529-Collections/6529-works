@@ -15,6 +15,7 @@ import {
 } from "src/interfaces/types/HashRef.sol";
 import { IStatementLog, Role, Statement } from "src/interfaces/IStatementLog.sol";
 import { EvilResolverMock } from "../mocks/records/RecordsResolvers.sol";
+import { ImmediateWithDelayAuthority } from "../mocks/records/RecordsMutationMocks.sol";
 import { StatementLogFixture } from "./StatementLogFixture.sol";
 import { StatementModel } from "./StatementModel.sol";
 import {
@@ -254,6 +255,31 @@ contract StatementLogTest is StatementLogFixture {
             abi.encodeWithSelector(IStatementLog.NotAuthorized.selector, Role.CURATOR, delayed)
         );
         _relay(Role.CURATOR, s, delayed, 0, deadline, sig);
+    }
+
+    /// @dev A relayed CURATOR statement needs the signer's call to be both immediate and without
+    ///      a delay: an authority that answers "immediate" with a delay does not authorize it.
+    function test_Relay_AnImmediateAnswerWithADelayDoesNotAuthorize() public {
+        ImmediateWithDelayAuthority authority = new ImmediateWithDelayAuthority();
+        StatementLog direct =
+            new StatementLog(address(authority), address(resolver), address(resolver).codehash);
+        Statement memory s = _statement();
+        uint64 deadline = uint64(block.timestamp + 1 hours);
+        bytes memory sig =
+            _signAs(curatorKey, block.chainid, address(direct), Role.CURATOR, s, 0, deadline);
+        authority.setDelay(1);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IStatementLog.NotAuthorized.selector, Role.CURATOR, curatorSigner
+            )
+        );
+        vm.prank(stranger);
+        direct.appendSigned(Role.CURATOR, s, curatorSigner, 0, deadline, sig);
+        authority.setDelay(0);
+        vm.prank(stranger);
+        direct.appendSigned(Role.CURATOR, s, curatorSigner, 0, deadline, sig);
+        (uint64 count,) = direct.chainOf(s.token, s.id);
+        assertEq(count, 1);
     }
 
     function test_Curator_ScheduledExecutionCannotBeAttributedToTheManager() public {

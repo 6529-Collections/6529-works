@@ -1889,6 +1889,13 @@ contract WorkRecordsTest is RecordsFixture {
         }
     }
 
+    /// @dev The delivery contract's refresh of one work requires an opened record.
+    function test_refreshMetadata_refusesATokenWithNoRecord() public {
+        vm.prank(address(delivery));
+        vm.expectRevert(abi.encodeWithSelector(IWorkRecords.RecordNotOpen.selector, 99));
+        records.refreshMetadata(99);
+    }
+
     /// @dev A repin names the renderer's code hash exactly: a wrong one sorting below or above
     ///      is refused.
     function test_repinRenderer_refusesAWrongHashEitherWay() public {
