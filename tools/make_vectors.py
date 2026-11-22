@@ -12,9 +12,9 @@ Two outputs, both reproducible byte for byte (`--check` compares and changes not
   image's file ID, the `tokenURI` fragments the renderer must produce, and the hash of a
   catalogue statement citing the Museum record. `test/replay/RealVectors.t.sol` checks each one
   against the real contracts.
-- `event-topics.json`: every event in the compiled ABI of each permanent contract the replay
-  suites rebuild, with its canonical signature and topic0, read from Foundry's `out/`
-  (run `forge build` first). `test/replay/ReplayBase.sol` requires each one to be replayed.
+- `event-topics.json`: every event in the compiled ABI of each permanent contract (ADR 0010),
+  with its canonical signature and topic0, read from Foundry's `out/` (run `forge build`
+  first). The log-replay suites under `test/replay/` rebuild these contracts from logs.
 
 Usage, from the repository root (Python 3.10 or later, standard library only):
 
@@ -70,16 +70,18 @@ MEDIA_PATH = (
 MEDIA_MIME = "image/webp"
 RECORD_MIME = "application/json"
 
-# The permanent contracts the replay suites rebuild: (name, artifact path under out/).
+# The permanent contracts (ADR 0010), whose logs alone rebuild their state: (name, artifact path
+# under out/).
 CONTRACTS = [
     ("Stream", "Stream.sol/Stream.json"),
-    ("WorkRecords", "WorkRecords.sol/WorkRecords.json"),
     ("Editions", "Editions.sol/Editions.json"),
+    ("WorkFacts", "WorkFacts.sol/WorkFacts.json"),
+    ("Directory", "Directory.sol/Directory.json"),
     ("ContentStore", "ContentStore.sol/ContentStore.json"),
     ("SplitLedger", "SplitLedger.sol/SplitLedger.json"),
     ("RevenueEscrow", "RevenueEscrow.sol/RevenueEscrow.json"),
-    ("FederationRegistry", "FederationRegistry.sol/FederationRegistry.json"),
-    ("ArtistRegistry", "ArtistRegistry.sol/ArtistRegistry.json"),
+    ("FederatedStream", "FederatedStream.sol/FederatedStream.json"),
+    ("FederatedEditions", "FederatedEditions.sol/FederatedEditions.json"),
 ]
 
 HASHREF_TYPEHASH = keccak256(b"HashRef(uint16 algorithm,bytes32 digest)")
