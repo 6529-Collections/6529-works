@@ -54,6 +54,7 @@ import {
     MockWorkRecords,
     RoyaltyProbe
 } from "../mocks/stream/StreamMocks.sol";
+import { SwitchableSaleAdapter } from "../mocks/stream/StreamMutationMocks.sol";
 import { RecordsFixture } from "./RecordsFixture.sol";
 import { StreamFixture } from "./StreamFixture.sol";
 import { BoundedCall } from "src/libraries/BoundedCall.sol";
@@ -2132,6 +2133,49 @@ contract StreamTest is StreamFixture, GasRuleAssertions {
         stream.safeTransferFrom(collector, outsider, 1);
         assertEq(stream.ownerOf(1), outsider);
         assertEq(IStreamViews(address(stream)).totalSupply(), 1);
+    }
+
+    // --------------------------------------------------------- exact checks (mutation, batch 2)
+
+    /// @dev An adapter reporting NONE is refused even with a buyer, as with no buyer: only SOLD
+    ///      takes the sale branch.
+    function test_settlePrimary_refusesNoneWithABuyer() public {
+        _mint(1);
+        address buyer = makeAddr("buyer");
+        vm.expectRevert(IStream.InvalidSaleOutcome.selector);
+        auction.settleWith(stream, 1, PrimaryOutcome.NONE, buyer, address(0), 1);
+        assertFalse(stream.primarySaleSettled(1));
+        assertEq(stream.ownerOf(1), address(auction));
+    }
+
+    /// @dev A rescue needs the work held by its own minting adapter: an unsettled work delivered
+    ///      to another adapter, admitted before it and since removed, is not rescuable.
+    function test_rescueToMuseum_refusesAWorkHeldByAnotherAdapter() public {
+        MockSaleAdapter later = new MockSaleAdapter(SaleKind.ENGLISH_AUCTION);
+        vm.startPrank(governor);
+        stream.setAdmittedMinter(address(later), true);
+        stream.setAdmittedMinter(address(auction), false);
+        vm.stopPrank();
+        (uint256 tokenId,) = later.start(stream, _request(_item(1)));
+        later.deliver(address(stream), tokenId, address(auction));
+        vm.warp(block.timestamp + 14 days);
+        vm.expectRevert(abi.encodeWithSelector(IStream.WorkNotRescuable.selector, tokenId));
+        stream.rescueToMuseum(tokenId);
+        assertEq(stream.ownerOf(tokenId), address(auction));
+    }
+
+    /// @dev Removal checks nothing about the adapter: one that no longer answers ERC-165 is
+    ///      still removed.
+    function test_setAdmittedMinter_removalChecksNothing() public {
+        SwitchableSaleAdapter adapter = new SwitchableSaleAdapter(SaleKind.ENGLISH_AUCTION);
+        vm.prank(governor);
+        stream.setAdmittedMinter(address(adapter), true);
+        adapter.setAnswers(false);
+        vm.expectEmit(address(stream));
+        emit IMintTarget.AdmittedMinterSet(address(adapter), 2, false, adapter.saleKind());
+        vm.prank(governor);
+        stream.setAdmittedMinter(address(adapter), false);
+        assertFalse(stream.isAdmittedMinter(address(adapter)));
     }
 
     // ----------------------------------------------------------------------------- helpers

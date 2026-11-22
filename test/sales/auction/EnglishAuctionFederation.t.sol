@@ -258,4 +258,80 @@ contract EnglishAuctionFederationTest is AuctionBase {
         assertEq(federatedNetwork.balance, 0.1 ether);
         assertEq(escrow.owed(address(escrow), ETH), 0);
     }
+
+    /// @dev A federated sale of a token that governance has since listed keeps taking bids and
+    ///      settles as sold after the registry delists it (found by mutation testing): a listed
+    ///      token is a target whatever the registry says.
+    function test_Bid_AFederatedSaleOfATokenListedSinceStillTakesBids() public {
+        MockMintTarget federated = _federated(_terms(ETH));
+        uint256 saleId = auction.start(address(federated), "");
+        vm.prank(successor);
+        auction.setTarget(address(federated), true);
+        MockFederationRegistry(auction.federationRegistry())
+            .setStatus(address(federated), IFederationRegistry.Status.DELISTED, bytes32(0));
+        _bidEth(saleId, alice, 1 ether);
+        vm.warp(block.timestamp + DURATION);
+        auction.settle(saleId);
+        assertEq(federated.ownerOf(1), alice, "sold, not frozen out");
+        assertEq(seller.balance, 0.9 ether);
+    }
+
+    /// @dev A registry whose code changed after it was installed starts no federated sale,
+    ///      whichever way its new code hash sorts against the pinned one (found by mutation
+    ///      testing; the tests above pin the lens's `isTarget`, this one the auction's `start`).
+    function test_Start_ARegistryWhoseCodeChangedEitherWayStartsNothing() public {
+        for (uint256 i; i < 2; ++i) {
+            MockFederationRegistry a = new MockFederationRegistry();
+            MockFederationRegistry b = new MockFederationRegistryV2();
+            bool aHigher = address(a).codehash > address(b).codehash;
+            // First the higher hash is pinned and the lower one replaces it, then the reverse.
+            (MockFederationRegistry registry, MockFederationRegistry other) =
+                (i == 0) == aHigher ? (a, b) : (b, a);
+            address installed = auction.federationRegistry();
+            vm.prank(successor);
+            auction.setFederationRegistry(installed, address(registry));
+            MockMintTarget federated = new MockMintTarget();
+            federated.setAdmittedMinter(address(auction), true);
+            federated.setTerms(_terms(ETH));
+            registry.setEntry(address(federated), 10_000, true);
+            vm.etch(address(registry), address(other).code);
+            vm.expectRevert(
+                abi.encodeWithSelector(ISaleAdapter.TargetNotAllowed.selector, address(federated))
+            );
+            auction.start(address(federated), "");
+        }
+    }
+
+    /// @dev A registry fee share of exactly the denominator is valid (found by mutation
+    ///      testing): the federated sale starts and pays the whole price to the network's
+    ///      federated recipient.
+    function test_Start_AFederatedFeeShareOfTheWholePriceSells() public {
+        MockMintTarget federated = _federated(_terms(ETH));
+        MockFederationRegistry(auction.federationRegistry())
+            .setEntry(address(federated), 100_000, true);
+        uint256 saleId = auction.start(address(federated), "");
+        assertEq(auction.lockedTerms(saleId).feeShare, 100_000);
+        _bidEth(saleId, alice, 1 ether);
+        vm.warp(block.timestamp + DURATION);
+        auction.settle(saleId);
+        assertEq(federatedNetwork.balance, 1 ether, "the whole price is the fee");
+        assertEq(seller.balance, 0);
+        assertEq(federated.ownerOf(1), alice);
+    }
+
+    /// @dev Removing the registry checks nothing and clears the pinned code hash (found by
+    ///      mutation testing), even where the zero address holds ether, as it does on mainnet,
+    ///      so that its own code hash is the empty-code hash rather than zero.
+    function test_SetFederationRegistry_RemovalChecksNothingAndClearsThePin() public {
+        MockFederationRegistry registry = new MockFederationRegistry();
+        vm.prank(successor);
+        auction.setFederationRegistry(address(0), address(registry));
+        vm.deal(address(0), 1 ether);
+        vm.expectEmit(address(auction));
+        emit ISaleAdapter.FederationRegistrySet(address(registry), address(0));
+        vm.prank(successor);
+        auction.setFederationRegistry(address(registry), address(0));
+        assertEq(auction.federationRegistry(), address(0));
+        assertEq(auction.federationRegistryCodeHash(), bytes32(0));
+    }
 }

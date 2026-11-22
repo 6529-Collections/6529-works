@@ -411,4 +411,24 @@ contract EnglishAuctionHostileTest is AuctionBase {
         auction.claim(ETH, carol);
         assertEq(auction.claimable(alice, ETH), 1 ether);
     }
+
+    /// @dev `expireCredit` holds the reentrancy guard while it pays the network's recipient
+    ///      (found by mutation testing): a recipient calling back into the auction is refused.
+    function test_ExpireCredit_AReentrantRecipientIsBlocked() public {
+        HostileActor recipient = new HostileActor();
+        recipient.configure(HostileActor.Behaviour.REENTER, HostileActor.Behaviour.ACCEPT);
+        uint256 saleId = _start();
+        _bidEth(saleId, alice, 1 ether);
+        _bidEth(saleId, bob, 2 ether);
+        resolver.set(PRODUCT_STREAM, address(recipient), FEE);
+        recipient.setReentry(
+            address(auction), abi.encodeCall(auction.claim, (ETH, address(recipient)))
+        );
+        vm.warp(block.timestamp + 180 days);
+        assertEq(auction.expireCredit(alice, ETH), 1 ether);
+        assertTrue(recipient.reentered());
+        assertFalse(recipient.reentryOk());
+        assertEq(bytes4(recipient.reentryResult()), REENTRY);
+        assertEq(address(recipient).balance, 1 ether, "paid once");
+    }
 }
