@@ -106,6 +106,15 @@ def new_safes(new):
     return json.loads(path.read_text(encoding="utf-8")).get("safes", {})
 
 
+def merge_safes(prev_safes, new):
+    """Earlier and new Safe records keyed by normalized address: for an address both describe,
+    the new record (config/sepolia-<new>/accounts.json) wins, whatever either label is."""
+    out = {}
+    for s in list(prev_safes.values()) + list(new.values()):
+        out[s["address"].lower()] = s
+    return out
+
+
 def sha(path):
     return hashlib.sha256((REPO / path).read_bytes()).hexdigest()
 
@@ -121,7 +130,7 @@ def main(new, prev, commit, sim_path=None):
     genesis = f"config/sepolia-{new}/genesis.json"
     m["genesis"] = {"path": genesis, "sha256": sha(genesis)}
     g = json.loads((REPO / genesis).read_text(encoding="utf-8"))
-    m["safes"] = safes_from_genesis(g, {**m["safes"], **new_safes(new)})
+    m["safes"] = safes_from_genesis(g, merge_safes(m["safes"], new_safes(new)))
     m["keys"] = keys_from_genesis(g)
     m["signatures"] = "Unsigned: testnet rehearsal. A mainnet manifest is signed by the network Safe's signers."
     for name, s in m["safes"].items():

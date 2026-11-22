@@ -46,7 +46,17 @@ foreach ($line in Get-Content -Encoding UTF8 (Join-Path $Repo $EnvFile)) {
 }
 if ($Rpc) { $env:SEPOLIA_RPC_URL = $Rpc }
 $a = @('script', 'script/Deploy.s.sol', '--rpc-url', $env:SEPOLIA_RPC_URL, '--sender', $env:DEPLOYER)
+# Endpoints whose eth_estimateGas cap (50M) is known to refuse WorkRecords' creation (about
+# 51.2M under Sepolia's Glamsterdam pricing): a broadcast through one stops partway, after
+# Stream. They are fine for the simulation.
+$EstimateCapped = @('ethereum-sepolia-rpc.publicnode.com')
 if ($Broadcast) {
+    $rpcHost = ([Uri]$env:SEPOLIA_RPC_URL).Host
+    if ($EstimateCapped -contains $rpcHost) {
+        throw ("$rpcHost caps eth_estimateGas at 50M and cannot estimate WorkRecords' creation (about 51.2M " +
+            "on Sepolia), so a broadcast would stop partway. Pass -Rpc with an endpoint whose estimate cap is " +
+            "higher (script/README.md, step 10).")
+    }
     $a += @('--broadcast', '--slow', '--skip-simulation', '--priority-gas-price', $PriorityFee,
         '--with-gas-price', $MaxFee)
     if ($Resume) { $a += '--resume' }

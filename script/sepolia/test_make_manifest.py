@@ -86,11 +86,37 @@ class KeysFromGenesis(unittest.TestCase):
         with self.assertRaises(ValueError):
             make_manifest.keys_from_genesis({"holders": [{"role": "PLATFORM", "account": "0x51"}]})
 
-    def test_r5_keys_match_its_genesis(self):
+    def test_r5_keys_match_its_committed_manifest(self):
+        # The keys the writer derives from r5's genesis are exactly the committed manifest's:
+        # the same addresses in the same order, and the same single-holder roles.
         g = json.loads((REPO / "config/sepolia-r5/genesis.json").read_text(encoding="utf-8"))
-        out = make_manifest.keys_from_genesis(g)
-        self.assertEqual(len(out["pausers"]), 3)
-        self.assertEqual(len(out["curationSigners"]), 2)
+        m = json.loads((REPO / "config/sepolia-r5/manifest-epoch0.json").read_text(encoding="utf-8"))
+        self.assertEqual(make_manifest.keys_from_genesis(g), m["keys"])
+
+
+class MergeSafes(unittest.TestCase):
+    OLD = {"pauser-1": safe("0x00000000000000000000000000000000000000A1", 2, ["0x01", "0x02", "0x03"])}
+
+    def test_new_record_wins_for_the_same_address_whatever_the_labels(self):
+        new = safe("0x00000000000000000000000000000000000000a1", 3, ["0x04", "0x05", "0x06"])
+        for label in ("network", "network-r6", "pauser-1", "a"):
+            merged = make_manifest.merge_safes(self.OLD, {label: new})
+            self.assertEqual(len(merged), 1)
+            out = make_manifest.safes_from_genesis(
+                {"network": "0x00000000000000000000000000000000000000A1", "holders": []}, merged)
+            self.assertEqual(out["network"]["threshold"], 3)
+            self.assertEqual(out["network"]["owners"], ["0x04", "0x05", "0x06"])
+
+    def test_distinct_addresses_are_kept(self):
+        new = {"network": safe("0x00000000000000000000000000000000000000B1", 2, ["0x07"])}
+        self.assertEqual(len(make_manifest.merge_safes(self.OLD, new)), 2)
+
+    def test_r5_manifest_safes_are_reproduced(self):
+        r4 = json.loads((REPO / "config/sepolia-r4/manifest-epoch0.json").read_text(encoding="utf-8"))
+        r5 = json.loads((REPO / "config/sepolia-r5/manifest-epoch0.json").read_text(encoding="utf-8"))
+        g = json.loads((REPO / "config/sepolia-r5/genesis.json").read_text(encoding="utf-8"))
+        merged = make_manifest.merge_safes(r4["safes"], make_manifest.new_safes("r5"))
+        self.assertEqual(make_manifest.safes_from_genesis(g, merged), r5["safes"])
 
 
 if __name__ == "__main__":

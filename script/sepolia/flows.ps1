@@ -154,11 +154,23 @@ function Get-Address([string]$Role) {
     return $address
 }
 
+# The role whose account is $Address (case-insensitive). Addresses already in the state file are
+# matched first; the others are resolved one by one, and a role whose keystore the operator does
+# not hold (for example `pauser` on an earlier record) is skipped, not fatal.
 function Get-Role([string]$Address) {
-    foreach ($role in $Accounts.Keys) {
-        if ((Get-Address $role) -eq $Address) { return $role }
+    $cached = (Read-State).addresses
+    foreach ($p in $cached.PSObject.Properties) {
+        if ($Accounts.ContainsKey($p.Name) -and $p.Value -eq $Address) { return $p.Name }
     }
-    throw "no account for $Address"
+    $missing = @()
+    foreach ($role in $Accounts.Keys) {
+        if ($cached.PSObject.Properties[$role]) { continue }
+        try { $resolved = Get-Address $role }
+        catch { $missing += $role; continue }
+        if ($resolved -eq $Address) { return $role }
+    }
+    $note = if ($missing.Count) { " (not resolvable here: $($missing -join ', '))" } else { '' }
+    throw "no account for $Address$note"
 }
 
 # ---------------------------------------------------------------------------- forge and cast

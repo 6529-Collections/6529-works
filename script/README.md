@@ -569,7 +569,10 @@ forge script script/Deploy.s.sol --rpc-url "$SEPOLIA_RPC_URL" --sender <deployer
     Before a mainnet run, budget WorkRecords' creation against the private endpoint's estimate
     cap, or set its gas limit by hand.
   - [`sepolia/deploy.ps1`](sepolia/deploy.ps1) runs this step with an instance's public inputs
-    (`config/sepolia-r5/deploy.env`; `-Rpc` overrides its RPC) and the operator's signer module;
+    (`config/sepolia-r5/deploy.env`) and the operator's signer module. Its `-Broadcast` refuses
+    the env file's public RPC, whose 50M estimate cap stops at WorkRecords; pass `-Rpc` with an
+    endpoint whose cap is higher. No endpoint has yet been shown to carry the whole broadcast
+    through forge (r5 finished as above);
     [`sepolia/`](sepolia/) also has the genesis and manifest writers, the per-transaction gas
     rows, Sourcify verification and the flow driver.
   - **On Sepolia r1, with Glamsterdam costs,** the deploy took 445M gas over 25 transactions,
