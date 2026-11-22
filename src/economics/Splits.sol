@@ -79,13 +79,10 @@ library Splits {
         returns (uint256 low)
     {
         uint256 high = payees.length;
-        // Safe: `low < high <= payees.length`, so neither the sum nor `mid + 1` overflows.
-        unchecked {
-            while (low < high) {
-                uint256 mid = (low + high) / 2;
-                if (payees[mid].artistId == 0 && payees[mid].account < account) low = mid + 1;
-                else high = mid;
-            }
+        while (low < high) {
+            uint256 mid = (low + high) / 2;
+            if (payees[mid].artistId == 0 && payees[mid].account < account) low = mid + 1;
+            else high = mid;
         }
     }
 
