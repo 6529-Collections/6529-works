@@ -188,3 +188,9 @@ attempted". That is exact for the split ledger and for both auctions (`AgedCredi
 also reads the period at every deposit and recovery, when it ages an account's credit windows:
 a change of the period reaches every amount not yet aged, and an amount a write has already
 counted as aged stays aged (`RevenueEscrow`, ECO-45).
+
+Decision 6 ("no third party can shorten or postpone a clock") holds as written for both
+auctions (`AgedCredits`). For the escrow the rule is: money expires only after it has itself
+waited the period; a window's due time can be at most two periods after its first deposit.
+A deposit into an open window, by anyone, can move that window's due time later within that
+bound and never earlier (`RevenueEscrow`, ECO-45; owner ruling of 22 November 2026).

@@ -115,6 +115,10 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, IItemApprovals, Acces
 
     /// @inheritdoc IPackageRegistry
     IEconomicsResolver public immutable economics;
+    /// @notice The deployment's CC0 text (`IWorkFacts.cc0TextFileId` of the bound Stream's
+    ///         facts, which never changes): the text a CC0 item must name. Kept here so a start
+    ///         does not read it from `WorkFacts` each time; `bindStream` checks it is the same.
+    bytes32 public immutable cc0TextFileId;
     /// @inheritdoc IPackageRegistry
     ICurationVerifier public verifier;
     /// @inheritdoc IPackageRegistry
@@ -144,13 +148,15 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, IItemApprovals, Acces
     ///        its ACCOUNTS slot names must bind this registry as its only `register` caller.
     /// @param economics_ The economics resolver (immutable): the terms of new works.
     /// @param entropyModule_ The VRF entropy module, or zero (VRF items are then refused).
+    /// @param cc0TextFileId_ The deployment's CC0 text file (`IWorkFacts.cc0TextFileId`).
     constructor(
         address authority_,
         ICurationVerifier verifier_,
         bytes32 verifierCodeHash,
         address directory_,
         IEconomicsResolver economics_,
-        address entropyModule_
+        address entropyModule_,
+        bytes32 cc0TextFileId_
     )
         AccessManaged(authority_)
         EIP712(Typehashes.PACKAGE_REGISTRY_NAME, Typehashes.DOMAIN_VERSION)
@@ -159,6 +165,7 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, IItemApprovals, Acces
         Dependency.check(address(economics_), type(IEconomicsResolver).interfaceId);
         directory = directory_;
         economics = economics_;
+        cc0TextFileId = cc0TextFileId_;
         _setVerifier(verifier_, verifierCodeHash);
         _setEntropyModule(entropyModule_);
     }
@@ -169,6 +176,9 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, IItemApprovals, Acces
     function bindStream(address target) external restricted {
         if (stream != address(0)) revert AlreadyBound(STREAM);
         Dependency.check(target, type(IStream).interfaceId);
+        if (IWorkFacts(IStream(target).facts()).cc0TextFileId() != cc0TextFileId) {
+            revert Dependency.InvalidDependency(target);
+        }
         stream = target;
         emit Bound(STREAM, target);
     }
@@ -506,12 +516,10 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, IItemApprovals, Acces
         if (!SpdxId.isValidCalldata(item.license.spdxId)) revert InvalidLicenseId();
         // `WorkFacts.open` refuses a CC0 item whose text is not the deployment's CC0 text, and
         // takes only the exact item a token was minted from: such a token could never get a
-        // record. Unbound (only `preview` reaches here then), there is no text to compare with.
-        address stream_ = stream;
+        // record. The text is compared first, so an item naming the CC0 text costs no more.
         if (
-            stream_ != address(0)
+            item.license.textFileId != cc0TextFileId
                 && WorksHashing.licenseKey(item.license.spdxId) == WorksHashing.CC0_LICENSE_KEY
-                && item.license.textFileId != IWorkFacts(IStream(stream_).facts()).cc0TextFileId()
         ) revert InvalidLicenseId();
     }
 

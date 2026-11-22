@@ -69,12 +69,14 @@ contract UniformEditionAuctionAdoptTest is EditionAuctionBase {
 
     // ------------------------------------------------------------------ a removed auction
 
-    /// @dev A removed auction opens nothing new, but its running sale settles and its winners
-    ///      claim: the removed minter seals the edition, then mints up to the seal.
+    /// @dev A removed auction opens nothing new. A sale it settled before its removal sealed
+    ///      the edition, so its winners still claim: a removed minter mints up to the seal. (A
+    ///      sale still open at the removal voids with full refunds: `EditionAuctionFixes`.)
     function test_RemovedAuction_ItsWinnersStillClaim() public {
         uint256 saleId = _open(0);
         _bid(saleId, alice, 100, 2);
         _bid(saleId, bob, 50, 1);
+        _settle(saleId);
         editions.removeMinter(address(auction));
         english.set(
             address(stream),
@@ -85,7 +87,6 @@ contract UniformEditionAuctionAdoptTest is EditionAuctionBase {
         PackageItem memory other = _item(8, 0);
         vm.expectRevert(abi.encodeWithSelector(IModules.NotMinter.selector, address(auction)));
         auction.open(address(editions), 8, _openData(other));
-        _settle(saleId);
         assertEq(_claimAll(saleId), 2);
         assertEq(editions.balanceOf(alice, ID), 2);
         assertEq(editions.balanceOf(bob, ID), 0, "outbid: refunded");

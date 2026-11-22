@@ -698,6 +698,8 @@ contract StreamTest is CoreFixture {
     function testFuzz_SetRoyalty_TermsOnly(address caller, address receiver, uint24 rate) public {
         vm.assume(caller != address(terms));
         rate = uint24(bound(rate, 0, Core.DENOMINATOR));
+        // A nonzero rate needs a receiver (`InvalidRoyalty`, pinned in the refusals test).
+        if (receiver == address(0)) rate = 0;
         uint256 id = _sell(1, collector);
         vm.prank(caller);
         vm.expectRevert(_notTerms(caller));

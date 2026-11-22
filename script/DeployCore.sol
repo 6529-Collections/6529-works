@@ -459,7 +459,8 @@ library DeployCore {
                     verifier.codehash,
                     d.directory,
                     d.economicsResolver,
-                    address(0)
+                    address(0),
+                    d.cc0TextFileId
                 )
             );
         }

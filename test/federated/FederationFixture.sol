@@ -91,6 +91,8 @@ abstract contract FederationFixture is CoreFixture {
     DelegationManagementMock internal delegation;
     ConsolidationAdapter internal adapter;
     FedSale internal fedSale;
+    /// @dev A sale contract is admitted for one token form: this one serves the editions.
+    FedSale internal fedEdSale;
     FedSink internal sink;
     FederatedStream internal fStream;
     FederatedEditions internal fEditions;
@@ -159,6 +161,8 @@ abstract contract FederationFixture is CoreFixture {
         registry.approveTemplate(address(streamDeployer), 1, IFederationRegistry.Form.ERC721);
         registry.approveTemplate(address(editionsDeployer), 1, IFederationRegistry.Form.ERC1155);
         registry.setAdapter(address(fedSale), IFederationRegistry.Form.ERC721, true);
+        fedEdSale = new FedSale();
+        registry.setAdapter(address(fedEdSale), IFederationRegistry.Form.ERC1155, true);
 
         _consolidate(artist, wallet);
         licenseText = _file("license text of the work", "text/plain");

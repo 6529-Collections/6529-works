@@ -394,7 +394,7 @@ contract FederationRegistryListingTest is FederationFixture {
             abi.encode(registry.templateOf(address(streamDeployer)))
         );
         assertTrue(next.canMint(address(fStream), address(fedSale)));
-        assertTrue(next.canMint(address(fEditions), address(fedSale)));
+        assertTrue(next.canMint(address(fEditions), address(fedEdSale)));
         assertTrue(next.isActive(address(fStream)));
         assertTrue(next.saleContractOf(address(fedSale)).addedAt != 0);
         assertTrue(next.isAccountDelisted(otherId));

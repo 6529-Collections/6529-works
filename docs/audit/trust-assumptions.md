@@ -89,7 +89,9 @@ the federation module's answer.
   `rescue`, `setRescueDelay`, `rebind` and `setRebindDelay` only from a role member calling
   directly with no delay; giving that role a delay would lock these functions (LIM-GV-31).
 - **A replacement module carries state over.** A new accounts module must carry the artists
-  over; a new mint policy, the barred items and content releases (LIM-GV-32).
+  over; a new mint policy starts with no content releases and no barred items, and the network
+  releases again what is still to be minted (LIM-GV-32;
+  [Replacing a module](../operations/replacing-modules.md)).
 - **Off-chain copies of a finalized work** are named by the replaceable delivery module; the
   content hashes stay in `WorkFacts` (LIM-CNT-23).
 - **A sale contract can close an edition for good** by sealing it at zero (LIM-EA-21).

@@ -361,9 +361,9 @@ contract EditionAuctionIntegrationTest is EditionAuctionStack {
         editionAuction.open(address(editions), token2, _openData(w2));
     }
 
-    /// @dev The network removes the adapter before its sale settles: the sale still settles
-    ///      (a removed minter seals), every winner still claims exactly the count, and the
-    ///      removed adapter opens nothing new.
+    /// @dev The network removes the adapter after its sale settled (and sealed the edition):
+    ///      every winner still claims exactly the count, since a removed minter mints up to
+    ///      the seal, and the removed adapter opens nothing new.
     function test_EditionAuction_ARemovedAdaptersWinnersStillClaim() public {
         (,, uint256 oneSaleId, uint256 tokenId, uint256 saleId) = _startMaster(artist, 10);
         address fan1 = makeAddr("fan1");
@@ -371,12 +371,12 @@ contract EditionAuctionIntegrationTest is EditionAuctionStack {
         _editionBid(saleId, fan1, 30, 6);
         _editionBid(saleId, fan2, 25, 8);
         _settleAtEnd(oneSaleId);
+        _settleEditions(saleId);
+        assertEq(ea.settlement(saleId).count, 10, "the cap binds");
         _asNetwork(
             address(editions), abi.encodeCall(editions.removeMinter, (address(editionAuction)))
         );
         assertFalse(editions.isMinter(address(editionAuction)));
-        _settleEditions(saleId);
-        assertEq(ea.settlement(saleId).count, 10, "the cap binds");
         vm.prank(fan1);
         (uint256 won1,) = editionAuction.claimBid(saleId, 1, fan1);
         vm.prank(fan2);

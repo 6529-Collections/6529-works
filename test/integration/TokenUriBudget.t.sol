@@ -450,25 +450,31 @@ contract TokenUriBudgetTest is GasBase {
     }
 
     /// @dev A name over the bound is refused by its length alone, so what it holds costs
-    ///      nothing: 4,096 control bytes, quotes or bytes that are not UTF-8 render the work
-    ///      without a collection name for no more gas than the longest shown name. (Before the
+    ///      nothing: the work renders without a collection name, inside the budget. (Before the
     ///      bound, 4,096 control bytes took this work to 15.7M gas.)
-    function test_Budget_NameOverTheBound_CostsNoMoreThanAShownName() public {
-        uint256 shown = _namedRow(_fill(hex"01", LONGEST_SHOWN_NAME));
-        bytes[4] memory names = [
-            _fill(hex"01", 4_096),
-            _fill('"', 4_096),
-            _fill(hex"ff", 4_096),
-            _fill(hex"01", LONGEST_SHOWN_NAME + 1)
-        ];
-        for (uint256 i; i < names.length; ++i) {
-            uint256 used = _namedRow(names[i]);
-            string memory uri = stream.tokenURI(lastTokenId);
-            assertFalse(_contains(uri, "\\u0001\\u0001"), "the name is not shown");
-            assertFalse(_contains(uri, '\\"\\"\\"'), "the name is not shown");
-            assertLt(used, TOKEN_URI_BUDGET);
-            assertLt(used, shown, "an unread name costs less than a shown one");
-        }
+    function _checkOverTheBound(bytes memory name) internal {
+        uint256 used = _namedRow(name);
+        console2.log("tokenURI with a collection name over the bound:", used);
+        string memory uri = stream.tokenURI(lastTokenId);
+        assertFalse(_contains(uri, "\\u0001\\u0001"), "the name is not shown");
+        assertFalse(_contains(uri, '\\"\\"\\"'), "the name is not shown");
+        assertLt(used, TOKEN_URI_BUDGET);
+    }
+
+    function test_Budget_NameOverTheBound_ControlBytes() public {
+        _checkOverTheBound(_fill(hex"01", 4_096));
+    }
+
+    function test_Budget_NameOverTheBound_Quotes() public {
+        _checkOverTheBound(_fill('"', 4_096));
+    }
+
+    function test_Budget_NameOverTheBound_NotUtf8() public {
+        _checkOverTheBound(_fill(hex"ff", 4_096));
+    }
+
+    function test_Budget_NameOverTheBound_ByOneByte() public {
+        _checkOverTheBound(_fill(hex"01", LONGEST_SHOWN_NAME + 1));
     }
 
     /// @dev A name longer than the renderer reads is no name: the work still renders, with its

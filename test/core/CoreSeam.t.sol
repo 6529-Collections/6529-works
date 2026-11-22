@@ -210,7 +210,10 @@ contract CoreSeamTest is CoreFixture {
         editions.rebind(live, address(next));
         editions.rebind(stuck, address(next));
         assertEq(editions.editionOf(stuck).minter, address(next));
-        // The removed minter still seals what it started.
+        // The removed minter no longer seals: an open edition with copies stays open.
+        vm.expectRevert(
+            abi.encodeWithSelector(IEditions.NotEditionMinter.selector, live, address(sale))
+        );
         sale.seal(address(editions), live, 1);
     }
 }

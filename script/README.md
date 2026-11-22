@@ -160,6 +160,7 @@ minters.
 | --- | --- | --- | --- |
 | Announce a module | `proposeModule(slot, module)` | The network | Any time; the module must have code. It becomes ready `moduleDelay` later. A new proposal for the same slot replaces the pending one |
 | Activate it | `activateModule(slot)` | Anyone | From the ready time |
+| Withdraw an announcement | `cancelModule(slot)` | The network | At once, before the module takes effect; the installed module stays |
 | Remove a module | `removeModule(slot)` | The network | At once; it also clears a pending proposal |
 | Add a minter | `addMinter(minter)` | The network | Active `moduleDelay` later |
 | Remove a minter | `removeMinter(minter)` | The network | At once. It still finishes the sales it started |
@@ -195,9 +196,10 @@ The launch values are in `config/genesis.core.example.json` (`settings`) and rea
   (`Editions.seal(editionId, 0)` with no copies minted). Add only sale contracts that seal at the
   count sold.
 - **Replacing modules.** A replacement accounts module must carry the existing artists over
-  (IDs, wallets, payout addresses). A replacement mint policy must carry over the barred items
-  and the content releases of the one it replaces. *(Pending the fix to `src/`: the integrator
-  adjusts this line at the final merge.)*
+  (IDs, wallets, payout addresses). A replacement mint policy starts with no content releases
+  and no barred items: a burned work's content stays unmintable until the network releases it
+  again there. A new instance needs its role-map entries. The checklist is in
+  [Replacing a module](../docs/operations/replacing-modules.md).
 - **Media locations.** A finalized work's content hashes are permanent in `WorkFacts`; where its
   off-chain copies are served from comes from the replaceable delivery module
   (`WorkRules.setDelivery`).

@@ -187,12 +187,21 @@ contract EditionsTest is EditionsFixture {
     function test_Mint_ARemovedMinterMintsOnlyWhatItSealed() public {
         uint256 id = _edition(1, 10);
         sale.mintEdition(address(editions), buyer, id, 2, 1);
+        // Left open at its removal: it mints no more and can no longer seal.
+        uint256 snap = vm.snapshotState();
         editions.removeMinter(address(sale));
         vm.expectRevert(
             abi.encodeWithSelector(IEditions.NotEditionMinter.selector, id, address(sale))
         );
         sale.mintEdition(address(editions), buyer, id, 1, 1);
+        vm.expectRevert(
+            abi.encodeWithSelector(IEditions.NotEditionMinter.selector, id, address(sale))
+        );
         sale.seal(address(editions), id, 5);
+        vm.revertToState(snap);
+        // Sealed before its removal: it still mints up to the seal.
+        sale.seal(address(editions), id, 5);
+        editions.removeMinter(address(sale));
         sale.mintEdition(address(editions), buyer, id, 3, 1);
         vm.expectRevert(abi.encodeWithSelector(IEditions.SupplyExceeded.selector, id));
         sale.mintEdition(address(editions), buyer, id, 1, 1);
@@ -285,7 +294,9 @@ contract EditionsTest is EditionsFixture {
         assertEq(editions.editionOf(b).maxSupply, type(uint40).max);
     }
 
-    function test_Seal_OnlyTheEditionsMinterRemovedOrNot() public {
+    /// @dev Only the edition's minter seals, and only while it has not been removed: an open
+    ///      edition of a removed minter waits for the network's rebind.
+    function test_Seal_OnlyTheEditionsMinterWhileNotRemoved() public {
         uint256 id = _edition(1, 10);
         _addActive(address(other));
         vm.expectRevert(
@@ -297,8 +308,11 @@ contract EditionsTest is EditionsFixture {
         );
         sale.seal(address(editions), 99, 1);
         editions.removeMinter(address(sale));
+        vm.expectRevert(
+            abi.encodeWithSelector(IEditions.NotEditionMinter.selector, id, address(sale))
+        );
         sale.seal(address(editions), id, 0);
-        assertTrue(editions.editionOf(id).supplySealed);
+        assertFalse(editions.editionOf(id).supplySealed);
     }
 
     function testFuzz_Seal_ASealedMaximumNeverGrows(uint40 cap, uint40 minted, uint40 supply)

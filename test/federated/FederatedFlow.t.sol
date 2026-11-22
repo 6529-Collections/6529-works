@@ -20,7 +20,7 @@ import { FederationFixture } from "./FederationFixture.sol";
 contract FederatedFlowTest is FederationFixture {
     function test_Flow_ListedPairAnswersTheGate() public view {
         assertTrue(fStream.isMinter(address(fedSale)));
-        assertTrue(fEditions.isMinter(address(fedSale)));
+        assertTrue(fEditions.isMinter(address(fedEdSale)));
         IFederationRegistry.Entry memory e = registry.entry(address(fEditions));
         assertEq(e.partner, address(fStream));
         assertEq(registry.entry(address(fStream)).partner, address(fEditions));
@@ -64,9 +64,9 @@ contract FederatedFlowTest is FederationFixture {
         (uint256 id,,) = fedSale.start(
             address(registry), address(fStream), _request(item, media, new bytes[](0))
         );
-        fedSale.createEdition(address(fEditions), id, 0, address(0xFEE), RATE);
-        fedSale.mintEdition(address(fEditions), collector, id, 3, 0.1 ether);
-        fedSale.seal(address(fEditions), id, 3);
+        fedEdSale.createEdition(address(fEditions), id, 0, address(0xFEE), RATE);
+        fedEdSale.mintEdition(address(fEditions), collector, id, 3, 0.1 ether);
+        fedEdSale.seal(address(fEditions), id, 3);
         assertEq(fEditions.balanceOf(collector, id), 3);
         assertEq(fEditions.uri(id), "data:,mock");
     }
@@ -104,7 +104,7 @@ contract FederatedFlowTest is FederationFixture {
         tokens[0] = address(fStream);
         registry.setStatus(tokens, IFederationRegistry.Status.DELISTED, bytes32("vote"));
         assertFalse(fStream.isMinter(address(fedSale)));
-        assertFalse(fEditions.isMinter(address(fedSale)), "editions follow their stream");
+        assertFalse(fEditions.isMinter(address(fedEdSale)), "editions follow their stream");
         (PackageItem memory item, MediaFile[] memory media) = _item(4);
         _approve(address(fStream), item, RATE);
         vm.expectRevert();
@@ -119,7 +119,7 @@ contract FederatedFlowTest is FederationFixture {
     function test_Flow_AccountDelistingStopsEveryContractOfTheAccount() public {
         registry.setAccountDelisted(fArtistId, true, bytes32("vote"));
         assertFalse(fStream.isMinter(address(fedSale)));
-        assertFalse(fEditions.isMinter(address(fedSale)));
+        assertFalse(fEditions.isMinter(address(fedEdSale)));
         assertEq(
             uint8(registry.entry(address(fStream)).status),
             uint8(IFederationRegistry.Status.DELISTED)

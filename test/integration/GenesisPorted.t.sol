@@ -389,9 +389,9 @@ contract GenesisPortedTest is GenesisJsonPorted {
         this.verifyExternal(params);
     }
 
-    /// @dev Intended: the genesis readback compares each governed vault's destination with the
-    ///      recipient the deployment was given (the retired `VerifyV1.checkRecipients`).
-    function check_ReadbackRefusesAWrongFeeVaultDestination() external view {
+    /// @dev The genesis readback compares each governed vault's destination with the recipient
+    ///      the deployment was given.
+    function test_Readback_RefusesAWrongFeeVaultDestination() external view {
         DeployCore.Params memory q = params;
         q.feeRecipient = address(0xBAD);
         try this.verifyExternal(q) {
@@ -400,9 +400,9 @@ contract GenesisPortedTest is GenesisJsonPorted {
         assertEq(feeVault.destination(), feeSafe);
     }
 
-    /// @dev Intended: the genesis readback checks the wiring's effects (the retired
-    ///      `VerifyV1.checkGenesisState`): here the edition auction's sale target removed.
-    function check_ReadbackRefusesAMissingWiringEffect() external {
+    /// @dev The genesis readback checks the wiring's effects: here the edition auction's sale
+    ///      target removed.
+    function test_Readback_RefusesAMissingWiringEffect() external {
         vm.mockCall(
             address(editionAuction),
             abi.encodeCall(IUniformEditionAuctionLens.isTarget, (address(editions))),
@@ -411,19 +411,6 @@ contract GenesisPortedTest is GenesisJsonPorted {
         try this.verifyExternal(params) {
             revert ReadbackAccepted("edition auction sale target");
         } catch { }
-    }
-
-    function test_Finding_ReadbackChecksNeitherRecipientsNorWiring() public {
-        _expectFailure(
-            abi.encodeCall(this.check_ReadbackRefusesAWrongFeeVaultDestination, ()),
-            ReadbackAccepted.selector,
-            "VerifyCore.verify does not read the vault destinations back"
-        );
-        _expectFailure(
-            abi.encodeCall(this.check_ReadbackRefusesAMissingWiringEffect, ()),
-            ReadbackAccepted.selector,
-            "VerifyCore.verify does not read the genesis wiring's effects back"
-        );
     }
 }
 

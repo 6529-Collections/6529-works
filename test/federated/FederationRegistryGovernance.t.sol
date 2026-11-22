@@ -284,9 +284,9 @@ contract FederationRegistryGovernanceTest is FederationFixture {
             "own status untouched"
         );
         assertFalse(registry.isActive(address(fStream)));
-        assertFalse(registry.canMint(address(fEditions), address(fedSale)));
+        assertFalse(registry.canMint(address(fEditions), address(fedEdSale)));
         registry.setAccountDelisted(fArtistId, false, "r2");
-        assertTrue(registry.canMint(address(fEditions), address(fedSale)));
+        assertTrue(registry.canMint(address(fEditions), address(fedEdSale)));
     }
 
     // ------------------------------------------------------------------ fee share
@@ -404,25 +404,27 @@ contract FederationRegistryGovernanceTest is FederationFixture {
     }
 
     function test_Editions_MintOnlyWhileTheirStreamIsMintable() public {
-        assertTrue(registry.canMint(address(fEditions), address(fedSale)));
+        assertTrue(registry.canMint(address(fEditions), address(fedEdSale)));
         registry.suspendTemplate(address(streamDeployer));
-        assertFalse(registry.canMint(address(fEditions), address(fedSale)), "stream suspended");
+        assertFalse(registry.canMint(address(fEditions), address(fedEdSale)), "stream suspended");
         assertTrue(registry.isActive(address(fEditions)), "editions still served");
         registry.resumeTemplate(address(streamDeployer));
         registry.setStatus(_tokens(address(fStream)), IFederationRegistry.Status.DELISTED, 0);
-        assertFalse(registry.canMint(address(fEditions), address(fedSale)), "stream delisted");
+        assertFalse(registry.canMint(address(fEditions), address(fedEdSale)), "stream delisted");
         registry.setStatus(_tokens(address(fStream)), IFederationRegistry.Status.ACTIVE, 0);
         registry.suspendTemplate(address(editionsDeployer));
-        assertFalse(registry.canMint(address(fEditions), address(fedSale)), "editions suspended");
+        assertFalse(registry.canMint(address(fEditions), address(fedEdSale)), "editions suspended");
         assertTrue(registry.canMint(address(fStream), address(fedSale)), "stream unaffected");
     }
 
     function test_Gate_TokensAskTheRegistry() public {
         assertTrue(fStream.isMinter(address(fedSale)));
-        assertTrue(fEditions.isMinter(address(fedSale)));
+        assertTrue(fEditions.isMinter(address(fedEdSale)));
         registry.setAdapter(address(fedSale), IFederationRegistry.Form.ERC721, false);
         assertFalse(fStream.isMinter(address(fedSale)));
-        assertFalse(fEditions.isMinter(address(fedSale)));
+        assertTrue(fEditions.isMinter(address(fedEdSale)), "each sale contract on its own");
+        registry.setAdapter(address(fedEdSale), IFederationRegistry.Form.ERC1155, false);
+        assertFalse(fEditions.isMinter(address(fedEdSale)));
     }
 
     function test_FeeShareOf_UnlistedIsZero() public view {

@@ -124,6 +124,28 @@ contract RevenueEscrowExpiryTest is EconomicsBase {
         assertEq(escrow.expire(alice, ETH), 5 ether + 179);
     }
 
+    /// @dev The bound, to the second: a stranger's deposit in the last second of an open window
+    ///      moves the window's due time to one second under two periods after its first
+    ///      deposit, and no later deposit moves it again.
+    function test_AStrangersDepositMovesAWindowsDueTimeByLessThanOnePeriod() public {
+        _deposit(alice, alice, 5 ether);
+        assertEq(escrow.expirableAt(alice, ETH, start + PERIOD), 5 ether, "due after one period");
+        vm.warp(start + PERIOD - 1);
+        _deposit(stranger, alice, 1); // the window's last second
+        uint256 due = start + 2 * PERIOD - 1;
+        assertEq(escrow.expirableAt(alice, ETH, due - 1), 0, "moved later");
+        assertEq(escrow.expirableAt(alice, ETH, due), 5 ether + 1, "under two periods");
+        vm.warp(start + PERIOD);
+        _deposit(stranger, alice, 1); // the window has closed: a new one
+        assertEq(escrow.expirableAt(alice, ETH, due), 5 ether + 1, "not moved again");
+        vm.warp(due - 1);
+        _deposit(stranger, alice, 1);
+        _expectNotDue(alice, due);
+        vm.warp(due);
+        assertEq(escrow.expire(alice, ETH), 5 ether + 1);
+        assertEq(escrow.owed(alice, ETH), 2, "the later deposits stay");
+    }
+
     /// @dev Three generations at once: a matured window (aged once rolled), a maturing one and
     ///      the open one; each moves only when due, and `CreditNotExpired` names the next due.
     function test_ThreeGenerationsAgeInOrder() public {

@@ -289,17 +289,19 @@ contract WorkRecordsStackPortedTest is IntegrationBase {
     }
 
     /// @dev A license whose key is CC0 names the deployment's CC0 text: an approved CC0 license
-    ///      with another text cannot open, while the same text under another spelling of the
-    ///      identifier can.
+    ///      with another text is refused by the mint policy, so it never mints a work whose
+    ///      record could not open, while the same text under another spelling of the identifier
+    ///      mints and opens.
     function test_Cc0_AnApprovedCc0LicenseMustNameThePinnedText() public {
         bytes32 typo = _storeText("CC0 1.0 Universal, with a typo", "text/plain");
         Work memory w = _work(artist, collectionId);
         w.item.license = License("CC0-1.0", typo);
         Work[] memory works = _one(w);
-        (, uint256 tokenId) = _start(_publish(works), works, 0);
-        vm.expectRevert(IWorkFacts.InvalidLicense.selector);
-        facts.open(address(stream), tokenId, w.item, w.media);
-        assertFalse(_licenseOf(tokenId).opened);
+        bytes memory data = _mintData(_publish(works), works, 0);
+        uint256 mintedBefore = stream.totalMinted();
+        vm.expectRevert(IPackageRegistry.InvalidLicenseId.selector);
+        auction.start(address(stream), data);
+        assertEq(stream.totalMinted(), mintedBefore);
 
         Work memory v = _work(artist, collectionId);
         v.item.license = License("cc0-1.0", cc0TextFileId);

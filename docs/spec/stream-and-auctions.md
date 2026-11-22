@@ -91,7 +91,8 @@ network before it has itself waited the period, and no deposit or call by anyone
 shorten or postpone a running wait. The revenue escrow's rule
 ([Economics and payouts](economics-and-payouts.md)) gives the same guarantee differently: it
 groups credits in windows that stay open for one period and expire a period after their last
-credit, so an amount waits at least one period and, while the period stays the same, less
+credit (a deposit into an open window can move its due time later, at most to two periods after
+the window's first deposit), so an amount waits at least one period and, while the period stays the same, less
 than two; its due time can be
 computed without anyone calling `expire`. The auctions use the simpler rule because their
 credits are short-lived refunds that their owners usually claim at once, so a batch that waits

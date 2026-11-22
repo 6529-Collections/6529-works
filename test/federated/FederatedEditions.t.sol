@@ -66,12 +66,21 @@ contract FederatedEditionsTest is FederatedTokenFixture {
     function test_Mint_AnUnsealedEditionNeedsTheGateASealedOneDoesNot() public {
         sale.createEdition(address(fe), master, 10, address(0xFEE), 700);
         sale.mintEdition(address(fe), collector, master, 2, 1 ether);
+        // Left open when the gate reports the sale contract removed: no mint and no seal.
+        uint256 snap = vm.snapshotState();
         _gateRemove(address(sale), block.timestamp);
         vm.expectRevert(
             abi.encodeWithSelector(IEditions.NotEditionMinter.selector, master, address(sale))
         );
         sale.mintEdition(address(fe), collector, master, 1, 1 ether);
+        vm.expectRevert(
+            abi.encodeWithSelector(IEditions.NotEditionMinter.selector, master, address(sale))
+        );
         sale.seal(address(fe), master, 5);
+        vm.revertToState(snap);
+        // Sealed before the removal: it still mints up to the seal.
+        sale.seal(address(fe), master, 5);
+        _gateRemove(address(sale), block.timestamp);
         sale.mintEdition(address(fe), collector, master, 3, 1 ether);
         assertEq(fe.balanceOf(collector, master), 5);
         vm.expectRevert(abi.encodeWithSelector(IEditions.SupplyExceeded.selector, master));

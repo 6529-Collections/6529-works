@@ -54,7 +54,8 @@ contract EnglishAuctionEndToEndTest is AuctionFixture, CurationHelpers {
                 )
             ),
             IEconomicsResolver(address(economics)),
-            address(0)
+            address(0),
+            IWorkFacts(address(facts)).cc0TextFileId()
         );
         artists.bindPackageRegistry(address(registry));
         registry.bindStream(address(stream));

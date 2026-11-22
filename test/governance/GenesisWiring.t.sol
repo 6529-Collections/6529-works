@@ -27,7 +27,7 @@ contract WiringValidator {
 }
 
 /// @notice The genesis wiring on the real deployed stack (with the entropy module): the genesis
-///         selector list is exactly nine selectors, each admitted only on a target declaring its
+///         selector list is exactly eight selectors, each admitted only on a target declaring its
 ///         interface; every wired call took effect in the configuring transaction; after genesis
 ///         each wired selector waits its class's delay, and the one-shot bind cannot run again.
 contract GenesisWiringTest is IntegrationBase {
@@ -205,7 +205,7 @@ contract GenesisWiringTest is IntegrationBase {
     }
 
     function _inList(bytes4[8] memory list, bytes4 sel) internal pure returns (bool) {
-        for (uint256 i; i < 9; ++i) {
+        for (uint256 i; i < list.length; ++i) {
             if (list[i] == sel) return true;
         }
         return false;

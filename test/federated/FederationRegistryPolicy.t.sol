@@ -498,8 +498,10 @@ contract FederationRegistryPolicyTest is FederationFixture {
 
         (PackageItem memory two, MediaFile[] memory m2) = _item(2);
         _approve(address(fStream), two, RATE);
-        accountsModule.freeze(fArtistId); // the payout reads zero while frozen
-        vm.expectRevert(IFederationRegistry.InvalidMintRequest.selector);
+        accountsModule.freeze(fArtistId); // a frozen account cannot act
+        vm.expectRevert(
+            abi.encodeWithSelector(IFederationRegistry.AccountCannotAct.selector, fArtistId)
+        );
         _start(two, m2, new bytes[](0));
         accountsModule.unfreeze(fArtistId);
         _start(two, m2, new bytes[](0));

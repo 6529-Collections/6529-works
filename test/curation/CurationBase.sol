@@ -343,7 +343,8 @@ abstract contract CurationBase is CurationHelpers {
                 )
             ),
             IEconomicsResolver(address(_policyStub)),
-            address(entropy)
+            address(entropy),
+            keccak256("cc0 text file")
         );
     }
 

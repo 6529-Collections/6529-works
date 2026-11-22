@@ -229,10 +229,8 @@ contract ModuleSwapTest is FederatedIntegrationBase {
         vm.prank(bidderA);
         old.claim(bidderA);
         assertEq(bidderA.balance, owed.credit, "the outbid credit is paid by the old auction");
-        // Its unsold federated work is not offered again there.
-        vm.expectRevert(
-            abi.encodeWithSelector(IEnglishAuction.TargetNotAllowed.selector, address(fStream))
-        );
+        // Its unsold federated work can still be offered again there, in the auction that
+        // minted it, for as long as the token is served.
         old.restart(fedSale2);
 
         // New sales run through the new auction only.
@@ -454,8 +452,8 @@ contract ModuleSwapTest is FederatedIntegrationBase {
         );
     }
 
-    /// @dev A new PackageRegistry (its genesis constructor arguments, `accountsModule` as its
-    ///      accounts module), bound to Stream, named by the accounts module and set as the
+    /// @dev A new PackageRegistry (its genesis constructor arguments; it reads the accounts
+    ///      module from the Directory), bound to Stream, named by `accountsModule` and set as the
     ///      auction's 6529 Stream policy, each at its role's delay.
     function _installRegistry(address accountsModule) internal returns (PackageRegistry next) {
         next = PackageRegistry(
@@ -465,10 +463,10 @@ contract ModuleSwapTest is FederatedIntegrationBase {
                     address(manager),
                     address(verifier),
                     address(verifier).codehash,
-                    accountsModule,
-                    accountsModule.codehash,
+                    address(directory),
                     address(economics),
-                    address(0)
+                    address(0),
+                    cc0TextFileId
                 )
             )
         );

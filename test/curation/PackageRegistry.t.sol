@@ -134,7 +134,8 @@ contract PackageRegistryTest is CurationBase {
         // at every use, so nothing about the module is pinned here).
         vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
         new PackageRegistry(
-            address(manager), v, vh, eoa, IEconomicsResolver(address(_policyStub)), address(0)
+            address(manager), v, vh, eoa, IEconomicsResolver(address(_policyStub)), address(0),
+            keccak256("cc0 text file")
         );
         vm.expectRevert(
             abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(verifier))
@@ -145,7 +146,8 @@ contract PackageRegistryTest is CurationBase {
             vh,
             address(verifier),
             IEconomicsResolver(address(_policyStub)),
-            address(0)
+            address(0),
+            keccak256("cc0 text file")
         );
         // The verifier's code hash is pinned.
         vm.expectRevert(
@@ -157,7 +159,8 @@ contract PackageRegistryTest is CurationBase {
             keccak256("other"),
             dir,
             IEconomicsResolver(address(_policyStub)),
-            address(0)
+            address(0),
+            keccak256("cc0 text file")
         );
         vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
         new PackageRegistry(
@@ -166,7 +169,8 @@ contract PackageRegistryTest is CurationBase {
             vh,
             dir,
             IEconomicsResolver(address(_policyStub)),
-            address(0)
+            address(0),
+            keccak256("cc0 text file")
         );
     }
 
@@ -184,7 +188,8 @@ contract PackageRegistryTest is CurationBase {
             h,
             dir,
             IEconomicsResolver(address(_policyStub)),
-            address(0)
+            address(0),
+            keccak256("cc0 text file")
         );
     }
 
@@ -1442,7 +1447,8 @@ contract PackageRegistryTest is CurationBase {
                 new Directory(address(manager), address(odd), address(0), address(0), address(0))
             ),
             IEconomicsResolver(address(_policyStub)),
-            address(0)
+            address(0),
+            keccak256("cc0 text file")
         );
         bytes32 root = keccak256("misnumbered");
         reg.registerPackage(root, EVIDENCE, _attestation(signerKey1, root, EVIDENCE));
@@ -1463,7 +1469,8 @@ contract PackageRegistryTest is CurationBase {
                 new Directory(address(manager), address(odd), address(0), address(0), address(0))
             ),
             IEconomicsResolver(address(_policyStub)),
-            address(0)
+            address(0),
+            keccak256("cc0 text file")
         );
         bytes32 root = keccak256("undernumbered");
         reg.registerPackage(root, EVIDENCE, _attestation(signerKey1, root, EVIDENCE));

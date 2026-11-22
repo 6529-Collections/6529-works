@@ -76,11 +76,13 @@ only when; the amounts are never more than the money that has itself waited.
 - **Split vault share.** Anyone may mark a payee's releasable share. Once the unclaimed period
   in force has passed since the mark, anyone may send the network what of the marked level is
   still unreleased. Money that arrived after the mark is never taken.
-- **Escrow credit.** A credit is `{total, aged, since}`. When a credit leaves zero, or after an
-  expiry, the whole balance is aged and the clock starts. Later deposits add to the total only.
-  Once the unclaimed period in force has passed since `since`, anyone may move the aged part
-  (never more than the total) to the network, and the rest starts a new clock. A stranger's
-  deposit can neither shorten nor postpone a clock.
+- **Escrow credit.** Credits to an account are grouped in windows. A credit with no open
+  window opens one; the window takes every credit for one unclaimed period from its first
+  credit, and all of it is due one period after its last credit. Money expires only after it
+  has itself waited the period, and a window's due time can be at most two periods after its
+  first deposit. Anyone may deposit into an open window; that can move the window's due time
+  later within that bound and never earlier. A deposit made once an amount has waited the
+  period never joins that amount's window, so it cannot move the time that amount is due.
 - If reading the period fails, the forfeit or expiry reverts and the money stays.
 
 ## Compiled limits
@@ -139,7 +141,7 @@ only when; the amounts are never more than the money that has itself waited.
 | ECO-42 | No compiled gas number in the ledger; a shortfall reverts, never a refusal. | `test_GasRule_ThePushToTheNetworkIsNeverSkippedForGas` |
 | ECO-43 | Every release from a vault that names the network fee vault also pays the fee vault its due share. | `test_ReleaseFromARoyaltyWalletAlsoPaysTheFeeVault`, `testFuzz_EveryReleasePathPaysTheNetwork` |
 | ECO-44 | Anyone may mark a payee's share; once the unclaimed period in force has passed since the mark, anyone may send the network what of the marked level is still unreleased, never money that arrived later. | `test_AShareClaimedInTimeIsNotForfeited`, `testFuzz_AMarkNeverTakesLaterMoney`, `test_ARunningMarkCannotBeRestarted` |
-| ECO-45 | Only the aged part of an escrow credit expires, once the unclaimed period in force has passed since it aged; a later deposit never shortens or postpones a clock; never the network's own credit. | `test_ExpireRefusals` |
+| ECO-45 | Only the aged part of an escrow credit expires, once the unclaimed period in force has passed since it aged; a later deposit never shortens a clock, and moves a window's due time at most to two periods after the window's first deposit; never the network's own credit. | `test_ExpireRefusals`, `test_AStrangersDepositMovesAWindowsDueTimeByLessThanOnePeriod`, `testFuzz_ExpiryGuaranteesUnderAnyInterleaving`, `test_Credits_EscrowAStreamOfCreditsCannotHoldAWindowOpen` |
 | ECO-46 | `unclaimedPeriod` is the network's setting in `Directory` (180 days at launch), changed at once, zero allowed; the ledger and escrow read it when the action is attempted. | `test_UnclaimedPeriod_OneEightyDaysAtDeploymentOnlyTheNetworkSetsIt` |
 | ECO-47 | The escrow's `locked()` is true exactly while it is inside a guarded call. | |
 

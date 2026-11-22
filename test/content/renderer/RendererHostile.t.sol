@@ -205,8 +205,8 @@ contract RendererHostileTest is RendererBase {
         );
         renderer.tokenURI(address(stream), ID);
 
-        // A collection name above 4 KiB, or not UTF-8, is no name: the work still renders,
-        // with an empty collection name.
+        // A collection name above 128 bytes (`Renderer.MAX_NAME_BYTES`), or not UTF-8, is no
+        // name: the work still renders, with an empty collection name.
         records.setLicense(ID, _license());
         WorkCore memory core = _core();
         core.collectionId = 1;
@@ -215,8 +215,10 @@ contract RendererHostileTest is RendererBase {
         assertEq(_attr(_out(), "Collection"), "");
         stream.setCollectionName(1, hex"ff");
         assertEq(_attr(_out(), "Collection"), "");
-        stream.setCollectionName(1, bytes(_text(200)));
-        assertEq(_attr(_out(), "Collection"), _text(200));
+        stream.setCollectionName(1, bytes(_text(129)));
+        assertEq(_attr(_out(), "Collection"), "");
+        stream.setCollectionName(1, bytes(_text(128)));
+        assertEq(_attr(_out(), "Collection"), _text(128));
 
         // More media files than a work may have.
         stream.setWork(ID, _core());

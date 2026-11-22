@@ -47,6 +47,11 @@ import { TokenTransfer } from "./TokenTransfer.sol";
 ///        nothing anyone does moves the time from which such an amount may expire;
 ///      - a credit into an open window (all of whose credits are younger than P) delays that
 ///        window's credits by at most the rest of the window, never past 2P from each.
+///      The bound, exactly: a window takes credits for P from its first credit and is due P
+///      after its last one, so its due time is at least P and less than 2P after its first
+///      credit. Anyone may deposit into an open window, the account's payers and strangers
+///      alike; such a deposit can move that window's due time later, never past that bound,
+///      and never earlier. Money expires only after it has itself waited the period.
 ///      A change of the period applies to every amount not yet aged, including windows already
 ///      open or closed (their due time is computed from their last credit when the escrow
 ///      looks); an amount the escrow already aged under the period then in force stays aged.
