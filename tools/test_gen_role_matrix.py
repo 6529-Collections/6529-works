@@ -159,10 +159,19 @@ class RenderTest(unittest.TestCase):
 
     def test_immediate_functions_cannot_be_cancelled(self) -> None:
         text = gm.render(committed_config())
-        row = next(line for line in text.splitlines() if "`deprecateAsset(address)`" in line)
+        row = next(line for line in text.splitlines() if "`removeMinter(address)`" in line)
         self.assertIn("No: executes at once", row)
         row = next(line for line in text.splitlines() if "`recover(address,address,address)`" in line)
         self.assertIn("The network or the scheduler, during the delay", row)
+
+
+    def test_the_settings_are_listed_as_the_networks_with_their_launch_values(self) -> None:
+        text = gm.render(committed_config())
+        self.assertIn("## Settings of the permanent contracts", text)
+        self.assertIn("| Directory | `unclaimedPeriod()` | 180 days |", text)
+        self.assertIn("| Stream | `rescueDelay()` | 14 days |", text)
+        self.assertIn("No delay on this page is a guarantee.", text)
+        self.assertNotIn("the number is the guarantee", text.lower())
 
 
 class MainTest(unittest.TestCase):

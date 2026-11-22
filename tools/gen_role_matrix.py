@@ -2,7 +2,7 @@
 """Generate the role and permission matrix, docs/audit/roles.md, from the genesis configuration.
 
 The matrix lists every restricted function of every governed contract in
-`config/genesis.example.json`: its selector, the AccessManager role it maps to, the role's delay
+`config/genesis.core.example.json` (the plain-core stack, ADR 0010): its selector, the AccessManager role it maps to, the role's delay
 class and delay, and who can cancel it while it waits. It also lists the single network
 authority, the brake, the roles and their holders, the genesis-only bindings, the deferred functions, the genesis wiring calls
 and the AccessManager's own administrative functions.
@@ -30,7 +30,7 @@ import json
 import sys
 from pathlib import Path
 
-CONFIG = "config/genesis.example.json"
+CONFIG = "config/genesis.core.example.json"
 OUTPUT = "docs/audit/roles.md"
 
 # Delay classes, as in src/governance/Roles.sol and tools/check_genesis.py.
@@ -46,82 +46,86 @@ CLASS_NAME = {
 # "*" matches every contract. Each key must name at least one configured function, so a
 # renamed or removed function fails generation instead of leaving a stale note.
 NOTES: dict[tuple[str, str], str] = {
-    ("Stream", "createCollection(string,bytes32)"): "Collection names are checked on-chain.",
-    ("*", "setOwner(address,address)"): "The marketplace `owner()`; compare-and-set.",
+    # The permanent contracts (ADR 0010). Their waiting periods are the network's settings,
+    # listed under "Settings of the permanent contracts".
+    ("*", "proposeModule(bytes32,address)"):
+        "Announces a module; anyone installs it once `moduleDelay()` has passed. An announcement "
+        "keeps the time it was given if the setting changes.",
+    ("*", "removeModule(bytes32)"): "At once.",
+    ("*", "setModuleDelay(uint48)"):
+        "A setting of the network: at once, no floor, zero allowed; `ModuleDelaySet` logs the "
+        "old and the new value.",
+    ("*", "addMinter(address)"): "Active once `moduleDelay()` has passed.",
+    ("*", "removeMinter(address)"):
+        "At once: it mints nothing new and still finishes what it started.",
+    ("Stream", "setRescueDelay(uint48)"):
+        "A setting of the network, at once, zero allowed; read when a rescue is attempted.",
+    ("Stream", "rescue(uint256,address)"):
+        "Only a token a removed minter still holds with no outcome, once `rescueDelay()` has "
+        "passed since the removal. It can never reach a token a collector holds.",
+    ("Editions", "setRebindDelay(uint48)"):
+        "A setting of the network, at once, zero allowed; read when a rebind is attempted.",
+    ("Editions", "rebind(uint256,address)"):
+        "Only an edition with no copies and no seal, once `rebindDelay()` has passed since its "
+        "minter was removed; the new minter adopts it.",
+    ("Directory", "setUnclaimedPeriod(uint48)"):
+        "A setting of the network, at once, zero allowed. The split ledger and the escrow read "
+        "it when a forfeit or an expiry is attempted, so a change applies to marks and credits "
+        "already running.",
+    ("Stream", "createCollection(string,bytes32)"): "A collection's name never changes.",
+    ("*", "setOwner(address)"): "The marketplace `owner()`.",
     ("*", "setContractURI(string)"): "Contract-level metadata (ERC-7572).",
-    ("Stream", "setDefaultRenderer(address,address,bytes32)"):
-        "Compare-and-set; ERC-165 and code hash pinned. Finalized works keep their pin.",
-    ("*", "setAdmittedMinter(address,bool)"): "Also a genesis wiring call.",
-    ("Stream", "setDependency(bytes32,address,address)"):
-        "Replaces the package registry, artist registry, economics resolver or entropy module "
-        "(owner decision 16); compare-and-set. Existing tokens are unaffected.",
-    ("Stream", "rescueToMuseum(uint256)"):
-        "Only a never-settled work its minting adapter holds, 14 days (fixed) after the network "
-        "removed that adapter; to the museum only (owner decision 20).",
-    ("Stream", "releaseContent(uint256,bytes32,uint256)"):
-        "After an upheld dispute; scheduled with the auction's `cancel`, to execute after it.",
-    ("WorkDelivery", "addLocator(uint256,bytes32,(uint8,string))"):
-        "The work's artist may also call it directly before finalize; PLATFORM's path is a "
-        "`canCall` check in the contract and needs a zero-delay grant.",
-    ("WorkRecords", "relicense(uint256,(string,bytes32),(uint8,uint256,bytes32,bytes32,bytes32,"
-     "(address,uint8)[],(uint256,address,uint32)[],(string,bytes32),uint8,bytes32,"
-     "(bytes32,address,bytes),(uint32,address,bytes32,bytes)),bytes32,uint64,bytes[])"): "Also needs every party's signed consent. CC0 is irrevocable.",
-    ("WorkRecords", "setRoyaltyRate(uint256,uint32,(uint8,uint256,bytes32,bytes32,bytes32,"
-     "(address,uint8)[],(uint256,address,uint32)[],(string,bytes32),uint8,bytes32,"
-     "(bytes32,address,bytes),(uint32,address,bytes32,bytes)),bytes32,uint64,bytes[])"): "Also needs every party's signed consent; re-rates the linked edition.",
-    ("WorkRecords", "repinRenderer(uint256,address,bytes32,bytes32)"):
-        "The errata repin, the network alone (C8); refused for good once the lead artist "
-        "renounced `RENDERER_REPIN`.",
-    ("WorkRecords", "retireStore(uint256)"):
-        "Marks an added store dead (C21): nothing new is counted against it; counted works keep "
-        "their state.",
-    ("WorkRecords", "renounce(uint256,uint16,bytes32,uint64,bytes)"):
-        "Not `restricted`: anyone relays the artist's signature, and a newly renounced royalty "
-        "or licence power also needs this role (C7); renouncing the repin alone does not.",
-    ("WorkRecords", "syncOnChain(uint256,uint256,uint256)"):
-        "Not `restricted`: the work's artist walks an added store directly; this role's path "
-        "is a `canCall` check in the contract and needs a zero-delay grant.",
-    ("WorkDelivery", "markLocatorDead(uint256,bytes32,uint256)"):
-        "A dead locator is passed over by every delivery tier (C21, C33).",
-    ("WorkRecords", "setDelivery(address,address)"):
-        "Replaces the delivery contract (locators and preferences); compare-and-set; the "
-        "successor names its predecessor. No fact of any work changes.",
-    ("WorkRecords", "addStore(address,bytes32)"):
-        "Adds a store `syncOnChain` may verify media against, for good; code-hash pinned. No "
-        "existing file's store or completeness changes.",
+    # The modules: replaceable; their compiled numbers are theirs.
+    ("WorkRules", "relicense(address,uint256,(string,bytes32),bytes32,uint64,bytes[])"):
+        "Also needs every party's signed consent. `WorkFacts` refuses to leave CC0 or pass a lock.",
+    ("WorkRules", "setRoyaltyRate(address,uint256,uint24,bytes32,uint64,bytes[])"):
+        "Also needs every party's signed consent; refused once the rate is locked in the token.",
+    ("WorkRules", "repinRenderer(address,uint256,address)"):
+        "Refused for good once the lead artist renounced the repin power (a lock in `WorkFacts`).",
+    ("WorkRules", "renounce(address,uint256,uint16,bytes32,uint64,bytes)"):
+        "Relays the artist's signature; the royalty and license powers also need this role.",
+    ("WorkRules", "setDelivery(address,address)"):
+        "Replaces the delivery contract (locators and preferences). No fact of any work changes.",
+    ("WorkRules", "addStore(address,bytes32)"):
+        "Adds a store media may be found complete in, for good; code-hash pinned.",
+    ("WorkRules", "retireStore(uint256)"): "Nothing new is counted against a retired store.",
+    ("WorkDelivery", "addLocator(address,uint256,bytes32,(uint8,string))"):
+        "The work's artist may also call it directly before finalize.",
+    ("WorkDelivery", "markLocatorDead(address,uint256,bytes32,uint256)"):
+        "A dead locator is passed over by every delivery tier.",
+    ("StreamTerms", "lowerFeeShare(address,uint256,address,address,uint32,uint32)"):
+        "Lower only; deploys the new royalty vault before it points the token at it, and "
+        "applies to the edition too.",
+    ("PackageRegistry", "releaseContent(address,uint256,bytes32,uint256)"):
+        "After an upheld dispute, a burned token's content may be minted again for the artist.",
     ("PackageRegistry", "revokePackage(bytes32,bytes32)"):
         "Also revokes a root before it is registered.",
     ("PackageRegistry", "setVerifier(address,address,bytes32)"):
-        "Compare-and-set; never back to a retired verifier.",
+        "Never back to a retired verifier.",
+    ("PackageRegistry", "killSignerApprovals(address)"):
+        "Every unminted approval the signer gave stops counting.",
     ("CurationVerifier", "disableSigner(address)"):
         "Ends the signer's epoch; only `enableSigner` undoes it, under a new epoch.",
     ("CurationVerifier", "enableSigner(address)"): "Starts a new signer epoch.",
-    ("ArtistRegistry", "freeze(uint256)"):
-        "Freezes the account for a fixed 14 days: no wallet acts, payouts read zero (C17).",
-    ("ArtistRegistry", "cancelReplacement(uint256)"):
-        "Withdraws the network's own pending replacement (C14).",
-    ("ArtistRegistry", "cancelOwnChange(uint256)"):
+    ("Accounts", "freeze(uint256)"):
+        "A freeze lasts 14 days (compiled in this module): no wallet acts and payouts read zero. "
+        "A freeze blocks a contest of a replacement, and the network can end a freeze and place "
+        "another.",
+    ("Accounts", "cancelReplacement(uint256)"): "Withdraws the network's own pending replacement.",
+    ("Accounts", "cancelOwnChange(uint256)"):
         "Cancels an account's own pending change; the account may stage a new one.",
-    ("ArtistRegistry", "stageReplacement(uint256,(address,address,bytes32,bytes32),bytes32,"
-     "uint64,bytes)"): "Needs the new root's acceptance; 14 days' notice; any wallet of the "
-     "account contests during it.",
-    ("ArtistRegistry", "setFederationDelisted(uint256,bool,bytes32)"):
-        "Delists an artist account from the federation and blocks its new contracts (C5).",
-    ("ArtistRegistry", "lowerFederatedFeeShare(address,uint32)"):
-        "Lower only; the token uses the smaller of its own share and this record (R8).",
-    ("Stream", "lowerFeeShare(uint256,uint32)"):
-        "Lower only (R9); the fee recipient never changes. Does not cascade to the edition.",
-    ("Editions", "lowerFeeShare(uint256,uint32)"):
-        "Lower only (R9); a sale already open keeps the terms it locked.",
-    ("PackageRegistry", "killSignerApprovals(address)"):
-        "Every unminted approval the signer gave stops counting (C32).",
-    ("ArtistRegistry", "setPackageRegistry(address,address)"):
-        "Replaces the only `register` caller with Stream's successor package registry (owner "
-        "decision 16); compare-and-set.",
-    ("ArtistRegistry", "setConsolidationSource(address,address,bytes32)"):
-        "Compare-and-set; code hash re-checked at every use.",
-    ("ArtistRegistry", "resolveContested(uint256,bool,bytes32)"):
+    ("Accounts", "stageReplacement(uint256,(address,address,bytes32,bytes32),bytes32,uint64,bytes)"):
+        "Needs the new root's acceptance; 14 days' notice (compiled in this module); any wallet "
+        "of the account may contest during it unless the account is frozen.",
+    ("Accounts", "setConsolidationSource(address,address,bytes32)"):
+        "Code hash re-checked at every use.",
+    ("Accounts", "resolveContested(uint256,bool,bytes32)"):
         "Must cite the DISPUTE_OUTCOME statement recorded after the contest.",
+    ("FederationRegistry", "setFederationDelisted(uint256,bool,bytes32)"):
+        "Delisting stops new mints for the account's federated contracts at once.",
+    ("FederationRegistry", "lowerFederatedFeeShare(address,uint32)"): "Lower only.",
+    ("FederationRegistry", "reinstateTemplate(bytes32)"):
+        "Moves a revoked template version back to approved.",
     ("StatementLog", "appendCurator((address,uint256,bytes32,bytes32,(uint16,bytes32),string,"
      "bytes32,bytes32))"): "Keep the grant zero-delay: a relayed `appendSigned` refuses a "
      "delayed signer, and a delayed holder could only schedule this call.",
@@ -131,71 +135,36 @@ NOTES: dict[tuple[str, str], str] = {
     ("StatementLog", "appendGovernanceManifest((address,uint256,bytes32,bytes32,(uint16,bytes32),"
      "string,bytes32,bytes32))"): "One entry per configuration epoch; also wired at genesis.",
     ("StatementLog", "setArtistResolver(address,address,bytes32)"):
-        "Compare-and-set; code hash re-checked at every artist statement.",
-    ("*", "pause()"): "Stops `openSale` and `purchase`; closing a sale and claims still work.",
-    ("EnglishAuction", "pause()"): "Stops new starts only; live auctions continue.",
-    ("UniformEditionAuction", "pause()"):
-        "Stops new `open` calls only; bids, raises, settlement and claims of open sales continue.",
-    ("FederatedEditionAuction", "pause()"):
-        "The shared edition-auction code: stops new `open` calls only; bids, raises, settlement "
-        "and claims of open sales continue (a delisting, not the pause, closes a running sale).",
+        "Code hash re-checked at every artist statement.",
+    ("*", "pause()"): "Stops new sales only; running sales, settlement and claims continue.",
     ("*", "unpause()"): "No wait of its own: the network lifts the pause at once.",
     ("EnglishAuction", "pause(uint256,bytes32)"):
-        "Dispute pause: one per auction, ending by itself after a fixed 3 days (C30).",
-    ("EnglishAuction", "resume(uint256)"): "No wait: at any moment of the pause (C30).",
+        "Dispute pause: one per auction, ending by itself after 3 days (compiled in this module).",
+    ("EnglishAuction", "resume(uint256)"): "At any moment of the pause.",
     ("EnglishAuction", "cancel(uint256,bytes32)"):
-        "Upheld dispute, at any moment of the pause, citing the token's DISPUTE_OUTCOME "
-        "recorded after it (C30).",
-    ("AssetAllowlist", "setOpeningBid(address,uint64,uint256)"):
-        "Per currency, the English auction's least first bid; compare-and-set; no price cap, "
-        "only the 96-bit bid bound (R19).",
-    ("EnglishAuction", "setConfig((uint32,uint32,uint32,uint32),(uint32,uint32,uint32,uint32))"):
-        "Duration, anti-snipe window, increment share and raise-only refusal gas; "
-        "compare-and-set. The refusal exit is a fixed 2 days.",
+        "Upheld dispute, at any moment of the pause, citing the token's DISPUTE_OUTCOME; burns "
+        "the token and refunds the bid.",
     ("*", "setTarget(address,bool)"): "Also a genesis wiring call.",
-    ("*", "setFederationRegistry(address,address)"):
-        "Replaces the federation registry (ADR 0008); compare-and-set, code hash pinned.",
-    ("UniformEditionAuction", "setConfig((uint96,uint16,uint16,uint32,uint32,uint32),"
-     "(uint96,uint16,uint16,uint32,uint32,uint32))"):
-        "Base price, step ladder, margin, soft-close window and backstop; compare-and-set, "
-        "with bounds in code. Every sale closes a fixed 15 minutes after its 1/1 (R20); an "
-        "auction keeps the values locked at its open.",
+    ("AssetAllowlist", "setOpeningBid(address,uint64,uint256)"):
+        "The English auction's least first bid in ETH; also a genesis wiring call.",
     ("EconomicsResolver", "setFeeTerms(bytes32,uint64,address,uint32)"):
-        "New works only; compare-and-set on the product's revision; refuses a fee recipient "
-        "that could never be paid.",
-    ("EconomicsResolver", "setRoyaltyRate(bytes32,uint64,uint32)"):
-        "New works only; compare-and-set on the product's revision.",
-    ("EconomicsResolver", "setDefaultLicense(bytes32,uint64,(string,bytes32))"):
-        "New works only; compare-and-set on the product's revision.",
+        "New works only; refuses a fee recipient that could never be paid.",
+    ("EconomicsResolver", "setRoyaltyRate(bytes32,uint64,uint32)"): "New works only.",
+    ("EconomicsResolver", "setDefaultLicense(bytes32,uint64,(string,bytes32))"): "New works only.",
     ("EconomicsResolver", "setMuseum(uint64,address)"):
-        "The 6529 Network Museum (D140): every settlement afterwards, running sales included; "
-        "compare-and-set on the museum's revision; refuses zero and a contract that could never "
-        "hold a work.",
-    ("AssetAllowlist", "admitAsset(address,uint64,uint256)"):
-        "Compare-and-set; a re-admission waits 3 days from the deprecation.",
-    ("AssetAllowlist", "setDefaultCurrency(bytes32,uint64,address)"):
-        "Compare-and-set; also a genesis wiring call (ETH for each product).",
-    ("AssetAllowlist", "deprecateAsset(address)"):
-        "Halts sales in the asset; withdrawals and claims never stop.",
+        "Where unsold 6529 Stream works go at settlement; refuses zero and a contract that could "
+        "never hold a work.",
     ("FeeRecipientVault", "setDestination(uint64,address)"):
-        "Where every held and future network fee goes; compare-and-set on the vault's revision.",
+        "Where every held and future network fee goes.",
     ("MuseumVault", "setDestination(uint64,address)"):
-        "Where every museum-held work and payout goes: authority over existing tokens, so the "
-        "7-day class, not the fee vault's 3 days; compare-and-set on the vault's revision.",
+        "Where every museum-held work and payout goes.",
     ("RevenueEscrow", "recover(address,address,address)"): "Only to an identical-configuration "
      "replacement wallet, or to the replacement the account itself named; the network's own "
-     "parked credits need no consent (C19).",
+     "parked credits need no consent.",
     ("DependencyRegistry", "register(bytes32,bytes32,bytes32)"):
-        "The file must be complete on-chain; a registered version never changes.",
+        "The file must be complete on chain; a registered version never changes.",
     ("DependencyRegistry", "deprecate(bytes32,bytes32)"): "A one-way flag; the version stays readable.",
-    ("EntropyModule", "setConfig((uint256,bytes32,uint32,uint16,bool),(uint256,bytes32,uint32,"
-     "uint16,bool))"): "Compare-and-set; the callback gas limit only rises (at most 2x a step).",
     ("EntropyModule", "lowerCallbackGasLimit(uint32,uint32)"): "Never below the floor.",
-    ("EntropyModule", "setWrapper(address,address,bytes32)"):
-        "The VRF wrapper federated requests pay directly (zero is off, as at launch); "
-        "compare-and-set, code hash pinned.",
-    ("FederationRegistry", "reinstateTemplate(bytes32)"):
-        "Moves a revoked template version back to approved (C26).",
 }
 
 # Notes that replace the configuration's own note for the manager's added functions (the
@@ -382,14 +351,14 @@ def render(config: dict) -> str:
 
     out: list[str] = []
     w = out.append
-    w("<!-- Generated by tools/gen_role_matrix.py from config/genesis.example.json. Do not edit by")
+    w(f"<!-- Generated by tools/gen_role_matrix.py from {CONFIG}. Do not edit by")
     w("     hand: change the configuration, then run `python tools/gen_role_matrix.py`. -->")
     w("")
     w("# Role and permission matrix")
     w("")
     w("Every restricted function of every governed 6529 Works contract: the AccessManager role it")
     w("maps to, the role's delay class and delay, and who can cancel it while it waits. Generated")
-    w("from [`config/genesis.example.json`](../../config/genesis.example.json), the")
+    w(f"from [`{CONFIG}`](../../{CONFIG}), the")
     w("committed genesis policy, by [`tools/gen_role_matrix.py`](../../tools/gen_role_matrix.py).")
     w("")
     w("> Pre-audit. See the [project status](../../README.md#status).")
@@ -408,6 +377,24 @@ def render(config: dict) -> str:
     w("with `transferNetwork` (7 days) and the next address's `acceptNetwork`. A brake, if the")
     w("network sets one (none at launch), may delay any scheduled operation once by 7 days.")
     w("")
+    w("A role's delay is the network's too: ADMIN can remap a selector to another role, or")
+    w("change a role's delay, with one 7-day action, so a class's delay holds until such a remap")
+    w("changes it. No delay on this page is a guarantee.")
+    w("")
+    settings = config.get("settings") or []
+    if settings:
+        w("## Settings of the permanent contracts")
+        w("")
+        w("There are no fixed waiting periods in the permanent contracts. Each wait is a stored")
+        w("setting with a launch value, which the network changes at once (no floor, zero")
+        w("allowed), with an event carrying the old and the new value. Read the getter; never")
+        w("assume the number.")
+        w("")
+        w("| Contract | Setting | Launch value |")
+        w("| --- | --- | --- |")
+        for item in settings:
+            w(f"| {item['contract']} | `{item['getter']}` | {format_delay(item['launch'])} |")
+        w("")
     w("## How to read the matrix")
     w("")
     w("- **Role.** The selector's role in the `WorksAccessManager`. The network schedules a call")
@@ -477,15 +464,20 @@ def render(config: dict) -> str:
     w("")
     w("## Genesis-only bindings")
     w("")
-    w("One-shot bindings between protocol contracts. The configurator executes them at genesis as")
-    w("zero-delay ADMIN, before it maps any selector; each target refuses a second call. They stay")
-    w(f"unmapped, so any later call resolves to ADMIN ({format_delay(admin_delay)}).")
-    w("")
-    w("| Contract | Function | Selector |")
-    w("| --- | --- | --- |")
-    for contract in config["contracts"]:
-        for f in contract.get("genesisOnly") or []:
-            w(f"| {contract['name']} | `{f['signature']}` | `{f['selector']}` |")
+    bindings = [(c["name"], f) for c in config["contracts"] for f in c.get("genesisOnly") or []]
+    if bindings:
+        w("One-shot bindings between protocol contracts. The configurator executes them at")
+        w("genesis as zero-delay ADMIN, before it maps any selector; each target refuses a second")
+        w(f"call. They stay unmapped, so any later call resolves to ADMIN ({format_delay(admin_delay)}).")
+        w("")
+        w("| Contract | Function | Selector |")
+        w("| --- | --- | --- |")
+        for name, f in bindings:
+            w(f"| {name} | `{f['signature']}` | `{f['selector']}` |")
+    else:
+        w("None. The genesis modules and minters of Stream, Editions and Directory are constructor")
+        w("arguments (their addresses are predicted before deployment); every later addition waits")
+        w("`moduleDelay()`.")
     deferred = [(c["name"], f) for c in config["contracts"] for f in c.get("deferred") or []]
     if deferred:
         w("")
@@ -575,6 +567,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     root = (args.root or repository_root()).resolve()
+    # Until integration, the earlier stack's configuration is still committed beside this one.
     config = json.loads((root / CONFIG).read_text(encoding="utf-8"))
     try:
         text = render(config)
