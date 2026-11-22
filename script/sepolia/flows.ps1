@@ -46,7 +46,7 @@
 param(
     [Parameter(Mandatory)] [string] $SignerModule,
     [Parameter(Mandatory)] [string] $State,
-    [Parameter(Mandatory)] [ValidateSet('content', 'collections', 'package', 'start', 'startWithBid',
+    [Parameter(Mandatory)] [ValidateSet('content', 'collections', 'package', 'start', 'starter', 'startWithBid',
         'bid', 'openRecord', 'sync', 'requestSeed', 'settle', 'createEdition', 'openEdition',
         'editionBid', 'editionRaise', 'editionSettle', 'claimBid', 'claimBidFor',
         'claimCredits', 'editionState', 'englishState', 'pause', 'englishWithdraw', 'outcome',
@@ -421,6 +421,10 @@ switch ($Step) {
     }
     'start' {
         Send-Items (Invoke-Plan 'startTx(uint256,uint256,uint64,bytes)' ((@("$Index") + (Get-MoveSignature $Index))))
+    }
+    'starter' {
+        # SaleStarter.start: auction, seller and royalty vaults and record in one transaction.
+        Send-Items (Invoke-Plan 'starterTx(uint256,uint256,uint64,bytes)' ((@("$Index") + (Get-MoveSignature $Index))))
     }
     'startWithBid' {
         $bidder = Get-Address $Bidder
