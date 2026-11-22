@@ -46,15 +46,6 @@ library TokenTransfer {
         return _read(asset, abi.encodeCall(IERC20.totalSupply, ()));
     }
 
-    /// @notice The allowance `owner` gave `spender` in `asset`, read strictly.
-    function allowance(address asset, address owner, address spender)
-        internal
-        view
-        returns (uint256)
-    {
-        return _read(asset, abi.encodeCall(IERC20.allowance, (owner, spender)));
-    }
-
     /// @notice Sends `amount` wei to `to` with at most `gasLimit` gas, copying no return data.
     /// @return ok Whether the call succeeded.
     function sendETH(address to, uint256 amount, uint256 gasLimit) internal returns (bool ok) {
@@ -93,21 +84,6 @@ library TokenTransfer {
         ) revert TokenBalanceMismatch(asset);
     }
 
-    /// @notice Transfers exactly `amount` of `asset` from this contract to `to`, giving the token
-    ///         exactly `gasLimit` gas, so a refusal is the token's and never the caller's gas.
-    ///         Under the EIP-8037 draft `gasLimit` caps regular gas only: a token creating storage
-    ///         draws state gas from the transaction's reservoir, so its outcome can depend on the
-    ///         caller's gas limit (`BoundedCall`, LIM-GAS-2).
-    /// @return moved False when the token reverted, or returned `false` and moved nothing; the
-    ///         caller may then take another route. Reverts on any other misbehaviour, and when the
-    ///         caller cannot forward `gasLimit` in full.
-    function tryTransferExact(address asset, address to, uint256 amount, uint256 gasLimit)
-        internal
-        returns (bool moved)
-    {
-        return _transfer(asset, to, amount, gasLimit);
-    }
-
     function _transfer(address asset, address to, uint256 amount, uint256 gasLimit)
         private
         returns (bool)
@@ -134,20 +110,6 @@ library TokenTransfer {
             abi.encodeCall(IERC20.transferFrom, (from, address(this), amount)),
             _ALL_GAS
         );
-    }
-
-    /// @notice Approves `amount` of `asset` to `spender`, or reverts unless the token returns
-    ///         exactly `true`.
-    /// @dev The resulting allowance is not read back: a caller that needs it consumed exactly
-    ///      checks the allowance after the pull (see `RevenuePayment.payERC20`). Too little makes
-    ///      the pull fail; anything left over fails that check.
-    function approve(address asset, address spender, uint256 amount) internal {
-        if (
-            _call(asset, abi.encodeCall(IERC20.approve, (spender, amount)), _ALL_GAS)
-                != Outcome.True
-        ) {
-            revert TokenCallFailed(asset, IERC20.approve.selector);
-        }
     }
 
     /// @dev Only a transfer with a bounded `gasLimit` tolerates a clean refusal; the strict paths

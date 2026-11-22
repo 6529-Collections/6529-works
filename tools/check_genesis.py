@@ -61,10 +61,10 @@ CLASS_DELAY = {"immediate": 0, "24h": 86_400, "3d": 259_200, "7d": 604_800}
 NETWORK_ROLES = frozenset({"ADMIN", "NETWORK", "PARAMETER_SETTER", "FUNDS_SETTER", "SUCCESSOR_SETTER"})
 ADDRESS = re.compile(r"^0x[0-9a-fA-F]{40}$")
 # Functions `GovernanceConfig.isGenesisSelector` admits (the package registry's Stream bind
-# and entropy module, sale targets, first default currencies, the ETH opening bid, the
+# and entropy module, sale targets, the ETH opening bid, the
 # federation module's adapters, template versions and entropy module, the epoch-0 manifest).
 GENESIS_FUNCTIONS = frozenset({
-    "bindStream", "setTarget", "setDefaultCurrency", "setOpeningBid", "setAdapter",
+    "bindStream", "setTarget", "setOpeningBid", "setAdapter",
     "approveTemplate", "setEntropyModule", "appendGovernanceManifest",
 })
 

@@ -23,9 +23,9 @@ import { WorksAccessManager } from "./WorksAccessManager.sol";
 ///      `transferNetwork`; the network takes over when it calls `acceptNetwork`.
 ///
 ///      Genesis wiring: `install` also executes the genesis calls ({isGenesisSelector}: the
-///      package registry's Stream bind and entropy module, sale targets, default currencies, the
-///      ETH opening bid, the federation module's adapters, template versions and entropy module,
-///      the epoch-0 manifest) as the zero-delay installer, before any selector is mapped. Every
+///      package registry's Stream bind and entropy module, sale targets, the ETH opening bid,
+///      the federation module's adapters, template versions and entropy module, the epoch-0
+///      manifest) as the zero-delay installer, before any selector is mapped. Every
 ///      wired selector therefore still resolves to `ADMIN`; without this phase those calls would
 ///      wait the network's 7-day class.
 library GovernanceConfig {
@@ -130,8 +130,8 @@ library GovernanceConfig {
     }
 
     /// @notice Whether `selector` may be wired at genesis: the package registry's one-shot
-    ///         Stream bind and first entropy module, an edition auction's sale target, a
-    ///         product's first default currency and the ETH opening bid, the federation
+    ///         Stream bind and first entropy module, an edition auction's sale target, the
+    ///         ETH opening bid, the federation
     ///         module's first configuration (its admitted sale contracts, its first template
     ///         versions and its entropy module: ADR 0008), or the epoch-0 governance manifest.
     ///         Modules and minters of the core are constructor arguments, so none is wired
@@ -157,8 +157,7 @@ library GovernanceConfig {
                 || selector == IPackageRegistry.setEntropyModule.selector
         ) return type(IPackageRegistry).interfaceId;
         if (
-            selector == IAssetAllowlist.setDefaultCurrency.selector
-                || selector == IAssetAllowlist.setOpeningBid.selector
+            selector == IAssetAllowlist.setOpeningBid.selector
                 || selector == IStatementLog.appendGovernanceManifest.selector
         ) return ANY_TARGET;
         return 0;

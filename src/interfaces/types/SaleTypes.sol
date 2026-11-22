@@ -59,9 +59,8 @@ struct Payment {
 /// @dev Returned by `IMintTarget.mint` and `IMintTarget.primaryTerms` (which, for a minted 6529
 ///      Stream token, sets only the sale kind, seller, fee and creator; 6529 Stream Editions'
 ///      `mint` sets only the sale kind). `currency` is the item's or edition's currency as
-///      approved: for a 6529 Stream item `CURRENCY_ETH`, an allowlisted ERC-20 or
-///      `CURRENCY_DEFAULT`, which the auction resolves (`IEconomicsResolver.resolveCurrency`) and
-///      locks when the sale starts; for an edition, the sale method's own, opaque to the token
+///      approved: for a 6529 Stream item `CURRENCY_ETH` or `CURRENCY_DEFAULT`, which means
+///      ETH; for an edition, the sale method's own, opaque to the token
 ///      (the edition auction accepts only ETH). `price` is zero: an English auction has none,
 ///      and `EditionTerms` carries none (a priced sale method keeps its price in `params`).
 ///      `params` are the sale method's, as approved. `seller` receives the artist portion (a

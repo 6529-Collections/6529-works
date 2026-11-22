@@ -10,8 +10,8 @@ the governed vault for the network's own accounts. The rules are in
 
 | File | What it is |
 | --- | --- |
-| `EconomicsResolver.sol` | Governed per-product economics for new works (fee share and recipient, royalty rate, default license), `newWorkTerms` and `resolveCurrency`; and the 6529 Network Museum (`museum`, `setMuseum`), where an unbid canonical work goes (ECO-37). |
-| `AssetAllowlist.sol` | Replaceable (no permanent contract references it; withdrawals never read it). ETH only: the English auction's opening bid (`setOpeningBid`) and increment floor (`setIncrementFloor`), read when a bid is placed, and a default currency per product (ETH), each compare-and-set on its own revision. No other asset can be admitted and ETH is never deprecated. |
+| `EconomicsResolver.sol` | Governed per-product economics for new works (fee share and recipient, royalty rate, default license), and `newWorkTerms`; and the 6529 Network Museum (`museum`, `setMuseum`), where an unbid canonical work goes (ECO-37). |
+| `AssetAllowlist.sol` | Replaceable (no permanent contract references it; withdrawals never read it). ETH only: the English auction's opening bid (`setOpeningBid`) and increment floor (`setIncrementFloor`), read when a bid is placed, each compare-and-set on ETH's revision. No other asset can be admitted and ETH is always active. |
 | `SplitLedger.sol` | Permanent, permissionless, unowned. `walletFor` predicts and `createWallet` deploys a split wallet (a `SplitVault`) at its CREATE2 address; keeps every wallet's accounting; executes `release`, `releaseTo` and signed `releaseWithAuthorization` (EIP-712, per-account nonce bitmaps shared across wallets, `revokeNonce`). Fixed payees by account, artist-resolved payees by artist ID through the artist registry's `payoutAddress`. Every release also pays the network fee vault (`network`, a constructor argument) its due share when it is a payee (ECO-43); `mark` and, once the unclaimed period has passed (`Directory.unclaimedPeriod`, a network setting, 180 days at launch, read when the forfeit is attempted), `forfeit` send an unclaimed share to the network (ECO-44). A payee who cannot release (a frozen or unresolved artist account) can still be marked and forfeited. |
 | `SplitVault.sol` | The wallet's 66 bytes of raw EVM code (documented byte by byte): holds ETH and ERC-20s, accepts plain ETH from anyone, moves funds only on its ledger's instruction. |
 | `GovernedVault.sol` | The network fee recipient and the museum as contracts: receive ETH, ERC-20s, ERC-721s and ERC-1155s; forward only to a destination the network sets (3 days for the fee vault, 7 days for the museum's). Deployed before the ledger, which names the fee vault. |
@@ -30,7 +30,7 @@ the governed vault for the network's own accounts. The rules are in
 | Anyone | `createWallet`, `release` for a fixed payee, `mark`, `forfeit`, `flush`, `expire`, `claim`; a governed vault's `forward`, `releaseToDestination` | ECO-9 to ECO-15, ECO-27, ECO-29, ECO-30, ECO-41, ECO-43 to ECO-45 |
 | An artist's current payout address | `release`, `releaseTo`, or a signature submitted with `releaseWithAuthorization` / `claimSigned`; `revokeNonce` | ECO-16, ECO-17, ECO-20 to ECO-22 |
 | A non-wallet account with escrow credits that is not the network's | `consentToRecovery(replacement)` | ECO-28 |
-| Governance | resolver and allowlist setters, `deprecateAsset`, `recover`, `sweepExcess`, `GovernedVault.setDestination` | ECO-2 to ECO-5, ECO-32, ECO-33; [role matrix](../../docs/audit/roles.md#economicsresolver) |
+| Governance | resolver and allowlist setters, `recover`, `sweepExcess`, `GovernedVault.setDestination` | ECO-2 to ECO-5, ECO-32, ECO-33; [role matrix](../../docs/audit/roles.md#economicsresolver) |
 
 Payment, release and recovery sequences are under
 [Flows](../../docs/spec/economics-and-payouts.md#flows); events under

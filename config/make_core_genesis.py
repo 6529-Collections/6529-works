@@ -268,8 +268,6 @@ CONTRACTS = [
         [
             fn("setIncrementFloor(address,uint64,uint256)", "PARAMETER_SETTER"),
             fn("setOpeningBid(address,uint64,uint256)", "PARAMETER_SETTER"),
-            fn("setDefaultCurrency(bytes32,uint64,address)", "PARAMETER_SETTER"),
-            fn("deprecateAsset(address)", "PARAMETER_SETTER", "never ETH"),
         ],
         "ETH only: opening bid and increment floor",
     ),

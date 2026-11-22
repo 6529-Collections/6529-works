@@ -120,8 +120,6 @@ contract EconomicsResolverTest is EconomicsBase {
         vm.expectRevert(unknown);
         econ.newWorkTerms(UNKNOWN, _artistPayees());
         vm.expectRevert(unknown);
-        econ.resolveCurrency(UNKNOWN, ETH);
-        vm.expectRevert(unknown);
         econ.setFeeTerms(UNKNOWN, 1, network, 1);
         vm.expectRevert(unknown);
         econ.setRoyaltyRate(UNKNOWN, 1, 1);
@@ -464,28 +462,6 @@ contract EconomicsResolverTest is EconomicsBase {
     }
 
     // ------------------------------------------------------------------ currency
-
-    /// @dev The resolver resolves `CURRENCY_DEFAULT` through the ETH-only allowlist.
-    function test_ResolveCurrencyThroughTheAllowlist() public {
-        MockERC20 usdc = new MockERC20("USD Coin", "USDC");
-        assertEq(econ.resolveCurrency(PRODUCT_STREAM, ETH), ETH);
-        vm.expectRevert(
-            abi.encodeWithSelector(IEconomicsResolver.CurrencyNotAllowed.selector, address(usdc))
-        );
-        econ.resolveCurrency(PRODUCT_EDITIONS, address(usdc));
-        vm.expectRevert(
-            abi.encodeWithSelector(IEconomicsResolver.CurrencyNotAllowed.selector, CURRENCY_DEFAULT)
-        );
-        econ.resolveCurrency(PRODUCT_STREAM, CURRENCY_DEFAULT);
-
-        allowlist.setDefaultCurrency(PRODUCT_STREAM, 0, ETH);
-        assertEq(econ.resolveCurrency(PRODUCT_STREAM, CURRENCY_DEFAULT), ETH);
-        // ETH only: no other asset can be admitted, so a product's default is ETH or unset.
-        vm.expectRevert(
-            abi.encodeWithSelector(IEconomicsResolver.CurrencyNotAllowed.selector, address(usdc))
-        );
-        econ.resolveCurrency(PRODUCT_STREAM, address(usdc));
-    }
 
     // ------------------------------------------------------------------ new work terms
 

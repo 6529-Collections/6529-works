@@ -282,7 +282,7 @@ contract RevenueEscrowTest is EconomicsBase {
         usdc.mint(address(wallet), 100);
         usdc.setBlocked(address(wallet), true);
         usdc.mint(address(payer), 1000);
-        assertTrue(payer.payERC20(address(wallet), address(usdc), 1000));
+        payer.creditERC20(address(wallet), address(usdc), 1000);
         vm.expectRevert(
             abi.encodeWithSelector(
                 TokenTransfer.TokenCallFailed.selector, address(usdc), usdc.transfer.selector
@@ -374,7 +374,7 @@ contract RevenueEscrowTest is EconomicsBase {
         BlocklistToken usdc = new BlocklistToken();
         usdc.setBlocked(alice, true);
         usdc.mint(address(payer), 1000);
-        assertTrue(payer.payERC20(alice, address(usdc), 1000));
+        payer.creditERC20(alice, address(usdc), 1000);
         vm.startPrank(depositor);
         escrow.depositETH{ value: 1 ether }(alice);
         escrow.depositETH{ value: 2 ether }(bob);

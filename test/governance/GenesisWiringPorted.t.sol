@@ -111,18 +111,17 @@ contract GenesisWiringPortedTest is GovernanceFixture {
 
     /// @dev Exactly nine selectors, each scoped to the interface it is admitted for.
     function test_GenesisSelectorsAreExactlyTheAllowList() public pure {
-        bytes4[9] memory allowed = [
+        bytes4[8] memory allowed = [
             IPackageRegistry.bindStream.selector,
             IPackageRegistry.setEntropyModule.selector,
             ISaleAdapter.setTarget.selector,
-            IAssetAllowlist.setDefaultCurrency.selector,
             IAssetAllowlist.setOpeningBid.selector,
             FederationRegistry.setAdapter.selector,
             FederationRegistry.approveTemplate.selector,
             FederationRegistry.setEntropyModule.selector,
             IStatementLog.appendGovernanceManifest.selector
         ];
-        bytes4[9] memory scope = [
+        bytes4[8] memory scope = [
             type(IPackageRegistry).interfaceId,
             type(IPackageRegistry).interfaceId,
             type(ISaleAdapter).interfaceId,

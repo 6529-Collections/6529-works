@@ -1008,21 +1008,6 @@
           "role": "PARAMETER_SETTER",
           "class": "24h",
           "delay": 86400
-        },
-        {
-          "signature": "setDefaultCurrency(bytes32,uint64,address)",
-          "selector": "0xbc27c0e9",
-          "role": "PARAMETER_SETTER",
-          "class": "24h",
-          "delay": 86400
-        },
-        {
-          "signature": "deprecateAsset(address)",
-          "selector": "0x41003c89",
-          "role": "PARAMETER_SETTER",
-          "class": "24h",
-          "delay": 86400,
-          "note": "never ETH"
         }
       ],
       "genesisOnly": [],

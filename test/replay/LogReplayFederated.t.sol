@@ -217,13 +217,13 @@ contract LogReplayFederatedTest is ReplayBase {
 
         // Editions: two created by the sale contract, minted, transferred and burned, one
         // sealed; one left unminted for the rebind.
-        edSale.(address(fEditions), a, 10, address(0xFEE), 5_000);
-        edSale.(address(fEditions), b, 0, address(0), 0);
+        edSale.createEdition(address(fEditions), a, 10, address(0xFEE), 5_000);
+        edSale.createEdition(address(fEditions), b, 0, address(0), 0);
         uint256 d = _mint(fedSale, _fedWork());
-        edSale.(address(fEditions), d, 5, address(0), 0);
-        edSale.(address(fEditions), collector, a, 4, 0.1 ether);
-        edSale.(address(fEditions), collector, b, 3, 0.1 ether);
-        edSale.(address(fEditions), a, 6);
+        edSale.createEdition(address(fEditions), d, 5, address(0), 0);
+        edSale.mintEdition(address(fEditions), collector, a, 4, 0.1 ether);
+        edSale.mintEdition(address(fEditions), collector, b, 3, 0.1 ether);
+        edSale.seal(address(fEditions), a, 6);
         vm.startPrank(collector);
         fEditions.safeTransferFrom(collector, second, a, 1, "");
         uint256[] memory ids = new uint256[](2);
@@ -320,9 +320,9 @@ contract LogReplayFederatedTest is ReplayBase {
     /// @dev An edition claim whose `TransferSingle` log is dropped: the balance is stale.
     function test_FederatedEditions_ReplayFailsOnADroppedLog() public {
         uint256 a = _mint(fedSale, _fedWork());
-        edSale.(address(fEditions), a, 10, address(0), 0);
+        edSale.createEdition(address(fEditions), a, 10, address(0), 0);
         _sync();
-        edSale.(address(fEditions), collector, a, 2, 0);
+        edSale.mintEdition(address(fEditions), collector, a, 2, 0);
         _apply(
             _dropOne(
                 address(fEditions),

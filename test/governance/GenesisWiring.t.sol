@@ -45,8 +45,8 @@ contract GenesisWiringTest is IntegrationBase {
     // ------------------------------------------------------------------ the list
 
     function test_GenesisWiring_TheGenesisSelectorsAreExactlyTheNine() public view {
-        bytes4[9] memory sels = _genesisSelectors();
-        bytes4[9] memory ifaces = [
+        bytes4[8] memory sels = _genesisSelectors();
+        bytes4[8] memory ifaces = [
             type(IPackageRegistry).interfaceId,
             type(IPackageRegistry).interfaceId,
             type(IFederationRegistry).interfaceId,
@@ -192,7 +192,7 @@ contract GenesisWiringTest is IntegrationBase {
 
     // ------------------------------------------------------------------ helpers
 
-    function _genesisSelectors() internal pure returns (bytes4[9] memory) {
+    function _genesisSelectors() internal pure returns (bytes4[8] memory) {
         return [
             IPackageRegistry.bindStream.selector,
             IPackageRegistry.setEntropyModule.selector,
@@ -200,13 +200,12 @@ contract GenesisWiringTest is IntegrationBase {
             ISaleAdapter.setTarget.selector,
             FederationRegistry.setAdapter.selector,
             FederationRegistry.approveTemplate.selector,
-            IAssetAllowlist.setDefaultCurrency.selector,
             IAssetAllowlist.setOpeningBid.selector,
             IStatementLog.appendGovernanceManifest.selector
         ];
     }
 
-    function _inList(bytes4[9] memory list, bytes4 sel) internal pure returns (bool) {
+    function _inList(bytes4[8] memory list, bytes4 sel) internal pure returns (bool) {
         for (uint256 i; i < 9; ++i) {
             if (list[i] == sel) return true;
         }

@@ -7,7 +7,6 @@ import { Dependency } from "../libraries/Dependency.sol";
 import { ProtocolContracts } from "../libraries/ProtocolContracts.sol";
 import { IEconomicsResolver } from "../interfaces/IEconomicsResolver.sol";
 import {
-    CURRENCY_DEFAULT,
     PRODUCT_EDITIONS,
     PRODUCT_FEDERATED,
     PRODUCT_STREAM,
@@ -179,22 +178,6 @@ contract EconomicsResolver is IEconomicsResolver, AccessManaged {
                 Splits.royaltyPayees(seller, e.feeRecipient, e.feeShare), bytes32(0)
             );
         return WorkTerms(seller, e.feeRecipient, e.feeShare, royaltyReceiver, e.royaltyRate);
-    }
-
-    /// @inheritdoc IEconomicsResolver
-    function resolveCurrency(bytes32 product, address requested)
-        external
-        view
-        returns (address currency)
-    {
-        _known(product);
-        currency = requested;
-        if (requested == CURRENCY_DEFAULT) {
-            bool configured;
-            (configured, currency,) = _allowlist.defaultCurrencyConfig(product);
-            if (!configured) revert CurrencyNotAllowed(CURRENCY_DEFAULT);
-        }
-        if (!_allowlist.isActive(currency)) revert CurrencyNotAllowed(currency);
     }
 
     /// @inheritdoc IEconomicsResolver
