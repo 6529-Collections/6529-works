@@ -443,6 +443,44 @@ contract FederatedSaleTest is FederationBase {
         assertEq(fed.owner(), collector);
     }
 
+    /// @dev The item's commitments are compared exactly, on both sides: an empty media list, a
+    ///      content hash or media hash above or below the true one, and a second file declared
+    ///      with a SHA-256 above or below the store's are each refused.
+    function test_Mint_TheContentAndMediaCommitmentsAreExact() public {
+        _joinedFed();
+        Work memory w = _fedWork(fedArtist);
+        bytes32[2] memory off = [bytes32(uint256(1)), bytes32(type(uint256).max)];
+        _refusedItem(w, new MediaFile[](0), w.item.contentHash, bytes32(0), true);
+        for (uint256 i; i < off.length; ++i) {
+            _refusedItem(w, w.media, off[i], bytes32(0), true);
+            _refusedItem(w, w.media, w.item.contentHash, off[i], false);
+            MediaFile[] memory two = new MediaFile[](2);
+            two[0] = w.media[0];
+            two[1] = MediaFile(w.media[0].fileId, off[i], 1);
+            _refusedItem(w, two, w.item.contentHash, bytes32(0), true);
+        }
+        _startFed(w);
+    }
+
+    /// @dev `w` with `media`, `contentHash` and either the media hash those files give
+    ///      (`ownMediaHash`) or `mediaHash`, approved and refused at mint.
+    function _refusedItem(
+        Work memory w,
+        MediaFile[] memory media,
+        bytes32 contentHash,
+        bytes32 mediaHash,
+        bool ownMediaHash
+    ) internal {
+        Work memory bad = abi.decode(abi.encode(w), (Work));
+        bad.media = media;
+        bad.item.contentHash = contentHash;
+        bad.item.mediaHash = ownMediaHash ? WorksHashing.mediaHash(media) : mediaHash;
+        vm.prank(fedArtist);
+        fed.approveItem(_itemHash(bad), RATE);
+        vm.expectRevert(IMintTarget.InvalidMintRequest.selector);
+        auction.start(address(fed), _mintData(bad));
+    }
+
     function _expectMediaRefused(Work memory w, MediaFile[] memory media) internal {
         Work memory bad = w;
         bad.media = media;
