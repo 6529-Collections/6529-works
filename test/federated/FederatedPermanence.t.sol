@@ -208,6 +208,10 @@ contract FederatedPermanenceTest is FederationBase {
         vm.warp(end + 21 days);
         fea.abandon(saleId, abi.encode(w.item));
         assertEq(uint8(fl.auction(saleId).status), uint8(IUniformEditionAuction.AuctionStatus.VOID));
+        // The abandonment sealed the edition at zero: the adapter cannot seal it again.
+        vm.prank(address(fea));
+        vm.expectRevert(abi.encodeWithSelector(IFederatedEditions.EditionSealed.selector, tokenId));
+        pairEditions.sealSupply(tokenId, 0);
     }
 
     /// @dev Pass 3: a federated edition sale voided while its best-effort seal was refused

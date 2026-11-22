@@ -19,6 +19,7 @@ import { Roles } from "src/governance/Roles.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { StreamLayout } from "src/stream/StreamLayout.sol";
 import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { MediaFile } from "src/interfaces/types/ContentTypes.sol";
@@ -1564,6 +1565,22 @@ contract StreamTest is StreamFixture, GasRuleAssertions {
         IStreamViews(address(stream)).collection(0);
         vm.expectRevert(abi.encodeWithSelector(IStream.UnknownCollection.selector, 2));
         IStreamViews(address(stream)).collection(2);
+    }
+
+    /// @dev The views read a collection's minted count and a work's serial at their full 32-bit
+    ///      widths (set here directly in storage above 16 bits).
+    function test_views_readCountsAndSerialsAbove16Bits() public {
+        uint256 tokenId = _mint(1);
+        bytes32 cslot = StreamLayout.collectionSlot(collectionId);
+        uint256 cword = uint256(vm.load(address(stream), cslot));
+        cword = (cword & ~(uint256(type(uint32).max) << 8)) | (uint256(70_000) << 8);
+        vm.store(address(stream), cslot, bytes32(cword));
+        assertEq(IStreamViews(address(stream)).collection(collectionId).minted, 70_000);
+        bytes32 tslot = StreamLayout.tokenSlot(tokenId);
+        uint256 tword = uint256(vm.load(address(stream), tslot));
+        tword = (tword & ~(uint256(type(uint32).max) << 160)) | (uint256(70_000) << 160);
+        vm.store(address(stream), tslot, bytes32(tword));
+        assertEq(IStreamViews(address(stream)).work(tokenId).serial, 70_000);
     }
 
     /// @dev The name bound is exact: 256 printable bytes are accepted and 257 refused.

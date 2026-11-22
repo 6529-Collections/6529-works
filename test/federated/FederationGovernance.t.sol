@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { Vm } from "forge-std/Vm.sol";
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
+import { Dependency } from "src/libraries/Dependency.sol";
 import { FederatedStream } from "src/federated/FederatedStream.sol";
 import { ArtistRegistry } from "src/identity/ArtistRegistry.sol";
 import { IConsolidationSource } from "src/interfaces/IArtistRegistry.sol";
@@ -204,6 +206,87 @@ contract FederationGovernanceTest is FederationBase {
         vm.expectRevert(abi.encodeWithSelector(IFederatedStream.WorkNotRestartable.selector, 1));
         fed.reclaim(tokenId);
         assertEq(fed.ownerOf(tokenId), address(adapter));
+    }
+
+    /// @dev Only the network sets listings: a stranger's delisting is refused.
+    function test_SetStatus_IsRestricted() public {
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(fed);
+        vm.prank(collector);
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, collector)
+        );
+        fedRegistry.setStatus(tokens, IFederationRegistry.Status.DELISTED, "no vote");
+        assertTrue(fedRegistry.isActive(address(fed)));
+    }
+
+    function test_Constructor_ChecksItsDependencies() public {
+        address eoa = makeAddr("noCode");
+        bytes memory bad = abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa);
+        vm.expectRevert(bad);
+        new FederationRegistry(address(manager), eoa, address(economics), address(store));
+        vm.expectRevert(bad);
+        new FederationRegistry(address(manager), address(artists), eoa, address(store));
+        vm.expectRevert(bad);
+        new FederationRegistry(address(manager), address(artists), address(economics), eoa);
+    }
+
+    /// @dev Template approval checks its deployer; approval, revocation, adapter changes and
+    ///      registrations are each logged.
+    function test_Templates_DeployerCheckedAndEveryChangeLogged() public {
+        address deployer = address(deployment.federatedStreamDeployer);
+        IFederationRegistry.Form one = IFederationRegistry.Form.ERC721;
+        assertFalse(
+            _governTry(
+                hotAdmin,
+                address(fedRegistry),
+                abi.encodeCall(fedRegistry.approveTemplate, (keccak256("t"), collector, 3, one))
+            ),
+            "a deployer without code"
+        );
+        // An EIP-7702 account delegated to the real deployer answers like it, and is refused.
+        address delegated = makeAddr("delegatedDeployer");
+        vm.etch(delegated, abi.encodePacked(hex"ef0100", deployer));
+        assertFalse(
+            _governTry(
+                hotAdmin,
+                address(fedRegistry),
+                abi.encodeCall(fedRegistry.approveTemplate, (keccak256("t"), delegated, 3, one))
+            ),
+            "a delegated account"
+        );
+        bytes32 topic = FederationRegistry.TemplateSet.selector;
+        vm.recordLogs();
+        _govern(
+            hotAdmin,
+            address(fedRegistry),
+            abi.encodeCall(fedRegistry.approveTemplate, (keccak256("t"), deployer, 3, one))
+        );
+        assertEq(_count(vm.getRecordedLogs(), topic), 1, "approval logged");
+        vm.recordLogs();
+        _govern(
+            hotAdmin,
+            address(fedRegistry),
+            abi.encodeCall(fedRegistry.revokeTemplate, (keccak256("t")))
+        );
+        assertEq(_count(vm.getRecordedLogs(), topic), 1, "revocation logged");
+        vm.recordLogs();
+        _govern(
+            hotAdmin,
+            address(fedRegistry),
+            abi.encodeCall(fedRegistry.setAdapter, (collector, false))
+        );
+        assertEq(_count(vm.getRecordedLogs(), FederationRegistry.AdapterSet.selector), 1);
+        FederatedStream another = _deployStream(fedArtist);
+        vm.recordLogs();
+        _join(address(another), fedArtist);
+        assertEq(_count(vm.getRecordedLogs(), IFederationRegistry.Registered.selector), 1);
+    }
+
+    function _count(Vm.Log[] memory logs, bytes32 topic) internal pure returns (uint256 n) {
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].topics.length != 0 && logs[i].topics[0] == topic) ++n;
+        }
     }
 
     /// @dev A template is one form (never the pair) under a nonzero code hash.

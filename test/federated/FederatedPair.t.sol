@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { Vm } from "forge-std/Vm.sol";
 import { IERC1155Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import {
     ReentrancyGuardTransient
@@ -190,6 +191,30 @@ contract FederatedPairTest is FederationBase {
         (uint256 won, uint256 refund) = fea.claimBid(saleId, 1, a);
         assertEq(won, 0);
         assertEq(refund, paid, "every bid back in full");
+    }
+
+    /// @dev The opening log names the edition's master, the federated 1/1 contract.
+    function test_Pair_TheOpeningLogsTheMaster() public {
+        Work memory w = _fedMaster(fedArtist, 0);
+        (, uint256 tokenId) = _startFed(pairStream, fedArtist, w, RATE);
+        vm.recordLogs();
+        fea.open(address(pairEditions), tokenId, abi.encode(w.item));
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bool found;
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].topics[0] != IUniformEditionAuction.AuctionOpened.selector) continue;
+            found = true;
+            (address master) = abi.decode(_firstWord(logs[i].data), (address));
+            assertEq(master, address(pairStream));
+        }
+        assertTrue(found);
+    }
+
+    function _firstWord(bytes memory data) internal pure returns (bytes memory word) {
+        word = new bytes(32);
+        for (uint256 i; i < 32; ++i) {
+            word[i] = data[i];
+        }
     }
 
     function test_Pair_AMasterWhoseEditionSaleBeganNeverRestarts() public {
