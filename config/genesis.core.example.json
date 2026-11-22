@@ -533,6 +533,14 @@
           "role": "PARAMETER_SETTER",
           "class": "24h",
           "delay": 86400
+        },
+        {
+          "signature": "setFileStore(address,uint256,bytes32,uint256)",
+          "selector": "0x52f2eb11",
+          "role": "STORAGE_OPERATOR",
+          "class": "immediate",
+          "delay": 0,
+          "note": "or a wallet of the lead artist's account"
         }
       ],
       "genesisOnly": [],

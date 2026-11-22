@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 /// @title IEnglishAuctionRefusal
 /// @notice The English auction's exit for a federated sale whose token will not let it settle.

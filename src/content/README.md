@@ -33,7 +33,7 @@ The upload flow is under [Upload and register a file](../../docs/spec/works-and-
 and what the renderer reads, in order, under
 [Inside the renderer](../../docs/spec/rendering-and-tokenuri.md#inside-the-renderer).
 Integrators start at [Reading a work](../../docs/integrators/reading-a-work.md) and
-[Storage](../../docs/integrators/storage.md).
+[Storage](../../docs/spec/works-and-storage.md).
 
 ## Developer notes
 
@@ -64,14 +64,14 @@ Integrators start at [Reading a work](../../docs/integrators/reading-a-work.md) 
   (`PREVIEW_LIMIT`, `Limits.MAX_PREVIEW_BYTES`), or changing `JsonScan`, `JsonEscape`, `Utf8`,
   `HtmlScript` or the read path, means rerunning
   [`RendererGas.t.sol`](../../test/content/renderer/RendererGas.t.sol) and
-  [`TokenUriBudget.t.sol`](../../test/integration/TokenUriBudget.t.sol); the margin is small.
+  `TokenUriBudget.t.sol`; the margin is small.
 - **`window.works` is a public API.** Finalized works pin their renderer, so version 1's fields
   never change meaning; a change needs a new `v` and a new renderer.
 - **Behavior is owned by the spec:** piecewise writes and links (WS-50, WS-51), bounded source
   answers (WS-52), open encoding ids (WS-54), degraded versus reverting metadata (RND-9,
   RND-16), and the part-count limit (RND-26, LIM-CNT-22).
 - **Bytecode: `Renderer` is the second-tightest contract**, barely under EIP-170 (current
-  margin in the [audit scope](../../docs/audit/scope.md#content-and-rendering)). New features
+  margin in the [audit scope](../../docs/audit/scope.md#modules)). New features
   belong in a later renderer, which works pin per work.
 - **Tests:** `forge test --match-path 'test/content/**'`: the store, the dependency registry,
   the renderer and the uploader's golden and CID vectors. Halmos proofs of `Base64Validator`,

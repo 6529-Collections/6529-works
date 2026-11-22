@@ -73,19 +73,6 @@
     "type": "error"
   },
   {
-    "id": "0x9700df8a",
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "asset",
-        "type": "address"
-      }
-    ],
-    "name": "AssetNotAdmissible",
-    "signature": "AssetNotAdmissible(address)",
-    "type": "error"
-  },
-  {
     "id": "0x0d0efc86",
     "inputs": [
       {
@@ -156,24 +143,6 @@
     "type": "error"
   },
   {
-    "id": "0x3e2aec66",
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "asset",
-        "type": "address"
-      },
-      {
-        "internalType": "uint256",
-        "name": "allowedAt",
-        "type": "uint256"
-      }
-    ],
-    "name": "ReadmissionTooEarly",
-    "signature": "ReadmissionTooEarly(address,uint256)",
-    "type": "error"
-  },
-  {
     "id": "0x03227756",
     "inputs": [
       {
@@ -189,19 +158,6 @@
     ],
     "name": "RevisionMismatch",
     "signature": "RevisionMismatch(uint64,uint64)",
-    "type": "error"
-  },
-  {
-    "id": "0x1373f626",
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "asset",
-        "type": "address"
-      }
-    ],
-    "name": "TokenReadFailed",
-    "signature": "TokenReadFailed(address)",
     "type": "error"
   },
   {
@@ -385,31 +341,6 @@
     ],
     "signature": "activeOpeningBid(address)",
     "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "id": "0x3979fc8e",
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "asset",
-        "type": "address"
-      },
-      {
-        "internalType": "uint64",
-        "name": "expectedRevision",
-        "type": "uint64"
-      },
-      {
-        "internalType": "uint256",
-        "name": "floor",
-        "type": "uint256"
-      }
-    ],
-    "name": "admitAsset",
-    "outputs": [],
-    "signature": "admitAsset(address,uint64,uint256)",
-    "stateMutability": "nonpayable",
     "type": "function"
   },
   {

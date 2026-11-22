@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 import { BoundedCall } from "../libraries/BoundedCall.sol";
 import { IRevenueEscrow } from "./interfaces/IRevenueEscrow.sol";

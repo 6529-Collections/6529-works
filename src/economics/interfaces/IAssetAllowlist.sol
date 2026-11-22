@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 /// @title IAssetAllowlist
 /// @notice The governed payment settings of the network's sales, ETH only (ETH is `address(0)`):

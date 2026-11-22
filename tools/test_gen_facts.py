@@ -181,7 +181,7 @@ class TreeTest(unittest.TestCase):
 
     def setUp(self) -> None:
         self.tmp = Path(tempfile.mkdtemp())
-        for rel in ("README.md", "CHANGELOG.md", "SECURITY.md", "script/Deploy.s.sol", "script/DeployV1.sol"):
+        for rel in ("README.md", "CHANGELOG.md", "SECURITY.md", "script/ScriptIO.sol", "script/DeployCore.sol"):
             self._copy(rel)
         for rel in ("src", "docs", "deployments"):
             shutil.copytree(ROOT / rel, self.tmp / rel)
@@ -212,7 +212,7 @@ class TreeTest(unittest.TestCase):
         self.assertEqual(run(["--root", str(self.tmp), "--check"])[0], 0)
 
     def test_a_changed_default_reaches_the_facts(self) -> None:
-        self._edit(gf.DEPLOY_SCRIPT, '"AUCTION_DURATION", 24 hours', '"AUCTION_DURATION", 2 days')
+        self._edit(gf.DEPLOY_LIBRARY, "AuctionConfig(24 hours,", "AuctionConfig(2 days,")
         facts = gf.generate(self.tmp)
         self.assertEqual(facts["parameters"]["oneOfOneAuction"]["durationSeconds"]["default"], 172_800)
 

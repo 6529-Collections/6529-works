@@ -112,7 +112,7 @@ nonce).
   more gas, paid by whoever settles or buys.
 - Off anvil, the deploy refuses a `NETWORK_FEE_RECIPIENT` that does not exist.
   The runbook asks the same of a later `setFeeTerms`
-  ([script README](../../script/README.md#the-network-fee-recipient-must-exist)).
+  ([script README](../../script/README.md#1-accounts-and-inputs)).
 - A new payee configuration's split wallet still costs one account creation
   on its first payout. This happens once per configuration, and the table
   shows it.
@@ -335,7 +335,7 @@ Re-measured for the review-fix pass of November 2026, on the merged tree:
   satellite (the locator fallback of RFX-REC-1) and deployment addresses took 321 off, and the
   statement log's check that the token declares `IStream`, now made before its item read
   (RFX-REC-2), adds 2,208.
-- **`royaltyInfo`** is unchanged; [`RoyaltyInfoGas.t.sol`](../../test/integration/RoyaltyInfoGas.t.sol)
+- **`royaltyInfo`** is unchanged; `RoyaltyInfoGas.t.sol`
   now also calls it with exactly its 50,000-gas budget, cold, and requires every lower limit
   to revert rather than answer a zero royalty.
 - **Every other row** moved by at most 32 with the new code and deployment addresses (the

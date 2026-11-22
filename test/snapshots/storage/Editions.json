@@ -1,115 +1,69 @@
 {
   "structs": {
-    "struct Editions.Minter": [
+    "struct Edition": [
       {
-        "label": "status",
+        "label": "minter",
         "offset": 0,
         "slot": 0,
-        "type": "uint8"
-      },
-      {
-        "label": "id",
-        "offset": 1,
-        "slot": 0,
-        "type": "uint16"
-      },
-      {
-        "label": "kindKey",
-        "offset": 3,
-        "slot": 0,
-        "type": "uint232"
-      }
-    ],
-    "struct Editions.Record": [
-      {
-        "label": "contentHash",
-        "offset": 0,
-        "slot": 0,
-        "type": "bytes32"
-      },
-      {
-        "label": "seller",
-        "offset": 0,
-        "slot": 1,
         "type": "address"
       },
       {
-        "label": "limit",
+        "label": "maxSupply",
         "offset": 20,
-        "slot": 1,
+        "slot": 0,
         "type": "uint40"
       },
       {
         "label": "minted",
         "offset": 25,
-        "slot": 1,
+        "slot": 0,
         "type": "uint40"
       },
       {
-        "label": "minterId",
+        "label": "supplySealed",
         "offset": 30,
-        "slot": 1,
-        "type": "uint16"
+        "slot": 0,
+        "type": "bool"
       },
       {
         "label": "royaltyReceiver",
         "offset": 0,
-        "slot": 2,
+        "slot": 1,
         "type": "address"
       },
       {
         "label": "royaltyRate",
         "offset": 20,
-        "slot": 2,
-        "type": "uint32"
-      },
+        "slot": 1,
+        "type": "uint24"
+      }
+    ],
+    "struct Minter": [
       {
-        "label": "artistId",
+        "label": "activeFrom",
         "offset": 0,
-        "slot": 3,
-        "type": "uint160"
+        "slot": 0,
+        "type": "uint48"
       },
       {
-        "label": "feeShare",
+        "label": "removedAt",
+        "offset": 6,
+        "slot": 0,
+        "type": "uint48"
+      }
+    ],
+    "struct PendingModule": [
+      {
+        "label": "module",
+        "offset": 0,
+        "slot": 0,
+        "type": "address"
+      },
+      {
+        "label": "readyAt",
         "offset": 20,
-        "slot": 3,
-        "type": "uint32"
-      },
-      {
-        "label": "maxCount",
-        "offset": 24,
-        "slot": 3,
-        "type": "uint32"
-      },
-      {
-        "label": "supplySealed",
-        "offset": 28,
-        "slot": 3,
-        "type": "bool"
-      },
-      {
-        "label": "feeRecipient",
-        "offset": 0,
-        "slot": 4,
-        "type": "address"
-      },
-      {
-        "label": "saleKind",
-        "offset": 0,
-        "slot": 5,
-        "type": "bytes32"
-      },
-      {
-        "label": "currency",
-        "offset": 0,
-        "slot": 6,
-        "type": "address"
-      },
-      {
-        "label": "params",
-        "offset": 0,
-        "slot": 7,
-        "type": "bytes"
+        "slot": 0,
+        "type": "uint48"
       }
     ]
   },
@@ -137,73 +91,73 @@
     },
     {
       "contract": "Editions",
-      "label": "_authority",
+      "label": "rebindDelay",
       "offset": 0,
       "slot": 3,
+      "type": "uint48"
+    },
+    {
+      "contract": "Editions",
+      "label": "owner",
+      "offset": 6,
+      "slot": 3,
+      "type": "address"
+    },
+    {
+      "contract": "Editions",
+      "label": "contractURI",
+      "offset": 0,
+      "slot": 4,
+      "type": "string"
+    },
+    {
+      "contract": "Editions",
+      "label": "_editions",
+      "offset": 0,
+      "slot": 5,
+      "type": "mapping(uint256 => struct Edition)"
+    },
+    {
+      "contract": "Editions",
+      "label": "_authority",
+      "offset": 0,
+      "slot": 6,
       "type": "address"
     },
     {
       "contract": "Editions",
       "label": "_consumingSchedule",
       "offset": 20,
-      "slot": 3,
+      "slot": 6,
       "type": "bool"
     },
     {
       "contract": "Editions",
-      "label": "workRecords",
-      "offset": 0,
-      "slot": 4,
-      "type": "address"
-    },
-    {
-      "contract": "Editions",
-      "label": "_contractURI",
-      "offset": 0,
-      "slot": 5,
-      "type": "string"
-    },
-    {
-      "contract": "Editions",
-      "label": "_owner",
-      "offset": 0,
+      "label": "moduleDelay",
+      "offset": 21,
       "slot": 6,
-      "type": "address"
+      "type": "uint48"
     },
     {
       "contract": "Editions",
-      "label": "_minterCount",
-      "offset": 20,
-      "slot": 6,
-      "type": "uint16"
+      "label": "_modules",
+      "offset": 0,
+      "slot": 7,
+      "type": "mapping(bytes32 => address)"
+    },
+    {
+      "contract": "Editions",
+      "label": "_pending",
+      "offset": 0,
+      "slot": 8,
+      "type": "mapping(bytes32 => struct PendingModule)"
     },
     {
       "contract": "Editions",
       "label": "_minters",
       "offset": 0,
-      "slot": 7,
-      "type": "mapping(address => struct Editions.Minter)"
-    },
-    {
-      "contract": "Editions",
-      "label": "_minterAddresses",
-      "offset": 0,
-      "slot": 8,
-      "type": "mapping(uint16 => address)"
-    },
-    {
-      "contract": "Editions",
-      "label": "_records",
-      "offset": 0,
       "slot": 9,
-      "type": "mapping(uint256 => struct Editions.Record)"
-    },
-    {
-      "contract": "Editions",
-      "label": "_minterKinds",
-      "offset": 0,
-      "slot": 10,
-      "type": "mapping(uint16 => bytes32)"
+      "type": "mapping(address => struct Minter)"
     }
   ]
 }

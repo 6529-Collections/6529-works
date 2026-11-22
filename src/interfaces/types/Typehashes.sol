@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 /// @title Typehashes
 /// @notice The EIP-712 domain names and typehashes of the package registry, curation verifier,

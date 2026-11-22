@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 /// @title DelegatedEOA
 /// @notice Detects EIP-7702 delegated accounts, whose code is the 23-byte designator

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 /// @title WorkPowers
 /// @notice The powers over one work that its lead artist may renounce for good

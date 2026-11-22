@@ -1,47 +1,41 @@
 {
   "structs": {
-    "struct FederatedEditions.Record": [
+    "struct Edition": [
       {
-        "label": "contentHash",
+        "label": "minter",
         "offset": 0,
         "slot": 0,
-        "type": "bytes32"
-      },
-      {
-        "label": "seller",
-        "offset": 0,
-        "slot": 1,
         "type": "address"
       },
       {
-        "label": "limit",
+        "label": "maxSupply",
         "offset": 20,
-        "slot": 1,
+        "slot": 0,
         "type": "uint40"
       },
       {
         "label": "minted",
         "offset": 25,
-        "slot": 1,
+        "slot": 0,
         "type": "uint40"
       },
       {
         "label": "supplySealed",
         "offset": 30,
-        "slot": 1,
+        "slot": 0,
         "type": "bool"
       },
       {
-        "label": "minter",
+        "label": "royaltyReceiver",
         "offset": 0,
-        "slot": 2,
+        "slot": 1,
         "type": "address"
       },
       {
-        "label": "maxCount",
+        "label": "royaltyRate",
         "offset": 20,
-        "slot": 2,
-        "type": "uint32"
+        "slot": 1,
+        "type": "uint24"
       }
     ]
   },
@@ -69,87 +63,45 @@
     },
     {
       "contract": "FederatedEditions",
-      "label": "_artistRegistry",
+      "label": "rebindDelay",
       "offset": 0,
+      "slot": 3,
+      "type": "uint48"
+    },
+    {
+      "contract": "FederatedEditions",
+      "label": "owner",
+      "offset": 6,
       "slot": 3,
       "type": "address"
     },
     {
       "contract": "FederatedEditions",
-      "label": "_splitLedger",
+      "label": "contractURI",
       "offset": 0,
       "slot": 4,
-      "type": "address"
+      "type": "string"
     },
     {
       "contract": "FederatedEditions",
-      "label": "_artistId",
+      "label": "_editions",
       "offset": 0,
       "slot": 5,
-      "type": "uint160"
+      "type": "mapping(uint256 => struct Edition)"
     },
     {
       "contract": "FederatedEditions",
-      "label": "_feeShare",
-      "offset": 20,
-      "slot": 5,
-      "type": "uint32"
-    },
-    {
-      "contract": "FederatedEditions",
-      "label": "_joined",
-      "offset": 24,
-      "slot": 5,
-      "type": "bool"
-    },
-    {
-      "contract": "FederatedEditions",
-      "label": "_feeRecipient",
+      "label": "name",
       "offset": 0,
       "slot": 6,
-      "type": "address"
+      "type": "string"
     },
     {
       "contract": "FederatedEditions",
-      "label": "_partner",
+      "label": "symbol",
       "offset": 0,
       "slot": 7,
-      "type": "address"
-    },
-    {
-      "contract": "FederatedEditions",
-      "label": "_owner",
-      "offset": 0,
-      "slot": 8,
-      "type": "address"
-    },
-    {
-      "contract": "FederatedEditions",
-      "label": "_contractURI",
-      "offset": 0,
-      "slot": 9,
       "type": "string"
-    },
-    {
-      "contract": "FederatedEditions",
-      "label": "_name",
-      "offset": 0,
-      "slot": 10,
-      "type": "string"
-    },
-    {
-      "contract": "FederatedEditions",
-      "label": "_symbol",
-      "offset": 0,
-      "slot": 11,
-      "type": "string"
-    },
-    {
-      "contract": "FederatedEditions",
-      "label": "_records",
-      "offset": 0,
-      "slot": 12,
-      "type": "mapping(uint256 => struct FederatedEditions.Record)"
     }
   ]
 }

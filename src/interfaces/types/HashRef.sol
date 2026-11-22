@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 /// @notice A tagged content hash: which algorithm produced the digest, and the digest itself.
 /// @dev Ported from RC1's `IStreamPreservationRecords.HashRef` with the variable-length digest

@@ -23,12 +23,12 @@
           },
           {
             "internalType": "address",
-            "name": "currency",
+            "name": "seller",
             "type": "address"
           },
           {
             "internalType": "uint256",
-            "name": "incrementFloor",
+            "name": "feeShare",
             "type": "uint256"
           },
           {
@@ -57,11 +57,6 @@
             "type": "uint64"
           },
           {
-            "internalType": "uint64",
-            "name": "pausedTotal",
-            "type": "uint64"
-          },
-          {
             "internalType": "enum IEnglishAuction.AuctionState",
             "name": "state",
             "type": "uint8"
@@ -86,43 +81,6 @@
         "internalType": "address",
         "name": "recipient",
         "type": "address"
-      },
-      {
-        "components": [
-          {
-            "internalType": "enum PaymentMethod",
-            "name": "method",
-            "type": "uint8"
-          },
-          {
-            "internalType": "address",
-            "name": "payer",
-            "type": "address"
-          },
-          {
-            "internalType": "uint256",
-            "name": "amount",
-            "type": "uint256"
-          },
-          {
-            "internalType": "uint256",
-            "name": "deadline",
-            "type": "uint256"
-          },
-          {
-            "internalType": "uint256",
-            "name": "nonce",
-            "type": "uint256"
-          },
-          {
-            "internalType": "bytes",
-            "name": "signature",
-            "type": "bytes"
-          }
-        ],
-        "internalType": "struct Payment",
-        "name": "payment",
-        "type": "tuple"
       }
     ],
     "name": "bid",
@@ -150,11 +108,6 @@
   },
   {
     "inputs": [
-      {
-        "internalType": "address",
-        "name": "currency",
-        "type": "address"
-      },
       {
         "internalType": "address",
         "name": "to",
@@ -195,35 +148,6 @@
       {
         "internalType": "address",
         "name": "account",
-        "type": "address"
-      },
-      {
-        "internalType": "address",
-        "name": "currency",
-        "type": "address"
-      }
-    ],
-    "name": "claimFor",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "amount",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "account",
-        "type": "address"
-      },
-      {
-        "internalType": "address",
-        "name": "currency",
         "type": "address"
       }
     ],
@@ -275,10 +199,10 @@
   },
   {
     "inputs": [],
-    "name": "escrow",
+    "name": "economics",
     "outputs": [
       {
-        "internalType": "address",
+        "internalType": "contract IEconomicsResolver",
         "name": "",
         "type": "address"
       }
@@ -291,11 +215,6 @@
       {
         "internalType": "address",
         "name": "account",
-        "type": "address"
-      },
-      {
-        "internalType": "address",
-        "name": "currency",
         "type": "address"
       }
     ],
@@ -311,88 +230,19 @@
     "type": "function"
   },
   {
-    "inputs": [],
-    "name": "federationRegistry",
-    "outputs": [
-      {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
     "inputs": [
       {
         "internalType": "address",
-        "name": "token",
+        "name": "account",
         "type": "address"
       }
     ],
-    "name": "isTarget",
+    "name": "expiresAt",
     "outputs": [
-      {
-        "internalType": "bool",
-        "name": "",
-        "type": "bool"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
       {
         "internalType": "uint256",
-        "name": "saleId",
-        "type": "uint256"
-      }
-    ],
-    "name": "lockedTerms",
-    "outputs": [
-      {
-        "components": [
-          {
-            "internalType": "address",
-            "name": "token",
-            "type": "address"
-          },
-          {
-            "internalType": "uint256",
-            "name": "id",
-            "type": "uint256"
-          },
-          {
-            "internalType": "address",
-            "name": "currency",
-            "type": "address"
-          },
-          {
-            "internalType": "uint256",
-            "name": "price",
-            "type": "uint256"
-          },
-          {
-            "internalType": "address",
-            "name": "seller",
-            "type": "address"
-          },
-          {
-            "internalType": "address",
-            "name": "feeRecipient",
-            "type": "address"
-          },
-          {
-            "internalType": "uint32",
-            "name": "feeShare",
-            "type": "uint32"
-          }
-        ],
-        "internalType": "struct LockedTerms",
         "name": "",
-        "type": "tuple"
+        "type": "uint256"
       }
     ],
     "stateMutability": "view",
@@ -407,25 +257,6 @@
       }
     ],
     "name": "minimumBid",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "currency",
-        "type": "address"
-      }
-    ],
-    "name": "openingBid",
     "outputs": [
       {
         "internalType": "uint256",
@@ -496,6 +327,38 @@
   {
     "inputs": [
       {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      }
+    ],
+    "name": "policyOf",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "saleId",
+        "type": "uint256"
+      }
+    ],
+    "name": "restart",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
         "internalType": "uint256",
         "name": "saleId",
         "type": "uint256"
@@ -528,19 +391,6 @@
       }
     ],
     "stateMutability": "pure",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "saleKind",
-    "outputs": [
-      {
-        "internalType": "bytes32",
-        "name": "",
-        "type": "bytes32"
-      }
-    ],
-    "stateMutability": "view",
     "type": "function"
   },
   {
@@ -618,25 +468,7 @@
         "type": "address"
       }
     ],
-    "name": "setFederationRegistry",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "token",
-        "type": "address"
-      },
-      {
-        "internalType": "bool",
-        "name": "listed",
-        "type": "bool"
-      }
-    ],
-    "name": "setTarget",
+    "name": "setStreamPolicy",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
@@ -663,7 +495,7 @@
       },
       {
         "internalType": "bytes",
-        "name": "mintData",
+        "name": "request",
         "type": "bytes"
       }
     ],
@@ -687,50 +519,13 @@
       },
       {
         "internalType": "bytes",
-        "name": "mintData",
+        "name": "request",
         "type": "bytes"
       },
       {
         "internalType": "address",
         "name": "recipient",
         "type": "address"
-      },
-      {
-        "components": [
-          {
-            "internalType": "enum PaymentMethod",
-            "name": "method",
-            "type": "uint8"
-          },
-          {
-            "internalType": "address",
-            "name": "payer",
-            "type": "address"
-          },
-          {
-            "internalType": "uint256",
-            "name": "amount",
-            "type": "uint256"
-          },
-          {
-            "internalType": "uint256",
-            "name": "deadline",
-            "type": "uint256"
-          },
-          {
-            "internalType": "uint256",
-            "name": "nonce",
-            "type": "uint256"
-          },
-          {
-            "internalType": "bytes",
-            "name": "signature",
-            "type": "bytes"
-          }
-        ],
-        "internalType": "struct Payment",
-        "name": "payment",
-        "type": "tuple"
       }
     ],
     "name": "startWithBid",
@@ -742,38 +537,6 @@
       }
     ],
     "stateMutability": "payable",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "statementLog",
-    "outputs": [
-      {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "bytes4",
-        "name": "interfaceId",
-        "type": "bytes4"
-      }
-    ],
-    "name": "supportsInterface",
-    "outputs": [
-      {
-        "internalType": "bool",
-        "name": "",
-        "type": "bool"
-      }
-    ],
-    "stateMutability": "view",
     "type": "function"
   },
   {
@@ -1090,25 +853,6 @@
       {
         "indexed": false,
         "internalType": "address",
-        "name": "previous",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "address",
-        "name": "next",
-        "type": "address"
-      }
-    ],
-    "name": "FederationRegistrySet",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": false,
-        "internalType": "address",
         "name": "account",
         "type": "address"
       }
@@ -1267,19 +1011,19 @@
     "anonymous": false,
     "inputs": [
       {
-        "indexed": true,
+        "indexed": false,
         "internalType": "address",
-        "name": "token",
+        "name": "previous",
         "type": "address"
       },
       {
         "indexed": false,
-        "internalType": "bool",
-        "name": "listed",
-        "type": "bool"
+        "internalType": "address",
+        "name": "next",
+        "type": "address"
       }
     ],
-    "name": "TargetSet",
+    "name": "StreamPolicySet",
     "type": "event"
   },
   {
@@ -1394,7 +1138,7 @@
       },
       {
         "internalType": "uint256",
-        "name": "id",
+        "name": "tokenId",
         "type": "uint256"
       }
     ],
@@ -1445,11 +1189,6 @@
         "internalType": "address",
         "name": "account",
         "type": "address"
-      },
-      {
-        "internalType": "address",
-        "name": "currency",
-        "type": "address"
       }
     ],
     "name": "NothingToClaim",
@@ -1480,17 +1219,6 @@
       }
     ],
     "name": "PauseExhausted",
-    "type": "error"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "deadline",
-        "type": "uint256"
-      }
-    ],
-    "name": "PaymentExpired",
     "type": "error"
   },
   {

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 /// @title IFederatedDeployer
 /// @notice The deployer of one federated template version (ADR 0008 §1): the only contract

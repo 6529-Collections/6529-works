@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 import { IClaimRouter } from "../economics/interfaces/IClaimRouter.sol";
 import { IRevenueEscrow } from "../economics/interfaces/IRevenueEscrow.sol";

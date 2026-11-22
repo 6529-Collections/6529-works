@@ -1,8 +1,9 @@
 # interfaces
 
 The external surfaces of every v1 contract and the types they exchange. Contracts depend on
-these files, not on each other's implementations: a sale adapter knows a token only through
-`IMintTarget`, which `IStream` and `IEditions` extend. What each function does is specified by
+these files, not on each other's implementations. The frozen interfaces of the permanent core
+(`IStream`, `IEditions`, `IModules`, `IDirectory`, `IWorkFacts` and the module interfaces they
+call) are in [`core/`](core/). What each function does is specified by
 area in the [specification](../../docs/spec/README.md); the ABIs, ERC-165 interface IDs and
 EIP-712 domains integrators need are in
 [ABIs and interface IDs](../../docs/integrators/abis-and-interface-ids.md).
@@ -11,9 +12,9 @@ EIP-712 domains integrators need are in
 
 | Path | What it holds |
 | --- | --- |
-| `I*.sol` | One interface per contract: `IStream`, `IWorkRecords` (with `IWorkPowers`, the renounceable work powers `WorkRecords` also reports through ERC-165, and the `WorkPowers` bit constants, ADR 0006), `IEditions`, `IMintTarget`, `ISaleAdapter`, `IEnglishAuction` (with `IEnglishAuctionClock`, its integration view outside ERC-165), `IUniformEditionAuction` (with `IUniformEditionAuctionLens` and `IUniformEditionAuctionStorage`, the edition auction's read side and storage words), `IPackageRegistry`, `ICurationVerifier`, `IArtistRegistry`, `IArtistRoleResolver`, `IStatementLog`, `IContentStore`, `IDependencyRegistry`, `IRenderer`, `IEntropyModule`, `IEconomicsResolver`, `IFederationRegistry` (v1.1, no implementation in v1) |
+| `I*.sol` | One interface per module: `IArtistRegistry`, `IArtistRoleResolver`, `IChunkStore`, `IContentStore`, `ICurationVerifier`, `IDependencyRegistry`, `IEconomicsResolver`, `IEnglishAuction`, `IEnglishAuctionClock`, `IEnglishAuctionRefusal`, `IEntropyModule`, `IFederatedDeployer`, `IFederatedMembership`, `IFederatedStream`, `IFederationRegistry`, `IItemApprovals`, `IPackageRegistry`, `IRenderer`, `ISaleAdapter`, `IStatementLog`, `IUniformEditionAuction`, `IUniformEditionAuctionLens`, `IUniformEditionAuctionStorage`, `IWorkDelivery`, `IWorkPowers` (`IWorkPowers`: the renounceable work powers the RECORDS module reports through ERC-165, ADR 0006) |
 | [`types/`](types/) | Shared structs and constants: `PackageTypes` (the package item), `SaleTypes`, `EconomicsTypes`, `IdentityTypes`, `ContentTypes`, `HashRef`, `StatementKinds`, `Limits` (every bound on user-supplied arrays), `Typehashes` (EIP-712 type strings and domain names), `WorksHashing` (item hashes, package leaves, media and record hashes) and `StepLadder` (the edition auction's price ladder) |
-| [`external/ISignatureTransfer.sol`](external/ISignatureTransfer.sol) | The Permit2 functions the sale adapters call |
+| [`external/ISignatureTransfer.sol`](external/ISignatureTransfer.sol) | The Permit2 interface; no contract calls it since sales are ETH only |
 | [`../economics/interfaces/`](../economics/interfaces/) | The economics module's own interfaces (`ISplitFactory`, `ISplitWallet`, `IAssetAllowlist`, `IRevenueEscrow`, `IReleaseVerifier`, `IClaimRouter`, `IArtistPayoutResolver`) |
 
 ## Developer notes
@@ -29,7 +30,7 @@ EIP-712 domains integrators need are in
   [Curation](../../docs/spec/curation.md#rules-and-invariants)). Signers, the uploader and
   off-chain tooling compute the same values, so a change here is a breaking change for them.
 - **Roles in NatSpec are hints.** Some governed functions name the role their selector is meant
-  to map to; the binding mapping is [`config/genesis.example.json`](../../config/genesis.example.json),
+  to map to; the binding mapping is [`config/genesis.core.example.json`](../../config/genesis.core.example.json),
   rendered as the [role and permission matrix](../../docs/audit/roles.md).
 - **Events and errors.** Event signatures and topic0 values are owned by
   [Events and indexing](../../docs/integrators/events-and-indexing.md), which the docs checker

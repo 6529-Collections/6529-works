@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 import { Base64 } from "@openzeppelin/contracts/utils/Base64.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";

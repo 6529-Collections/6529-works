@@ -1,8 +1,8 @@
 # Sepolia (chain 11155111)
 
 Deployment records for 6529 Works on Sepolia. Each record is written by
-[`script/Deploy.s.sol`](../../script/Deploy.s.sol) and confirmed by
-[`script/Verify.s.sol`](../../script/Verify.s.sol); the runbook is
+[`script/Deploy.s.sol`](https://github.com/6529-Collections/6529-works/blob/581cfb6f/script/Deploy.s.sol) and confirmed by
+[`script/Verify.s.sol`](https://github.com/6529-Collections/6529-works/blob/581cfb6f/script/Verify.s.sol); the runbook is
 [`script/README.md`](../../script/README.md).
 
 These are testnet rehearsals with throwaway signers. The code is pre-audit and nothing

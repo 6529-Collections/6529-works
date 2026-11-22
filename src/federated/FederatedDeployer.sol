@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 import { IFederatedDeployer } from "../interfaces/IFederatedDeployer.sol";
 import { SSTORE2 } from "../libraries/SSTORE2.sol";

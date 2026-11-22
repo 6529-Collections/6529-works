@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 /// @title BoundedParameter
 /// @notice Raise-only governed parameters, such as gas limits: each step at most doubles the

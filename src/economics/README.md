@@ -12,10 +12,10 @@ the governed vault for the network's own accounts. The rules are in
 | --- | --- |
 | `EconomicsResolver.sol` | Governed per-product economics for new works (fee share and recipient, royalty rate, default license), `newWorkTerms` and `resolveCurrency`; and the 6529 Network Museum (`museum`, `setMuseum`), where an unbid canonical work goes (ECO-37). |
 | `AssetAllowlist.sol` | Replaceable (no permanent contract references it; withdrawals never read it). ETH only: the English auction's opening bid (`setOpeningBid`) and increment floor (`setIncrementFloor`), read when a bid is placed, and a default currency per product (ETH), each compare-and-set on its own revision. No other asset can be admitted and ETH is never deprecated. |
-| `SplitLedger.sol` | Permanent, permissionless, unowned. `walletFor` predicts and `createWallet` deploys a split wallet (a `SplitVault`) at its CREATE2 address; keeps every wallet's accounting; executes `release`, `releaseTo` and signed `releaseWithAuthorization` (EIP-712, per-account nonce bitmaps shared across wallets, `revokeNonce`). Fixed payees by account, artist-resolved payees by artist ID through the artist registry's `payoutAddress`. Every release also pays the network fee vault (`network`, a constructor argument) its due share when it is a payee (ECO-43); `mark` and, 180 days later, `forfeit` send an unclaimed share to the network (ECO-44). |
+| `SplitLedger.sol` | Permanent, permissionless, unowned. `walletFor` predicts and `createWallet` deploys a split wallet (a `SplitVault`) at its CREATE2 address; keeps every wallet's accounting; executes `release`, `releaseTo` and signed `releaseWithAuthorization` (EIP-712, per-account nonce bitmaps shared across wallets, `revokeNonce`). Fixed payees by account, artist-resolved payees by artist ID through the artist registry's `payoutAddress`. Every release also pays the network fee vault (`network`, a constructor argument) its due share when it is a payee (ECO-43); `mark` and, once the unclaimed period has passed (`Directory.unclaimedPeriod`, a network setting, 180 days at launch, read when the forfeit is attempted), `forfeit` send an unclaimed share to the network (ECO-44). A payee who cannot release (a frozen or unresolved artist account) can still be marked and forfeited. |
 | `SplitVault.sol` | The wallet's 66 bytes of raw EVM code (documented byte by byte): holds ETH and ERC-20s, accepts plain ETH from anyone, moves funds only on its ledger's instruction. |
 | `GovernedVault.sol` | The network fee recipient and the museum as contracts: receive ETH, ERC-20s, ERC-721s and ERC-1155s; forward only to a destination the network sets (3 days for the fee vault, 7 days for the museum's). Deployed before the ledger, which names the fee vault. |
-| `RevenueEscrow.sol` | Credits a wallet whose payment failed; anyone flushes; governed `recover` (identical wallets; the network's own credits without consent; anyone else's with its `consentToRecovery`); `expire` to the network of credits whose window's last credit is 180 days old, so each waits 180 to under 360 days (ECO-45); `locked()` for callers that must not run inside it; governed `sweepExcess` of what nobody is owed. |
+| `RevenueEscrow.sol` | Credits a wallet whose payment failed; anyone flushes; governed `recover` (identical wallets; the network's own credits without consent; anyone else's with its `consentToRecovery`); `expire` to the network of credits whose window's last credit has waited the unclaimed period (`Directory.unclaimedPeriod`, 180 days at launch), so each waits from one period to under two (ECO-45); the period is read at every deposit, recovery and expiry, and an amount already counted as aged stays aged; `locked()` for callers that must not run inside it; governed `sweepExcess` of what nobody is owed. |
 | `ClaimRouter.sol` | Stateless batch claims through the ledger: up to 50 plain items (fixed payees) or 20 signed items. |
 | `RevenuePayment.sol` | Internal library for payers: pay the wallet with a fixed gas allowance, else credit the escrow. |
 | `TokenTransfer.sol`, `Splits.sol` | Internal libraries: exact-delta ERC-20 moves; payee-list validation, royalty payees and share maths. |
@@ -59,11 +59,11 @@ Payment, release and recovery sequences are under
   NatSpec). Its bytes are pinned by `test_Golden_InitCodeHashAndRuntime`.
 - **Transaction cap.** Rerun [`GasCap.t.sol`](../../test/economics/GasCap.t.sol) after changing a
   batch bound, a per-item minimum or the continue-mode signature bound (ECO-31, LIM-GAS-6).
-- **Bytecode:** [audit scope](../../docs/audit/scope.md#economics); gas:
+- **Bytecode:** [audit scope](../../docs/audit/scope.md#the-permanent-core); gas:
   [ADR 0004](../../docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table).
 - **Tests:** `forge test --match-path 'test/economics/**'`; Halmos proofs of `Splits` in
   `test/symbolic/` ([Testing](../../docs/testing/README.md)); end to end,
-  [`EscrowRecovery.t.sol`](../../test/integration/EscrowRecovery.t.sol).
+  `EscrowRecovery.t.sol`.
 
 ## See also
 

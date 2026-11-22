@@ -58,45 +58,45 @@
     },
     {
       "contract": "WorkDelivery",
-      "label": "preferredKind",
-      "offset": 21,
-      "slot": 0,
-      "type": "enum LocatorKind"
+      "label": "_preferredKinds",
+      "offset": 0,
+      "slot": 1,
+      "type": "mapping(address => enum LocatorKind)"
     },
     {
       "contract": "WorkDelivery",
       "label": "_collectionKinds",
       "offset": 0,
-      "slot": 1,
-      "type": "mapping(uint256 => enum LocatorKind)"
+      "slot": 2,
+      "type": "mapping(address => mapping(uint256 => enum LocatorKind))"
     },
     {
       "contract": "WorkDelivery",
       "label": "_locators",
       "offset": 0,
-      "slot": 2,
-      "type": "mapping(uint256 => mapping(bytes32 => struct Locator[]))"
+      "slot": 3,
+      "type": "mapping(address => mapping(uint256 => mapping(bytes32 => struct Locator[])))"
     },
     {
       "contract": "WorkDelivery",
       "label": "_filePrefs",
       "offset": 0,
-      "slot": 3,
-      "type": "mapping(uint256 => mapping(bytes32 => uint256))"
+      "slot": 4,
+      "type": "mapping(address => mapping(uint256 => mapping(bytes32 => uint256)))"
     },
     {
       "contract": "WorkDelivery",
       "label": "_locatorCounts",
       "offset": 0,
-      "slot": 4,
-      "type": "mapping(uint256 => mapping(bytes32 => struct WorkDelivery.LocatorCounts))"
+      "slot": 5,
+      "type": "mapping(address => mapping(uint256 => mapping(bytes32 => struct WorkDelivery.LocatorCounts)))"
     },
     {
       "contract": "WorkDelivery",
       "label": "_locatorUris",
       "offset": 0,
-      "slot": 5,
-      "type": "mapping(uint256 => mapping(bytes32 => mapping(bytes32 => bool)))"
+      "slot": 6,
+      "type": "mapping(address => mapping(uint256 => mapping(bytes32 => mapping(bytes32 => bool))))"
     }
   ]
 }

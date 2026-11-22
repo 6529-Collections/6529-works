@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 /// @title DataUri
 /// @notice Percent-encoding for text placed in a non-base64 `data:` URI.

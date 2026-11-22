@@ -83,6 +83,19 @@ the federation module's answer.
 | FEDERATION | Decides which sale contracts mint for federated tokens; cannot move, burn or re-record a sold token |
 | Mint policy, economics resolver | Decide what new works may be minted and on what terms; nothing about existing tokens |
 
+### Points of care for the network
+
+- **Federated tokens need an immediate role.** A federated token accepts the network's
+  `rescue`, `setRescueDelay`, `rebind` and `setRebindDelay` only from a role member calling
+  directly with no delay; giving that role a delay would lock these functions (LIM-GV-31).
+- **A replacement module carries state over.** A new accounts module must carry the artists
+  over; a new mint policy, the barred items and content releases (LIM-GV-32).
+- **Off-chain copies of a finalized work** are named by the replaceable delivery module; the
+  content hashes stay in `WorkFacts` (LIM-CNT-23).
+- **A sale contract can close an edition for good** by sealing it at zero (LIM-EA-21).
+- **Unclaimed shares** of a payee who cannot release (a frozen or unresolved artist account)
+  can still be marked and forfeited after the unclaimed period (LIM-ECO-13).
+
 ## Actors
 
 Artists, collaborators and collectors are trusted only with their own works, signatures and

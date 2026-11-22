@@ -2,70 +2,56 @@
   {
     "inputs": [
       {
-        "components": [
-          {
-            "internalType": "string",
-            "name": "name",
-            "type": "string"
-          },
-          {
-            "internalType": "string",
-            "name": "symbol",
-            "type": "string"
-          },
-          {
-            "internalType": "address",
-            "name": "artistRegistry",
-            "type": "address"
-          },
-          {
-            "internalType": "address",
-            "name": "splitLedger",
-            "type": "address"
-          },
-          {
-            "internalType": "address",
-            "name": "contentStore",
-            "type": "address"
-          },
-          {
-            "internalType": "uint256",
-            "name": "artistId",
-            "type": "uint256"
-          },
-          {
-            "internalType": "uint32",
-            "name": "feeShare",
-            "type": "uint32"
-          },
-          {
-            "internalType": "address",
-            "name": "feeRecipient",
-            "type": "address"
-          },
-          {
-            "internalType": "address",
-            "name": "renderer",
-            "type": "address"
-          },
-          {
-            "internalType": "bytes32",
-            "name": "rendererCodeHash",
-            "type": "bytes32"
-          },
-          {
-            "internalType": "address",
-            "name": "owner",
-            "type": "address"
-          }
-        ],
-        "internalType": "struct IFederatedStream.Config",
-        "name": "c",
-        "type": "tuple"
+        "internalType": "string",
+        "name": "name_",
+        "type": "string"
+      },
+      {
+        "internalType": "string",
+        "name": "symbol_",
+        "type": "string"
+      },
+      {
+        "internalType": "address",
+        "name": "facts_",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "directory_",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "artistId_",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "owner_",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "renderer_",
+        "type": "address"
       }
     ],
     "stateMutability": "nonpayable",
     "type": "constructor"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "slot",
+        "type": "bytes32"
+      }
+    ],
+    "name": "activateModule",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
   },
   {
     "inputs": [
@@ -86,21 +72,16 @@
     "type": "function"
   },
   {
-    "inputs": [
+    "inputs": [],
+    "name": "artistId",
+    "outputs": [
       {
-        "internalType": "bytes32",
-        "name": "itemHash",
-        "type": "bytes32"
-      },
-      {
-        "internalType": "uint32",
-        "name": "royaltyRate",
-        "type": "uint32"
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
       }
     ],
-    "name": "approveItem",
-    "outputs": [],
-    "stateMutability": "nonpayable",
+    "stateMutability": "view",
     "type": "function"
   },
   {
@@ -126,18 +107,26 @@
     "inputs": [
       {
         "internalType": "uint256",
-        "name": "id",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint256",
-        "name": "amount",
+        "name": "tokenId",
         "type": "uint256"
       }
     ],
     "name": "burn",
     "outputs": [],
     "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "collectionCount",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
     "type": "function"
   },
   {
@@ -148,14 +137,19 @@
         "type": "uint256"
       }
     ],
-    "name": "collection",
+    "name": "collectionOf",
     "outputs": [
       {
         "components": [
           {
-            "internalType": "string",
-            "name": "name",
-            "type": "string"
+            "internalType": "bool",
+            "name": "exists",
+            "type": "bool"
+          },
+          {
+            "internalType": "uint32",
+            "name": "minted",
+            "type": "uint32"
           },
           {
             "internalType": "bytes32",
@@ -163,27 +157,14 @@
             "type": "bytes32"
           },
           {
-            "internalType": "uint64",
-            "name": "minted",
-            "type": "uint64"
+            "internalType": "string",
+            "name": "name",
+            "type": "string"
           }
         ],
-        "internalType": "struct IStreamViews.Collection",
+        "internalType": "struct Collection",
         "name": "",
         "type": "tuple"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "contentStore",
-    "outputs": [
-      {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
       }
     ],
     "stateMutability": "view",
@@ -205,113 +186,31 @@
   {
     "inputs": [
       {
-        "internalType": "uint256",
-        "name": "tokenId",
-        "type": "uint256"
-      }
-    ],
-    "name": "coreOf",
-    "outputs": [
+        "internalType": "string",
+        "name": "name_",
+        "type": "string"
+      },
       {
         "internalType": "bytes32",
-        "name": "",
+        "name": "metadataHash",
         "type": "bytes32"
-      },
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint8",
-        "name": "",
-        "type": "uint8"
-      },
-      {
-        "internalType": "uint8",
-        "name": "",
-        "type": "uint8"
-      },
-      {
-        "internalType": "uint32",
-        "name": "",
-        "type": "uint32"
       }
     ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "bytes32",
-        "name": "slot",
-        "type": "bytes32"
-      },
-      {
-        "internalType": "uint256",
-        "name": "n",
-        "type": "uint256"
-      }
-    ],
-    "name": "extsload",
+    "name": "createCollection",
     "outputs": [
       {
-        "internalType": "bytes32[]",
-        "name": "words",
-        "type": "bytes32[]"
+        "internalType": "uint256",
+        "name": "collectionId",
+        "type": "uint256"
       }
     ],
-    "stateMutability": "view",
+    "stateMutability": "nonpayable",
     "type": "function"
   },
   {
     "inputs": [],
-    "name": "federationState",
+    "name": "directory",
     "outputs": [
-      {
-        "internalType": "bool",
-        "name": "joined",
-        "type": "bool"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "federationTerms",
-    "outputs": [
-      {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
-      },
-      {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
-      },
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint32",
-        "name": "",
-        "type": "uint32"
-      },
-      {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
-      },
       {
         "internalType": "address",
         "name": "",
@@ -325,13 +224,31 @@
     "inputs": [
       {
         "internalType": "uint256",
-        "name": "tokenId",
+        "name": "fromTokenId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "toTokenId",
         "type": "uint256"
       }
     ],
-    "name": "finalize",
+    "name": "emitMetadataUpdate",
     "outputs": [],
     "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "facts",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
     "type": "function"
   },
   {
@@ -357,11 +274,11 @@
     "inputs": [
       {
         "internalType": "address",
-        "name": "adapter",
+        "name": "account",
         "type": "address"
       }
     ],
-    "name": "isAdmittedMinter",
+    "name": "hasMinted",
     "outputs": [
       {
         "internalType": "bool",
@@ -399,12 +316,12 @@
   {
     "inputs": [
       {
-        "internalType": "uint256",
-        "name": "tokenId",
-        "type": "uint256"
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
       }
     ],
-    "name": "isOpen",
+    "name": "isMinter",
     "outputs": [
       {
         "internalType": "bool",
@@ -418,101 +335,17 @@
   {
     "inputs": [
       {
-        "components": [
-          {
-            "internalType": "bytes32",
-            "name": "profileId",
-            "type": "bytes32"
-          },
-          {
-            "internalType": "bytes32",
-            "name": "profileDocHash",
-            "type": "bytes32"
-          },
-          {
-            "internalType": "uint64",
-            "name": "deadline",
-            "type": "uint64"
-          },
-          {
-            "internalType": "bytes",
-            "name": "registration",
-            "type": "bytes"
-          },
-          {
-            "internalType": "bytes",
-            "name": "consent",
-            "type": "bytes"
-          }
-        ],
-        "internalType": "struct IFederationRegistry.Join",
-        "name": "j",
-        "type": "tuple"
-      }
-    ],
-    "name": "joinFederation",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
         "internalType": "uint256",
         "name": "tokenId",
         "type": "uint256"
       }
     ],
-    "name": "licenseOf",
+    "name": "itemHashOf",
     "outputs": [
       {
-        "components": [
-          {
-            "internalType": "string",
-            "name": "spdxId",
-            "type": "string"
-          },
-          {
-            "internalType": "bytes32",
-            "name": "textFileId",
-            "type": "bytes32"
-          }
-        ],
-        "internalType": "struct License",
+        "internalType": "bytes32",
         "name": "",
-        "type": "tuple"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "editions",
-        "type": "address"
-      }
-    ],
-    "name": "linkEditions",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "workId",
-        "type": "uint256"
-      }
-    ],
-    "name": "liveTokenOf",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
+        "type": "bytes32"
       }
     ],
     "stateMutability": "view",
@@ -526,32 +359,9 @@
         "type": "uint256"
       }
     ],
-    "name": "mediaOf",
-    "outputs": [
-      {
-        "components": [
-          {
-            "internalType": "bytes32",
-            "name": "fileId",
-            "type": "bytes32"
-          },
-          {
-            "internalType": "bytes32",
-            "name": "sha256Hash",
-            "type": "bytes32"
-          },
-          {
-            "internalType": "uint8",
-            "name": "role",
-            "type": "uint8"
-          }
-        ],
-        "internalType": "struct MediaFile[]",
-        "name": "",
-        "type": "tuple[]"
-      }
-    ],
-    "stateMutability": "view",
+    "name": "lockRoyaltyRate",
+    "outputs": [],
+    "stateMutability": "nonpayable",
     "type": "function"
   },
   {
@@ -562,19 +372,76 @@
         "type": "address"
       },
       {
-        "internalType": "uint256",
-        "name": "id",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint256",
-        "name": "amount",
-        "type": "uint256"
-      },
-      {
-        "internalType": "bytes",
-        "name": "data",
-        "type": "bytes"
+        "components": [
+          {
+            "internalType": "bytes32",
+            "name": "itemHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "contentHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "uint256",
+            "name": "artistId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "collectionId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint8",
+            "name": "kind",
+            "type": "uint8"
+          },
+          {
+            "internalType": "uint8",
+            "name": "seedPolicy",
+            "type": "uint8"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "seed",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "address",
+            "name": "royaltyReceiver",
+            "type": "address"
+          },
+          {
+            "internalType": "uint24",
+            "name": "royaltyRate",
+            "type": "uint24"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "packageRoot",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "mediaHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "recordFileId",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "address",
+            "name": "seller",
+            "type": "address"
+          }
+        ],
+        "internalType": "struct MintFacts",
+        "name": "f",
+        "type": "tuple"
       }
     ],
     "name": "mint",
@@ -583,56 +450,41 @@
         "internalType": "uint256",
         "name": "tokenId",
         "type": "uint256"
-      },
-      {
-        "components": [
-          {
-            "internalType": "bytes32",
-            "name": "saleKind",
-            "type": "bytes32"
-          },
-          {
-            "internalType": "address",
-            "name": "currency",
-            "type": "address"
-          },
-          {
-            "internalType": "uint256",
-            "name": "price",
-            "type": "uint256"
-          },
-          {
-            "internalType": "bytes",
-            "name": "params",
-            "type": "bytes"
-          },
-          {
-            "internalType": "address",
-            "name": "seller",
-            "type": "address"
-          },
-          {
-            "internalType": "address",
-            "name": "feeRecipient",
-            "type": "address"
-          },
-          {
-            "internalType": "uint32",
-            "name": "feeShare",
-            "type": "uint32"
-          },
-          {
-            "internalType": "address",
-            "name": "creator",
-            "type": "address"
-          }
-        ],
-        "internalType": "struct PrimaryTerms",
-        "name": "terms",
-        "type": "tuple"
       }
     ],
     "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "moduleDelay",
+    "outputs": [
+      {
+        "internalType": "uint48",
+        "name": "",
+        "type": "uint48"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "slot",
+        "type": "bytes32"
+      }
+    ],
+    "name": "moduleOf",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
     "type": "function"
   },
   {
@@ -646,40 +498,6 @@
       }
     ],
     "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
-      },
-      {
-        "internalType": "address",
-        "name": "from",
-        "type": "address"
-      },
-      {
-        "internalType": "uint256",
-        "name": "tokenId",
-        "type": "uint256"
-      },
-      {
-        "internalType": "bytes",
-        "name": "",
-        "type": "bytes"
-      }
-    ],
-    "name": "onERC721Received",
-    "outputs": [
-      {
-        "internalType": "bytes4",
-        "name": "",
-        "type": "bytes4"
-      }
-    ],
-    "stateMutability": "nonpayable",
     "type": "function"
   },
   {
@@ -717,151 +535,27 @@
   {
     "inputs": [
       {
-        "internalType": "uint256",
-        "name": "tokenId",
-        "type": "uint256"
-      },
-      {
         "internalType": "bytes32",
-        "name": "fileId",
+        "name": "slot",
         "type": "bytes32"
       }
     ],
-    "name": "preferredLocator",
+    "name": "pendingModule",
     "outputs": [
       {
         "components": [
           {
-            "internalType": "uint8",
-            "name": "kind",
-            "type": "uint8"
+            "internalType": "address",
+            "name": "module",
+            "type": "address"
           },
           {
-            "internalType": "string",
-            "name": "uri",
-            "type": "string"
+            "internalType": "uint48",
+            "name": "readyAt",
+            "type": "uint48"
           }
         ],
-        "internalType": "struct IWorkDelivery.Location",
-        "name": "",
-        "type": "tuple"
-      },
-      {
-        "internalType": "uint256",
-        "name": "index",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "tokenId",
-        "type": "uint256"
-      }
-    ],
-    "name": "primarySale",
-    "outputs": [
-      {
-        "internalType": "enum PrimaryOutcome",
-        "name": "outcome",
-        "type": "uint8"
-      },
-      {
-        "internalType": "address",
-        "name": "currency",
-        "type": "address"
-      },
-      {
-        "internalType": "uint256",
-        "name": "price",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "tokenId",
-        "type": "uint256"
-      }
-    ],
-    "name": "primarySaleSettled",
-    "outputs": [
-      {
-        "internalType": "bool",
-        "name": "",
-        "type": "bool"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "id",
-        "type": "uint256"
-      },
-      {
-        "internalType": "bytes",
-        "name": "",
-        "type": "bytes"
-      }
-    ],
-    "name": "primaryTerms",
-    "outputs": [
-      {
-        "components": [
-          {
-            "internalType": "bytes32",
-            "name": "saleKind",
-            "type": "bytes32"
-          },
-          {
-            "internalType": "address",
-            "name": "currency",
-            "type": "address"
-          },
-          {
-            "internalType": "uint256",
-            "name": "price",
-            "type": "uint256"
-          },
-          {
-            "internalType": "bytes",
-            "name": "params",
-            "type": "bytes"
-          },
-          {
-            "internalType": "address",
-            "name": "seller",
-            "type": "address"
-          },
-          {
-            "internalType": "address",
-            "name": "feeRecipient",
-            "type": "address"
-          },
-          {
-            "internalType": "uint32",
-            "name": "feeShare",
-            "type": "uint32"
-          },
-          {
-            "internalType": "address",
-            "name": "creator",
-            "type": "address"
-          }
-        ],
-        "internalType": "struct PrimaryTerms",
+        "internalType": "struct PendingModule",
         "name": "p",
         "type": "tuple"
       }
@@ -872,12 +566,17 @@
   {
     "inputs": [
       {
-        "internalType": "uint256",
-        "name": "tokenId",
-        "type": "uint256"
+        "internalType": "bytes32",
+        "name": "slot",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "address",
+        "name": "module",
+        "type": "address"
       }
     ],
-    "name": "reclaim",
+    "name": "proposeModule",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
@@ -888,54 +587,39 @@
         "internalType": "uint256",
         "name": "tokenId",
         "type": "uint256"
-      }
-    ],
-    "name": "record",
-    "outputs": [
+      },
       {
-        "components": [
-          {
-            "internalType": "bytes32",
-            "name": "recordFileId",
-            "type": "bytes32"
-          },
-          {
-            "internalType": "bytes32",
-            "name": "mediaHash",
-            "type": "bytes32"
-          },
-          {
-            "internalType": "bytes32",
-            "name": "licenseKey",
-            "type": "bytes32"
-          },
-          {
-            "internalType": "uint32",
-            "name": "version",
-            "type": "uint32"
-          },
-          {
-            "internalType": "bool",
-            "name": "finalized",
-            "type": "bool"
-          },
-          {
-            "internalType": "bool",
-            "name": "onChainComplete",
-            "type": "bool"
-          },
-          {
-            "internalType": "address",
-            "name": "renderer",
-            "type": "address"
-          }
-        ],
-        "internalType": "struct IWorkRecords.RecordInfo",
-        "name": "r",
-        "type": "tuple"
+        "internalType": "bool",
+        "name": "sold",
+        "type": "bool"
+      },
+      {
+        "internalType": "address",
+        "name": "buyer",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "price",
+        "type": "uint256"
       }
     ],
-    "stateMutability": "view",
+    "name": "recordPrimarySale",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "slot",
+        "type": "bytes32"
+      }
+    ],
+    "name": "removeModule",
+    "outputs": [],
+    "stateMutability": "nonpayable",
     "type": "function"
   },
   {
@@ -960,14 +644,32 @@
   {
     "inputs": [
       {
-        "internalType": "bytes32",
-        "name": "itemHash",
-        "type": "bytes32"
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "to",
+        "type": "address"
       }
     ],
-    "name": "revokeItem",
+    "name": "rescue",
     "outputs": [],
     "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "rescueDelay",
+    "outputs": [
+      {
+        "internalType": "uint48",
+        "name": "",
+        "type": "uint48"
+      }
+    ],
+    "stateMutability": "view",
     "type": "function"
   },
   {
@@ -992,7 +694,7 @@
       },
       {
         "internalType": "uint256",
-        "name": "amount",
+        "name": "royaltyAmount",
         "type": "uint256"
       }
     ],
@@ -1053,48 +755,6 @@
   {
     "inputs": [
       {
-        "internalType": "uint256",
-        "name": "tokenId",
-        "type": "uint256"
-      }
-    ],
-    "name": "seedOf",
-    "outputs": [
-      {
-        "internalType": "uint8",
-        "name": "",
-        "type": "uint8"
-      },
-      {
-        "internalType": "bytes32",
-        "name": "",
-        "type": "bytes32"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
-      },
-      {
-        "internalType": "bool",
-        "name": "",
-        "type": "bool"
-      }
-    ],
-    "name": "setAdmittedMinter",
-    "outputs": [],
-    "stateMutability": "pure",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
         "internalType": "address",
         "name": "operator",
         "type": "address"
@@ -1126,50 +786,12 @@
   {
     "inputs": [
       {
-        "internalType": "address",
-        "name": "expected",
-        "type": "address"
-      },
-      {
-        "internalType": "address",
-        "name": "renderer",
-        "type": "address"
-      },
-      {
-        "internalType": "bytes32",
-        "name": "codeHash",
-        "type": "bytes32"
+        "internalType": "uint48",
+        "name": "next",
+        "type": "uint48"
       }
     ],
-    "name": "setDefaultRenderer",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "tokenId",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint256",
-        "name": "index",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint8",
-        "name": "kind",
-        "type": "uint8"
-      },
-      {
-        "internalType": "string",
-        "name": "uri",
-        "type": "string"
-      }
-    ],
-    "name": "setLocator",
+    "name": "setModuleDelay",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
@@ -1190,17 +812,12 @@
   {
     "inputs": [
       {
-        "internalType": "uint256",
-        "name": "tokenId",
-        "type": "uint256"
-      },
-      {
-        "internalType": "bytes32",
-        "name": "recordFileId",
-        "type": "bytes32"
+        "internalType": "uint48",
+        "name": "next",
+        "type": "uint48"
       }
     ],
-    "name": "setRecord",
+    "name": "setRescueDelay",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
@@ -1213,74 +830,18 @@
         "type": "uint256"
       },
       {
-        "internalType": "uint32",
+        "internalType": "address",
+        "name": "receiver",
+        "type": "address"
+      },
+      {
+        "internalType": "uint24",
         "name": "rate",
-        "type": "uint32"
+        "type": "uint24"
       }
     ],
-    "name": "setRoyaltyRate",
+    "name": "setRoyalty",
     "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "tokenId",
-        "type": "uint256"
-      },
-      {
-        "internalType": "enum PrimaryOutcome",
-        "name": "outcome",
-        "type": "uint8"
-      },
-      {
-        "internalType": "address",
-        "name": "buyer",
-        "type": "address"
-      },
-      {
-        "internalType": "address",
-        "name": "currency",
-        "type": "address"
-      },
-      {
-        "internalType": "uint256",
-        "name": "price",
-        "type": "uint256"
-      }
-    ],
-    "name": "settlePrimary",
-    "outputs": [
-      {
-        "components": [
-          {
-            "internalType": "address",
-            "name": "seller",
-            "type": "address"
-          },
-          {
-            "internalType": "address",
-            "name": "feeRecipient",
-            "type": "address"
-          },
-          {
-            "internalType": "uint32",
-            "name": "feeShare",
-            "type": "uint32"
-          },
-          {
-            "internalType": "address",
-            "name": "holder",
-            "type": "address"
-          }
-        ],
-        "internalType": "struct PrimarySettlement",
-        "name": "s",
-        "type": "tuple"
-      }
-    ],
     "stateMutability": "nonpayable",
     "type": "function"
   },
@@ -1319,40 +880,17 @@
   {
     "inputs": [
       {
-        "internalType": "uint256",
-        "name": "tokenId",
-        "type": "uint256"
+        "internalType": "bytes32",
+        "name": "contentHash",
+        "type": "bytes32"
       }
     ],
-    "name": "syncOnChain",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "tokenId",
-        "type": "uint256"
-      }
-    ],
-    "name": "tokenInfo",
+    "name": "tokenOfContent",
     "outputs": [
       {
         "internalType": "uint256",
-        "name": "",
+        "name": "tokenId",
         "type": "uint256"
-      },
-      {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
-      },
-      {
-        "internalType": "uint8",
-        "name": "",
-        "type": "uint8"
       }
     ],
     "stateMutability": "view",
@@ -1372,6 +910,45 @@
         "internalType": "string",
         "name": "",
         "type": "string"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "totalBurned",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "totalMinted",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "totalSupply",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
       }
     ],
     "stateMutability": "view",
@@ -1408,7 +985,7 @@
         "type": "uint256"
       }
     ],
-    "name": "work",
+    "name": "workOf",
     "outputs": [
       {
         "components": [
@@ -1418,19 +995,19 @@
             "type": "bytes32"
           },
           {
-            "internalType": "uint256",
+            "internalType": "uint160",
             "name": "artistId",
-            "type": "uint256"
+            "type": "uint160"
           },
           {
-            "internalType": "uint256",
+            "internalType": "uint32",
             "name": "collectionId",
-            "type": "uint256"
+            "type": "uint32"
           },
           {
-            "internalType": "uint64",
+            "internalType": "uint32",
             "name": "serial",
-            "type": "uint64"
+            "type": "uint32"
           },
           {
             "internalType": "uint8",
@@ -1443,9 +1020,9 @@
             "type": "uint8"
           },
           {
-            "internalType": "address",
-            "name": "seller",
-            "type": "address"
+            "internalType": "enum Outcome",
+            "name": "outcome",
+            "type": "uint8"
           },
           {
             "internalType": "address",
@@ -1453,62 +1030,28 @@
             "type": "address"
           },
           {
-            "internalType": "uint32",
+            "internalType": "uint24",
             "name": "royaltyRate",
-            "type": "uint32"
+            "type": "uint24"
+          },
+          {
+            "internalType": "bool",
+            "name": "royaltyRateLocked",
+            "type": "bool"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "seed",
+            "type": "bytes32"
           }
         ],
-        "internalType": "struct IStreamViews.WorkCore",
-        "name": "c",
+        "internalType": "struct Work",
+        "name": "",
         "type": "tuple"
       }
     ],
     "stateMutability": "view",
     "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "workRecords",
-    "outputs": [
-      {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "adapter",
-        "type": "address"
-      },
-      {
-        "indexed": true,
-        "internalType": "uint24",
-        "name": "id",
-        "type": "uint24"
-      },
-      {
-        "indexed": false,
-        "internalType": "bool",
-        "name": "admitted",
-        "type": "bool"
-      },
-      {
-        "indexed": false,
-        "internalType": "bytes32",
-        "name": "saleKind",
-        "type": "bytes32"
-      }
-    ],
-    "name": "AdmittedMinterSet",
-    "type": "event"
   },
   {
     "anonymous": false,
@@ -1583,210 +1126,30 @@
     "anonymous": false,
     "inputs": [
       {
-        "indexed": false,
-        "internalType": "address",
-        "name": "contentStore",
-        "type": "address"
-      }
-    ],
-    "name": "ContentStoreSet",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [],
-    "name": "ContractURIUpdated",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": false,
-        "internalType": "address",
-        "name": "previous",
-        "type": "address"
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "collectionId",
+        "type": "uint256"
       },
       {
         "indexed": false,
-        "internalType": "address",
-        "name": "next",
-        "type": "address"
+        "internalType": "string",
+        "name": "name",
+        "type": "string"
       },
       {
         "indexed": false,
         "internalType": "bytes32",
-        "name": "codeHash",
+        "name": "metadataHash",
         "type": "bytes32"
       }
     ],
-    "name": "DefaultRendererSet",
+    "name": "CollectionCreated",
     "type": "event"
   },
   {
     "anonymous": false,
     "inputs": [
-      {
-        "indexed": false,
-        "internalType": "address",
-        "name": "editions",
-        "type": "address"
-      }
-    ],
-    "name": "EditionsLinked",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "uint256",
-        "name": "artistId",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "address",
-        "name": "registry",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint32",
-        "name": "feeShare",
-        "type": "uint32"
-      },
-      {
-        "indexed": false,
-        "internalType": "address",
-        "name": "feeRecipient",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "address",
-        "name": "partner",
-        "type": "address"
-      }
-    ],
-    "name": "FederationJoined",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "uint256",
-        "name": "artistId",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "address",
-        "name": "artistRegistry",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "address",
-        "name": "splitLedger",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint32",
-        "name": "feeShare",
-        "type": "uint32"
-      },
-      {
-        "indexed": false,
-        "internalType": "address",
-        "name": "feeRecipient",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "address",
-        "name": "partner",
-        "type": "address"
-      }
-    ],
-    "name": "FederationTermsLocked",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "uint256",
-        "name": "workId",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "address",
-        "name": "renderer",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "bytes32",
-        "name": "codeHash",
-        "type": "bytes32"
-      }
-    ],
-    "name": "Finalized",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "bytes32",
-        "name": "itemHash",
-        "type": "bytes32"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint32",
-        "name": "royaltyRate",
-        "type": "uint32"
-      },
-      {
-        "indexed": false,
-        "internalType": "bool",
-        "name": "approved",
-        "type": "bool"
-      }
-    ],
-    "name": "ItemApproval",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "uint256",
-        "name": "workId",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "index",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint8",
-        "name": "kind",
-        "type": "uint8"
-      },
       {
         "indexed": false,
         "internalType": "string",
@@ -1794,7 +1157,13 @@
         "type": "string"
       }
     ],
-    "name": "LocatorSet",
+    "name": "ContractURISet",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [],
+    "name": "ContractURIUpdated",
     "type": "event"
   },
   {
@@ -1814,13 +1183,69 @@
     "anonymous": false,
     "inputs": [
       {
-        "indexed": true,
-        "internalType": "uint256",
-        "name": "workId",
-        "type": "uint256"
+        "indexed": false,
+        "internalType": "uint48",
+        "name": "previous",
+        "type": "uint48"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint48",
+        "name": "next",
+        "type": "uint48"
       }
     ],
-    "name": "OnChainComplete",
+    "name": "ModuleDelaySet",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "slot",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "module",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint48",
+        "name": "readyAt",
+        "type": "uint48"
+      }
+    ],
+    "name": "ModuleProposed",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "slot",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "previous",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "module",
+        "type": "address"
+      }
+    ],
+    "name": "ModuleSet",
     "type": "event"
   },
   {
@@ -1853,20 +1278,14 @@
       },
       {
         "indexed": false,
-        "internalType": "enum PrimaryOutcome",
+        "internalType": "enum Outcome",
         "name": "outcome",
         "type": "uint8"
       },
       {
-        "indexed": false,
+        "indexed": true,
         "internalType": "address",
         "name": "buyer",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "address",
-        "name": "currency",
         "type": "address"
       },
       {
@@ -1876,51 +1295,39 @@
         "type": "uint256"
       }
     ],
-    "name": "PrimarySaleSettled",
+    "name": "PrimarySale",
     "type": "event"
   },
   {
     "anonymous": false,
     "inputs": [
       {
-        "indexed": true,
-        "internalType": "uint256",
-        "name": "workId",
-        "type": "uint256"
-      },
-      {
         "indexed": false,
-        "internalType": "bytes32",
-        "name": "recordFileId",
-        "type": "bytes32"
-      }
-    ],
-    "name": "RecordChanged",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "uint256",
-        "name": "workId",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint32",
+        "internalType": "uint48",
         "name": "previous",
-        "type": "uint32"
+        "type": "uint48"
       },
       {
         "indexed": false,
-        "internalType": "uint32",
+        "internalType": "uint48",
         "name": "next",
-        "type": "uint32"
+        "type": "uint48"
       }
     ],
-    "name": "RoyaltyRateChanged",
+    "name": "RescueDelaySet",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      }
+    ],
+    "name": "RoyaltyRateLocked",
     "type": "event"
   },
   {
@@ -1933,25 +1340,19 @@
         "type": "uint256"
       },
       {
-        "indexed": true,
-        "internalType": "uint256",
-        "name": "workId",
-        "type": "uint256"
-      },
-      {
-        "indexed": true,
+        "indexed": false,
         "internalType": "address",
-        "name": "adapter",
+        "name": "receiver",
         "type": "address"
       },
       {
         "indexed": false,
-        "internalType": "uint32",
-        "name": "feeShare",
-        "type": "uint32"
+        "internalType": "uint24",
+        "name": "rate",
+        "type": "uint24"
       }
     ],
-    "name": "TokenMinted",
+    "name": "RoyaltySet",
     "type": "event"
   },
   {
@@ -1985,39 +1386,49 @@
       {
         "indexed": true,
         "internalType": "uint256",
-        "name": "workId",
+        "name": "tokenId",
         "type": "uint256"
       },
       {
         "indexed": true,
-        "internalType": "bytes32",
-        "name": "itemHash",
-        "type": "bytes32"
+        "internalType": "uint256",
+        "name": "collectionId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
       },
       {
         "indexed": false,
         "internalType": "address",
-        "name": "seller",
+        "name": "minter",
         "type": "address"
       },
       {
         "indexed": false,
         "internalType": "uint32",
-        "name": "royaltyRate",
-        "type": "uint32"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint32",
-        "name": "feeShare",
+        "name": "serial",
         "type": "uint32"
       },
       {
         "components": [
           {
-            "internalType": "uint8",
-            "name": "kind",
-            "type": "uint8"
+            "internalType": "bytes32",
+            "name": "itemHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "contentHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "uint256",
+            "name": "artistId",
+            "type": "uint256"
           },
           {
             "internalType": "uint256",
@@ -2025,8 +1436,33 @@
             "type": "uint256"
           },
           {
+            "internalType": "uint8",
+            "name": "kind",
+            "type": "uint8"
+          },
+          {
+            "internalType": "uint8",
+            "name": "seedPolicy",
+            "type": "uint8"
+          },
+          {
             "internalType": "bytes32",
-            "name": "contentHash",
+            "name": "seed",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "address",
+            "name": "royaltyReceiver",
+            "type": "address"
+          },
+          {
+            "internalType": "uint24",
+            "name": "royaltyRate",
+            "type": "uint24"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "packageRoot",
             "type": "bytes32"
           },
           {
@@ -2040,151 +1476,18 @@
             "type": "bytes32"
           },
           {
-            "components": [
-              {
-                "internalType": "address",
-                "name": "account",
-                "type": "address"
-              },
-              {
-                "internalType": "uint8",
-                "name": "role",
-                "type": "uint8"
-              }
-            ],
-            "internalType": "struct Party[]",
-            "name": "parties",
-            "type": "tuple[]"
-          },
-          {
-            "components": [
-              {
-                "internalType": "uint256",
-                "name": "artistId",
-                "type": "uint256"
-              },
-              {
-                "internalType": "address",
-                "name": "account",
-                "type": "address"
-              },
-              {
-                "internalType": "uint32",
-                "name": "share",
-                "type": "uint32"
-              }
-            ],
-            "internalType": "struct ISplitWallet.Payee[]",
-            "name": "payees",
-            "type": "tuple[]"
-          },
-          {
-            "components": [
-              {
-                "internalType": "string",
-                "name": "spdxId",
-                "type": "string"
-              },
-              {
-                "internalType": "bytes32",
-                "name": "textFileId",
-                "type": "bytes32"
-              }
-            ],
-            "internalType": "struct License",
-            "name": "license",
-            "type": "tuple"
-          },
-          {
-            "internalType": "uint8",
-            "name": "seedPolicy",
-            "type": "uint8"
-          },
-          {
-            "internalType": "bytes32",
-            "name": "seed",
-            "type": "bytes32"
-          },
-          {
-            "components": [
-              {
-                "internalType": "bytes32",
-                "name": "saleKind",
-                "type": "bytes32"
-              },
-              {
-                "internalType": "address",
-                "name": "currency",
-                "type": "address"
-              },
-              {
-                "internalType": "bytes",
-                "name": "params",
-                "type": "bytes"
-              }
-            ],
-            "internalType": "struct SaleTerms",
-            "name": "sale",
-            "type": "tuple"
-          },
-          {
-            "components": [
-              {
-                "internalType": "uint32",
-                "name": "maxCount",
-                "type": "uint32"
-              },
-              {
-                "internalType": "address",
-                "name": "currency",
-                "type": "address"
-              },
-              {
-                "internalType": "bytes32",
-                "name": "saleKind",
-                "type": "bytes32"
-              },
-              {
-                "internalType": "bytes",
-                "name": "params",
-                "type": "bytes"
-              }
-            ],
-            "internalType": "struct EditionTerms",
-            "name": "edition",
-            "type": "tuple"
+            "internalType": "address",
+            "name": "seller",
+            "type": "address"
           }
         ],
         "indexed": false,
-        "internalType": "struct PackageItem",
-        "name": "item",
+        "internalType": "struct MintFacts",
+        "name": "facts",
         "type": "tuple"
-      },
-      {
-        "components": [
-          {
-            "internalType": "bytes32",
-            "name": "fileId",
-            "type": "bytes32"
-          },
-          {
-            "internalType": "bytes32",
-            "name": "sha256Hash",
-            "type": "bytes32"
-          },
-          {
-            "internalType": "uint8",
-            "name": "role",
-            "type": "uint8"
-          }
-        ],
-        "indexed": false,
-        "internalType": "struct MediaFile[]",
-        "name": "media",
-        "type": "tuple[]"
       }
     ],
-    "name": "WorkOpened",
+    "name": "WorkMinted",
     "type": "event"
   },
   {
@@ -2195,20 +1498,37 @@
         "internalType": "uint256",
         "name": "tokenId",
         "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "from",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "to",
+        "type": "address"
       }
     ],
-    "name": "WorkReturned",
+    "name": "WorkRescued",
     "type": "event"
   },
   {
     "inputs": [
       {
-        "internalType": "address",
-        "name": "dependency",
-        "type": "address"
+        "internalType": "bytes32",
+        "name": "contentHash",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
       }
     ],
-    "name": "DependencyCodeChanged",
+    "name": "ContentAlreadyMinted",
     "type": "error"
   },
   {
@@ -2316,76 +1636,39 @@
   },
   {
     "inputs": [],
-    "name": "ExpectedValueMismatch",
-    "type": "error"
-  },
-  {
-    "inputs": [],
-    "name": "FederationStateInvalid",
-    "type": "error"
-  },
-  {
-    "inputs": [],
     "name": "InvalidConfig",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidMint",
     "type": "error"
   },
   {
     "inputs": [
       {
         "internalType": "address",
-        "name": "dependency",
+        "name": "module",
         "type": "address"
       }
     ],
-    "name": "InvalidDependency",
+    "name": "InvalidModule",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidRoyalty",
     "type": "error"
   },
   {
     "inputs": [
       {
         "internalType": "bytes32",
-        "name": "textFileId",
+        "name": "slot",
         "type": "bytes32"
       }
     ],
-    "name": "InvalidLicenseText",
-    "type": "error"
-  },
-  {
-    "inputs": [],
-    "name": "InvalidLocator",
-    "type": "error"
-  },
-  {
-    "inputs": [],
-    "name": "InvalidMintRequest",
-    "type": "error"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint32",
-        "name": "rate",
-        "type": "uint32"
-      }
-    ],
-    "name": "InvalidRoyaltyRate",
-    "type": "error"
-  },
-  {
-    "inputs": [],
-    "name": "InvalidSaleOutcome",
-    "type": "error"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "caller",
-        "type": "address"
-      }
-    ],
-    "name": "NotAdmittedMinter",
+    "name": "ModuleNotReady",
     "type": "error"
   },
   {
@@ -2402,39 +1685,72 @@
   {
     "inputs": [
       {
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      }
+    ],
+    "name": "NotInPrimarySale",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "slot",
+        "type": "bytes32"
+      }
+    ],
+    "name": "NotLocalSlot",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
         "internalType": "address",
         "name": "caller",
         "type": "address"
       }
     ],
-    "name": "NotMintingAdapter",
+    "name": "NotMetadataSource",
     "type": "error"
   },
   {
     "inputs": [
       {
-        "internalType": "uint256",
-        "name": "tokenId",
-        "type": "uint256"
+        "internalType": "address",
+        "name": "caller",
+        "type": "address"
       }
     ],
-    "name": "SaleAlreadySettled",
+    "name": "NotMinter",
     "type": "error"
   },
   {
     "inputs": [
       {
         "internalType": "bytes32",
-        "name": "expected",
+        "name": "slot",
         "type": "bytes32"
       },
       {
-        "internalType": "bytes32",
-        "name": "actual",
-        "type": "bytes32"
+        "internalType": "address",
+        "name": "caller",
+        "type": "address"
       }
     ],
-    "name": "SaleKindMismatch",
+    "name": "NotModule",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "caller",
+        "type": "address"
+      }
+    ],
+    "name": "NotNetwork",
     "type": "error"
   },
   {
@@ -2445,29 +1761,39 @@
         "type": "uint256"
       }
     ],
-    "name": "UnknownWork",
+    "name": "NotRescuable",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "OneCollection",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint8",
+        "name": "bits",
+        "type": "uint8"
+      },
+      {
+        "internalType": "uint256",
+        "name": "value",
+        "type": "uint256"
+      }
+    ],
+    "name": "SafeCastOverflowedUintDowncast",
     "type": "error"
   },
   {
     "inputs": [
       {
         "internalType": "uint256",
-        "name": "workId",
+        "name": "collectionId",
         "type": "uint256"
       }
     ],
-    "name": "WorkFinalized",
-    "type": "error"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "workId",
-        "type": "uint256"
-      }
-    ],
-    "name": "WorkNotRestartable",
+    "name": "UnknownCollection",
     "type": "error"
   }
 ]

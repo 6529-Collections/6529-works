@@ -41,15 +41,11 @@ def _fn(name: str, *types: str, mutability: str = "nonpayable") -> dict:
 # The contracts with a full ABI, and what each forwards to, written out here rather than read
 # from the exporter, so dropping one from export_abis.FORWARDED fails the tests.
 EXPECTED_FORWARDED = {
-    "Stream": "IStreamViews",
-    "EnglishAuction": "EnglishAuctionLens",
     "UniformEditionAuction": "UniformEditionAuctionLens",
     "FederatedEditionAuction": "FederatedEditionAuctionLens",
 }
 # Where each forwarding contract is declared (the exporter matches by source path).
 FORWARDED_SOURCES = {
-    "Stream": "src/stream/Stream.sol",
-    "EnglishAuction": "src/sales/EnglishAuction.sol",
     "UniformEditionAuction": "src/sales/UniformEditionAuction.sol",
     "FederatedEditionAuction": "src/federated/FederatedEditionAuction.sol",
 }
@@ -275,12 +271,12 @@ class ExportTest(unittest.TestCase):
         self.assertIn("two exported contracts are named Thing", err)
 
     def test_AForwardedSurfaceMissingFromTheBuildFails(self) -> None:
-        for f in (self.repo.root / "out" / "EnglishAuctionLens.sol").glob("*.json"):
+        for f in (self.repo.root / "out" / "UniformEditionAuctionLens.sol").glob("*.json"):
             f.unlink()
-        (self.repo.root / "src" / "EnglishAuctionLens.sol").unlink()
+        (self.repo.root / "src" / "UniformEditionAuctionLens.sol").unlink()
         code, err = self._run()
         self.assertEqual(code, 2)
-        self.assertIn("forwards to EnglishAuctionLens, which the build lacks", err)
+        self.assertIn("forwards to UniformEditionAuctionLens, which the build lacks", err)
 
     def test_InterfaceIdLeavesOutASameArityInheritedOverload(self) -> None:
         # Solidity accepts a child's f(address) beside its parent's f(uint256); the child's ID

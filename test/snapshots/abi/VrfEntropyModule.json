@@ -62,6 +62,11 @@
         "internalType": "bytes32",
         "name": "packageRegistryCodeHash",
         "type": "bytes32"
+      },
+      {
+        "internalType": "contract IModuleSlots",
+        "name": "directory_",
+        "type": "address"
       }
     ],
     "stateMutability": "nonpayable",
@@ -829,6 +834,21 @@
       }
     ],
     "signature": "coordinator()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xc41c2f24",
+    "inputs": [],
+    "name": "directory",
+    "outputs": [
+      {
+        "internalType": "contract IModuleSlots",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "directory()",
     "stateMutability": "view",
     "type": "function"
   },

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 /// @title StatementKinds
 /// @notice Well-known statement kinds. A kind is only a `bytes32` label: the log accepts any

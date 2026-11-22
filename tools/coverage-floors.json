@@ -7,6 +7,35 @@
     "lines": 95.0,
     "branches": 85.0
   },
+  "pendingNote": "Placeholder floors, each the floor of the file it replaces or the file's floor before the plain-core restructuring (ADR 0010), until a campaign on the integrated code measures them; replace and drop this list when it does.",
+  "pending": [
+    "src/content/Renderer.sol",
+    "src/core/Directory.sol",
+    "src/core/Editions.sol",
+    "src/core/EditionsBase.sol",
+    "src/core/Modules.sol",
+    "src/core/Stream.sol",
+    "src/core/StreamBase.sol",
+    "src/core/WorkFacts.sol",
+    "src/curation/PackageRegistry.sol",
+    "src/economics/RevenueEscrow.sol",
+    "src/economics/SplitVault.sol",
+    "src/federated/FederatedEditionAuction.sol",
+    "src/federated/FederatedEditionAuctionLens.sol",
+    "src/federated/FederatedEditions.sol",
+    "src/federated/FederatedMembership.sol",
+    "src/federated/FederatedStream.sol",
+    "src/federated/FederationRegistry.sol",
+    "src/identity/Accounts.sol",
+    "src/libraries/AgedCredits.sol",
+    "src/records/WorkRules.sol",
+    "src/sales/EnglishAuction.sol",
+    "src/sales/SaleStarter.sol",
+    "src/sales/UniformEditionAuction.sol",
+    "src/sales/UniformEditionAuctionLens.sol",
+    "src/stream/WorkDelivery.sol",
+    "src/terms/StreamTerms.sol"
+  ],
   "files": {
     "src/content/Base64Validator.sol": {
       "lines": 99.0,
@@ -100,6 +129,10 @@
       "lines": 99.0,
       "branches": 98.0
     },
+    "src/economics/SplitVault.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
     "src/economics/Splits.sol": {
       "lines": 99.0,
       "branches": 98.0
@@ -109,10 +142,6 @@
       "branches": 92.1
     },
     "src/editions/EditionRules.sol": {
-      "lines": 99.0,
-      "branches": 98.0
-    },
-    "src/editions/Editions.sol": {
       "lines": 99.0,
       "branches": 98.0
     },
@@ -172,10 +201,6 @@
       "lines": 99.0,
       "branches": 98.0
     },
-    "src/identity/ArtistRegistry.sol": {
-      "lines": 99.0,
-      "branches": 98.0
-    },
     "src/identity/ConsolidationAdapter.sol": {
       "lines": 99.0,
       "branches": 98.0
@@ -187,6 +212,10 @@
     "src/interfaces/types/WorksHashing.sol": {
       "lines": 99.0,
       "branches": 98.0
+    },
+    "src/libraries/AgedCredits.sol": {
+      "lines": 99.0,
+      "branches": 96.0
     },
     "src/libraries/BoundedCall.sol": {
       "lines": 99.0,
@@ -232,10 +261,6 @@
       "lines": 99.0,
       "branches": 96.0
     },
-    "src/sales/EnglishAuctionLens.sol": {
-      "lines": 98.5,
-      "branches": 89.6
-    },
     "src/sales/SaleStarter.sol": {
       "lines": 99.0,
       "branches": 98.0
@@ -256,25 +281,9 @@
       "lines": 99.0,
       "branches": 98.0
     },
-    "src/stream/Stream.sol": {
-      "lines": 99.0,
-      "branches": 95.6
-    },
-    "src/stream/StreamLayout.sol": {
-      "lines": 99.0,
-      "branches": 98.0
-    },
-    "src/stream/StreamViews.sol": {
-      "lines": 99.0,
-      "branches": 98.0
-    },
     "src/stream/WorkDelivery.sol": {
       "lines": 99.0,
       "branches": 98.0
-    },
-    "src/stream/WorkRecords.sol": {
-      "lines": 99.0,
-      "branches": 95.7
     },
     "src/terms/StreamTerms.sol": {
       "lines": 99.0,

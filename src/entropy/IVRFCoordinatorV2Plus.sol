@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 /// @title IVRFCoordinatorV2Plus
 /// @notice The one function of the Chainlink VRF v2.5 coordinator that the entropy module calls,

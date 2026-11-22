@@ -1,0 +1,26 @@
+{
+  "description": "Sepolia rehearsal r6 of 6529 Works on the plain core of ADR 0010 (chain 11155111). The network is a throwaway 2-of-3 Safe 1.4.1 (plain-key owners, no module, no guard); every holder is a throwaway testnet key. No brake at launch. Not for mainnet.",
+  "network": "0x54a769fe591c3F47CF83d30b69e576497CE34454",
+  "safes": {
+    "network-r5": {
+      "address": "0x54a769fe591c3F47CF83d30b69e576497CE34454",
+      "threshold": 2,
+      "owners": [
+        "0xd4957eFe0D658A945D33e2D285D7ef103C3669de",
+        "0xe98BA252eA2f4cF9a4F16De84930b9E7Ec205553",
+        "0x56ec02E81f5Cd36E49cA5382A5f55a00A4906F94"
+      ],
+      "version": "Safe 1.4.1 (L1 singleton), no module, no guard; created 22 November 2026 in tx 0x4aa9971e8832fef1643a3f4cf86b92bf32245c9464f9a1d37c6a0bb45c20d16c"
+    }
+  },
+  "holders": [
+    { "role": "PAUSER", "account": "0x521e65E87cECeb5BA4a494511507B3AAF6534Bd6", "label": "Pauser key 1" },
+    { "role": "PAUSER", "account": "0x81B9D0267d39Ef1f2E45Ab7d06d8CAE652287d17", "label": "Pauser key 2" },
+    { "role": "PAUSER", "account": "0x5F9e1473d99C1371397F2175191DEe84732C575d", "label": "Pauser key 3" },
+    { "role": "CURATION_SIGNER", "account": "0xa901A777C41e36B4Bd1caD3101140D8D12C5f9C9", "label": "Curation signer key 1" },
+    { "role": "CURATION_SIGNER", "account": "0x760088bD696444cF66b9Fa7dc9db2c0E449761D1", "label": "Curation signer key 2" },
+    { "role": "STORAGE_OPERATOR", "account": "0x738c6ffD3a57975FE0D79829267C674E177f00bD", "label": "Storage operator key" },
+    { "role": "PLATFORM", "account": "0x0a69CdD0d8De0680779237aFF610C90b61B83b2D", "label": "Platform key" },
+    { "role": "CURATOR", "account": "0x73FC598b7140e50d96Cb9C26A016f20B26f526E6", "label": "Curator key" }
+  ]
+}

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 // The currency value meaning ETH.
 address constant CURRENCY_ETH = address(0);

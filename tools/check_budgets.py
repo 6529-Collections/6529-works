@@ -3,10 +3,7 @@
 
 Checks:
   1. at most 17,000 non-comment, non-blank Solidity lines under src/ (lib/ excluded; ADR 0001,
-     as amended by ADRs 0007, 0008 and 0010). While the plain core (ADR 0010) is being built,
-     the old and the new contracts both sit in src/: the files listed in tools/retiring.json
-     are deleted when the new stack is integrated. Both trees are counted and reported; the
-     limit applies to the code that stays (all of src/ minus the retiring files);
+     as amended by ADRs 0007, 0008 and 0010);
   2. no `delegatecall` (or the equivalent legacy `callcode`) in src/ code;
   3. at most 5 libraries with public or external functions (each would be linked);
   4. every contract built by the measured Foundry profile fits EIP-170 (24,576-byte
@@ -48,7 +45,6 @@ MAX_RUNTIME_BYTES = 24_576
 MAX_INITCODE_BYTES = 49_152
 MIN_RUNTIME_MARGIN = 512
 DEFAULT_MARGINS = Path("tools") / "size-margins.json"
-DEFAULT_RETIRING = Path("tools") / "retiring.json"
 DEFAULT_PROFILE = "default"
 SIZE_FIELDS = ("runtime_size", "init_size")
 
@@ -166,23 +162,15 @@ def check_sources(
     report: Report,
     max_lines: int,
     max_linked: int,
-    retiring: list[str] | None = None,
 ) -> None:
     files = source_files(src)
-    retire = set(retiring or [])
     total = 0
-    retired = 0
-    seen: set[str] = set()
     linked: list[str] = []
     calls: list[str] = []
     for path in files:
         code = strip_solidity(path.read_text(encoding="utf-8"))
         lines = count_code_lines(code)
         total += lines
-        relative = path.relative_to(src.parent).as_posix()
-        if relative in retire:
-            retired += lines
-            seen.add(relative)
         for number, line in enumerate(code.splitlines(), 1):
             for hit in FORBIDDEN_CALL.finditer(line):
                 calls.append(f"{hit.group(1)} at {path.relative_to(src.parent).as_posix()}:{number}")
@@ -190,17 +178,7 @@ def check_sources(
     for call in calls:
         report.check(False, call)
     report.check(not calls, f"{len(calls)} delegatecall/callcode uses in {len(files)} source files")
-    for missing in sorted(retire - seen):
-        report.check(False, f"{missing}: listed in tools/retiring.json, but no such src/ file")
-    if retire:
-        staying = total - retired
-        report.check(
-            staying <= max_lines,
-            f"{staying} Solidity code lines in src/ that stay (limit {max_lines});"
-            f" {total} in both trees, {retired} in {len(seen)} files retiring at integration",
-        )
-    else:
-        report.check(total <= max_lines, f"{total} Solidity code lines in src/ (limit {max_lines})")
+    report.check(total <= max_lines, f"{total} Solidity code lines in src/ (limit {max_lines})")
     listed = ", ".join(sorted(linked)) or "none"
     report.check(
         len(linked) <= max_linked,
@@ -275,17 +253,6 @@ def _read_json(path: Path) -> object:
         return json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise MarginsError(f"{path.name}: not JSON ({exc})") from exc
-
-
-def load_retiring(path: Path) -> list[str]:
-    """Paths from the root (`src/stream/Stream.sol`) that integration deletes; none if absent."""
-    if not path.is_file():
-        return []
-    data = _read_json(path)
-    files = data.get("files") if isinstance(data, dict) else None
-    if not isinstance(files, list) or not all(isinstance(f, str) and f for f in files):
-        raise MarginsError(f'{path.name}: expected an object with a "files" list of paths')
-    return files
 
 
 def load_floors(path: Path, floor: int) -> dict[str, int]:
@@ -492,11 +459,6 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         help=f"exemptions file (default: {DEFAULT_MARGINS.as_posix()} under the root)",
     )
-    parser.add_argument(
-        "--retiring",
-        type=Path,
-        help=f"files deleted at integration (default: {DEFAULT_RETIRING.as_posix()} under the root)",
-    )
     args = parser.parse_args(argv)
 
     root = args.root or find_root(Path(__file__).resolve().parent)
@@ -504,12 +466,7 @@ def main(argv: list[str] | None = None) -> int:
     src = root / "src"
     if not src.is_dir():
         raise SystemExit(f"no src/ directory under {root}")
-    try:
-        retiring = load_retiring(args.retiring or root / DEFAULT_RETIRING)
-    except MarginsError as exc:
-        report.check(False, str(exc))
-        retiring = []
-    check_sources(src, report, args.max_lines, args.max_linked_libraries, retiring)
+    check_sources(src, report, args.max_lines, args.max_linked_libraries)
     if not args.skip_sizes:
         if args.sizes_json:
             sizes = json.loads(args.sizes_json.read_text(encoding="utf-8"))

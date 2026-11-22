@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 /// @notice How a token's first sale ended. `NONE` until its sale contract records it.
 enum Outcome {

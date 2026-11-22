@@ -156,8 +156,9 @@ CONTRACTS = [
             fn("setDelivery(address,address)", "SUCCESSOR_SETTER"),
             fn("addStore(address,bytes32)", "SUCCESSOR_SETTER"),
             fn("retireStore(uint256)", "PARAMETER_SETTER"),
+            fn("setFileStore(address,uint256,bytes32,uint256)", "STORAGE_OPERATOR", "or a wallet of the lead artist's account"),
         ],
-        "lane 3 (RECORDS module of Stream and, through Directory, of federated tokens)",
+        "RECORDS module of Stream and, through Directory, of federated tokens",
     ),
     contract(
         "WorkDelivery", "0x000000000000000000000000000000000000a011",
@@ -169,7 +170,7 @@ CONTRACTS = [
             fn("addLocator(address,uint256,bytes32,(uint8,string))", "PLATFORM"),
             fn("markLocatorDead(address,uint256,bytes32,uint256)", "STORAGE_OPERATOR"),
         ],
-        "lane 3 (keyed by token)",
+        "Keyed by token",
     ),
     contract(
         "StreamTerms", "0x000000000000000000000000000000000000a018",
@@ -178,7 +179,7 @@ CONTRACTS = [
             fn("lowerFeeShare(address,uint256,address,address,uint32,uint32)", "PARAMETER_SETTER", "lower only"),
             fn("setEditions(address,address)", "SUCCESSOR_SETTER", "pairs a token with its editions contract"),
         ],
-        "lane 3 (TERMS module of Stream, Editions and federated tokens)",
+        "TERMS module of Stream, Editions and federated tokens",
     ),
     contract(
         "PackageRegistry", "0x000000000000000000000000000000000000a004",
@@ -190,13 +191,12 @@ CONTRACTS = [
             fn("releaseContent(address,uint256,bytes32,uint256)", "PARAMETER_SETTER"),
             fn("setEntropyModule(address,address)", "SUCCESSOR_SETTER", "also set once at genesis"),
         ],
-        "lane 4 (the mint policy; content release moved in from Stream)",
+        "The mint policy; content release moved in from Stream",
     ),
     contract(
         "CurationVerifier", "0x000000000000000000000000000000000000a005",
         "src/curation/Eip712CurationVerifier.sol:Eip712CurationVerifier", None,
         [fn("disableSigner(address)", "NETWORK"), fn("enableSigner(address)", "SUCCESSOR_SETTER")],
-        "lane 4",
     ),
     contract(
         "Accounts", "0x000000000000000000000000000000000000a006",
@@ -211,7 +211,7 @@ CONTRACTS = [
             fn("stageReplacement(uint256,(address,address,bytes32,bytes32),bytes32,uint64,bytes)", "PARAMETER_SETTER"),
             fn("setPackageRegistry(address,address)", "SUCCESSOR_SETTER"),
         ],
-        "lane 5 (the ACCOUNTS module behind Directory)",
+        "The ACCOUNTS module behind Directory",
     ),
     contract(
         "StatementLog", "0x000000000000000000000000000000000000a007",
@@ -235,7 +235,7 @@ CONTRACTS = [
             fn(f"setConfig({AUCTION_CONFIG},{AUCTION_CONFIG})", "PARAMETER_SETTER"),
             fn("setStreamPolicy(address,address)", "SUCCESSOR_SETTER", "the mint policy for 6529 Stream"),
         ],
-        "lane 4 (ETH only; the minter of Stream)",
+        "ETH only; the minter of Stream",
     ),
     contract(
         "UniformEditionAuction", "0x000000000000000000000000000000000000a009",
@@ -248,7 +248,7 @@ CONTRACTS = [
             fn("setLimits(uint256,uint256)", "PARAMETER_SETTER"),
             fn("adopt(address,uint256,bytes)", "NETWORK", "opens the sale of an edition the network rebound to this auction"),
         ],
-        "lane 2 (the minter of Editions)",
+        "The minter of Editions",
     ),
     contract(
         "EconomicsResolver", "0x000000000000000000000000000000000000a00b",
@@ -259,7 +259,6 @@ CONTRACTS = [
             fn("setDefaultLicense(bytes32,uint64,(string,bytes32))", "PARAMETER_SETTER"),
             fn("setMuseum(uint64,address)", "FUNDS_SETTER"),
         ],
-        "lane 4",
     ),
     contract(
         "AssetAllowlist", "0x000000000000000000000000000000000000a00c",
@@ -270,7 +269,7 @@ CONTRACTS = [
             fn("setDefaultCurrency(bytes32,uint64,address)", "PARAMETER_SETTER"),
             fn("deprecateAsset(address)", "PARAMETER_SETTER", "never ETH"),
         ],
-        "lane 4 (ETH only: opening bid and increment floor)",
+        "ETH only: opening bid and increment floor",
     ),
     contract(
         "RevenueEscrow", "0x000000000000000000000000000000000000a00d",
@@ -318,7 +317,7 @@ CONTRACTS = [
             fn("releaseContent(address,uint256,bytes32,uint256)", "PARAMETER_SETTER"),
             fn("setEntropyModule(address)", "SUCCESSOR_SETTER", "also set once at genesis"),
         ],
-        "lane 5 (the FEDERATION module behind Directory)",
+        "The FEDERATION module behind Directory",
     ),
     contract(
         "FederatedEditionAuction", "0x000000000000000000000000000000000000a016",
@@ -330,7 +329,6 @@ CONTRACTS = [
             fn("setLimits(uint256,uint256)", "PARAMETER_SETTER"),
             fn("adopt(address,uint256,bytes)", "NETWORK", "opens the sale of an edition the network rebound to this auction"),
         ],
-        "lane 2",
     ),
 ]
 

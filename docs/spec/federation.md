@@ -53,21 +53,21 @@ that applies to a change of who may mint federated tokens.
 | --- | --- | --- |
 | FED-1 | A copy is genuine only if the approved deployer recorded it (FED-64); its code is the approved code. | |
 | FED-2 | Retired: the token holds no fee terms; the fee share is the federation module's (FED-73). | |
-| FED-3 | Every artist power on the token asks the accounts module, through `Directory`, whether the caller is a wallet of the artist's account now; none while frozen. | `test_Artist_AnyWalletOfTheAccountActsAndNoneWhileFrozen` |
-| FED-4 | The network reaches a federated token only through `Directory` (its authority and modules) and the federation module. | `check_noRestrictedFunction_onATemplate` |
+| FED-3 | Every artist power on the token asks the accounts module, through `Directory`, whether the caller is a wallet of the artist's account now; none while frozen. | |
+| FED-4 | The network reaches a federated token only through `Directory` (its authority and modules) and the federation module. | |
 | FED-5 | Retired: the token has no minters of its own (FED-7). | |
-| FED-6 | A token is listed through the federation module with a wallet of the artist's account consenting to its facts. | `test_Join_CreatesTheIdentityAndListsTheTokenWithItsTrueFacts` |
-| FED-7 | A mint needs the federation module's `canMint` for the caller; a delisted contract, or one of a suspended or revoked template, mints nothing. | `test_C1_ADelistedContractMintsRestartsAndBindsNothing`, `test_C1_ASuspendedTemplateMintsNothingAndOpensNoSale` |
-| FED-8 | There is no exit: nothing leaves the federation. | `test_NoExit_TheTokenInterfacesHaveNoWayOut` |
+| FED-6 | A token is listed through the federation module with a wallet of the artist's account consenting to its facts. | |
+| FED-7 | A mint needs the federation module's `canMint` for the caller; a delisted contract, or one of a suspended or revoked template, mints nothing. | |
+| FED-8 | There is no exit: nothing leaves the federation. | |
 | FED-9 | (Removed in the second pass: there are no minters of the artist's own.) | |
-| FED-10 | A work is a `PackageItem` with its media list; `itemHash` is `WorksHashing.itemHash`. | `test_Mint_OnlyAfterJoiningAndOnlyAnApprovedItem` |
-| FED-11 | The artist approves one mint per approval in the federation module and sets the work's royalty rate (at most 100,000); a revoke withdraws it. | `test_Mint_OnlyAfterJoiningAndOnlyAnApprovedItem` |
+| FED-10 | A work is a `PackageItem` with its media list; `itemHash` is `WorksHashing.itemHash`. | |
+| FED-11 | The artist approves one mint per approval in the federation module and sets the work's royalty rate (at most 100,000); a revoke withdraws it. | |
 | FED-12 | Retired: the mint request is the federation module's `authorize` input. | |
 | FED-13 | Retired: the record opens in `WorkFacts` (WS-2). | |
-| FED-14 | The federation module deploys the seller and royalty vaults before the mint. | `test_Mint_DeploysThePayoutVaultsBeforeAnythingIsOwed` |
+| FED-14 | The federation module deploys the seller and royalty vaults before the mint. | |
 | FED-15 | Retired: the sale contract stores each sale's terms. | |
 | FED-16 | Retired: the same token code as Stream (AUC-8). | |
-| FED-17 | An unsold federated work stays in the sale contract's custody and can be started again there for the same item; the artist cannot take it out without a sale. | `test_Unbid_StaysInTheTemplatesCustodyAndRestarts` |
+| FED-17 | An unsold federated work stays in the sale contract's custody and can be started again there for the same item; the artist cannot take it out without a sale. | |
 | FED-18 | Retired: a restart is a new start in the sale contract (FED-17). | |
 | FED-19 | Retired: a refused settlement leaves the work in the sale contract (FED-17). | |
 | FED-20 | Retired: the token holds no custody. | |
@@ -88,45 +88,45 @@ that applies to a change of who may mint federated tokens.
 | FED-35 | Retired: the edition sale contract pays as EA-12 and FED-54 say. | |
 | FED-36 | Retired: the same token code as Editions. | |
 | FED-41 | The federation module holds the per-token directory: listing, status, fee share and the federated sale contracts. | |
-| FED-42 | `isActive`: listed ACTIVE, template approved or suspended. `canMint`: a listed sale contract, the token listed ACTIVE, template approved, and for editions the partner listed ACTIVE. | `test_Suspension_IsTheNetworksAndStopsOnlyNewWorks`, `test_Pair_ASuspended1of1TemplateOpensNoEditionSale` |
+| FED-42 | `isActive`: listed ACTIVE, template approved or suspended. `canMint`: a listed sale contract, the token listed ACTIVE, template approved, and for editions the partner listed ACTIVE. | |
 | FED-43 | Retired: listing is FED-6. | |
-| FED-44 | A template code hash is approved once, bound to its deployer, only by the network. | `test_Templates_ApprovedOnceAndOnlyByGovernance` |
-| FED-45 | Suspension stops new joins, works and sales; running sales finish. | `test_Suspension_IsTheNetworksAndStopsOnlyNewWorks` |
-| FED-46 | Revocation stops serving the contracts; running sales end unsold with refunds; the network can reverse it. | `test_Revocation_EndsRunningSalesUnsoldAndTheWorkStaysHome` |
+| FED-44 | A template code hash is approved once, bound to its deployer, only by the network. | |
+| FED-45 | Suspension stops new joins, works and sales; running sales finish. | |
+| FED-46 | Revocation stops serving the contracts; running sales end unsold with refunds; the network can reverse it. | |
 | FED-47 | (Removed by the review fixes of the second pass: no revocation propagation call.) | |
-| FED-48 | The network delists and relists by contract or by account, in bounded batches. | `test_Delisting_ByVoteStopsSalesAndRelistingRestores`, `test_Batch_BoundedAtMaxBatch` |
-| FED-49 | The network lists federated sale contracts; removal stops new works; the module answers which were minters and when they were removed. | `test_Adapters_*` |
-| FED-50 | A delisting or revocation never touches tokens, ownership, records, vaults or credits. | `test_Delisting_ByVoteStopsSalesAndRelistingRestores` |
-| FED-51 | Federation never changes 6529 Stream or a curated artist's identity. | `invariant_FederationNeverTouchesCanonicalState`, `invariant_FederationNeverTouchesStreamOrIdentity` |
-| FED-52 | On every sold federated sale the network receives exactly its share at the stored share, and nothing on any other outcome. | `invariant_TheNetworkIsPaidItsShareExactlyOnSoldSales`, `testFuzz_Sold_FeeIsExactlyTheLockedShare` |
-| FED-53 | The federated edition auction sells any contract the federation module serves; its master is the contract's partner. | `test_Pair_OnlyServedContractsOpen` |
-| FED-54 | Its fee is the federation module's share, stored at open, never the token's answer. | `test_Pair_TheEditionTakesTheFeeFromTheRegistryNotTheToken` |
-| FED-55 | A sale of a contract the module stops serving is void with full refunds; bidding closes at the delisting. | `test_Pair_ADelistingVoidsTheRunningEditionSaleWithRefunds` |
-| FED-56 | `abandon` of a federated edition sale needs its 1/1 closed, then 21 days after the edition close; it seals at zero. | `test_Abandon_AFederatedSaleAfterARefusedMaster` |
+| FED-48 | The network delists and relists by contract or by account, in bounded batches. | |
+| FED-49 | The network lists federated sale contracts; removal stops new works; the module answers which were minters and when they were removed. | |
+| FED-50 | A delisting or revocation never touches tokens, ownership, records, vaults or credits. | |
+| FED-51 | Federation never changes 6529 Stream or a curated artist's identity. | |
+| FED-52 | On every sold federated sale the network receives exactly its share at the stored share, and nothing on any other outcome. | |
+| FED-53 | The federated edition auction sells any contract the federation module serves; its master is the contract's partner. | |
+| FED-54 | Its fee is the federation module's share, stored at open, never the token's answer. | |
+| FED-55 | A sale of a contract the module stops serving is void with full refunds; bidding closes at the delisting. | |
+| FED-56 | `abandon` of a federated edition sale needs its 1/1 closed, then 21 days after the edition close; it seals at zero. | |
 | FED-57 | Every other rule of the edition auction is the shared base's (EA-1 onward). | |
-| FED-58 | A delisted sale's views show its 1/1 as it is, while bids and settlement treat it as cancelled. | `test_Pair_ADelistedSalesViewsShowItsOneOfOneAsItIs` |
+| FED-58 | A delisted sale's views show its 1/1 as it is, while bids and settlement treat it as cancelled. | |
 | FED-59 | (Removed in the second pass: there is no exit, so no left contract.) | |
-| FED-60 | An item's first party is the contract's artist; every artist-resolved payee has a payout address now. | `test_Mint_TheItemNamesOnlyConsentingParties`, `test_Collaborators_ArtistResolvedPayeesNeedAPartyWithAPayout` |
+| FED-60 | An item's first party is the contract's artist; every artist-resolved payee has a payout address now. | |
 | FED-61 | Retired: no raw storage reads; the renderer reads plain views. | |
 | FED-62 | (Removed in the second pass: the abandonment wait is a fixed 21 days.) | |
 | FED-63 | Genesis installs the federation module in `Directory`, lists both shared sale contracts in it and approves the two token versions. | |
-| FED-64 | A copy joins only if the approved, ownerless deployer recorded it. | `test_Provenance_ACopyNotRecordedByTheApprovedDeployerNeverJoins`, `test_Deployer_DeploysOnlyItsCodeAndRecordsEveryCopy` |
-| FED-65 | A listing needs a consent to its facts signed by a wallet of the artist's account. | `test_List_TheConsentCoversTheFacts`, `test_EveryFederationEventReplaysToTheSameState` |
+| FED-64 | A copy joins only if the approved, ownerless deployer recorded it. | |
+| FED-65 | A listing needs a consent to its facts signed by a wallet of the artist's account. | |
 | FED-66 | (Removed in the second pass: no LEFT or LEFT_DELISTED status.) | |
-| FED-67 | The pair as one: the 1/1 contract joins only after its editions are listed; an editions contract mints only while its partner is listed ACTIVE. | `test_Pair_The1of1JoinsOnlyAfterItsEditions`, `test_Pair_EditionsWithoutAListed1of1MintNothing` |
+| FED-67 | The pair as one: the 1/1 contract joins only after its editions are listed; an editions contract mints only while its partner is listed ACTIVE. | |
 | FED-68 | Retired: content checks are `WorkFacts`' (WS-2). | |
 | FED-69 | Retired: `Directory` names the one current federation module. | |
-| FED-70 | Each genesis setter reaches only a target declaring its interface. | `test_GenesisSelectorsReachOnlyTheirTargets` |
+| FED-70 | Each genesis setter reaches only a target declaring its interface. | |
 | FED-71 | Each collaborator after the first consents to `Core.federatedConsent(itemHash, royaltyRate)`, through the accounts module's `requireConsent`. | |
-| FED-72 | A VRF item mints only once its seed is delivered; the seed is stored in the token at mint. | `test_Vrf_AWorkMintsOnlyAfterDeliveryAndKeepsItsSeed` |
-| FED-73 | The share in force is the federation module's `feeShareOf(token)`, recorded at listing and only ever lowered. | `test_FeeShare_LowersAndNeverRises` |
-| FED-74 | The network may reinstate a revoked template. | `test_C26_AReinstatedTemplateMintsAgain` |
-| FED-75 | An account delisting reports every contract of the account DELISTED, with no batch. | `test_C1_AnAccountDelistingStopsEveryContractOfTheAccount` |
+| FED-72 | A VRF item mints only once its seed is delivered; the seed is stored in the token at mint. | |
+| FED-73 | The share in force is the federation module's `feeShareOf(token)`, recorded at listing and only ever lowered. | |
+| FED-74 | The network may reinstate a revoked template. | |
+| FED-75 | An account delisting reports every contract of the account DELISTED, with no batch. | |
 | FED-76 | A hostile federation module can mint junk into a federated token but cannot move, burn or re-record a sold token. | |
 | FED-77 | A federated token's RENDERER slot is set by the artist with the same announce-and-wait as other module slots. | |
-| ID-12 | A directory entry is written once per token by the federation module, with a wallet of the account's consent to its facts, never for a delisted account; status changes need no signature. | `test_List_*`, `test_Status_*` |
-| ID-13 | An account delisting covers every contract of the account and blocks new listings; identity and payout are untouched. | `test_AccountDelisting_CoversEveryContractOfTheAccount` |
-| ID-14 | A listing's recorded fee share only lowers. | `test_FeeShare_LowersAndNeverRises` |
+| ID-12 | A directory entry is written once per token by the federation module, with a wallet of the account's consent to its facts, never for a delisted account; status changes need no signature. | `test_List_*` |
+| ID-13 | An account delisting covers every contract of the account and blocks new listings; identity and payout are untouched. | |
+| ID-14 | A listing's recorded fee share only lowers. | |
 
 ## The nine template guarantees, as met
 

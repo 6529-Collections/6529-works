@@ -14,9 +14,7 @@ off-chain. Events are in [Events and indexing](events-and-indexing.md), addresse
 [`abi/`](../../abi/) holds the ABIs of the code on this commit, exported from the build by
 [`tools/export_abis.py`](../../tools/export_abis.py) (`--check` fails when they differ). They
 are the ABIs of `main`, not of a deployment: for a deployed instance, build its commit.
-`abi/manifest.json` lists each file with its kind, source path, interface ID and hash. After
-the plain-core restructuring the export is regenerated at integration; until then `abi/`
-describes the previous design.
+`abi/manifest.json` lists each file with its kind, source path, interface ID and hash.
 
 ```bash
 forge build && python tools/export_abis.py          # rewrite abi/
@@ -49,8 +47,33 @@ The IDs below are computed from the frozen interfaces in
 | [`ILocators`](../../src/interfaces/core/ILocators.sol) | `0x4e8975bf` | WorkDelivery |
 | ERC-721, ERC-1155, ERC-2981, ERC-4906 | `0x80ac58cd`, `0xd9b67a26`, `0x2a55205a`, `0x49064906` | the token contracts |
 
-Which contract answers which ID is pinned by tests at integration. The IDs of interfaces outside
-`src/interfaces/core/` are in `abi/manifest.json`.
+The module interfaces, with the IDs `test/interfaces/InterfacesCompile.t.sol` pins:
+
+| Interface | ID | Answered by |
+| --- | --- | --- |
+| [`IPackageRegistry`](../../src/interfaces/IPackageRegistry.sol) | `0xfecfa933` | PackageRegistry |
+| [`IItemApprovals`](../../src/interfaces/IItemApprovals.sol) | `0x881b19aa` | PackageRegistry |
+| [`ICurationVerifier`](../../src/interfaces/ICurationVerifier.sol) | `0x492733ca` | Eip712CurationVerifier |
+| [`ICurationSignerVerifier`](../../src/interfaces/ICurationVerifier.sol) | `0x9f12d97a` | Eip712CurationVerifier |
+| [`IEnglishAuction`](../../src/interfaces/IEnglishAuction.sol) | `0x54df3713` | EnglishAuction |
+| [`IEnglishAuctionClock`](../../src/interfaces/IEnglishAuctionClock.sol) | `0x968c7b07` | EnglishAuction (read by the edition auction) |
+| [`IEnglishAuctionRefusal`](../../src/interfaces/IEnglishAuctionRefusal.sol) | `0x625761b5` | EnglishAuction |
+| [`IUniformEditionAuction`](../../src/interfaces/IUniformEditionAuction.sol) | `0xa34e53aa` | UniformEditionAuction, FederatedEditionAuction |
+| [`ISaleAdapter`](../../src/interfaces/ISaleAdapter.sol) | `0x312dc1e1` | the sale contracts |
+| [`IArtistRegistry`](../../src/interfaces/IArtistRegistry.sol) | `0xb06572e4` | Accounts |
+| [`IArtistRoleResolver`](../../src/interfaces/IArtistRoleResolver.sol) | `0x3074ca00` | Accounts |
+| [`IConsolidationSource`](../../src/interfaces/IArtistRegistry.sol) | `0x42129132` | ConsolidationAdapter |
+| [`IArtistPayoutResolver`](../../src/economics/interfaces/IArtistPayoutResolver.sol) | `0x9b2c1793` | Directory |
+| [`IFederationRegistry`](../../src/interfaces/IFederationRegistry.sol) | `0x74a7e21a` | FederationRegistry |
+| [`IWorkPowers`](../../src/interfaces/IWorkPowers.sol) | `0xf2f560e3` | WorkRules |
+| [`IStatementLog`](../../src/interfaces/IStatementLog.sol) | `0xbb5574c7` | StatementLog |
+| [`IEntropyModule`](../../src/interfaces/IEntropyModule.sol) | `0xa8a2a007` | VrfEntropyModule |
+| [`IRenderer`](../../src/interfaces/IRenderer.sol) | `0xa772216d` | Renderer |
+| [`IContentStore`](../../src/interfaces/IContentStore.sol) | `0xe5a30736` | ContentStore |
+| [`IDependencyRegistry`](../../src/interfaces/IDependencyRegistry.sol) | `0xe5338d57` | DependencyRegistry |
+| [`IEconomicsResolver`](../../src/interfaces/IEconomicsResolver.sol) | `0x9ba8ecb3` | EconomicsResolver |
+
+Every exported interface's ID is also in `abi/manifest.json`.
 
 ## EIP-712 domains
 

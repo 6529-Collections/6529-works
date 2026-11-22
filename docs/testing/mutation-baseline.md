@@ -1,5 +1,12 @@
 # Mutation testing baseline
 
+> **Historical record.** This page measured the contracts as they were before the plain-core
+> restructuring ([ADR 0010](../adr/0010-plain-permanent-core.md)): many of the files, tests and
+> floors it names no longer exist. It is kept as the record of those campaigns and is not
+> updated. The current floors are in
+> [`tools/mutation-floors.json`](../../tools/mutation-floors.json); how to run a campaign is in
+> the [testing guide](README.md#mutation-testing).
+
 The first full mutation campaign over `src/`, with every surviving mutant triaged, and a second
 campaign (21 to 22 November 2026) over the files the permanence passes added or rewrote,
 [below](#second-campaign-21-to-22-november-2026), and a [third batch](#third-batch-22-november-2026)

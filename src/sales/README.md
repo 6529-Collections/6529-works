@@ -1,12 +1,11 @@
 # sales
 
-The shared sale adapters. Each knows a token only through
-[`IMintTarget`](../interfaces/IMintTarget.sol), so the same adapters serve 6529 Stream, 6529
-Stream Editions and, from v1.1, federated contracts. The English auction sells 6529 Stream's
+The sale contracts. Each is a replaceable module: a token lets it mint only while it is an
+active minter (`addMinter`, active after the token's `moduleDelay`; `removeMinter` at once), so
+a new sale method is a new contract. The English auction sells 6529 Stream's 1/1s and federated
 1/1s; the uniform-price edition auction sells 6529 Stream Editions beside them
-([ADR 0005](../../docs/adr/0005-stream-editions-auction.md), which removed rc.1's fixed-price
-and Dutch adapters). A token admits each adapter with its own governed `setAdmittedMinter` (30
-days), so a new sale method is a new adapter. The rules are in
+([ADR 0005](../../docs/adr/0005-stream-editions-auction.md),
+[ADR 0010](../../docs/adr/0010-plain-permanent-core.md)). The rules are in
 [Stream and auctions](../../docs/spec/stream-and-auctions.md) (`AUC-*`),
 [Disputes and statements](../../docs/spec/disputes-and-statements.md) (`DSP-13` to `DSP-23`, the
 dispute pause) and [Editions and sales](../../docs/spec/editions-and-sales.md) (`EA-*`).
@@ -19,7 +18,7 @@ dispute pause) and [Editions and sales](../../docs/spec/editions-and-sales.md) (
 | `UniformEditionAuction.sol` | The shared base `UniformEditionAuctionBase` (the federated deployment is in [`src/federated`](../federated/README.md)) and 6529 Stream Editions' deployment: [`IUniformEditionAuction`](../interfaces/IUniformEditionAuction.sol)'s writes and [`IUniformEditionAuctionStorage`](../interfaces/IUniformEditionAuctionStorage.sol): the bid book (step totals, bids, FIFO departure logs), the coupling with the 1/1's end (the sale closes 15 minutes after it, fixed), settlement in calls of bounded gas, claims through `IMintTarget.mint`, credits that expire to the network after 180 days, the abandonment exit (21 days after the close), governance (configuration and payout gas). |
 | `UniformEditionAuctionLens.sol` | [`IUniformEditionAuctionLens`](../interfaces/IUniformEditionAuctionLens.sol): every view (the adapter's own settings included), computed from the adapter's storage words, which it locates from the adapter's layout; the package-item check `open` consults (with the package registry's approval, C23, for 6529 Stream Editions), which also deploys the sale's split wallets; the abandonment check; and the network fee recipient settlement pays (R18). Stateless and bound to no adapter (it reads its caller): deployed in its own transaction, then pinned by the adapter's constructor (code hash and wiring) and forwards its views to it. |
 | `SaleStarter.sol` | A stateless helper with no roles: starts a 6529 Stream sale, deploys the work's seller and royalty vaults and opens its record in `WorkFacts` in one transaction, all or nothing. `start` and `startWithBid` on the auction stay permissionless. |
-| `UniformClearing.sol` | Internal library, pure: the D138 clearing on [`StepLadder`](../interfaces/types/StepLadder.sol)'s prices, the FIFO split of the cut step and the what-if quote, shared by the lens, the adapter's sweep and the Halmos proofs. |
+| `UniformClearing.sol` | Internal library, pure: the uniform-price clearing on [`StepLadder`](../interfaces/types/StepLadder.sol)'s prices, the FIFO split of the cut step and the what-if quote, shared by the lens, the adapter's sweep and the Halmos proofs. |
 
 Every bid is ETH.
 
@@ -60,8 +59,7 @@ events and their ordering: [Events and indexing](../../docs/integrators/events-a
   `settleOrRefund` calls `settle` on the auction itself with exactly `refusalGas` (the one
   governed gas bound, raise-only) and, if that fails, closes the sale with refunds; the work
   stays in custody for `restart`. It takes no guard but refuses to run inside the auction's or
-  the escrow's (a zero `depositETH` must revert with `ZeroAmount`; the escrow's explicit
-  `locked()` view replaces this probe once it lands).
+  the escrow's (it asks the escrow's `locked()` view).
 - **Money.** At settlement the seller gets `floor(price × (100,000 − share) / 100,000)` (the
   share the policy answered at the start) and the network the rest, paid to the recipient the
   economics resolver names then (`networkFeeRecipient(product)`). A wallet that refuses ETH is
@@ -79,20 +77,21 @@ events and their ordering: [Events and indexing](../../docs/integrators/events-a
   (`settlementOrderFor`), the first settler to sweep every departure settles the sale, and an
   order that skips a departure strands only its sender. A differential fuzz holds the Yul scan
   equal to `UniformClearing.clear` (10,000 runs nightly).
-- **The edition is bound at open.** `open` calls `Editions.bindMinter(id, item)` before it
-  records the sale (ADR 0005 §6), which also snapshots the edition's economics, so the split
-  paid is the split the edition reports.
+- **The edition is created at open.** `open` calls `Editions.create` once, with the maximum and
+  royalty from the master's terms, so the edition's minter is this sale contract; `adopt` (the
+  network) takes over an edition a removed sale contract left with no copies and no seal, after
+  `Editions.rebind`.
 - **Long departure logs.** The lens reads a log four entries per storage word and sorts with a
   heap in Yul, `O(n log n)` in any log order. A keeper pages with
   `settlementOrderFor(saleId, settler, fromPosition, max)`, `O(n log max)`: 21.9M gas for a page
   of 96 at 10,000 departures (`test_F9_AKeeperPagesTenThousandDepartures`). `clearing` and
   `quote` cost about 5,000 gas a departure at the cut step, within a 50M `eth_call` up to about
   9,000; `settlementOrder` up to about 7,000.
-- **Firm edition bids (R21).** There is no withdrawal; an upheld dispute voids the sale and
+- **Firm edition bids.** There is no withdrawal; an upheld dispute voids the sale and
   every bid comes back in full at its claim.
 - **The 1/1's end is cached.** It only moves later, so a bid reads `auctionClock` only within the
   soft-close window of the cached close; settlement always does.
-- **No wait after a pause (C30).** `unpause`, `resume` and the dispute `cancel` add no wait of
+- **No wait after a pause.** `unpause`, `resume` and the dispute `cancel` add no wait of
   their own; the network acts at any moment of the 3-day pause.
 - **Gas.** Per-operation Prague gas and slots are in
   [ADR 0004](../../docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table);

@@ -147,10 +147,17 @@ def defined_test_functions(root: Path) -> set[str]:
     return names
 
 
+# History documents keep the test names of their time: ADRs (never rewritten, only amended) and
+# the mutation baseline, a record of campaigns on the contracts before ADR 0010.
+HISTORY = ("docs/adr/", "docs/testing/mutation-baseline.md")
+
+
 def check_test_names(root: Path, report: Report) -> None:
     defined = defined_test_functions(root)
     for path in doc_files(root):
         rel = path.relative_to(root).as_posix()
+        if rel.startswith(HISTORY):
+            continue
         for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             for span in CODE_SPAN.findall(line):
                 for name in TEST_NAME.findall(span):
