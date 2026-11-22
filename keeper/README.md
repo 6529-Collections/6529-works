@@ -16,22 +16,27 @@ Each run is stateless and idempotent. It reads the deployment's event logs from
 longer due, so two keepers, or a keeper and anyone else, can run side by side. Run it on a
 schedule (every few minutes); each run picks up where the chain is.
 
+Sales are in ETH only. The unclaimed period and the rescue period are the network's settings
+(`Directory.unclaimedPeriod()`, 180 days at launch; `Stream.rescueDelay()`, 14 days at launch):
+the keeper reads them on every run and never assumes a number.
+
 | Step | When it is due | Call |
 | --- | --- | --- |
-| `start` | A request in `--starts` whose item is not on chain yet | `SaleStarter.start(auction, stream, mintData, media)`: the sale, the work's seller and royalty vaults and its record in one transaction |
-| `start`, already started | Someone started the same item directly (`Stream.consumedItemOf(contentHash)` is set), so `SaleStarter.start` would revert | `SplitLedger.createWallet` for each missing vault and `WorkRecords.openRecord`, both permissionless |
-| `open` | An `EDITION_MASTER` 1/1 started and its edition sale is not open, before the 1/1 settles | `UniformEditionAuction.open(editions, tokenId, abi.encode(item, packageRoot, proof))` |
+| `start` | A request in `--starts` whose content has no live token (`Stream.tokenOfContent` is zero or names a burned token) | `SaleStarter.start(auction, stream, mintData, media)`: the sale, the work's vaults and its record in one transaction |
+| `start`, already started | Someone started the same item directly, so `SaleStarter.start` would revert | `SplitLedger.createWallet` for a missing seller vault and `WorkFacts.open(stream, tokenId, item, media)`, both permissionless |
+| `open` | An `EDITION_MASTER` 1/1 started and its edition sale is not open, before the 1/1 settles | `UniformEditionAuction.open(editions, tokenId, abi.encode(item, packageRoot, proof))`; the edition sale creates the edition in the same call |
 | `settle` | A 1/1 auction is `ENDED` | `EnglishAuction.settle(saleId)` |
-| `create` | An `EDITION_MASTER` whose primary sale settled has no edition | `Editions.createEdition(tokenId, item)` |
 | `editions` | An edition sale is past its close (or its 1/1 was cancelled) and not settled | `settle(saleId, settlementOrderFor(saleId, keeper))`, repeated until it returns true, from the keeper's own address |
 | `abandon` | `abandonable(saleId)` is true (21 days after the close) | `abandon(saleId, abi.encode(item))` |
-| `finalize` | A `FinalizeNoticeRecorded` notice is 14 days old and the work is not finalized | `WorkRecords.finalize(tokenId, 0)` |
-| `vaults` | A 6529 Stream work's seller vault (payees known from its record) or royalty vault is not deployed | `SplitLedger.createWallet(payees, 0)` |
-| `expire` | A credit on either auction, or in the revenue escrow, is unclaimed 180 days after it went from zero | `expireCredit(account, currency)`, `RevenueEscrow.expire(wallet, asset)` |
-| `forfeit` | A split-wallet mark the payee has not released up to is 180 days old | `SplitLedger.forfeit(payees, salt, asset, index)` |
+| `finalize` | A `FinalizeNoticeRecorded` notice is 14 days old and the work is not finalized | `WorkRules.finalize(stream, tokenId, 0)` |
+| `vaults` | A 6529 Stream work's seller vault (payees from its item) is not deployed | `SplitLedger.createWallet(payees, 0)`. Royalty vaults are deployed by the mint policy at the start and by the TERMS module when a share is lowered; the keeper only reports a missing one |
+| `attest` | An opened work is not marked complete on chain | `ContentStore.attestComplete(fileId, 512)` for each incomplete media file (a large file takes several runs), then `WorkFacts.markOnChainComplete(stream, tokenId)` |
+| `expire` | An aged credit on either auction, or in the revenue escrow, has waited the unclaimed period | `expireCredit(account)`, `RevenueEscrow.expire(wallet, asset)`. Only the aged part goes; money that arrived later keeps its own clock |
+| `forfeit` | A split-wallet mark the payee has not released up to is older than the unclaimed period | `SplitLedger.forfeit(payees, salt, asset, index)` |
+| `rescues` | A removed minter still holds a token with no outcome, and the rescue period has passed since the removal | Nothing is sent: `Stream.rescue(tokenId, to)` is the network's action. The keeper prints it |
 | `release` (opt-in, `--release`) | A fixed payee of a split wallet has ETH to release | `ClaimRouter.claim(claims, true)` in batches of at most the router's `MAX_CONTINUE_CLAIMS` (8); the network's own index is left out of a batch that releases another payee of the same wallet and asset, because that release already paid the network |
-| `mark` (opt-in, `--mark`) | A payee other than the network has ETH releasable and no pending mark (none, or one it has since released up to) | `SplitLedger.mark(payees, salt, asset, index)`, which starts the payee's 180 days |
-| `notice` (opt-in, `--notice`) | A work's primary sale settled and it has no finalize notice | `WorkRecords.finalize(tokenId, 0)` from a non-artist, which records the notice |
+| `mark` (opt-in, `--mark`) | A payee other than the network has ETH releasable and no pending mark (none, or one it has since released up to) | `SplitLedger.mark(payees, salt, asset, index)`, which starts the payee's unclaimed period |
+| `notice` (opt-in, `--notice`) | A work's first sale has an outcome and it has no finalize notice | `WorkRules.finalize(stream, tokenId, 0)` from a non-artist, which records the notice |
 
 The rules behind each step are in the [script README's operating procedures](../script/README.md#operating-procedures)
 and [Buying, bidding, settling and claiming](../docs/integrators/buying-bidding-settling.md).
@@ -59,7 +64,7 @@ standard (canonical) ABI encoding that `abi.encode` and ethers produce.
 - It does not bid, claim on anyone's behalf (except the fixed-payee pushes of `--release`), push
   edition claims (`claimBidFor`), flush the escrow, or call `settleOrRefund` for a federated
   sale that will not settle.
-- It handles ETH only for marks, forfeits and releases, and does not page
+- It handles ETH only, and does not page
   `settlementOrderFor` for very large edition books.
 - It does not hold a role: anything it sends, anyone may send. Its key only pays gas.
 - It never reads, prints or accepts a private key. Signing is Foundry's: `--account <name>`
@@ -101,6 +106,12 @@ starts (default: the record's `startBlock`). On a long-lived chain, set it to th
 block and use a node whose `eth_getLogs` range limit allows it.
 
 ## How it is tested
+
+> During the plain-core restructuring (ADR 0010) the end-to-end tests are skipped
+> (`E2E_AWAITS_INTEGRATION` in `test_keeper.py`): their fixture deploys the whole stack, which
+> is wired at integration. A few calls the keeper makes to contracts still being rebuilt
+> (`AWAITING_INTEGRATION`) are listed there and must appear in `abi/` once those land.
+
 
 [`test_keeper.py`](test_keeper.py):
 

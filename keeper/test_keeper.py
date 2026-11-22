@@ -37,6 +37,21 @@ sys.modules[_SPEC.name] = k  # before exec: @dataclass resolves annotations thro
 _SPEC.loader.exec_module(k)
 
 REQUIRED = os.environ.get("KEEPER_E2E_REQUIRE") == "1"
+# The end-to-end fixture deploys the whole stack through the deploy library. During the plain
+# core restructuring (ADR 0010) that stack is built by several lanes and wired at integration:
+# until then the end-to-end tests are skipped. Set this to False at integration (with the
+# fixture moved to the new deployment), and they run again; KEEPER_E2E_REQUIRE=1 then applies.
+E2E_AWAITS_INTEGRATION = True
+# Signatures the keeper calls on contracts that are still being rebuilt by other lanes; each must
+# be in abi/ once they land. The test fails when one appears there, so this list only shrinks.
+AWAITING_INTEGRATION = {
+    "Credited(address,uint256,uint256)": "the ETH-only auctions (credit event without currency)",
+    "creditOf(address)": "both auctions: the aged credit (total, aged, since)",
+    "expireCredit(address)": "both auctions, ETH only",
+    "creditOf(address,address)": "RevenueEscrow on the escrow-and-content fix branch",
+    "attestComplete(bytes32,uint256)": "ContentStore on the escrow-and-content fix branch",
+}
+PERIOD = 180 * 86400  # the launch value of Directory.unclaimedPeriod(), as a test input
 DAY = 86400
 ZERO = "0x" + "00" * 20
 
@@ -81,6 +96,7 @@ class FakeKeeper(k.Keeper):
         self.c["FeeRecipientVault"] = "0x" + "fe" * 20
         self._views, self._logs, self.sends = views, logs, []
         self._views.setdefault(("MAX_CONTINUE_CLAIMS", None), k.word(8))
+        self._views.setdefault(("unclaimedPeriod", None), k.word(PERIOD))
 
     def view(self, contract, signature, *args):
         """The table's answer for (name, last argument), else for (name, None); a callable
@@ -162,13 +178,103 @@ class MarkRuleTest(unittest.TestCase):
         return [name for name, _ in keeper.sends]
 
     def test_AReachedMarkIsReplaced(self) -> None:
-        self.assertEqual(self._run(released=100, now=1_000 + k.MARK_EXPIRY), ["mark"])
+        self.assertEqual(self._run(released=100, now=1_000 + PERIOD), ["mark"])
 
     def test_APendingMatureMarkIsForfeited(self) -> None:
-        self.assertEqual(self._run(released=60, now=1_000 + k.MARK_EXPIRY), ["forfeit"])
+        self.assertEqual(self._run(released=60, now=1_000 + PERIOD), ["forfeit"])
 
     def test_APendingYoungMarkKeepsItsClock(self) -> None:
-        self.assertEqual(self._run(released=60, now=1_000 + k.MARK_EXPIRY - 1), [])
+        self.assertEqual(self._run(released=60, now=1_000 + PERIOD - 1), [])
+
+    def test_TheNetworksCurrentPeriodDecides(self) -> None:
+        # The period is the network's setting, read on every run: a shorter one forfeits sooner.
+        seller, network = "0x" + "11" * 20, "0x" + "fe" * 20
+        payees = k.royalty_payees(seller, network, 25_000)
+        views = {
+            ("markOf", 0): k.word(100) + k.word(1_000),
+            ("released", 0): k.word(60),
+            ("unclaimedPeriod", None): k.word(10),
+        }
+        keeper = FakeKeeper(views, {"WalletCreated": [_wallet_log(payees)]})
+        keeper.step_marks(1_010, mark=False)
+        self.assertEqual([name for name, _ in keeper.sends], ["forfeit"])
+
+
+def _work(outcome: int = 0, receiver: str = ZERO) -> bytes:
+    """`Stream.workOf`: eleven words; the outcome is word 6, the royalty receiver word 7."""
+    words = [0] * 11
+    words[6] = outcome
+    words[7] = int(receiver, 16)
+    return b"".join(k.word(x) for x in words)
+
+
+def _facts(opened: bool, finalized: bool = False, on_chain: bool = False) -> bytes:
+    """`WorkFacts.factsOf`: an offset, then the struct head (opened is word 3)."""
+    head = [0, 0, 0, int(opened), int(finalized), int(on_chain)] + [0] * 5
+    return k.word(32) + b"".join(k.word(x) for x in head)
+
+
+class ExpireRuleTest(unittest.TestCase):
+    """Only an aged credit that has waited the unclaimed period in force is expired."""
+
+    def _sends(self, aged: int, since: int, now: int) -> list[str]:
+        account = "0x" + "00" * 12 + "ab" * 20
+        log = {"topics": ["0x0", account, account], "data": "0x"}
+        credit = k.word(5) + k.word(aged) + k.word(since)
+        keeper = FakeKeeper({("creditOf", None): credit}, {"Credited": [log]})
+        for name in ("EnglishAuction", "UniformEditionAuction", "RevenueEscrow"):
+            keeper.c[name] = name
+        keeper._logs["Credited"] = [log]
+        keeper.step_expire(now)
+        return [name for name, _ in keeper.sends]
+
+    def test_AnAgedCreditPastThePeriodExpires(self) -> None:
+        sends = self._sends(aged=3, since=1_000, now=1_000 + PERIOD)
+        self.assertEqual(sends, ["expireCredit", "expireCredit", "expire"])
+
+    def test_ACreditBeforeThePeriodWaits(self) -> None:
+        self.assertEqual(self._sends(aged=3, since=1_000, now=1_000 + PERIOD - 1), [])
+
+    def test_MoneyThatIsNotAgedNeverExpires(self) -> None:
+        self.assertEqual(self._sends(aged=0, since=1_000, now=1_000 + 10 * PERIOD), [])
+
+
+class AttestTest(unittest.TestCase):
+    def _sends(self, complete: set[int]) -> list[str]:
+        media = k.Dyn(k.word(2) + k.word(1) + k.word(0) + k.word(0) + k.word(2) + k.word(0) + k.word(1))
+        views = {
+            ("factsOf", None): _facts(opened=True),
+            ("isComplete", None): lambda f: k.word(int(int.from_bytes(f, "big") in complete)),
+        }
+        keeper = FakeKeeper(views, {})
+        keeper.c["Stream"] = "0x" + "57" * 20
+        keeper.step_attest({1: {}}, {1: (k.Dyn(b""), media)})
+        return [name for name, _ in keeper.sends]
+
+    def test_AttestsEachIncompleteFileFirst(self) -> None:
+        self.assertEqual(self._sends(complete={1}), ["attestComplete"])
+
+    def test_MarksTheWorkOnceEveryFileIsComplete(self) -> None:
+        self.assertEqual(self._sends(complete={1, 2}), ["markOnChainComplete"])
+
+
+class RescueReportTest(unittest.TestCase):
+    def test_ReportsOnlyOnceTheNetworksRescuePeriodHasPassed(self) -> None:
+        minter = "0x" + "aa" * 20
+        views = {
+            ("rescueDelay", None): k.word(100),
+            ("workOf", None): _work(),
+            ("minterOf", None): k.word(1) + k.word(1_000),  # removed at t = 1,000
+            ("ownerOf", None): k.word(minter),
+        }
+        works = {1: {"minter": minter}}
+        for now, due in ((1_099, False), (1_100, True)):
+            keeper = FakeKeeper(dict(views), {})
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                keeper.step_rescues(works, now)
+            self.assertEqual("due   rescue of work 1" in out.getvalue(), due, now)
+            self.assertEqual(keeper.sends, [])  # never sent: rescue is the network's action
 
 
 def _item(kind: int, content: bytes) -> k.Dyn:
@@ -188,30 +294,51 @@ class WorkGuardTest(unittest.TestCase):
         self.assertEqual(keeper.sends, [])
 
     def test_ABurnedWorkDoesNotStopTheVaultsStep(self) -> None:
-        # primaryTerms reverts for a burned work (UnknownWork); the later work still gets its vaults.
-        def terms(token_id, _data):
+        # workOf reverts for a burned work; the later work still gets its seller vault.
+        def work(token_id):
             if token_id == 1:
-                raise k.Reverted("UnknownWork(1)")
-            return k.word(0) * 5 + k.word("0x" + "11" * 20) + k.word("0x" + "fe" * 20) + k.word(25_000)
+                raise k.Reverted("ERC721NonexistentToken(1)")
+            return _work()
 
-        views = {("primaryTerms", None): terms, ("walletFor", None): k.word(0x99), ("isWallet", None): k.word(0)}
-        keeper = FakeKeeper(views, {})
-        works = {t: {"root": k.word(0), "content": k.word(t)} for t in (1, 2)}
-        keeper.step_vaults(works, {})
-        self.assertEqual([name for name, _ in keeper.sends], ["createWallet"])
+        keeper = FakeKeeper({("workOf", None): work, ("isWallet", None): k.word(0)}, {})
+        seller = "0x" + "11" * 20
+        works = {t: {"root": k.word(0), "content": k.word(t), "seller": seller} for t in (1, 2)}
+        items = {t: (_item(0, k.word(t)), k.Dyn(b"")) for t in (1, 2)}
+        keeper.step_vaults(works, items)
+        self.assertEqual(keeper.sends, [("createWallet", (k.item_payees(items[2][0]), 0))])
 
     def test_StartFinishesTheNewestWorkWithTheRequestsContent(self) -> None:
         # Work 1 was burned and its content released; work 2 re-minted it, started directly.
         content = k.word(7)
         keeper = FakeKeeper(
-            {("consumedItemOf", None): k.word(1), ("isOpen", None): lambda t: k.word(1 if t == 1 else 0)},
+            {
+                ("tokenOfContent", None): k.word(2),
+                ("workOf", None): _work(),
+                ("factsOf", None): lambda _token, t: _facts(opened=t == 1),
+            },
             {},
         )
+        keeper.c["Stream"] = "0x" + "57" * 20
         keeper.starts = [{"name": "r", "content": content, "payees": None, "item": b"", "media": b""}]
-        keeper.ensure_vaults = lambda token_id, payees: None
+        keeper.ensure_vaults = lambda token_id, payees, minted: None
         keeper.step_start({1: {"content": content}, 2: {"content": content}})
         (name, args), = keeper.sends
-        self.assertEqual((name, args[0]), ("openRecord", 2))
+        self.assertEqual((name, args[1]), ("open", 2))
+
+    def test_ABurnedTokensContentIsStartedAgain(self) -> None:
+        # tokenOfContent still names token 1, but it is burned: the request is started anew.
+        def work(_t):
+            raise k.Reverted("ERC721NonexistentToken(1)")
+
+        keeper = FakeKeeper({("tokenOfContent", None): k.word(1), ("workOf", None): work}, {})
+        for name in ("Stream", "EnglishAuction", "SaleStarter"):
+            keeper.c[name] = "0x" + "57" * 20
+        keeper.starts = [
+            {"name": "r", "content": k.word(7), "payees": None, "item": b"", "media": k.Dyn(b""),
+             "mintData": b""}
+        ]
+        keeper.step_start({})
+        self.assertEqual([name for name, _ in keeper.sends], ["start"])
 
 
 class SignaturesTest(unittest.TestCase):
@@ -235,7 +362,9 @@ class SignaturesTest(unittest.TestCase):
             if re.fullmatch(r"[A-Za-z]\w*\(.*\)", literal):
                 used.add(literal)
         self.assertGreater(len(used), 25)
-        self.assertEqual(sorted(used - known), [])
+        self.assertEqual(sorted(used - known - set(AWAITING_INTEGRATION)), [])
+        # A signature that has landed leaves the list.
+        self.assertEqual(sorted(set(AWAITING_INTEGRATION) & known), [])
 
 
 class RequestTest(unittest.TestCase):
@@ -320,6 +449,8 @@ def _build_fixture() -> Path:
 
 def setUpModule() -> None:
     global _fixture
+    if E2E_AWAITS_INTEGRATION:
+        return
     missing = [tool for tool in ("anvil", "forge", "cast") if shutil.which(tool) is None]
     if missing:
         if REQUIRED:
@@ -434,6 +565,8 @@ class Chain:
 
 class _E2E(unittest.TestCase):
     def setUp(self) -> None:
+        if E2E_AWAITS_INTEGRATION:
+            self.skipTest("the end-to-end fixture needs the integrated plain-core stack")
         if _fixture is None:
             self.skipTest("anvil, forge or cast is not on the PATH")
         self.chain = Chain()

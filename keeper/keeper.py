@@ -12,22 +12,30 @@ gas. Reads go to the node over JSON-RPC; every transaction is signed and sent by
 `cast send`, with `--account <keystore name>` or `--unlocked` (a local node's own accounts).
 This program never reads, prints or accepts a private key.
 
-The steps (script/README.md, "Operating procedures"):
+The steps (script/README.md, "Operating procedures"). Sales are in ETH only (ADR 0010). The
+unclaimed period is the network's setting `Directory.unclaimedPeriod()` (180 days at launch),
+read on every run, never a constant here:
   start       start each 1/1 in --starts through SaleStarter (vaults and record in one call);
-              when someone started it directly first, deploy its vaults and open its record
-  open        open the edition sale of every EDITION_MASTER 1/1 that has none yet
+              when someone started it directly first, deploy its seller vault and open its
+              record in WorkFacts
+  open        open the edition sale of every EDITION_MASTER 1/1 that has none yet (the edition
+              sale creates the edition itself, in the same call)
   settle      settle every ended 1/1
-  create      create the edition of every settled EDITION_MASTER that has none
   editions    settle every closed edition sale, with the keeper's own settlement order
   abandon     abandon every edition sale that has become abandonable (21 days after close)
-  finalize    finalize every work whose finalize notice is 14 days old
-  vaults      deploy any missing seller or royalty vault of a 6529 Stream work
-  expire      send credits unclaimed for 180 days to the network (both auctions, the escrow)
-  forfeit     forfeit every split-wallet mark that is 180 days old
+  finalize    finalize every work whose finalize notice is 14 days old (WorkRules)
+  vaults      deploy any missing seller vault of a 6529 Stream work
+  attest      walk the content store's completeness of each opened work's media files
+              (attestComplete, in pieces) and then mark the work complete on chain
+  expire      send aged credits to the network once they have waited the unclaimed period
+              (both auctions, the escrow); money that arrived later keeps its own clock
+  forfeit     forfeit every split-wallet mark older than the unclaimed period
+  rescues     report (never send) tokens a removed minter still holds unsold once the
+              network's rescue period (`Stream.rescueDelay()`) has passed: a network action
   release     push the fixed payees' shares of royalty wallets through the ClaimRouter
               (opt-in: --release); the network's own index is left out of a batch whose
               wallet and asset also release another payee
-  mark        mark unclaimed split-wallet shares (opt-in: --mark; starts the 180-day clock)
+  mark        mark unclaimed split-wallet shares (opt-in: --mark; starts the unclaimed period)
   notice      record finalize notices for settled, unfinalized works (opt-in: --notice)
 
 Standard library only (plus the repository's pure-Python keccak in tools/content).
@@ -46,18 +54,26 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.content.keccak import keccak256  # noqa: E402  (the repository's own keccak)
 
-DEFAULT_STEPS = "start,open,settle,create,editions,abandon,finalize,vaults,expire,forfeit"
+DEFAULT_STEPS = "start,open,settle,editions,abandon,finalize,vaults,attest,expire,forfeit,rescues"
 OPT_IN_STEPS = ("release", "mark", "notice")
 ETH = "0x" + "00" * 20
 EDITION_MASTER = 1
 # English auction states; edition auction statuses.
 ENDED, SETTLED_1 = 3, 4
 EA_SETTLED, EA_VOID = 4, 5
-CREDIT_EXPIRY = MARK_EXPIRY = 180 * 86400
+# `Outcome` of a work's first sale (src/interfaces/core/CoreTypes.sol).
+OUTCOME_NONE = 0
+# How many chunks one attestComplete call walks; a large file takes several calls.
+ATTEST_CHUNKS = 512
 
 # Canonical ABI types (src/interfaces/types/PackageTypes.sol, ContentTypes.sol, ISplitWallet.sol).
 PAYEES = "(uint256,address,uint32)[]"
 MEDIA = "(bytes32,bytes32,uint8)[]"
+# MintFacts, logged whole by Stream's WorkMinted (src/interfaces/core/CoreTypes.sol).
+MINT_FACTS = (
+    "(bytes32,bytes32,uint256,uint256,uint8,uint8,bytes32,address,uint24,bytes32,bytes32,"
+    "bytes32,address)"
+)
 ITEM = (
     "(uint8,uint256,bytes32,bytes32,bytes32,(address,uint8)[]," + PAYEES + ",(string,bytes32),"
     "uint8,bytes32,(bytes32,address,bytes),(uint32,address,bytes32,bytes))"
@@ -250,28 +266,53 @@ class Keeper:
     # -------------------------------------------------------------- what the chain says
 
     def works(self) -> dict[int, dict]:
-        """Every 6529 Stream work: token ID -> package root and content hash (WorkMinted)."""
+        """Every 6529 Stream work: token ID -> minter, package root, content hash and seller
+        (WorkMinted logs the whole MintFacts)."""
         out = {}
-        sig = (
-            "WorkMinted(uint256,uint256,uint256,bytes32,uint64,uint8,bytes32,bytes32,bytes32,"
-            "bytes32,address,uint24)"
-        )
+        sig = f"WorkMinted(uint256,uint256,uint256,address,uint32,{MINT_FACTS})"
         for log in self.logs("Stream", sig):
             data = bytes.fromhex(log["data"][2:])
-            # Non-indexed: itemHash, serial, flags, packageRoot, contentHash, mediaHash, ...
-            out[int(log["topics"][1], 16)] = {"root": data[96:128], "content": data[128:160]}
+            # Non-indexed: minter, serial, then MintFacts inline (thirteen static words):
+            # itemHash, contentHash, artistId, collectionId, kind, seedPolicy, seed,
+            # royaltyReceiver, royaltyRate, packageRoot, mediaHash, recordFileId, seller.
+            out[int(log["topics"][1], 16)] = {
+                "minter": a(data, 0),
+                "content": data[32 * 3 : 32 * 4],
+                "root": data[32 * 11 : 32 * 12],
+                "seller": a(data, 14),
+            }
         return out
 
     def items(self) -> dict[int, tuple[Dyn, Dyn]]:
-        """Each opened record's item and media, from RecordOpened (item, media, licenseKey,
-        seed): the item's encoding ends where the media's begins."""
+        """Each opened 6529 Stream record's item and media, from WorkFacts' RecordOpened
+        (token and token ID indexed; item, media): the item ends where the media begin."""
         out = {}
-        sig = f"RecordOpened(uint256,{ITEM},{MEDIA},bytes32,bytes32)"
-        for log in self.logs("WorkRecords", sig):
+        sig = f"RecordOpened(address,uint256,{ITEM},{MEDIA})"
+        for log in self.logs("WorkFacts", sig):
+            if topic_address(log, 1).lower() != self.c["Stream"].lower():
+                continue  # a federated token's record
             data = bytes.fromhex(log["data"][2:])
             item, media = tail(data, w(data, 0), w(data, 1)), tail(data, w(data, 1))
-            out[int(log["topics"][1], 16)] = (item, media)
+            out[int(log["topics"][2], 16)] = (item, media)
         return out
+
+    def facts(self, token_id: int) -> dict[str, bool]:
+        """The flags of a 6529 Stream work's permanent record (`WorkFacts.factsOf`): the
+        returned struct is dynamic, so its head starts at the offset in word 0."""
+        data = self.view("WorkFacts", "factsOf(address,uint256)", self.c["Stream"], token_id)
+        head = data[w(data, 0) :]
+        return {"opened": bool(w(head, 3)), "finalized": bool(w(head, 4)), "onChain": bool(w(head, 5))}
+
+    def work(self, token_id: int) -> bytes | None:
+        """`Stream.workOf` (eleven static words), or None for a burned or unknown token."""
+        try:
+            return self.view("Stream", "workOf(uint256)", token_id)
+        except Reverted:
+            return None
+
+    def unclaimed_period(self) -> int:
+        """The network's unclaimed period now (`Directory.unclaimedPeriod()`)."""
+        return w(self.view("Directory", "unclaimedPeriod()"), 0)
 
     def sales(self, contract: str) -> list[tuple[int, str, int]]:
         sig = "SaleStarted(uint256,address,uint256,bytes32,address,uint256,uint64,uint64)"
@@ -294,8 +335,11 @@ class Keeper:
     def step_start(self, works: dict) -> None:
         """Start each request through SaleStarter; if it was started directly, finish it."""
         for req in self.starts:
-            used = self.view("Stream", "consumedItemOf(bytes32)", req["content"])
-            if int.from_bytes(used, "big") == 0:
+            # One live token per content: a burned token's content may be minted again.
+            live = w(self.view("Stream", "tokenOfContent(bytes32)", req["content"]), 0)
+            if live and self.work(live) is None:
+                live = 0
+            if live == 0:
                 self.send(
                     "SaleStarter",
                     f"start(address,address,bytes,{MEDIA})",
@@ -311,39 +355,41 @@ class Keeper:
             token_id = max((t for t, v in works.items() if v["content"] == req["content"]), default=0)
             if not token_id:
                 continue  # started in a block after this run's log read; the next run sees it
-            self.ensure_vaults(token_id, req["payees"])
-            if w(self.view("WorkRecords", "isOpen(uint256)", token_id), 0) == 0:
+            self.ensure_vaults(token_id, req["payees"], works.get(token_id, {}))
+            if not self.facts(token_id)["opened"]:
                 self.send(
-                    "WorkRecords",
-                    f"openRecord(uint256,{ITEM},{MEDIA})",
+                    "WorkFacts",
+                    f"open(address,uint256,{ITEM},{MEDIA})",
+                    self.c["Stream"],
                     token_id,
                     req["item"],
                     req["media"],
-                    label=f"openRecord {token_id} (started by someone else)",
+                    label=f"open the record of work {token_id} (started by someone else)",
                 )
 
-    def ensure_vaults(self, token_id: int, payees: Dyn | None) -> None:
-        """Deploy the work's seller vault (when its payees are known) and royalty vault."""
-        try:
-            terms = self.view("Stream", "primaryTerms(uint256,bytes)", token_id, blob(b""))
-        except Reverted:
+    def ensure_vaults(self, token_id: int, payees: Dyn | None, minted: dict) -> None:
+        """Deploy the work's seller vault (its payees from the item) when it is missing. The
+        royalty vault is deployed by the mint policy at the start, and again by the TERMS module
+        whenever the network's share is lowered, so the keeper only reports one it cannot find
+        (its payee list needs the sale's fee terms, which only the sale contract holds)."""
+        work = self.work(token_id)
+        if work is None:
             return  # burned (a sale cancelled after an upheld dispute): no vaults to deploy
-        seller, fee_recipient, fee_share = a(terms, 5), a(terms, 6), w(terms, 7)
-        wallets = []
-        if payees is not None:
-            wallets.append(("seller", seller, payees))
-        if fee_share:
-            royalty = royalty_payees(seller, fee_recipient, fee_share)
-            wallets.append(("royalty", self.wallet_for(royalty), royalty))
-        for kind, wallet, list_ in wallets:
-            if w(self.view("SplitFactory", "isWallet(address)", wallet), 0) == 0:
-                self.send(
-                    "SplitFactory",
-                    f"createWallet({PAYEES},bytes32)",
-                    list_,
-                    0,
-                    label=f"createWallet {kind} vault of work {token_id} ({wallet})",
-                )
+        seller = minted.get("seller")
+        if payees is not None and seller and self.wallet_missing(seller):
+            self.send(
+                "SplitFactory",
+                f"createWallet({PAYEES},bytes32)",
+                payees,
+                0,
+                label=f"createWallet seller vault of work {token_id} ({seller})",
+            )
+        receiver = a(work, 7)
+        if receiver != seller and int(receiver, 16) and self.wallet_missing(receiver):
+            print(f"note  royalty receiver {receiver} of work {token_id} is not a deployed vault")
+
+    def wallet_missing(self, wallet: str) -> bool:
+        return w(self.view("SplitFactory", "isWallet(address)", wallet), 0) == 0
 
     def wallet_for(self, payees: Dyn) -> str:
         return a(self.view("SplitFactory", f"walletFor({PAYEES},bytes32)", payees, 0), 0)
@@ -382,18 +428,6 @@ class Keeper:
             if w(clock, 0) == ENDED:
                 label = f"settle 1/1 sale of token {token_id}"
                 self.send("EnglishAuction", "settle(uint256)", sale, label=label)
-
-    def step_create(self, works: dict, items: dict) -> None:
-        for token_id in sorted(works):
-            item = self.item_of(token_id, works, items)
-            if item is None or w(item, ITEM_KIND) != EDITION_MASTER:
-                continue
-            if w(self.view("Stream", "primarySaleSettled(uint256)", token_id), 0) == 0:
-                continue
-            if w(self.view("Stream", "editionOf(uint256)", token_id), 0) != 0:
-                continue
-            sig = f"createEdition(uint256,{ITEM})"
-            self.send("Editions", sig, token_id, item, label=f"createEdition {token_id}")
 
     def step_editions(self, now: int) -> None:
         for sale, _, edition_id in self.sales("UniformEditionAuction"):
@@ -439,63 +473,102 @@ class Keeper:
 
     def step_finalize(self, works: dict, now: int, notice: bool) -> None:
         due = {}
-        for log in self.logs("WorkRecords", "FinalizeNoticeRecorded(uint256,uint256)"):
-            due[int(log["topics"][1], 16)] = int(log["data"][2:66], 16)
+        stream = self.c["Stream"]
+        for log in self.logs("WorkRules", "FinalizeNoticeRecorded(address,uint256,uint256)"):
+            if topic_address(log, 1).lower() == stream.lower():
+                due[int(log["topics"][2], 16)] = int(log["data"][2:66], 16)
         for token_id in sorted(works):
-            if w(self.view("WorkRecords", "isOpen(uint256)", token_id), 0) == 0:
+            facts = self.facts(token_id)
+            if not facts["opened"] or facts["finalized"]:
                 continue
-            if w(self.view("WorkRecords", "record(uint256)", token_id), 4):
-                continue  # finalized
+            sig = "finalize(address,uint256,bytes32)"
             if token_id in due and now >= due[token_id]:
                 label = f"finalize work {token_id}"
-                self.send("WorkRecords", "finalize(uint256,bytes32)", token_id, 0, label=label)
+                self.send("WorkRules", sig, stream, token_id, 0, label=label)
             elif token_id not in due and notice:
-                if w(self.view("Stream", "primarySaleSettled(uint256)", token_id), 0):
-                    self.send(
-                        "WorkRecords",
-                        "finalize(uint256,bytes32)",
-                        token_id,
-                        0,
-                        label=f"record the finalize notice of work {token_id}",
-                    )
+                work = self.work(token_id)
+                if work is not None and w(work, 6) != OUTCOME_NONE:  # the first sale has ended
+                    label = f"record the finalize notice of work {token_id}"
+                    self.send("WorkRules", sig, stream, token_id, 0, label=label)
 
     def step_vaults(self, works: dict, items: dict) -> None:
         for token_id in sorted(works):
             item = self.item_of(token_id, works, items)
-            self.ensure_vaults(token_id, item_payees(item) if item is not None else None)
+            payees = item_payees(item) if item is not None else None
+            self.ensure_vaults(token_id, payees, works[token_id])
+
+    def step_attest(self, works: dict, items: dict) -> None:
+        """Walk each media file's completeness in the content store (permissionless, in pieces
+        of ATTEST_CHUNKS chunks; chunks are never removed, so it never reverses), then mark the
+        work complete on chain once every file is."""
+        for token_id in sorted(items):
+            if token_id not in works or self.facts(token_id)["onChain"]:
+                continue
+            media = items[token_id][1]
+            files = [media[32 + 96 * i : 64 + 96 * i] for i in range(w(media, 0))]
+            complete = True
+            for file_id in files:
+                if w(self.view("ContentStore", "isComplete(bytes32)", file_id), 0):
+                    continue
+                complete = False
+                self.send(
+                    "ContentStore",
+                    "attestComplete(bytes32,uint256)",
+                    file_id,
+                    ATTEST_CHUNKS,
+                    label=f"attest file 0x{file_id.hex()[:12]}... of work {token_id}",
+                )
+            if complete and files:
+                self.send(
+                    "WorkFacts",
+                    "markOnChainComplete(address,uint256)",
+                    self.c["Stream"],
+                    token_id,
+                    label=f"mark work {token_id} complete on chain",
+                )
 
     def step_expire(self, now: int) -> None:
-        sig = "Credited(address,address,uint256,uint256)"
-        for contract, expires in (
-            ("EnglishAuction", "creditExpiresAt(address,address)"),
-            ("UniformEditionAuction", "creditExpiresAt(address)"),
-        ):
-            credits = self.logs(contract, sig)
-            pairs = sorted({(topic_address(g, 1), topic_address(g, 2)) for g in credits})
-            for account, currency in pairs:
-                if w(self.view(contract, "claimable(address,address)", account, currency), 0) == 0:
-                    continue
-                # The English auction's lens takes the currency; the edition auction's (ETH only)
-                # does not.
-                args = (account, currency) if contract == "EnglishAuction" else (account,)
-                if now >= w(self.view(contract, expires, *args), 0):
+        """Expire aged credits. Each credit is (total, aged, since): only the `aged` part, which
+        has itself waited the unclaimed period since `since`, can go to the network; money that
+        arrived later is not aged and keeps its own clock."""
+        period = self.unclaimed_period()
+        sig = "Credited(address,uint256,uint256)"
+        for contract in ("EnglishAuction", "UniformEditionAuction"):
+            for account in sorted({topic_address(g, 1) for g in self.logs(contract, sig)}):
+                credit = self.view(contract, "creditOf(address)", account)
+                if w(credit, 1) and now >= w(credit, 2) + period:
                     self.send(
                         contract,
-                        "expireCredit(address,address)",
+                        "expireCredit(address)",
                         account,
-                        currency,
-                        label=f"expire {account}'s credit on {contract}",
+                        label=f"expire {account}'s aged credit on {contract}",
                     )
         escrow_sig = "Credited(address,address,address,uint256,uint256)"
         credits = self.logs("RevenueEscrow", escrow_sig)
         pairs = sorted({(topic_address(g, 1), topic_address(g, 2)) for g in credits})
         for wallet, asset in pairs:
-            if w(self.view("RevenueEscrow", "owed(address,address)", wallet, asset), 0) == 0:
-                continue
-            since = w(self.view("RevenueEscrow", "creditedAt(address,address)", wallet, asset), 0)
-            if now >= since + CREDIT_EXPIRY:
-                label = f"expire escrow credit of {wallet}"
+            credit = self.view("RevenueEscrow", "creditOf(address,address)", wallet, asset)
+            if w(credit, 1) and now >= w(credit, 2) + period:
+                label = f"expire the aged escrow credit of {wallet}"
                 self.send("RevenueEscrow", "expire(address,address)", wallet, asset, label=label)
+
+    def step_rescues(self, works: dict, now: int) -> None:
+        """Report tokens a removed minter still holds with no outcome, once the network's rescue
+        period has passed since the removal. `rescue` is the network's action; the keeper only
+        says it is possible."""
+        delay = w(self.view("Stream", "rescueDelay()"), 0)
+        for token_id in sorted(works):
+            work = self.work(token_id)
+            if work is None or w(work, 6) != OUTCOME_NONE:
+                continue
+            minter = works[token_id]["minter"]
+            removed_at = w(self.view("Stream", "minterOf(address)", minter), 1)
+            holder = a(self.view("Stream", "ownerOf(uint256)", token_id), 0)
+            if removed_at and holder.lower() == minter.lower() and now >= removed_at + delay:
+                print(
+                    f"due   rescue of work {token_id} from removed minter {minter}"
+                    " (a network action: Stream.rescue(tokenId, to))"
+                )
 
     def wallets(self) -> list[tuple[str, bytes, Dyn]]:
         """Every split wallet: address, salt and payee list (WalletCreated)."""
@@ -508,6 +581,7 @@ class Keeper:
     def step_marks(self, now: int, mark: bool) -> None:
         """Forfeit matured marks; with `mark`, place marks on unclaimed shares (ETH only)."""
         network = self.c["FeeRecipientVault"].lower()
+        period = self.unclaimed_period()
         for wallet, salt, payees in self.wallets():
             for index, (_, account, _) in enumerate(payee_list(payees)):
                 if account.lower() == network:
@@ -522,7 +596,7 @@ class Keeper:
                     sig = "released(address,address,uint256)"
                     done = w(self.view("SplitFactory", sig, wallet, ETH, index), 0)
                     target = target if done < target else 0
-                if target and now >= marked_at + MARK_EXPIRY:
+                if target and now >= marked_at + period:
                     self.send(
                         "SplitFactory",
                         f"forfeit({PAYEES},bytes32,address,uint256)",
@@ -585,8 +659,6 @@ class Keeper:
             self.step_open(works, items)
         if "settle" in steps:
             self.step_settle()
-        if "create" in steps:
-            self.step_create(works, items)
         if "editions" in steps:
             self.step_editions(now)
         if "abandon" in steps:
@@ -595,12 +667,16 @@ class Keeper:
             self.step_finalize(works, now, "notice" in steps)
         if "vaults" in steps:
             self.step_vaults(works, items)
+        if "attest" in steps:
+            self.step_attest(works, items)
         if "expire" in steps:
             self.step_expire(now)
         if "forfeit" in steps or "mark" in steps:
             self.step_marks(now, "mark" in steps)
         if "release" in steps:
             self.step_release()
+        if "rescues" in steps:
+            self.step_rescues(works, now)
 
 
 def _short(exc: Exception) -> str:
