@@ -319,7 +319,7 @@ After ADR 0007's review fixes:
   replacement procedure still swaps both pointers in one batch, and a successor must approve
   every template version (each bound to its deployer) and admit the adapters **before** the
   artist registry's pointer moves: a successor without them serves nothing, so running sales
-  freeze out with refunds (pinned by test_Replacement_SwappedBeforeItsApprovalsFreezesRunningSales;
+  freeze out with refunds (pinned by `test_Replacement_SwappedBeforeItsApprovalsFreezesRunningSales`;
   the procedure is in the script README).
 - **A contract that left starts no sale through a network adapter.** As first built, the
   registry reported a LEFT contract ACTIVE everywhere (the English auction had no bytes for a
@@ -434,7 +434,7 @@ creation code, read back from its data contracts and rehashed, is the build's), 
 edition auction's lens and the federated product's economics (10% to the fee vault).
 **Which build (review F, F8).** With `bytecode_hash = "ipfs"`, any edit to a source a template
 imports changes both hashes, so `checkFederation` run from a later commit fails by design
-(test_CheckTemplate_RefusesARebuiltArtifact). Artists never handle the creation code: the
+(`test_CheckTemplate_RefusesARebuiltArtifact`). Artists never handle the creation code: the
 deployer holds the genesis build's, stored on chain (`codeOf`). The registry's roles are SUCCESSOR_SETTER (approve, revoke, adapters;
 30 days), GUARDIAN (suspend; immediate) and PARAMETER_SETTER (resume, delist and relist;
 48 hours); the federated edition auction's are 6529 Stream Editions' auction's, without
