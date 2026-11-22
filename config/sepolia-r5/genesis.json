@@ -1,0 +1,1353 @@
+{
+  "schema": "6529-works/governance-genesis/1",
+  "description": "Sepolia rehearsal r5 of 6529 Works v1 (chain 11155111). The network is a throwaway 2-of-3 Safe 1.4.1 (plain-key owners, no module, no guard); every holder is a throwaway testnet key. No brake at launch. Not for mainnet.",
+  "sources": [
+    "docs/spec/governance.md (the single authority, the classes and the brake)",
+    "src/governance/Roles.sol (role IDs and delays)",
+    "src/interfaces/ and the implementations (selectors)"
+  ],
+  "network": "0x54a769fe591c3F47CF83d30b69e576497CE34454",
+  "roles": [
+    {
+      "name": "ADMIN",
+      "id": 0,
+      "executionClass": "7d",
+      "executionDelay": 604800,
+      "grantDelay": 0,
+      "network": true
+    },
+    {
+      "name": "NETWORK",
+      "id": 1,
+      "executionClass": "immediate",
+      "executionDelay": 0,
+      "grantDelay": 0,
+      "network": true
+    },
+    {
+      "name": "PAUSER",
+      "id": 2,
+      "executionClass": "immediate",
+      "executionDelay": 0,
+      "grantDelay": 0,
+      "network": false
+    },
+    {
+      "name": "CURATION_SIGNER",
+      "id": 4,
+      "executionClass": "immediate",
+      "executionDelay": 0,
+      "grantDelay": 0,
+      "network": false
+    },
+    {
+      "name": "STORAGE_OPERATOR",
+      "id": 5,
+      "executionClass": "immediate",
+      "executionDelay": 0,
+      "grantDelay": 0,
+      "network": false
+    },
+    {
+      "name": "MINTER",
+      "id": 6,
+      "executionClass": "immediate",
+      "executionDelay": 0,
+      "grantDelay": 0,
+      "network": false
+    },
+    {
+      "name": "KEEPER",
+      "id": 7,
+      "executionClass": "immediate",
+      "executionDelay": 0,
+      "grantDelay": 0,
+      "network": false
+    },
+    {
+      "name": "PLATFORM",
+      "id": 8,
+      "executionClass": "immediate",
+      "executionDelay": 0,
+      "grantDelay": 0,
+      "network": false
+    },
+    {
+      "name": "PARAMETER_SETTER",
+      "id": 9,
+      "executionClass": "24h",
+      "executionDelay": 86400,
+      "grantDelay": 0,
+      "network": true
+    },
+    {
+      "name": "FUNDS_SETTER",
+      "id": 10,
+      "executionClass": "3d",
+      "executionDelay": 259200,
+      "grantDelay": 0,
+      "network": true
+    },
+    {
+      "name": "SUCCESSOR_SETTER",
+      "id": 11,
+      "executionClass": "7d",
+      "executionDelay": 604800,
+      "grantDelay": 0,
+      "network": true
+    },
+    {
+      "name": "CURATOR",
+      "id": 12,
+      "executionClass": "immediate",
+      "executionDelay": 0,
+      "grantDelay": 0,
+      "network": false
+    }
+  ],
+  "holders": [
+    {
+      "role": "PAUSER",
+      "account": "0x521e65E87cECeb5BA4a494511507B3AAF6534Bd6",
+      "label": "Pauser key 1"
+    },
+    {
+      "role": "PAUSER",
+      "account": "0x81B9D0267d39Ef1f2E45Ab7d06d8CAE652287d17",
+      "label": "Pauser key 2"
+    },
+    {
+      "role": "PAUSER",
+      "account": "0x5F9e1473d99C1371397F2175191DEe84732C575d",
+      "label": "Pauser key 3"
+    },
+    {
+      "role": "CURATION_SIGNER",
+      "account": "0xa901A777C41e36B4Bd1caD3101140D8D12C5f9C9",
+      "label": "Curation signer key 1"
+    },
+    {
+      "role": "CURATION_SIGNER",
+      "account": "0x760088bD696444cF66b9Fa7dc9db2c0E449761D1",
+      "label": "Curation signer key 2"
+    },
+    {
+      "role": "STORAGE_OPERATOR",
+      "account": "0x738c6ffD3a57975FE0D79829267C674E177f00bD",
+      "label": "Storage operator key"
+    },
+    {
+      "role": "PLATFORM",
+      "account": "0x0a69CdD0d8De0680779237aFF610C90b61B83b2D",
+      "label": "Platform key"
+    },
+    {
+      "role": "CURATOR",
+      "account": "0x73FC598b7140e50d96Cb9C26A016f20B26f526E6",
+      "label": "Curator key"
+    }
+  ],
+  "peers": [
+    {
+      "name": "SplitFactory",
+      "address": "0x000000000000000000000000000000000000a010",
+      "note": "the split ledger; not governed; passed to ArtistRegistry.bindSplitFactory"
+    },
+    {
+      "name": "WorksAccessManager",
+      "address": "0x000000000000000000000000000000000000a0ff",
+      "note": "configurator.worksManager(); the subject of the epoch-0 manifest"
+    }
+  ],
+  "manager": {
+    "name": "WorksAccessManager",
+    "artifact": "src/governance/WorksAccessManager.sol:WorksAccessManager",
+    "base": "lib/openzeppelin-contracts/contracts/access/manager/AccessManager.sol:AccessManager",
+    "note": "Never a configured target. Its functions beyond the OpenZeppelin base check the caller themselves; tools/check_genesis.py requires every one to be listed here.",
+    "functions": [
+      {
+        "signature": "transferNetwork(address)",
+        "selector": "0x33c95bb5",
+        "role": "ADMIN",
+        "class": "7d",
+        "delay": 604800,
+        "note": "Proposes the next network address (zero withdraws); nothing changes until it accepts"
+      },
+      {
+        "signature": "setBrake(address)",
+        "selector": "0x8917bd43",
+        "role": "ADMIN",
+        "class": "7d",
+        "delay": 604800,
+        "note": "Sets or removes (zero) the brake; none is installed at launch"
+      }
+    ],
+    "open": [
+      {
+        "signature": "acceptNetwork()",
+        "selector": "0xa503fb3e",
+        "note": "Only the pending network: completes a handover; the old address then holds nothing"
+      },
+      {
+        "signature": "brakeOnce(bytes32)",
+        "selector": "0xb11f4f47",
+        "note": "Only the brake: delays one scheduled operation by 7 days, once"
+      }
+    ],
+    "views": [
+      {
+        "signature": "network()",
+        "selector": "0x6739afca",
+        "note": "The address that holds every network role"
+      },
+      {
+        "signature": "pendingNetwork()",
+        "selector": "0xedcad97f",
+        "note": "The proposed next network, until it accepts"
+      },
+      {
+        "signature": "brake()",
+        "selector": "0x5642e2dc",
+        "note": "The brake, zero when there is none"
+      },
+      {
+        "signature": "notBefore(bytes32)",
+        "selector": "0x7afbb993",
+        "note": "When a braked operation may run, zero when it was not braked"
+      },
+      {
+        "signature": "grantCount(uint64,address)",
+        "selector": "0x5effa99b",
+        "note": "How many grants made an account a member of a role; the curation verifier's signer epoch reads it"
+      }
+    ]
+  },
+  "contracts": [
+    {
+      "name": "Stream",
+      "artifact": "src/stream/Stream.sol:Stream",
+      "implementation": "src/stream/Stream.sol:Stream",
+      "address": "0x000000000000000000000000000000000000a001",
+      "status": "implemented",
+      "functions": [
+        {
+          "signature": "createCollection(string,bytes32)",
+          "selector": "0x41d06dde",
+          "role": "PLATFORM",
+          "class": "immediate",
+          "delay": 0
+        },
+        {
+          "signature": "setContractURI(string)",
+          "selector": "0x938e3d7b",
+          "role": "PARAMETER_SETTER",
+          "class": "24h",
+          "delay": 86400
+        },
+        {
+          "signature": "setOwner(address,address)",
+          "selector": "0x299a7bcc",
+          "role": "FUNDS_SETTER",
+          "class": "3d",
+          "delay": 259200
+        },
+        {
+          "signature": "setDefaultRenderer(address,address,bytes32)",
+          "selector": "0x95021460",
+          "role": "SUCCESSOR_SETTER",
+          "class": "7d",
+          "delay": 604800
+        },
+        {
+          "signature": "setAdmittedMinter(address,bool)",
+          "selector": "0xa82ed63a",
+          "role": "SUCCESSOR_SETTER",
+          "class": "7d",
+          "delay": 604800
+        },
+        {
+          "signature": "releaseContent(uint256,bytes32,uint256)",
+          "selector": "0x56c6d728",
+          "role": "PARAMETER_SETTER",
+          "class": "24h",
+          "delay": 86400
+        },
+        {
+          "signature": "setDependency(bytes32,address,address)",
+          "selector": "0x480b197d",
+          "role": "SUCCESSOR_SETTER",
+          "class": "7d",
+          "delay": 604800
+        },
+        {
+          "signature": "rescueToMuseum(uint256)",
+          "selector": "0xe9c794a4",
+          "role": "PARAMETER_SETTER",
+          "class": "24h",
+          "delay": 86400
+        },
+        {
+          "signature": "lowerFeeShare(uint256,uint32)",
+          "selector": "0xb8012723",
+          "role": "PARAMETER_SETTER",
+          "class": "24h",
+          "delay": 86400
+        }
+      ],
+      "genesisOnly": [
+        {
+          "signature": "bindWorkRecords(address)",
+          "selector": "0x8bb9e2fd"
+        },
+        {
+          "signature": "bindEditions(address)",
+          "selector": "0x8d12f114"
+        }
+      ],
+      "deferred": []
+    },
+    {
+      "name": "WorkRecords",
+      "artifact": "src/stream/WorkRecords.sol:WorkRecords",
+      "implementation": "src/stream/WorkRecords.sol:WorkRecords",
+      "address": "0x000000000000000000000000000000000000a002",
+      "status": "implemented",
+      "functions": [
+        {
+          "signature": "relicense(uint256,(string,bytes32),(uint8,uint256,bytes32,bytes32,bytes32,(address,uint8)[],(uint256,address,uint32)[],(string,bytes32),uint8,bytes32,(bytes32,address,bytes),(uint32,address,bytes32,bytes)),bytes32,uint64,bytes[])",
+          "selector": "0xd60ad0db",
+          "role": "FUNDS_SETTER",
+          "class": "3d",
+          "delay": 259200
+        },
+        {
+          "signature": "setRoyaltyRate(uint256,uint32,(uint8,uint256,bytes32,bytes32,bytes32,(address,uint8)[],(uint256,address,uint32)[],(string,bytes32),uint8,bytes32,(bytes32,address,bytes),(uint32,address,bytes32,bytes)),bytes32,uint64,bytes[])",
+          "selector": "0xc13560ef",
+          "role": "FUNDS_SETTER",
+          "class": "3d",
+          "delay": 259200
+        },
+        {
+          "signature": "setDelivery(address,address)",
+          "selector": "0x118e803d",
+          "role": "SUCCESSOR_SETTER",
+          "class": "7d",
+          "delay": 604800
+        },
+        {
+          "signature": "addStore(address,bytes32)",
+          "selector": "0xce8238dd",
+          "role": "SUCCESSOR_SETTER",
+          "class": "7d",
+          "delay": 604800
+        },
+        {
+          "signature": "repinRenderer(uint256,address,bytes32,bytes32)",
+          "selector": "0x6ca04c66",
+          "role": "SUCCESSOR_SETTER",
+          "class": "7d",
+          "delay": 604800
+        },
+        {
+          "signature": "retireStore(uint256)",
+          "selector": "0x2dc3d993",
+          "role": "PARAMETER_SETTER",
+          "class": "24h",
+          "delay": 86400
+        },
+        {
+          "signature": "renounce(uint256,uint16,bytes32,uint64,bytes)",
+          "selector": "0x7dec8a35",
+          "role": "PARAMETER_SETTER",
+          "class": "24h",
+          "delay": 86400
+        },
+        {
+          "signature": "syncOnChain(uint256,uint256,uint256)",
+          "selector": "0xe96a1fdf",
+          "role": "STORAGE_OPERATOR",
+          "class": "immediate",
+          "delay": 0
+        }
+      ],
+      "genesisOnly": [],
+      "deferred": []
+    },
+    {
+      "name": "WorkDelivery",
+      "artifact": "src/stream/WorkDelivery.sol:WorkDelivery",
+      "implementation": "src/stream/WorkDelivery.sol:WorkDelivery",
+      "address": "0x000000000000000000000000000000000000a011",
+      "status": "created by WorkRecords' constructor; replaceable through WorkRecords.setDelivery",
+      "functions": [
+        {
+          "signature": "setPreferredKind(uint8)",
+          "selector": "0x40ff5d7f",
+          "role": "STORAGE_OPERATOR",
+          "class": "immediate",
+          "delay": 0
+        },
+        {
+          "signature": "setCollectionPreferredKind(uint256,uint8)",
+          "selector": "0x4ddc92d1",
+          "role": "STORAGE_OPERATOR",
+          "class": "immediate",
+          "delay": 0
+        },
+        {
+          "signature": "setFilePreference(uint256,bytes32,uint256)",
+          "selector": "0x65a48a4e",
+          "role": "STORAGE_OPERATOR",
+          "class": "immediate",
+          "delay": 0
+        },
+        {
+          "signature": "addLocator(uint256,bytes32,(uint8,string))",
+          "selector": "0xf3326c0f",
+          "role": "PLATFORM",
+          "class": "immediate",
+          "delay": 0
+        },
+        {
+          "signature": "markLocatorDead(uint256,bytes32,uint256)",
+          "selector": "0x9a3a206a",
+          "role": "STORAGE_OPERATOR",
+          "class": "immediate",
+          "delay": 0
+        }
+      ],
+      "genesisOnly": [],
+      "deferred": []
+    },
+    {
+      "name": "Editions",
+      "artifact": "src/editions/Editions.sol:Editions",
+      "implementation": "src/editions/Editions.sol:Editions",
+      "address": "0x000000000000000000000000000000000000a003",
+      "status": "implemented",
+      "functions": [
+        {
+          "signature": "setContractURI(string)",
+          "selector": "0x938e3d7b",
+          "role": "PARAMETER_SETTER",
+          "class": "24h",
+          "delay": 86400
+        },
+        {
+          "signature": "setOwner(address,address)",
+          "selector": "0x299a7bcc",
+          "role": "FUNDS_SETTER",
+          "class": "3d",
+          "delay": 259200
+        },
+        {
+          "signature": "setAdmittedMinter(address,bool)",
+          "selector": "0xa82ed63a",
+          "role": "SUCCESSOR_SETTER",
+          "class": "7d",
+          "delay": 604800
+        },
+        {
+          "signature": "lowerFeeShare(uint256,uint32)",
+          "selector": "0xb8012723",
+          "role": "PARAMETER_SETTER",
+          "class": "24h",
+          "delay": 86400
+        }
+      ],
+      "genesisOnly": [
+        {
+          "signature": "bindWorkRecords(address)",
+          "selector": "0x8bb9e2fd"
+        }
+      ],
+      "deferred": []
+    },
+    {
+      "name": "PackageRegistry",
+      "artifact": "src/curation/PackageRegistry.sol:PackageRegistry",
+      "implementation": "src/curation/PackageRegistry.sol:PackageRegistry",
+      "address": "0x000000000000000000000000000000000000a004",
+      "status": "implemented",
+      "functions": [
+        {
+          "signature": "revokePackage(bytes32,bytes32)",
+          "selector": "0x6ce7e2f6",
+          "role": "NETWORK",
+          "class": "immediate",
+          "delay": 0
+        },
+        {
+          "signature": "setVerifier(address,address,bytes32)",
+          "selector": "0xef65fbd2",
+          "role": "SUCCESSOR_SETTER",
+          "class": "7d",
+          "delay": 604800
+        },
+        {
+          "signature": "killSignerApprovals(address)",
+          "selector": "0x532178aa",
+          "role": "NETWORK",
+          "class": "immediate",
+          "delay": 0
+        }
+      ],
+      "genesisOnly": [
+        {
+          "signature": "bindStream(address)",
+          "selector": "0x7d4b8f67"
+        },
+        {
+          "signature": "bindEditions(address)",
+          "selector": "0x8d12f114"
+        }
+      ],
+      "deferred": []
+    },
+    {
+      "name": "CurationVerifier",
+      "artifact": "src/curation/Eip712CurationVerifier.sol:Eip712CurationVerifier",
+      "implementation": "src/curation/Eip712CurationVerifier.sol:Eip712CurationVerifier",
+      "address": "0x000000000000000000000000000000000000a005",
+      "status": "implemented",
+      "functions": [
+        {
+          "signature": "disableSigner(address)",
+          "selector": "0x27086336",
+          "role": "NETWORK",
+          "class": "immediate",
+          "delay": 0
+        },
+        {
+          "signature": "enableSigner(address)",
+          "selector": "0x6dcd6b34",
+          "role": "SUCCESSOR_SETTER",
+          "class": "7d",
+          "delay": 604800
+        }
+      ],
+      "genesisOnly": [],
+      "deferred": []
+    },
+    {
+      "name": "ArtistRegistry",
+      "artifact": "src/identity/ArtistRegistry.sol:ArtistRegistry",
+      "implementation": "src/identity/ArtistRegistry.sol:ArtistRegistry",
+      "address": "0x000000000000000000000000000000000000a006",
+      "status": "implemented",
+      "functions": [
+        {
+          "signature": "setConsolidationSource(address,address,bytes32)",
+          "selector": "0x741cbdad",
+          "role": "SUCCESSOR_SETTER",
+          "class": "7d",
+          "delay": 604800
+        },
+        {
+          "signature": "setPackageRegistry(address,address)",
+          "selector": "0x00752cf1",
+          "role": "SUCCESSOR_SETTER",
+          "class": "7d",
+          "delay": 604800
+        },
+        {
+          "signature": "resolveContested(uint256,bool,bytes32)",
+          "selector": "0xd16d1602",
+          "role": "PARAMETER_SETTER",
+          "class": "24h",
+          "delay": 86400
+        },
+        {
+          "signature": "setFederationRegistry(address,address)",
+          "selector": "0x747e3199",
+          "role": "SUCCESSOR_SETTER",
+          "class": "7d",
+          "delay": 604800
+        },
+        {
+          "signature": "freeze(uint256)",
+          "selector": "0xd7a78db8",
+          "role": "NETWORK",
+          "class": "immediate",
+          "delay": 0
+        },
+        {
+          "signature": "unfreeze(uint256)",
+          "selector": "0x6623fc46",
+          "role": "NETWORK",
+          "class": "immediate",
+          "delay": 0
+        },
+        {
+          "signature": "cancelReplacement(uint256)",
+          "selector": "0x0c3f8b2a",
+          "role": "NETWORK",
+          "class": "immediate",
+          "delay": 0
+        },
+        {
+          "signature": "cancelOwnChange(uint256)",
+          "selector": "0x6196ae79",
+          "role": "NETWORK",
+          "class": "immediate",
+          "delay": 0
+        },
+        {
+          "signature": "stageReplacement(uint256,(address,address,bytes32,bytes32),bytes32,uint64,bytes)",
+          "selector": "0x2eff6829",
+          "role": "PARAMETER_SETTER",
+          "class": "24h",
+          "delay": 86400
+        },
+        {
+          "signature": "setFederationDelisted(uint256,bool,bytes32)",
+          "selector": "0x2a973e93",
+          "role": "PARAMETER_SETTER",
+          "class": "24h",
+          "delay": 86400
+        },
+        {
+          "signature": "lowerFederatedFeeShare(address,uint32)",
+          "selector": "0xa8bf8adc",
+          "role": "PARAMETER_SETTER",
+          "class": "24h",
+          "delay": 86400
+        }
+      ],
+      "genesisOnly": [
+        {
+          "signature": "bindPackageRegistry(address)",
+          "selector": "0x56ea1bf8"
+        },
+        {
+          "signature": "bindStream(address)",
+          "selector": "0x7d4b8f67"
+        },
+        {
+          "signature": "bindSplitFactory(address)",
+          "selector": "0x5b004c86"
+        },
+        {
+          "signature": "bindStatementLog(address)",
+          "selector": "0xa46c8086"
+        },
+        {
+          "signature": "bindFederationRegistry(address)",
+          "selector": "0x3d4dbd3c"
+        }
+      ],
+      "deferred": []
+    },
+    {
+      "name": "StatementLog",
+      "artifact": "src/records/StatementLog.sol:StatementLog",
+      "implementation": "src/records/StatementLog.sol:StatementLog",
+      "address": "0x000000000000000000000000000000000000a007",
+      "status": "implemented",
+      "functions": [
+        {
+          "signature": "appendCurator((address,uint256,bytes32,bytes32,(uint16,bytes32),string,bytes32,bytes32))",
+          "selector": "0xa054305a",
+          "role": "CURATOR",
+          "class": "immediate",
+          "delay": 0
+        },
+        {
+          "signature": "appendPlatform((address,uint256,bytes32,bytes32,(uint16,bytes32),string,bytes32,bytes32))",
+          "selector": "0x8479b292",
+          "role": "PLATFORM",
+          "class": "immediate",
+          "delay": 0
+        },
+        {
+          "signature": "appendGovernanceManifest((address,uint256,bytes32,bytes32,(uint16,bytes32),string,bytes32,bytes32))",
+          "selector": "0x5cab7fab",
+          "role": "SUCCESSOR_SETTER",
+          "class": "7d",
+          "delay": 604800
+        },
+        {
+          "signature": "setArtistResolver(address,address,bytes32)",
+          "selector": "0x4585913a",
+          "role": "SUCCESSOR_SETTER",
+          "class": "7d",
+          "delay": 604800
+        }
+      ],
+      "genesisOnly": [],
+      "deferred": []
+    },
+    {
+      "name": "EnglishAuction",
+      "artifact": "src/sales/EnglishAuction.sol:EnglishAuction",
+      "implementation": "src/sales/EnglishAuction.sol:EnglishAuction",
+      "address": "0x000000000000000000000000000000000000a008",
+      "status": "implemented",
+      "functions": [
+        {
+          "signature": "pause()",
+          "selector": "0x8456cb59",
+          "role": "PAUSER",
+          "class": "immediate",
+          "delay": 0
+        },
+        {
+          "signature": "unpause()",
+          "selector": "0x3f4ba83a",
+          "role": "NETWORK",
+          "class": "immediate",
+          "delay": 0
+        },
+        {
+          "signature": "pause(uint256,bytes32)",
+          "selector": "0xa9f8f393",
+          "role": "PAUSER",
+          "class": "immediate",
+          "delay": 0
+        },
+        {
+          "signature": "resume(uint256)",
+          "selector": "0x414000b5",
+          "role": "NETWORK",
+          "class": "immediate",
+          "delay": 0
+        },
+        {
+          "signature": "cancel(uint256,bytes32)",
+          "selector": "0xeafb64d5",
+          "role": "NETWORK",
+          "class": "immediate",
+          "delay": 0
+        },
+        {
+          "signature": "setConfig((uint32,uint32,uint32,uint32),(uint32,uint32,uint32,uint32))",
+          "selector": "0xf9f86bee",
+          "role": "PARAMETER_SETTER",
+          "class": "24h",
+          "delay": 86400
+        },
+        {
+          "signature": "setTarget(address,bool)",
+          "selector": "0x80ffe77f",
+          "role": "SUCCESSOR_SETTER",
+          "class": "7d",
+          "delay": 604800
+        },
+        {
+          "signature": "setFederationRegistry(address,address)",
+          "selector": "0x747e3199",
+          "role": "SUCCESSOR_SETTER",
+          "class": "7d",
+          "delay": 604800
+        }
+      ],
+      "genesisOnly": [],
+      "deferred": []
+    },
+    {
+      "name": "UniformEditionAuction",
+      "artifact": "src/sales/UniformEditionAuction.sol:UniformEditionAuction",
+      "implementation": "src/sales/UniformEditionAuction.sol:UniformEditionAuction",
+      "address": "0x000000000000000000000000000000000000a009",
+      "status": "implemented",
+      "functions": [
+        {
+          "signature": "pause()",
+          "selector": "0x8456cb59",
+          "role": "PAUSER",
+          "class": "immediate",
+          "delay": 0
+        },
+        {
+          "signature": "unpause()",
+          "selector": "0x3f4ba83a",
+          "role": "NETWORK",
+          "class": "immediate",
+          "delay": 0
+        },
+        {
+          "signature": "setConfig((uint96,uint16,uint16,uint32,uint32,uint32),(uint96,uint16,uint16,uint32,uint32,uint32))",
+          "selector": "0x0b8c383f",
+          "role": "PARAMETER_SETTER",
+          "class": "24h",
+          "delay": 86400
+        },
+        {
+          "signature": "setTarget(address,bool)",
+          "selector": "0x80ffe77f",
+          "role": "SUCCESSOR_SETTER",
+          "class": "7d",
+          "delay": 604800
+        },
+        {
+          "signature": "setLimits(uint256,uint256)",
+          "selector": "0xc4590d3f",
+          "role": "PARAMETER_SETTER",
+          "class": "24h",
+          "delay": 86400
+        }
+      ],
+      "genesisOnly": [],
+      "deferred": []
+    },
+    {
+      "name": "EconomicsResolver",
+      "artifact": "src/economics/EconomicsResolver.sol:EconomicsResolver",
+      "implementation": "src/economics/EconomicsResolver.sol:EconomicsResolver",
+      "address": "0x000000000000000000000000000000000000a00b",
+      "status": "implemented",
+      "functions": [
+        {
+          "signature": "setFeeTerms(bytes32,uint64,address,uint32)",
+          "selector": "0x9a8fce26",
+          "role": "FUNDS_SETTER",
+          "class": "3d",
+          "delay": 259200
+        },
+        {
+          "signature": "setRoyaltyRate(bytes32,uint64,uint32)",
+          "selector": "0x6e58f7af",
+          "role": "PARAMETER_SETTER",
+          "class": "24h",
+          "delay": 86400
+        },
+        {
+          "signature": "setDefaultLicense(bytes32,uint64,(string,bytes32))",
+          "selector": "0x387226d6",
+          "role": "PARAMETER_SETTER",
+          "class": "24h",
+          "delay": 86400
+        },
+        {
+          "signature": "setMuseum(uint64,address)",
+          "selector": "0x10d71d79",
+          "role": "FUNDS_SETTER",
+          "class": "3d",
+          "delay": 259200
+        }
+      ],
+      "genesisOnly": [],
+      "deferred": []
+    },
+    {
+      "name": "AssetAllowlist",
+      "artifact": "src/economics/AssetAllowlist.sol:AssetAllowlist",
+      "implementation": "src/economics/AssetAllowlist.sol:AssetAllowlist",
+      "address": "0x000000000000000000000000000000000000a00c",
+      "status": "implemented",
+      "functions": [
+        {
+          "signature": "admitAsset(address,uint64,uint256)",
+          "selector": "0x3979fc8e",
+          "role": "FUNDS_SETTER",
+          "class": "3d",
+          "delay": 259200
+        },
+        {
+          "signature": "setDefaultCurrency(bytes32,uint64,address)",
+          "selector": "0xbc27c0e9",
+          "role": "FUNDS_SETTER",
+          "class": "3d",
+          "delay": 259200
+        },
+        {
+          "signature": "setIncrementFloor(address,uint64,uint256)",
+          "selector": "0xad176f96",
+          "role": "PARAMETER_SETTER",
+          "class": "24h",
+          "delay": 86400
+        },
+        {
+          "signature": "deprecateAsset(address)",
+          "selector": "0x41003c89",
+          "role": "NETWORK",
+          "class": "immediate",
+          "delay": 0
+        },
+        {
+          "signature": "setOpeningBid(address,uint64,uint256)",
+          "selector": "0x373577fc",
+          "role": "PARAMETER_SETTER",
+          "class": "24h",
+          "delay": 86400
+        }
+      ],
+      "genesisOnly": [],
+      "deferred": []
+    },
+    {
+      "name": "RevenueEscrow",
+      "artifact": "src/economics/RevenueEscrow.sol:RevenueEscrow",
+      "implementation": "src/economics/RevenueEscrow.sol:RevenueEscrow",
+      "address": "0x000000000000000000000000000000000000a00d",
+      "status": "implemented",
+      "functions": [
+        {
+          "signature": "recover(address,address,address)",
+          "selector": "0x159c61f8",
+          "role": "FUNDS_SETTER",
+          "class": "3d",
+          "delay": 259200
+        },
+        {
+          "signature": "sweepExcess(address,address)",
+          "selector": "0xfc6e9367",
+          "role": "FUNDS_SETTER",
+          "class": "3d",
+          "delay": 259200
+        }
+      ],
+      "genesisOnly": [],
+      "deferred": []
+    },
+    {
+      "name": "FeeRecipientVault",
+      "artifact": "src/economics/GovernedVault.sol:GovernedVault",
+      "implementation": "src/economics/GovernedVault.sol:GovernedVault",
+      "address": "0x000000000000000000000000000000000000a013",
+      "status": "implemented",
+      "note": "The network fee recipient: a governed vault the economics resolver names; it forwards what it holds only to its destination (the deployment's NETWORK_FEE_RECIPIENT first)",
+      "functions": [
+        {
+          "signature": "setDestination(uint64,address)",
+          "selector": "0x765b2cf1",
+          "role": "FUNDS_SETTER",
+          "class": "3d",
+          "delay": 259200
+        }
+      ],
+      "genesisOnly": [],
+      "deferred": []
+    },
+    {
+      "name": "MuseumVault",
+      "artifact": "src/economics/GovernedVault.sol:GovernedVault",
+      "implementation": "src/economics/GovernedVault.sol:GovernedVault",
+      "address": "0x000000000000000000000000000000000000a014",
+      "status": "implemented",
+      "note": "The museum: a governed vault the economics resolver names; unbid and rescued works and museum payouts land here and move only to its destination (the deployment's MUSEUM first)",
+      "functions": [
+        {
+          "signature": "setDestination(uint64,address)",
+          "selector": "0x765b2cf1",
+          "role": "SUCCESSOR_SETTER",
+          "class": "7d",
+          "delay": 604800,
+          "note": "7-day class, not the fee vault's 3 days: the museum vault holds existing works (every museum-held 1/1), so its destination is an authority over existing tokens (ADR 0007)"
+        }
+      ],
+      "genesisOnly": [],
+      "deferred": []
+    },
+    {
+      "name": "DependencyRegistry",
+      "artifact": "src/content/DependencyRegistry.sol:DependencyRegistry",
+      "implementation": "src/content/DependencyRegistry.sol:DependencyRegistry",
+      "address": "0x000000000000000000000000000000000000a00e",
+      "status": "implemented",
+      "functions": [
+        {
+          "signature": "register(bytes32,bytes32,bytes32)",
+          "selector": "0x4da274fd",
+          "role": "PARAMETER_SETTER",
+          "class": "24h",
+          "delay": 86400
+        },
+        {
+          "signature": "deprecate(bytes32,bytes32)",
+          "selector": "0x38bc7435",
+          "role": "NETWORK",
+          "class": "immediate",
+          "delay": 0
+        }
+      ],
+      "genesisOnly": [],
+      "deferred": []
+    },
+    {
+      "name": "EntropyModule",
+      "artifact": "src/entropy/VrfEntropyModule.sol:VrfEntropyModule",
+      "implementation": "src/entropy/VrfEntropyModule.sol:VrfEntropyModule",
+      "address": "0x000000000000000000000000000000000000a00f",
+      "status": "implemented (optional module)",
+      "functions": [
+        {
+          "signature": "setConfig((uint256,bytes32,uint32,uint16,bool),(uint256,bytes32,uint32,uint16,bool))",
+          "selector": "0x058832db",
+          "role": "PARAMETER_SETTER",
+          "class": "24h",
+          "delay": 86400
+        },
+        {
+          "signature": "setCoordinator(address,address,bytes32)",
+          "selector": "0xf1fb02ec",
+          "role": "SUCCESSOR_SETTER",
+          "class": "7d",
+          "delay": 604800
+        },
+        {
+          "signature": "lowerCallbackGasLimit(uint32,uint32)",
+          "selector": "0x37f9925e",
+          "role": "SUCCESSOR_SETTER",
+          "class": "7d",
+          "delay": 604800
+        },
+        {
+          "signature": "setWrapper(address,address,bytes32)",
+          "selector": "0x40cacfc9",
+          "role": "SUCCESSOR_SETTER",
+          "class": "7d",
+          "delay": 604800
+        }
+      ],
+      "genesisOnly": [],
+      "deferred": []
+    },
+    {
+      "name": "FederationRegistry",
+      "artifact": "src/federated/FederationRegistry.sol:FederationRegistry",
+      "implementation": "src/federated/FederationRegistry.sol:FederationRegistry",
+      "address": "0x000000000000000000000000000000000000a015",
+      "status": "implemented",
+      "functions": [
+        {
+          "signature": "approveTemplate(bytes32,address,uint32,uint8)",
+          "selector": "0x62c03b8e",
+          "role": "PARAMETER_SETTER",
+          "class": "24h",
+          "delay": 86400
+        },
+        {
+          "signature": "revokeTemplate(bytes32)",
+          "selector": "0x3d4e7cc8",
+          "role": "PARAMETER_SETTER",
+          "class": "24h",
+          "delay": 86400
+        },
+        {
+          "signature": "setAdapter(address,bool)",
+          "selector": "0x332f6465",
+          "role": "SUCCESSOR_SETTER",
+          "class": "7d",
+          "delay": 604800
+        },
+        {
+          "signature": "suspendTemplate(bytes32)",
+          "selector": "0xbb294eed",
+          "role": "PARAMETER_SETTER",
+          "class": "24h",
+          "delay": 86400
+        },
+        {
+          "signature": "resumeTemplate(bytes32)",
+          "selector": "0x8a16038f",
+          "role": "PARAMETER_SETTER",
+          "class": "24h",
+          "delay": 86400
+        },
+        {
+          "signature": "setStatus(address[],uint8,bytes32)",
+          "selector": "0x565f9c3d",
+          "role": "PARAMETER_SETTER",
+          "class": "24h",
+          "delay": 86400
+        },
+        {
+          "signature": "reinstateTemplate(bytes32)",
+          "selector": "0x8a9e9fbe",
+          "role": "PARAMETER_SETTER",
+          "class": "24h",
+          "delay": 86400
+        }
+      ],
+      "genesisOnly": [],
+      "deferred": []
+    },
+    {
+      "name": "FederatedEditionAuction",
+      "artifact": "src/federated/FederatedEditionAuction.sol:FederatedEditionAuction",
+      "implementation": "src/federated/FederatedEditionAuction.sol:FederatedEditionAuction",
+      "address": "0x000000000000000000000000000000000000a016",
+      "status": "implemented; setTarget is a pure refusal (the federation registry decides), so it has no row",
+      "functions": [
+        {
+          "signature": "pause()",
+          "selector": "0x8456cb59",
+          "role": "PAUSER",
+          "class": "immediate",
+          "delay": 0
+        },
+        {
+          "signature": "unpause()",
+          "selector": "0x3f4ba83a",
+          "role": "NETWORK",
+          "class": "immediate",
+          "delay": 0
+        },
+        {
+          "signature": "setConfig((uint96,uint16,uint16,uint32,uint32,uint32),(uint96,uint16,uint16,uint32,uint32,uint32))",
+          "selector": "0x0b8c383f",
+          "role": "PARAMETER_SETTER",
+          "class": "24h",
+          "delay": 86400
+        },
+        {
+          "signature": "setLimits(uint256,uint256)",
+          "selector": "0xc4590d3f",
+          "role": "PARAMETER_SETTER",
+          "class": "24h",
+          "delay": 86400
+        }
+      ],
+      "genesisOnly": [],
+      "deferred": []
+    }
+  ],
+  "wiring": [
+    {
+      "contract": "Stream",
+      "signature": "bindWorkRecords(address)",
+      "args": [
+        "WorkRecords"
+      ],
+      "calldata": "0x8bb9e2fd000000000000000000000000000000000000000000000000000000000000a002"
+    },
+    {
+      "contract": "Stream",
+      "signature": "bindEditions(address)",
+      "args": [
+        "Editions"
+      ],
+      "calldata": "0x8d12f114000000000000000000000000000000000000000000000000000000000000a003"
+    },
+    {
+      "contract": "Editions",
+      "signature": "bindWorkRecords(address)",
+      "args": [
+        "WorkRecords"
+      ],
+      "calldata": "0x8bb9e2fd000000000000000000000000000000000000000000000000000000000000a002"
+    },
+    {
+      "contract": "PackageRegistry",
+      "signature": "bindStream(address)",
+      "args": [
+        "Stream"
+      ],
+      "calldata": "0x7d4b8f67000000000000000000000000000000000000000000000000000000000000a001"
+    },
+    {
+      "contract": "PackageRegistry",
+      "signature": "bindEditions(address)",
+      "args": [
+        "Editions"
+      ],
+      "calldata": "0x8d12f114000000000000000000000000000000000000000000000000000000000000a003"
+    },
+    {
+      "contract": "ArtistRegistry",
+      "signature": "bindPackageRegistry(address)",
+      "args": [
+        "PackageRegistry"
+      ],
+      "calldata": "0x56ea1bf8000000000000000000000000000000000000000000000000000000000000a004"
+    },
+    {
+      "contract": "ArtistRegistry",
+      "signature": "bindStream(address)",
+      "args": [
+        "Stream"
+      ],
+      "calldata": "0x7d4b8f67000000000000000000000000000000000000000000000000000000000000a001"
+    },
+    {
+      "contract": "ArtistRegistry",
+      "signature": "bindSplitFactory(address)",
+      "args": [
+        "SplitFactory"
+      ],
+      "calldata": "0x5b004c86000000000000000000000000000000000000000000000000000000000000a010"
+    },
+    {
+      "contract": "ArtistRegistry",
+      "signature": "bindStatementLog(address)",
+      "args": [
+        "StatementLog"
+      ],
+      "calldata": "0xa46c8086000000000000000000000000000000000000000000000000000000000000a007"
+    },
+    {
+      "contract": "Stream",
+      "signature": "setAdmittedMinter(address,bool)",
+      "args": [
+        "EnglishAuction",
+        true
+      ],
+      "calldata": "0xa82ed63a000000000000000000000000000000000000000000000000000000000000a0080000000000000000000000000000000000000000000000000000000000000001"
+    },
+    {
+      "contract": "Editions",
+      "signature": "setAdmittedMinter(address,bool)",
+      "args": [
+        "UniformEditionAuction",
+        true
+      ],
+      "calldata": "0xa82ed63a000000000000000000000000000000000000000000000000000000000000a0090000000000000000000000000000000000000000000000000000000000000001",
+      "note": "The genesis edition sale; later sale methods are admitted the same way, in the 7-day class (owner decision 14)"
+    },
+    {
+      "contract": "EnglishAuction",
+      "signature": "setTarget(address,bool)",
+      "args": [
+        "Stream",
+        true
+      ],
+      "calldata": "0x80ffe77f000000000000000000000000000000000000000000000000000000000000a0010000000000000000000000000000000000000000000000000000000000000001"
+    },
+    {
+      "contract": "AssetAllowlist",
+      "signature": "setOpeningBid(address,uint64,uint256)",
+      "args": [
+        "0x0000000000000000000000000000000000000000",
+        1,
+        50000000000000000
+      ],
+      "note": "ETH opening bid 0.05 ETH (owner decision 19), held by the asset allowlist since ADR 0007 (ETH is at revision 1 from its admission at deployment): a 1-wei self-bid can no longer take a 1/1 past the museum",
+      "calldata": "0x373577fc0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000b1a2bc2ec50000"
+    },
+    {
+      "contract": "UniformEditionAuction",
+      "signature": "setTarget(address,bool)",
+      "args": [
+        "Editions",
+        true
+      ],
+      "calldata": "0x80ffe77f000000000000000000000000000000000000000000000000000000000000a0030000000000000000000000000000000000000000000000000000000000000001"
+    },
+    {
+      "contract": "AssetAllowlist",
+      "signature": "setDefaultCurrency(bytes32,uint64,address)",
+      "args": [
+        "0x8d6f9a2373152dc58ba78e223790bc7f77f86abeb152249f9dfa37dfb9f47de2",
+        0,
+        "0x0000000000000000000000000000000000000000"
+      ],
+      "note": "PRODUCT_STREAM: ETH, revision 0",
+      "calldata": "0xbc27c0e98d6f9a2373152dc58ba78e223790bc7f77f86abeb152249f9dfa37dfb9f47de200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "contract": "AssetAllowlist",
+      "signature": "setDefaultCurrency(bytes32,uint64,address)",
+      "args": [
+        "0xdda24e9b6aae8e08617e9965b04fb0c49afa288965fbdf1734798e07309ffb7b",
+        0,
+        "0x0000000000000000000000000000000000000000"
+      ],
+      "note": "PRODUCT_EDITIONS: ETH, revision 0",
+      "calldata": "0xbc27c0e9dda24e9b6aae8e08617e9965b04fb0c49afa288965fbdf1734798e07309ffb7b00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "contract": "AssetAllowlist",
+      "signature": "setDefaultCurrency(bytes32,uint64,address)",
+      "args": [
+        "0x12f6fbd5cb8f4522cd7d37f0fdc7097a4960a4f90e7a869820d34c7bdb75edff",
+        0,
+        "0x0000000000000000000000000000000000000000"
+      ],
+      "note": "PRODUCT_FEDERATED: ETH, revision 0",
+      "calldata": "0xbc27c0e912f6fbd5cb8f4522cd7d37f0fdc7097a4960a4f90e7a869820d34c7bdb75edff00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "contract": "ArtistRegistry",
+      "signature": "bindFederationRegistry(address)",
+      "args": [
+        "FederationRegistry"
+      ],
+      "note": "The genesis one-shot bind (ADR 0008); later replacements use setFederationRegistry (7 days)",
+      "calldata": "0x3d4dbd3c000000000000000000000000000000000000000000000000000000000000a015"
+    },
+    {
+      "contract": "EnglishAuction",
+      "signature": "setFederationRegistry(address,address)",
+      "args": [
+        "0x0000000000000000000000000000000000000000",
+        "FederationRegistry"
+      ],
+      "note": "The English auction serves the contracts the registry lists, its code hash pinned at this call",
+      "calldata": "0x747e31990000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a015"
+    },
+    {
+      "contract": "FederationRegistry",
+      "signature": "setAdapter(address,bool)",
+      "args": [
+        "EnglishAuction",
+        true
+      ],
+      "calldata": "0x332f6465000000000000000000000000000000000000000000000000000000000000a0080000000000000000000000000000000000000000000000000000000000000001"
+    },
+    {
+      "contract": "FederationRegistry",
+      "signature": "setAdapter(address,bool)",
+      "args": [
+        "FederatedEditionAuction",
+        true
+      ],
+      "calldata": "0x332f6465000000000000000000000000000000000000000000000000000000000000a0160000000000000000000000000000000000000000000000000000000000000001"
+    },
+    {
+      "contract": "FederationRegistry",
+      "signature": "approveTemplate(bytes32,address,uint32,uint8)",
+      "args": [
+        "FederatedStream",
+        "FederatedStreamDeployer",
+        1,
+        0
+      ],
+      "note": "Federated Stream v1 (ERC721). The code hash is computed by DeployV1.templateCodeHash from this build (keccak256 of the template's runtime code), never held here; the deployer is the template's FederatedDeployer, deployed by DeployV1 from the build's creation code; the calldata's first two words are placeholders",
+      "calldata": "0x62c03b8e0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "contract": "FederationRegistry",
+      "signature": "approveTemplate(bytes32,address,uint32,uint8)",
+      "args": [
+        "FederatedEditions",
+        "FederatedEditionsDeployer",
+        1,
+        1
+      ],
+      "note": "Federated Stream Editions v1 (ERC1155), as above",
+      "calldata": "0x62c03b8e0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000001"
+    },
+    {
+      "contract": "StatementLog",
+      "signature": "appendGovernanceManifest((address,uint256,bytes32,bytes32,(uint16,bytes32),string,bytes32,bytes32))",
+      "args": [],
+      "statement": {
+        "token": "WorksAccessManager",
+        "id": 0,
+        "kind": "GOVERNANCE_MANIFEST",
+        "schema": "keccak256(\"6529-works/governance-manifest/1\")",
+        "content": "SHA-256 (algorithm 2) of the signed epoch-0 manifest JSON (placeholder digest)",
+        "uri": "ar://placeholder-epoch-0-manifest",
+        "fileId": "0",
+        "supersedes": "0 (first epoch)"
+      },
+      "calldata": "0x5cab7fab0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000a0ff0000000000000000000000000000000000000000000000000000000000000000da3e4cfef33ef5fdea6a80cfd6c21354d7614a38addf188d0edad56c431651fc8eed62bc4427fadfd725468d49f945fa5af42bb4e58a6a6e36a907ce8743d4a700000000000000000000000000000000000000000000000000000000000000026e422bb96460cca9f8124fc04f069fe6e7bdce63cb4224e7c9a4eb5bba13d291000000000000000000000000000000000000000000000000000000000000012000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002161723a2f2f706c616365686f6c6465722d65706f63682d302d6d616e696665737400000000000000000000000000000000000000000000000000000000000000"
+    }
+  ],
+  "initialInstalls": {
+    "constructor": "Anything immutable or installed once with a pinned code hash: the curation verifier in the PackageRegistry, the resolver and escrow in the sale adapters, the consolidation source in the ArtistRegistry, the artist resolver in the StatementLog, the initial economics, default license and museum in the EconomicsResolver.",
+    "wiring": "One-shot binds between protocol contracts, admitted-minter grants (setAdmittedMinter), sale targets (setTarget), each product's first default currency (setDefaultCurrency: EnglishAuction.start reads PRODUCT_STREAM's) and the epoch-0 governance manifest (appendGovernanceManifest).",
+    "grants": "Curation signers are active once granted CURATION_SIGNER in holders; the verifier has no signer list to wire."
+  },
+  "unusedRoles": [
+    {
+      "role": "MINTER",
+      "note": "Sale adapters mint through each token's admitted-minter mapping (setAdmittedMinter, 7-day class), not the MINTER role."
+    },
+    {
+      "role": "KEEPER",
+      "note": "No selector maps to KEEPER: the network's keeper is a funded hot wallet with no role (R22); it starts sales through SaleStarter."
+    }
+  ]
+}
