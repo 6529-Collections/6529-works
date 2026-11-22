@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { Vm } from "forge-std/Vm.sol";
+import { Errors } from "@openzeppelin/contracts/utils/Errors.sol";
 import { GovernedVault } from "src/economics/GovernedVault.sol";
 import { SplitLedger } from "src/economics/SplitLedger.sol";
 import { SplitVault } from "src/economics/SplitVault.sol";
@@ -329,6 +330,18 @@ contract SplitFactoryTest is EconomicsBase {
             )
         );
         factory.createWallet(payees, slot);
+    }
+
+    /// @dev A creation that itself fails (here: the address already has code the ledger did not
+    ///      put there) reverts with OpenZeppelin's `Errors.FailedDeployment`, and nothing is
+    ///      recorded.
+    function test_CreateWalletRevertsIfTheCreationFails() public {
+        ISplitWallet.Payee[] memory payees = _list(_fixed(alice, D));
+        address predicted = factory.walletFor(payees, ZERO_SALT);
+        vm.etch(predicted, hex"00");
+        vm.expectRevert(Errors.FailedDeployment.selector);
+        factory.createWallet(payees, ZERO_SALT);
+        assertFalse(factory.isWallet(predicted));
     }
 
     /// @dev The largest payee list, with extreme field values, is logged exactly, and the logged

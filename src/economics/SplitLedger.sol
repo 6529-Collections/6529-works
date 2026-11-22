@@ -119,11 +119,7 @@ contract SplitLedger is ISplitLedger, EIP712 {
         bytes32 walletSalt = _walletSalt(configHash, salt);
         wallet = Create2.computeAddress(walletSalt, walletInitCodeHash);
         if (configOf[wallet] != bytes32(0)) return wallet;
-        bytes memory initCode = SplitVault.INIT_CODE;
-        address deployed;
-        assembly ("memory-safe") {
-            deployed := create2(0, add(initCode, 0x20), mload(initCode), walletSalt)
-        }
+        address deployed = Create2.deploy(0, walletSalt, SplitVault.INIT_CODE);
         if (deployed != wallet) revert WalletAddressMismatch(wallet, deployed);
         configOf[wallet] = configHash;
         emit WalletCreated(wallet, configHash, salt, payees);
