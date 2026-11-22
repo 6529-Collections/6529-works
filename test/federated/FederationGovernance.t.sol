@@ -14,6 +14,7 @@ import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IFederatedStream } from "src/interfaces/IFederatedStream.sol";
 import { IFederatedToken } from "src/interfaces/IFederatedToken.sol";
 import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
+import { ArtistIdentity } from "src/interfaces/types/IdentityTypes.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { CURRENCY_ETH, PRODUCT_FEDERATED } from "src/interfaces/types/EconomicsTypes.sol";
@@ -342,6 +343,49 @@ contract FederationGovernanceTest is FederationBase {
             fedArtist,
             abi.encodeWithSelector(IFederationRegistry.NotListable.selector, address(stream))
         );
+    }
+
+    /// @dev A copy whose artist ID names an account that is now another artist's root is
+    ///      refused: the registry tries to register that account and the artist registry
+    ///      answers that it is taken, whichever of the two IDs is larger.
+    function test_Register_AnAccountThatIsAnotherArtistsRootIsTaken() public {
+        address root = _actor("movedRoot");
+        address other = _actor("movedFrom");
+        // `other` must sort above `root`, so that only an exact comparison sends the join to
+        // the registration.
+        for (uint256 i; uint160(other) <= uint160(root); ++i) {
+            other = _actor(string.concat("movedFrom", vm.toString(i)));
+        }
+        _moveRoot(other, root);
+        assertEq(artists.artistIdOf(root), uint160(other));
+
+        FederatedStream s = _deployStream(_streamConfigFor(root));
+        IFederationRegistry.Join memory j = _joinRequest(address(s), root);
+        j.registration = _sign(
+            root, artists.registrationDigest(root, j.profileId, j.profileDocHash, j.deadline)
+        );
+        vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.AccountTaken.selector, root));
+        vm.prank(root);
+        s.joinFederation(j);
+    }
+
+    /// @dev Registers `from`, consolidates `to` with it and moves its root to `to`.
+    function _moveRoot(address from, address to) internal {
+        uint64 deadline = uint64(block.timestamp + 1 days);
+        bytes memory sig = _sign(from, artists.registrationDigest(from, 0, 0, deadline));
+        vm.prank(address(fedRegistry));
+        artists.registerFederated(from, 0, 0, deadline, sig);
+        address all = 0x8888888888888888888888888888888888888888;
+        vm.prank(from);
+        delegation.registerDelegationAddress(all, to, type(uint64).max, 999, true, 0);
+        vm.prank(to);
+        delegation.registerDelegationAddress(all, from, type(uint64).max, 999, true, 0);
+        uint256 id = uint160(from);
+        ArtistIdentity memory next = ArtistIdentity(to, to, 0, 0);
+        bytes32 digest = artists.changeDigest(id, next, artists.changeNonce(id), deadline);
+        artists.stageChange(id, next, deadline, abi.encodePacked(to, _sign(to, digest)));
+        vm.warp(block.timestamp + artists.OWN_CHANGE_DELAY());
+        artists.executeChange(id);
     }
 
     /// @dev Makes `token` answer the federation terms of `like`, with `share` and `partner`.
