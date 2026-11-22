@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { FederatedStream } from "src/federated/FederatedStream.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
@@ -348,7 +349,10 @@ contract ModuleLifecycleTest is FederatedIntegrationBase {
         (FederatedStream fStream,) = _listPair(artist);
         (,, uint256 tokenId) = _fedApproveAndStart(address(fStream), artist);
         _asNetwork(
-            address(federation), abi.encodeCall(federation.setAdapter, (address(auction), false))
+            address(federation),
+            abi.encodeCall(
+                federation.setAdapter, (address(auction), IFederationRegistry.Form.ERC721, false)
+            )
         );
         uint256 removedAt = block.timestamp;
         assertFalse(fStream.isMinter(address(auction)));

@@ -457,8 +457,7 @@ library DeployCore {
                     m,
                     verifier,
                     verifier.codehash,
-                    d.accounts,
-                    d.accounts.codehash,
+                    d.directory,
                     d.economicsResolver,
                     address(0)
                 )
@@ -518,7 +517,7 @@ library DeployCore {
         if (n == keccak256("WorkDelivery")) {
             return _artifact(
                 "WorkDelivery.sol:WorkDelivery",
-                abi.encode(m, d.workRules, d.workFacts, d.directory, address(0))
+                abi.encode(m, d.workRules, d.workFacts, d.directory)
             );
         }
         if (n == keccak256("StreamTerms")) {

@@ -80,6 +80,7 @@ FED_EDITIONS = "src/federated/FederatedEditions.sol:FederatedEditions"
 SLOTS = [
     fn("proposeModule(bytes32,address)", "NETWORK", "takes effect after moduleDelay, the contract's own setting"),
     fn("removeModule(bytes32)", "NETWORK", "at once"),
+    fn("cancelModule(bytes32)", "NETWORK", "withdraws an announced module before it takes effect; at once"),
     fn("setModuleDelay(uint48)", "NETWORK", "the network's setting, 7 days at launch; zero allowed"),
 ]
 MINTERS = [
@@ -247,6 +248,7 @@ CONTRACTS = [
             fn("setTarget(address,bool)", "SUCCESSOR_SETTER"),
             fn("setLimits(uint256,uint256)", "PARAMETER_SETTER"),
             fn("adopt(address,uint256,bytes)", "NETWORK", "opens the sale of an edition the network rebound to this auction"),
+            fn("closeEdition(address,uint256)", "NETWORK", "seals at zero an edition rebound to this auction that has no sale here"),
         ],
         "The minter of Editions",
     ),
@@ -307,7 +309,7 @@ CONTRACTS = [
         [
             fn("approveTemplate(address,uint32,uint8)", "PARAMETER_SETTER"),
             fn("revokeTemplate(address)", "PARAMETER_SETTER"),
-            fn("setAdapter(address,bool)", "SUCCESSOR_SETTER"),
+            fn("setAdapter(address,uint8,bool)", "SUCCESSOR_SETTER"),
             fn("suspendTemplate(address)", "PARAMETER_SETTER"),
             fn("resumeTemplate(address)", "PARAMETER_SETTER"),
             fn("setStatus(address[],uint8,bytes32)", "PARAMETER_SETTER"),
@@ -328,6 +330,7 @@ CONTRACTS = [
             fn(f"setConfig({EDITION_CONFIG},{EDITION_CONFIG})", "PARAMETER_SETTER"),
             fn("setLimits(uint256,uint256)", "PARAMETER_SETTER"),
             fn("adopt(address,uint256,bytes)", "NETWORK", "opens the sale of an edition the network rebound to this auction"),
+            fn("closeEdition(address,uint256)", "NETWORK", "seals at zero an edition rebound to this auction that has no sale here"),
         ],
     ),
 ]
@@ -347,8 +350,8 @@ WIRING = [
         ["0x0000000000000000000000000000000000000000", 1, 50000000000000000],
         "ETH opening bid 0.05 ETH: a 1-wei self-bid cannot keep an unsold work from the museum",
     ),
-    ("FederationRegistry", "setAdapter(address,bool)", ["EnglishAuction", True], None),
-    ("FederationRegistry", "setAdapter(address,bool)", ["FederatedEditionAuction", True], None),
+    ("FederationRegistry", "setAdapter(address,uint8,bool)", ["EnglishAuction", 0, True], None),
+    ("FederationRegistry", "setAdapter(address,uint8,bool)", ["FederatedEditionAuction", 1, True], None),
     ("FederationRegistry", "approveTemplate(address,uint32,uint8)", ["FederatedStreamDeployer", 1, 0], None),
     ("FederationRegistry", "approveTemplate(address,uint32,uint8)", ["FederatedEditionsDeployer", 1, 1], None),
     ("FederationRegistry", "setEntropyModule(address)", ["EntropyModule"], "left out when there is no entropy module"),

@@ -335,8 +335,7 @@ contract StreamDependenciesPortedTest is IntegrationBase {
             address(manager),
             ICurationVerifier(address(verifier)),
             address(verifier).codehash,
-            address(accounts),
-            address(accounts).codehash,
+            address(directory),
             IEconomicsResolver(address(economics)),
             address(0)
         );

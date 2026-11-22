@@ -51,6 +51,9 @@ contract LogReplayFederatedTest is ReplayBase {
     FederatedEditions internal fEditions;
     FedSale internal fedSale;
     FedSale internal nextSale;
+    /// @dev A sale contract is admitted for one token form: these two serve the editions.
+    FedSale internal edSale;
+    FedSale internal nextEdSale;
     FederatedStreamIndexer internal fStreamIdx;
     EditionsCoreIndexer internal fEditionsIdx;
     FederationRegistryIndexer internal fedIdx;
@@ -106,10 +109,28 @@ contract LogReplayFederatedTest is ReplayBase {
         );
         fedSale = new FedSale();
         nextSale = new FedSale();
+        edSale = new FedSale();
+        nextEdSale = new FedSale();
         _asNetwork(
-            address(federation), abi.encodeCall(federation.setAdapter, (address(fedSale), true))
+            address(federation),
+            abi.encodeCall(
+                federation.setAdapter, (address(fedSale), IFederationRegistry.Form.ERC721, true)
+            )
+        );
+        _asNetwork(
+            address(federation),
+            abi.encodeCall(
+                federation.setAdapter, (address(edSale), IFederationRegistry.Form.ERC1155, true)
+            )
         );
         fedIdx.addProbe(address(this));
+    }
+
+    function _setAdapter(FedSale sale, IFederationRegistry.Form form, bool admitted) internal {
+        _asNetwork(
+            address(federation),
+            abi.encodeCall(federation.setAdapter, (address(sale), form, admitted))
+        );
     }
 
     function _join(address token, address deployer, bool register) internal {
@@ -196,13 +217,13 @@ contract LogReplayFederatedTest is ReplayBase {
 
         // Editions: two created by the sale contract, minted, transferred and burned, one
         // sealed; one left unminted for the rebind.
-        fedSale.createEdition(address(fEditions), a, 10, address(0xFEE), 5_000);
-        fedSale.createEdition(address(fEditions), b, 0, address(0), 0);
+        edSale.(address(fEditions), a, 10, address(0xFEE), 5_000);
+        edSale.(address(fEditions), b, 0, address(0), 0);
         uint256 d = _mint(fedSale, _fedWork());
-        fedSale.createEdition(address(fEditions), d, 5, address(0), 0);
-        fedSale.mintEdition(address(fEditions), collector, a, 4, 0.1 ether);
-        fedSale.mintEdition(address(fEditions), collector, b, 3, 0.1 ether);
-        fedSale.seal(address(fEditions), a, 6);
+        edSale.(address(fEditions), d, 5, address(0), 0);
+        edSale.(address(fEditions), collector, a, 4, 0.1 ether);
+        edSale.(address(fEditions), collector, b, 3, 0.1 ether);
+        edSale.(address(fEditions), a, 6);
         vm.startPrank(collector);
         fEditions.safeTransferFrom(collector, second, a, 1, "");
         uint256[] memory ids = new uint256[](2);
@@ -248,23 +269,22 @@ contract LogReplayFederatedTest is ReplayBase {
         // The federation module removes the sale contract and admits another: a work still in
         // the old one's custody is rescued, and the unminted edition is rebound.
         uint256 stranded = _mint(fedSale, _fedWork());
-        _asNetwork(
-            address(federation), abi.encodeCall(federation.setAdapter, (address(fedSale), false))
-        );
-        _asNetwork(
-            address(federation), abi.encodeCall(federation.setAdapter, (address(nextSale), true))
-        );
+        _setAdapter(fedSale, IFederationRegistry.Form.ERC721, false);
+        _setAdapter(edSale, IFederationRegistry.Form.ERC1155, false);
+        _setAdapter(nextSale, IFederationRegistry.Form.ERC721, true);
+        _setAdapter(nextEdSale, IFederationRegistry.Form.ERC1155, true);
         fedIdx.addProbe(address(nextSale));
+        fedIdx.addProbe(address(nextEdSale));
         _sync();
         skip(2 days);
         vm.startPrank(network);
         fStream.rescue(stranded, museum);
-        fEditions.rebind(d, address(nextSale));
+        fEditions.rebind(d, address(nextEdSale));
         vm.stopPrank();
-        nextSale.mintEdition(address(fEditions), collector, d, 2, 0);
+        nextEdSale.mintEdition(address(fEditions), collector, d, 2, 0);
         _sync();
         assertEq(fStream.ownerOf(stranded), museum);
-        assertEq(fEditions.editionOf(d).minter, address(nextSale));
+        assertEq(fEditions.editionOf(d).minter, address(nextEdSale));
 
         _assertEveryEventReplayed(
             "FederatedStream", fStreamIdx, ReplayEvents.federatedStream(), _none()
@@ -300,9 +320,9 @@ contract LogReplayFederatedTest is ReplayBase {
     /// @dev An edition claim whose `TransferSingle` log is dropped: the balance is stale.
     function test_FederatedEditions_ReplayFailsOnADroppedLog() public {
         uint256 a = _mint(fedSale, _fedWork());
-        fedSale.createEdition(address(fEditions), a, 10, address(0), 0);
+        edSale.(address(fEditions), a, 10, address(0), 0);
         _sync();
-        fedSale.mintEdition(address(fEditions), collector, a, 2, 0);
+        edSale.(address(fEditions), collector, a, 2, 0);
         _apply(
             _dropOne(
                 address(fEditions),

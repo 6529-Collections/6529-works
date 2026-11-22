@@ -274,6 +274,14 @@
           "note": "at once"
         },
         {
+          "signature": "cancelModule(bytes32)",
+          "selector": "0xfbcfb93b",
+          "role": "NETWORK",
+          "class": "immediate",
+          "delay": 0,
+          "note": "withdraws an announced module before it takes effect; at once"
+        },
+        {
           "signature": "setModuleDelay(uint48)",
           "selector": "0x6cb67613",
           "role": "NETWORK",
@@ -356,6 +364,14 @@
           "note": "at once"
         },
         {
+          "signature": "cancelModule(bytes32)",
+          "selector": "0xfbcfb93b",
+          "role": "NETWORK",
+          "class": "immediate",
+          "delay": 0,
+          "note": "withdraws an announced module before it takes effect; at once"
+        },
+        {
           "signature": "setModuleDelay(uint48)",
           "selector": "0x6cb67613",
           "role": "NETWORK",
@@ -421,6 +437,14 @@
           "class": "immediate",
           "delay": 0,
           "note": "at once"
+        },
+        {
+          "signature": "cancelModule(bytes32)",
+          "selector": "0xfbcfb93b",
+          "role": "NETWORK",
+          "class": "immediate",
+          "delay": 0,
+          "note": "withdraws an announced module before it takes effect; at once"
         },
         {
           "signature": "setModuleDelay(uint48)",
@@ -912,6 +936,14 @@
           "class": "immediate",
           "delay": 0,
           "note": "opens the sale of an edition the network rebound to this auction"
+        },
+        {
+          "signature": "closeEdition(address,uint256)",
+          "selector": "0x9133f905",
+          "role": "NETWORK",
+          "class": "immediate",
+          "delay": 0,
+          "note": "seals at zero an edition rebound to this auction that has no sale here"
         }
       ],
       "genesisOnly": [],
@@ -1143,8 +1175,8 @@
           "delay": 86400
         },
         {
-          "signature": "setAdapter(address,bool)",
-          "selector": "0x332f6465",
+          "signature": "setAdapter(address,uint8,bool)",
+          "selector": "0x8d4fb9dc",
           "role": "SUCCESSOR_SETTER",
           "class": "7d",
           "delay": 604800
@@ -1253,6 +1285,14 @@
           "class": "immediate",
           "delay": 0,
           "note": "opens the sale of an edition the network rebound to this auction"
+        },
+        {
+          "signature": "closeEdition(address,uint256)",
+          "selector": "0x9133f905",
+          "role": "NETWORK",
+          "class": "immediate",
+          "delay": 0,
+          "note": "seals at zero an edition rebound to this auction that has no sale here"
         }
       ],
       "genesisOnly": [],
@@ -1297,17 +1337,19 @@
     },
     {
       "contract": "FederationRegistry",
-      "signature": "setAdapter(address,bool)",
+      "signature": "setAdapter(address,uint8,bool)",
       "args": [
         "EnglishAuction",
+        0,
         true
       ]
     },
     {
       "contract": "FederationRegistry",
-      "signature": "setAdapter(address,bool)",
+      "signature": "setAdapter(address,uint8,bool)",
       "args": [
         "FederatedEditionAuction",
+        1,
         true
       ]
     },

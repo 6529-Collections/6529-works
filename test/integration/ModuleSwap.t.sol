@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { Splits } from "src/economics/Splits.sol";
 import { FederatedStream } from "src/federated/FederatedStream.sol";
@@ -490,11 +491,17 @@ contract ModuleSwapTest is FederatedIntegrationBase {
     function _installAuction(address policy) internal returns (address next) {
         next = _newEnglishAuction(policy);
         _asNetwork(address(stream), abi.encodeCall(IModules.addMinter, (next)));
-        _asNetwork(address(federation), abi.encodeCall(federation.setAdapter, (next, true)));
+        _asNetwork(
+            address(federation),
+            abi.encodeCall(federation.setAdapter, (next, IFederationRegistry.Form.ERC721, true))
+        );
         vm.warp(stream.minterOf(next).activeFrom);
         _asNetwork(address(stream), abi.encodeCall(IModules.removeMinter, (address(auction))));
         _asNetwork(
-            address(federation), abi.encodeCall(federation.setAdapter, (address(auction), false))
+            address(federation),
+            abi.encodeCall(
+                federation.setAdapter, (address(auction), IFederationRegistry.Form.ERC721, false)
+            )
         );
         assertTrue(stream.isMinter(next));
         assertTrue(fStream.isMinter(next));

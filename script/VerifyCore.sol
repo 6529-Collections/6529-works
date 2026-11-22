@@ -350,10 +350,10 @@ library VerifyCore {
                 revert Mismatch("setOpeningBid", asset);
             }
         } else if (selector == IRegistryWiring.setAdapter.selector) {
-            (address adapter, bool admitted) = abi.decode(args, (address, bool));
+            (address adapter, uint8 form, bool admitted) = abi.decode(args, (address, uint8, bool));
             IFederationRegistry.SaleContract memory s =
                 IRegistryWiring(c.target).saleContractOf(adapter);
-            if ((s.addedAt != 0 && s.removedAt == 0) != admitted) {
+            if ((s.addedAt != 0 && s.removedAt == 0) != admitted || uint8(s.form) != form) {
                 revert Mismatch("setAdapter", adapter);
             }
         } else if (selector == IRegistryWiring.approveTemplate.selector) {
@@ -449,7 +449,7 @@ interface IRegistryWiring {
         view
         returns (IFederationRegistry.Template memory);
     function setEntropyModule(address next) external;
-    function setAdapter(address adapter, bool admitted) external;
+    function setAdapter(address adapter, uint8 form, bool admitted) external;
     function approveTemplate(address deployer, uint32 version, uint8 form) external;
 }
 
