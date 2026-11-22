@@ -106,6 +106,18 @@ contract WorkFactsTest is RulesFixture {
         facts.open(b, id, item, other);
     }
 
+    /// @dev The primary matches; a later file is not the one the item committed to.
+    function test_Open_RefusesASecondaryFileTheItemDidNotCommitTo() public {
+        MediaFile[] memory media = new MediaFile[](2);
+        media[0] = _mediaFile(1, FileRole.PRIMARY, true);
+        media[1] = _mediaFile(2, FileRole.PREVIEW, false);
+        PackageItem memory item = _item(1, media);
+        uint256 id = _mintItem(bare, item);
+        media[1] = _mediaFile(3, FileRole.PREVIEW, false);
+        vm.expectRevert(abi.encodeWithSelector(IWorkFacts.InvalidRecord.selector, b, id));
+        facts.open(b, id, item, media);
+    }
+
     function test_Open_RefusesAPrimaryOtherThanTheContentHash() public {
         MediaFile[] memory media = _single(1);
         PackageItem memory item = _item(1, media);
