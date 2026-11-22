@@ -213,11 +213,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           MEDUSA_VERSION: v1.5.1
+          MEDUSA_SHA256: ddfe1517ae9028ef9fc331b00f5a6a9d5406f3fcd11a715d60c6b6fb3e4546d3
         shell: bash
         run: |
           set -euo pipefail
           gh release download "$MEDUSA_VERSION" --repo crytic/medusa --pattern medusa-linux-x64.tar.gz
-          gh attestation verify medusa-linux-x64.tar.gz --repo crytic/medusa
+          # The release carries a sigstore bundle, not a GitHub attestation. The digest below is
+          # the one in that bundle, whose certificate was issued to crytic/medusa's release
+          # workflow at this tag; a different file fails here.
+          echo "$MEDUSA_SHA256  medusa-linux-x64.tar.gz" | sha256sum --check --strict
           tar -xzf medusa-linux-x64.tar.gz
           sudo install medusa /usr/local/bin/medusa
           medusa --version
