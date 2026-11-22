@@ -3,6 +3,8 @@ pragma solidity ^0.8.24;
 
 import { console2 } from "forge-std/console2.sol";
 import { VmSafe } from "forge-std/Vm.sol";
+import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
+import { VrfEntropyModule } from "src/entropy/VrfEntropyModule.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { DelegationManagementMock } from "test/mocks/identity/DelegationManagementMock.sol";
 import { DeployCore } from "./DeployCore.sol";
@@ -20,9 +22,11 @@ import { VerifyCore } from "./VerifyCore.sol";
 ///      `MANIFEST_DIGEST`, `MANIFEST_URI`, `ACCEPT_NETWORK` (1 on anvil to accept as the
 ///      network). Off anvil the genesis file's network must be a deployed Safe and its holders
 ///      real keys (`DeployGuards.checkHolders`), and no brake is installed.
-///      INTEGRATION: this replaces `Deploy.s.sol` once the old stack is deleted; the old
-///      script's guards that read `DeployV1.Deployment` (`checkPolicy`, `checkNothingDropped`,
-///      `checkHoldersAgainst`) move here then.
+///      Off anvil it also checks, before `configure`, that the genesis policy is the committed
+///      one (`DeployGuards.checkPolicy`) and that no holder is a contract of the deployment
+///      (`DeployGuards.checkHoldersAgainst`). VRF: `VRF_COORDINATOR` (zero or unset: no entropy
+///      module), `VRF_SUBSCRIPTION_ID`, `VRF_KEY_HASH`, `VRF_CALLBACK_GAS_LIMIT`,
+///      `VRF_CONFIRMATIONS`, `VRF_NATIVE_PAYMENT`, `VRF_RETRY_DELAY`.
 contract DeployCoreScript is ScriptIO {
     string internal constant CORE_GENESIS = "config/genesis.core.example.json";
     string internal constant CC0_FIXTURE = "test/fixtures/cc0-legalcode.txt";
@@ -61,6 +65,10 @@ contract DeployCoreScript is ScriptIO {
 
         GovernanceConfig.Config memory cfg = DeployCore.config(d, json);
         GovernanceConfig.Call[] memory calls = DeployCore.wiring(d, json, manifest);
+        if (!local) {
+            DeployGuards.checkPolicy(d, json, _read(CORE_GENESIS), manifest);
+            DeployGuards.checkHoldersAgainst(d, p, cfg);
+        }
         vm.startBroadcast(msg.sender);
         DeployCore.install(d, cfg, manifest, calls);
         vm.stopBroadcast();
@@ -112,7 +120,23 @@ contract DeployCoreScript is ScriptIO {
         p.cc0Text = _readBinary(CC0_FIXTURE);
         if (sha256(p.cc0Text) != cc0Digest()) revert Cc0TextMismatch(sha256(p.cc0Text));
         p.ethIncrementFloor = 0.001 ether;
-        // INTEGRATION: the auctions' genesis configuration (`auctionConfig`,
-        // `editionAuctionConfig`) and the VRF settings follow lanes 4 and 2.
+        p.auctionConfig = DeployCore.auctionConfig();
+        p.editionAuctionConfig = DeployCore.editionAuctionConfig();
+        p.vrfCoordinator = _envAddress("VRF_COORDINATOR", address(0));
+        if (p.vrfCoordinator != address(0)) {
+            p.vrfCoordinatorCodeHash = p.vrfCoordinator.codehash;
+            uint256 subscription = _envUint("VRF_SUBSCRIPTION_ID", 0);
+            bytes32 keyHash = _envBytes32("VRF_KEY_HASH", bytes32(0));
+            if (subscription == 0) revert MissingParameter("VRF_SUBSCRIPTION_ID");
+            if (keyHash == 0) revert MissingParameter("VRF_KEY_HASH");
+            p.vrf = VrfEntropyModule.VrfConfig(
+                subscription,
+                keyHash,
+                SafeCast.toUint32(_envUint("VRF_CALLBACK_GAS_LIMIT", 200_000)),
+                SafeCast.toUint16(_envUint("VRF_CONFIRMATIONS", 3)),
+                _envUint("VRF_NATIVE_PAYMENT", 0) == 1
+            );
+            p.vrfRetryDelay = SafeCast.toUint64(_envUint("VRF_RETRY_DELAY", 3 days));
+        }
     }
 }

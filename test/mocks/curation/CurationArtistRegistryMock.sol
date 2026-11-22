@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import { IAccounts } from "src/interfaces/IAccounts.sol";
+import { IAccounts } from "src/interfaces/core/IAccounts.sol";
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
 import { IArtistRoleResolver } from "src/interfaces/IArtistRoleResolver.sol";
 import { ArtistIdentity } from "src/interfaces/types/IdentityTypes.sol";

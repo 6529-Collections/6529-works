@@ -82,7 +82,7 @@ contract EditionsCoreIndexer {
             }
         } else if (t == IEditions.OwnershipTransferred.selector) {
             owner = _address(l.topics[2]);
-        } else if (t == EditionsBase.ContractURISet.selector) {
+        } else if (t == IEditions.ContractURISet.selector) {
             contractURI = abi.decode(l.data, (string));
         } else if (t == IEditions.RebindDelaySet.selector) {
             (, rebindDelay) = abi.decode(l.data, (uint48, uint48));

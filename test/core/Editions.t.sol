@@ -584,7 +584,7 @@ contract EditionsTest is EditionsFixture {
 
     function test_SetContractURI_TheAdminOnlyAndLogsTheValue() public {
         vm.expectEmit(address(editions));
-        emit EditionsBase.ContractURISet("ipfs://contract");
+        emit IEditions.ContractURISet("ipfs://contract");
         vm.expectEmit(address(editions));
         emit IEditions.ContractURIUpdated();
         editions.setContractURI("ipfs://contract");

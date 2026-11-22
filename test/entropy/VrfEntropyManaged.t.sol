@@ -8,6 +8,7 @@ import { BoundedParameter } from "src/governance/BoundedParameter.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { IEntropyModule } from "src/interfaces/IEntropyModule.sol";
+import { IModuleSlots } from "src/interfaces/core/IModules.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { PackageItem, SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
@@ -47,7 +48,8 @@ contract VrfEntropyManagedTest is GovernanceFixture, EntropyItems {
             _vrfConfig(),
             3 days,
             IPackageRegistry(address(registry)),
-            address(registry).codehash
+            address(registry).codehash,
+            IModuleSlots(address(0))
         );
 
         // The selector-to-class mapping the deploy configuration must carry.

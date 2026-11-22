@@ -84,26 +84,6 @@ contract AccountsWiringTest is AccountsFixture {
         assertEq(registry.payoutAddress(artistId), artist);
     }
 
-    /// @dev The four wiring functions of the earlier registry are refused for everyone.
-    function test_Bind_AlwaysRefused() public {
-        address[3] memory callers = [admin, network, stranger];
-        for (uint256 i; i < callers.length; ++i) {
-            bytes memory refused =
-                abi.encodeWithSelector(IArtistRegistry.UnboundCaller.selector, callers[i]);
-            vm.startPrank(callers[i]);
-            vm.expectRevert(refused);
-            registry.bindPackageRegistry(stranger);
-            vm.expectRevert(refused);
-            registry.bindSplitFactory(stranger);
-            vm.expectRevert(refused);
-            registry.bindFederationRegistry(stranger);
-            vm.expectRevert(refused);
-            registry.bindStatementLog(stranger);
-            vm.stopPrank();
-        }
-        assertEq(registry.packageRegistry(), packageRegistry, "nothing moved");
-    }
-
     /// @dev The wiring is what the constructor was given; it logs the first source and package
     ///      registry.
     function test_Constructor_WiringAndLogs() public {

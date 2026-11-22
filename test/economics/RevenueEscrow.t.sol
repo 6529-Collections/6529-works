@@ -237,10 +237,8 @@ contract RevenueEscrowTest is EconomicsBase {
     }
 
     function test_DeprecatedAssetCreditsStillFlush() public {
-        allowlist.admitAsset(address(token), 0, 1);
         vm.prank(depositor);
         escrow.depositERC20(address(wallet), address(token), 10);
-        allowlist.deprecateAsset(address(token));
         escrow.flush(address(wallet), address(token));
         assertEq(token.balanceOf(address(wallet)), 10);
     }

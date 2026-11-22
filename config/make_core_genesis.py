@@ -7,10 +7,8 @@ is computed from its signature, never typed by hand. Run from the repository roo
     python config/make_core_genesis.py           # write
     python config/make_core_genesis.py --check   # fail if the committed file differs
 
-At integration the result replaces config/genesis.example.json (and tools/check_genesis.py then
-checks it against the build). Rows whose contract is still being rewritten by another lane carry
-"implementation": null; their signatures follow that lane's brief and are re-checked against the
-build at integration.
+It replaced config/genesis.example.json at integration; tools/check_genesis.py checks it against
+the build.
 
 Role choices:
 - Every waiting period in a permanent contract is a setting the network changes at once, so the
@@ -29,7 +27,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "config" / "genesis.core.example.json"
-OLD = ROOT / "config" / "genesis.example.json"
+# The network, role table, holders and manager placeholders are kept from the committed file.
+OLD = OUT
 
 CLASS = {
     "NETWORK": ("immediate", 0),
@@ -315,18 +314,20 @@ CONTRACTS = [
 ]
 
 WIRING = [
-    ("EnglishAuction", "setTarget(address,bool)", ["Stream", True], "pending lane 4: kept only if the auction keeps a target list"),
-    ("UniformEditionAuction", "setTarget(address,bool)", ["Editions", True], "pending lane 2"),
+    ("PackageRegistry", "bindStream(address)", ["Stream"], "the one Stream the package registry admits for"),
+    ("PackageRegistry", "setEntropyModule(address,address)", ["0x0000000000000000000000000000000000000000", "EntropyModule"], "left out when there is no entropy module"),
+    ("UniformEditionAuction", "setTarget(address,bool)", ["Editions", True], None),
     (
         "AssetAllowlist",
         "setOpeningBid(address,uint64,uint256)",
         ["0x0000000000000000000000000000000000000000", 1, 50000000000000000],
         "ETH opening bid 0.05 ETH: a 1-wei self-bid cannot keep an unsold work from the museum",
     ),
-    ("FederationRegistry", "setAdapter(address,bool)", ["EnglishAuction", True], "pending lane 5"),
-    ("FederationRegistry", "setAdapter(address,bool)", ["FederatedEditionAuction", True], "pending lane 5"),
-    ("FederationRegistry", "approveTemplate(bytes32,address,uint32,uint8)", ["FederatedStream", "FederatedStreamDeployer", 1, 0], "pending lane 5"),
-    ("FederationRegistry", "approveTemplate(bytes32,address,uint32,uint8)", ["FederatedEditions", "FederatedEditionsDeployer", 1, 1], "pending lane 5"),
+    ("FederationRegistry", "setAdapter(address,bool)", ["EnglishAuction", True], None),
+    ("FederationRegistry", "setAdapter(address,bool)", ["FederatedEditionAuction", True], None),
+    ("FederationRegistry", "approveTemplate(address,uint32,uint8)", ["FederatedStreamDeployer", 1, 0], None),
+    ("FederationRegistry", "approveTemplate(address,uint32,uint8)", ["FederatedEditionsDeployer", 1, 1], None),
+    ("FederationRegistry", "setEntropyModule(address)", ["EntropyModule"], "left out when there is no entropy module"),
     ("StatementLog", f"appendGovernanceManifest({STATEMENT})", [], None),
 ]
 
@@ -377,7 +378,7 @@ def build() -> dict:
         ],
         "initialInstalls": {
             "constructor": "Genesis modules and minters of Stream, Editions and Directory (their addresses are predicted before deployment); every immutable dependency and every dependency pinned by code hash.",
-            "wiring": "Sale targets, the ETH opening bid, the federation's adapters and templates, and the epoch-0 governance manifest.",
+            "wiring": "The package registry's Stream bind and entropy module, the edition auction's sale target, the ETH opening bid, the federation module's adapters, templates and entropy module, and the epoch-0 governance manifest.",
             "grants": "Curation signers are active once granted CURATION_SIGNER in holders.",
         },
         "unusedRoles": [

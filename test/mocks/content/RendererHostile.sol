@@ -2,8 +2,6 @@
 pragma solidity ^0.8.24;
 
 import { IContentStore } from "src/interfaces/IContentStore.sol";
-import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
-import { IStream } from "src/interfaces/IStream.sol";
 
 /// @dev A content store that answers `fileInfo`, `maxParts` and `readChunk` for a work record
 ///      (`RECORD`, always honest) and for one base64 file of `'A'` bytes (every other ID), and
@@ -138,7 +136,7 @@ contract BurningRecords {
     }
 
     fallback(bytes calldata data) external returns (bytes memory) {
-        if (bytes4(data) == IWorkRecords.preferredLocator.selector) {
+        if (bytes4(data) == bytes4(keccak256("preferredLocator(uint256,bytes32)"))) {
             uint256 start = gasleft();
             while (start - gasleft() < burn) { }
         }
@@ -165,8 +163,8 @@ contract ShortAnswerToken {
 
     fallback() external {
         uint256 n = 32;
-        if (msg.sig == IStream.coreOf.selector) n = coreBytes;
-        else if (msg.sig == IStream.extsload.selector) n = slotBytes;
+        if (msg.sig == bytes4(keccak256("coreOf()"))) n = coreBytes;
+        else if (msg.sig == bytes4(keccak256("extsload(bytes32)"))) n = slotBytes;
         bytes memory data = new bytes(n);
         assembly ("memory-safe") {
             return(add(data, 0x20), n)

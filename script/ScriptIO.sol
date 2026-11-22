@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import { Script } from "forge-std/Script.sol";
 import { DeployGuards } from "./DeployGuards.sol";
-import { DeployV1 } from "./DeployV1.sol";
+import { DeployCore } from "./DeployCore.sol";
 
 /// @title ScriptIO
 /// @notice What the deploy and verify scripts read from outside the EVM: environment
@@ -30,7 +30,7 @@ abstract contract ScriptIO is Script {
 
     /// @notice The canonical CC0 legal code digest that off-anvil runs require.
     function cc0Digest() public view virtual returns (bytes32) {
-        return DeployV1.CC0_LEGALCODE_SHA256;
+        return DeployCore.CC0_LEGALCODE_SHA256;
     }
 
     /// @notice The Safe singletons (with their runtime code hashes) that the off-anvil network

@@ -17,6 +17,8 @@ import { GovernanceConfigurator } from "src/governance/GovernanceConfigurator.so
 import { Roles } from "src/governance/Roles.sol";
 import { WorksAccessManager } from "src/governance/WorksAccessManager.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
+import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
+import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
 import { IStatementLog, Statement } from "src/interfaces/IStatementLog.sol";
 import { HashRef, HASH_SHA256 } from "src/interfaces/types/HashRef.sol";
 import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
@@ -38,10 +40,9 @@ import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
 ///      address of a token contract or of Directory but must not call it before it exists;
 ///      the permanent contracts never call a module in their constructors.
 ///
-///      Contracts whose files other lanes are rewriting are created from their build artifacts
-///      (`vm.getCode`), so this library compiles whatever their constructors become. Each such
-///      constructor is written once, in `_moduleCode`, and marked `INTEGRATION:` where its
-///      arguments follow the lane's brief rather than finished code.
+///      The replaceable modules are created from their build artifacts (`vm.getCode`), so this
+///      library does not import their sources; each constructor is written once, in
+///      `_moduleCode` and `_moduleCodeLater`.
 library DeployCore {
     Vm private constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
 
@@ -155,6 +156,35 @@ library DeployCore {
     error UnknownRoleName(string name);
     error UnsupportedWiringSignature(string signature);
 
+    // ------------------------------------------------------------------ genesis parameters
+
+    /// @notice The English auction's genesis configuration, encoded as its constructor takes it:
+    ///         a 24-hour auction, a 15-minute extension window, a 5% minimum increment
+    ///         (5,000 of 100,000) and 4,000,000 gas for a refusal attempt. Each is governed
+    ///         after genesis.
+    function auctionConfig() internal pure returns (bytes memory) {
+        return abi.encode(IEnglishAuction.AuctionConfig(24 hours, 15 minutes, 5_000, 4_000_000));
+    }
+
+    /// @notice Both edition auctions' genesis configuration and limit, encoded as their
+    ///         constructors take them: 0.0001 ETH at step 0, 48 steps per decade over 336 steps,
+    ///         a 10% breadth margin (10,000 of 100,000), a 5-minute soft close, a 24-hour
+    ///         extension backstop, and 100,000 gas per settlement payout. Each is governed after
+    ///         genesis.
+    function editionAuctionConfig() internal pure returns (bytes memory) {
+        return abi.encode(
+            IUniformEditionAuction.AuctionConfig({
+                basePrice: 0.0001 ether,
+                stepsPerDecade: 48,
+                stepCount: 336,
+                marginShare: 10_000,
+                softWindow: 5 minutes,
+                maxExtension: 24 hours
+            }),
+            IUniformEditionAuction.Limits({ payoutGas: 100_000 })
+        );
+    }
+
     // ------------------------------------------------------------------ deployment
 
     /// @notice Deploys every contract in `order(p)` from the calling context (a script under
@@ -196,11 +226,6 @@ library DeployCore {
             assign(d, list[i], addressFor(p, list[i], factory));
         }
         d.manager = WorksAccessManager(vm.computeCreateAddress(address(d.configurator), 1));
-        if (d.workRules != address(0)) {
-            // INTEGRATION: lane 3 decides whether WorkRules creates its WorkDelivery (as
-            // WorkRecords does today) or WorkDelivery is deployed on its own.
-            d.workDelivery = vm.computeCreateAddress(d.workRules, 1);
-        }
     }
 
     /// @notice The address of contract `name` under `p.namespace`, created through CREATE2
@@ -217,7 +242,7 @@ library DeployCore {
     /// @notice The contracts `deploy` creates, in order. The entropy module only with a VRF
     ///         coordinator; the manager is created by the configurator.
     function order(Params memory p) internal pure returns (string[] memory list) {
-        string[30] memory all = [
+        string[31] memory all = [
             "GovernanceConfigurator",
             "ContentStore",
             "WorkFacts",
@@ -239,6 +264,7 @@ library DeployCore {
             "DependencyRegistry",
             "Renderer",
             "WorkRules",
+            "WorkDelivery",
             "StreamTerms",
             "EnglishAuction",
             "UniformEditionAuctionLens",
@@ -337,17 +363,30 @@ library DeployCore {
                 _artifact("ConsolidationAdapter.sol:ConsolidationAdapter", abi.encode(p.delegation));
         }
         if (n == keccak256("Accounts")) {
-            // INTEGRATION: lane 5. Today's ArtistRegistry constructor (manager, consolidation
-            // source, its code hash), without the bind-once wiring.
+            // The consolidation source is pinned by code hash; the rest of the wiring is plain
+            // addresses (directory, Stream, Editions, split ledger, statement log, package
+            // registry), several of them deployed after this module.
             address adapter = d.consolidationAdapter;
-            return _artifact("Accounts.sol:Accounts", abi.encode(m, adapter, adapter.codehash));
+            return _artifact(
+                "Accounts.sol:Accounts",
+                abi.encode(
+                    m,
+                    adapter,
+                    adapter.codehash,
+                    d.directory,
+                    d.stream,
+                    d.editions,
+                    d.splitLedger,
+                    d.statementLog,
+                    d.packageRegistry
+                )
+            );
         }
         if (n == keccak256("AssetAllowlist")) {
             return
                 _artifact("AssetAllowlist.sol:AssetAllowlist", abi.encode(m, p.ethIncrementFloor));
         }
         if (n == keccak256("EconomicsResolver")) {
-            // INTEGRATION: lane 4. Today's constructor.
             return _artifact(
                 "EconomicsResolver.sol:EconomicsResolver",
                 abi.encode(
@@ -364,13 +403,22 @@ library DeployCore {
             return _artifact("Eip712CurationVerifier.sol:Eip712CurationVerifier", abi.encode(m));
         }
         if (n == keccak256("PackageRegistry")) {
-            // INTEGRATION: lane 4. Today's constructor with the accounts module in place of the
-            // artist registry; it reads Stream through the sale contract's call, so it needs no
-            // Stream address.
+            // The accounts module and the curation verifier are pinned by code hash. It starts
+            // with no entropy module (the module pins this registry's code hash, so it is
+            // deployed after it); the genesis wiring sets it (`setEntropyModule`) and binds
+            // Stream (`bindStream`).
             address verifier = d.curationVerifier;
             return _artifact(
                 "PackageRegistry.sol:PackageRegistry",
-                abi.encode(m, verifier, verifier.codehash, d.accounts, d.accounts.codehash)
+                abi.encode(
+                    m,
+                    verifier,
+                    verifier.codehash,
+                    d.accounts,
+                    d.accounts.codehash,
+                    d.economicsResolver,
+                    address(0)
+                )
             );
         }
         if (n == keccak256("StatementLog")) {
@@ -390,7 +438,8 @@ library DeployCore {
                     p.vrf,
                     p.vrfRetryDelay,
                     registry,
-                    registry.codehash
+                    registry.codehash,
+                    d.directory
                 )
             );
         }
@@ -401,8 +450,7 @@ library DeployCore {
                 );
         }
         if (n == keccak256("Renderer")) {
-            // INTEGRATION: lane 6. Today's constructor; the renderer now reads WorkFacts, which
-            // it may take here or find through `IStream.facts()`.
+            // The renderer finds WorkFacts through each token's `facts()`.
             return _artifact(
                 "Renderer.sol:Renderer",
                 abi.encode(d.contentStore, d.statementLog, RENDERER_INLINE_THRESHOLD)
@@ -418,66 +466,90 @@ library DeployCore {
     {
         address m = address(d.manager);
         if (n == keccak256("WorkRules")) {
-            // INTEGRATION: lane 3. Manager, WorkFacts, content store, Directory (accounts).
+            // One token-keyed instance serves Stream and every federated token; its delivery
+            // contract is deployed next, at its predicted address.
             return _artifact(
-                "WorkRules.sol:WorkRules", abi.encode(m, d.workFacts, d.contentStore, d.directory)
+                "WorkRules.sol:WorkRules", abi.encode(m, d.workFacts, d.directory, d.workDelivery)
+            );
+        }
+        if (n == keccak256("WorkDelivery")) {
+            return _artifact(
+                "WorkDelivery.sol:WorkDelivery",
+                abi.encode(m, d.workRules, d.workFacts, d.directory, address(0))
             );
         }
         if (n == keccak256("StreamTerms")) {
-            // INTEGRATION: lane 3. Manager, split ledger (vault derivation), Directory
-            // (federated fee shares), 6529 Stream and its Editions (`editionsOf`).
+            // Manager, split ledger (vault derivation), 6529 Stream and its Editions
+            // (`editionsOf`), Directory (federated fee shares).
             return _artifact(
                 "StreamTerms.sol:StreamTerms",
-                abi.encode(m, d.splitLedger, d.directory, d.stream, d.editions)
+                abi.encode(m, d.splitLedger, d.stream, d.editions, d.directory)
             );
         }
         if (n == keccak256("EnglishAuction")) {
-            // INTEGRATION: lane 4. ETH only: no Permit2 and no lens. The mint policy for 6529
-            // Stream is the package registry; for federated tokens Directory's FEDERATION module.
+            // ETH only. The mint policy for 6529 Stream is the package registry; for federated
+            // tokens it is the directory's FEDERATION module.
             return _artifact(
                 "EnglishAuction.sol:EnglishAuction",
                 bytes.concat(
                     abi.encode(
                         m,
-                        d.revenueEscrow,
+                        d.stream,
+                        d.directory,
                         d.economicsResolver,
+                        d.revenueEscrow,
                         d.statementLog,
-                        d.packageRegistry,
-                        d.directory
+                        d.packageRegistry
                     ),
                     p.auctionConfig
                 )
             );
         }
         if (n == keccak256("UniformEditionAuctionLens")) {
-            // INTEGRATION: lane 2.
             return _artifact(
                 "UniformEditionAuctionLens.sol:UniformEditionAuctionLens",
-                abi.encode(d.editions, d.stream, d.englishAuction, d.revenueEscrow)
+                abi.encode(
+                    d.editions,
+                    d.stream,
+                    d.englishAuction,
+                    d.revenueEscrow,
+                    d.directory,
+                    d.economicsResolver,
+                    d.packageRegistry
+                )
             );
         }
         if (n == keccak256("UniformEditionAuction")) {
-            // INTEGRATION: lane 2. Today's constructor; it pins the lens deployed just before.
+            // It pins the lens deployed just before.
             address lens = d.editionAuctionLens;
             return _artifact(
                 "UniformEditionAuction.sol:UniformEditionAuction",
                 bytes.concat(
                     abi.encode(
-                        m, d.revenueEscrow, d.editions, d.englishAuction, lens, lens.codehash
+                        m,
+                        d.revenueEscrow,
+                        d.directory,
+                        d.editions,
+                        d.englishAuction,
+                        lens,
+                        lens.codehash
                     ),
                     p.editionAuctionConfig
                 )
             );
         }
         if (n == keccak256("FederationRegistry")) {
-            // INTEGRATION: lane 5. Manager, Directory, economics resolver, content store.
+            // Manager, Directory, WorkFacts, economics resolver, content store, and no earlier
+            // registry to inherit from.
             return _artifact(
                 "FederationRegistry.sol:FederationRegistry",
-                abi.encode(m, d.directory, d.economicsResolver, d.contentStore)
+                abi.encode(
+                    m, d.directory, d.workFacts, d.economicsResolver, d.contentStore, address(0)
+                )
             );
         }
         if (n == keccak256("FederatedStreamDeployer")) {
-            // INTEGRATION: lane 5. Today's deployer, holding the template's creation code.
+            // The deployer holds the template's creation code.
             return _artifact(
                 "FederatedDeployer.sol:FederatedDeployer",
                 abi.encode(vm.getCode("FederatedStream.sol:FederatedStream"))
@@ -490,19 +562,20 @@ library DeployCore {
             );
         }
         if (n == keccak256("FederatedEditionAuctionLens")) {
-            // INTEGRATION: lane 2. The federation registry is found through Directory.
+            // The federation module is found through Directory.
             return _artifact(
                 "FederatedEditionAuctionLens.sol:FederatedEditionAuctionLens",
                 abi.encode(d.englishAuction, d.revenueEscrow, d.directory, d.economicsResolver)
             );
         }
         if (n == keccak256("FederatedEditionAuction")) {
-            // INTEGRATION: lane 2.
             address lens = d.federatedEditionAuctionLens;
             return _artifact(
                 "FederatedEditionAuction.sol:FederatedEditionAuction",
                 bytes.concat(
-                    abi.encode(m, d.revenueEscrow, d.englishAuction, lens, lens.codehash),
+                    abi.encode(
+                        m, d.revenueEscrow, d.directory, d.englishAuction, lens, lens.codehash
+                    ),
                     p.editionAuctionConfig
                 )
             );

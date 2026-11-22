@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import { Test } from "forge-std/Test.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IArtistPayoutResolver } from "../../src/economics/interfaces/IArtistPayoutResolver.sol";
-import { IAccounts } from "../../src/interfaces/IAccounts.sol";
+import { IAccounts } from "../../src/interfaces/core/IAccounts.sol";
 import { IArtistRegistry, IConsolidationSource } from "../../src/interfaces/IArtistRegistry.sol";
 import { IItemApprovals } from "../../src/interfaces/IItemApprovals.sol";
 import { IArtistRoleResolver } from "../../src/interfaces/IArtistRoleResolver.sol";
@@ -15,22 +15,19 @@ import {
 } from "../../src/interfaces/ICurationVerifier.sol";
 import { IDependencyRegistry } from "../../src/interfaces/IDependencyRegistry.sol";
 import { IEconomicsResolver } from "../../src/interfaces/IEconomicsResolver.sol";
-import { IEditions } from "../../src/interfaces/IEditions.sol";
+import { IEditions } from "../../src/interfaces/core/IEditions.sol";
 import { IEnglishAuction } from "../../src/interfaces/IEnglishAuction.sol";
 import { IEnglishAuctionClock } from "../../src/interfaces/IEnglishAuctionClock.sol";
 import { IEnglishAuctionRefusal } from "../../src/interfaces/IEnglishAuctionRefusal.sol";
 import { IEntropyModule } from "../../src/interfaces/IEntropyModule.sol";
 import { IFederationRegistry } from "../../src/interfaces/IFederationRegistry.sol";
-import { IMintTarget } from "../../src/interfaces/IMintTarget.sol";
 import { IPackageRegistry } from "../../src/interfaces/IPackageRegistry.sol";
 import { IRenderer } from "../../src/interfaces/IRenderer.sol";
 import { ISaleAdapter } from "../../src/interfaces/ISaleAdapter.sol";
 import { IStatementLog } from "../../src/interfaces/IStatementLog.sol";
-import { IStream } from "../../src/interfaces/IStream.sol";
-import { IStreamExtension } from "../../src/interfaces/IStreamExtension.sol";
+import { IStream } from "../../src/interfaces/core/IStream.sol";
 import { IUniformEditionAuction } from "../../src/interfaces/IUniformEditionAuction.sol";
 import { IWorkPowers } from "../../src/interfaces/IWorkPowers.sol";
-import { IWorkRecords } from "../../src/interfaces/IWorkRecords.sol";
 import { Limits } from "../../src/interfaces/types/Limits.sol";
 import { SaleKind } from "../../src/interfaces/types/SaleTypes.sol";
 
@@ -40,10 +37,7 @@ import { SaleKind } from "../../src/interfaces/types/SaleTypes.sol";
 /// @dev An ID covers the functions an interface declares itself, not inherited ones.
 contract InterfacesCompileTest is Test {
     function test_interfaceIds() public pure {
-        assertEq(type(IMintTarget).interfaceId, bytes4(0xba4ae536), "IMintTarget");
         assertEq(type(IStream).interfaceId, bytes4(0xced242c8), "IStream");
-        assertEq(type(IStreamExtension).interfaceId, bytes4(0x1b9217b1), "IStreamExtension");
-        assertEq(type(IWorkRecords).interfaceId, bytes4(0x5a8252d9), "IWorkRecords");
         assertEq(type(IWorkPowers).interfaceId, bytes4(0xbd18229c), "IWorkPowers");
         assertEq(type(IEditions).interfaceId, bytes4(0x566c4b4c), "IEditions");
         assertEq(type(ISaleAdapter).interfaceId, bytes4(0x312dc1e1), "ISaleAdapter");
@@ -79,16 +73,6 @@ contract InterfacesCompileTest is Test {
         assertEq(type(IConsolidationSource).interfaceId, bytes4(0x42129132), "IConsolidationSource");
         assertEq(type(IEntropyModule).interfaceId, bytes4(0xa8a2a007), "IEntropyModule");
         assertEq(type(IFederationRegistry).interfaceId, bytes4(0x279a77ec), "IFederationRegistry");
-    }
-
-    /// @dev The mint surface stays small: four adapter calls plus the admitted-minter mapping.
-    function test_mintTargetIsMinimal() public pure {
-        assertEq(
-            type(IMintTarget).interfaceId,
-            IMintTarget.mint.selector ^ IMintTarget.primaryTerms.selector
-                ^ IMintTarget.burn.selector ^ IMintTarget.isAdmittedMinter.selector
-                ^ IMintTarget.setAdmittedMinter.selector ^ IMintTarget.settlePrimary.selector
-        );
     }
 
     /// @dev Decision D8: every interface a contract installs as a dependency extends IERC165, so

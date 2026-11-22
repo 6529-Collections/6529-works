@@ -158,23 +158,10 @@ contract AccountsResolversTest is CoreFixture {
 
     // ------------------------------------------------------------------ federation forwards
 
-    function test_FederatedListing_ForwardsTheFederationModule() public {
-        address token = makeAddr("token");
-        (uint256 id, IArtistRegistry.FederationStatus status) = acc.federatedListing(token);
-        assertEq(id, 0);
-        assertEq(uint8(status), uint8(IArtistRegistry.FederationStatus.NONE));
-        federation.set(token, artistId, IFederationRegistry.Status.ACTIVE);
-        (id, status) = acc.federatedListing(token);
-        assertEq(id, artistId);
-        assertEq(uint8(status), uint8(IArtistRegistry.FederationStatus.ACTIVE));
-        federation.set(token, artistId, IFederationRegistry.Status.DELISTED);
-        (, status) = acc.federatedListing(token);
-        assertEq(uint8(status), uint8(IArtistRegistry.FederationStatus.DELISTED));
+    function test_FederationRegistry_IsTheDirectorysFederationModule() public {
         assertEq(acc.federationRegistry(), address(federation));
         dir.removeModule(Slots.FEDERATION);
-        (id, status) = acc.federatedListing(token);
-        assertEq(id, 0, "an empty slot answers nothing");
-        assertEq(uint8(status), uint8(IArtistRegistry.FederationStatus.NONE));
+        assertEq(acc.federationRegistry(), address(0), "an empty slot answers nothing");
     }
 
     function test_RegisterFederated_OnlyTheDirectorysFederationModule() public {

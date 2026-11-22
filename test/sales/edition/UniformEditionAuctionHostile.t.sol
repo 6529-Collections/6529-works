@@ -13,7 +13,7 @@ import {
     ReenteringPayee,
     ReentrantBidder,
     ReentrantSeller
-} from "../../mocks/sales/EditionAuctionMocks.sol";
+} from "./EditionAuctionMocks.sol";
 import { EditionAuctionBase } from "./EditionAuctionBase.sol";
 
 /// @notice Hostile ERC-1155 receivers, ETH receivers and payout wallets against the edition

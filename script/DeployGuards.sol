@@ -5,7 +5,8 @@ import { Vm } from "forge-std/Vm.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { DelegatedEOA } from "src/libraries/DelegatedEOA.sol";
-import { DeployV1 } from "./DeployV1.sol";
+import { VrfEntropyModule } from "src/entropy/VrfEntropyModule.sol";
+import { DeployCore } from "./DeployCore.sol";
 
 /// @title DeployGuards
 /// @notice The off-anvil checks `Deploy.s.sol` runs before anything is broadcast and
@@ -63,10 +64,12 @@ library DeployGuards {
     /// @notice Its runtime code hash (24,094 bytes), read from mainnet on 14 October 2026.
     bytes32 internal constant CANONICAL_VRF_COORDINATOR_CODEHASH =
         0xbe4ae0321fb1c74c80eea0c14c9c7b28c69ce17df15222e27b1e934cc98f5f61;
-    /// @notice The runtime code hash of Permit2 (`DeployV1.CANONICAL_PERMIT2`) on Ethereum
+    /// @notice The runtime code hash of Permit2 (`CANONICAL_PERMIT2`) on Ethereum
     ///         mainnet (9,152 bytes), read from mainnet on 15 October 2026 at block 26,198,501.
     ///         Permit2 keeps its chain ID and EIP-712 domain separator as immutables, so its code,
     ///         and this hash, differ per chain: Verify checks it on mainnet only.
+    /// @notice Permit2's canonical address, a system address no holder may be.
+    address internal constant CANONICAL_PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
     bytes32 internal constant CANONICAL_PERMIT2_CODEHASH =
         0xc67d1657868aa5146eaf24fb879fb1fdec3d2d493b3683a61c9c2f4fb2851131;
     /// @notice The official 6529 delegation deployment on Sepolia (the nftdelegation README).
@@ -285,7 +288,7 @@ library DeployGuards {
             || account == 0x00000961Ef480Eb55e80D19ad83579A64c007002
             || account == 0x0000BBdDc7CE488642fb579F8B00f3a590007251
             || account == 0x00000000219ab540356cBB839Cbe05303d7705Fa || account == CREATE2_FACTORY
-            || account == DeployV1.CANONICAL_PERMIT2 || account == CANONICAL_DELEGATION
+            || account == CANONICAL_PERMIT2 || account == CANONICAL_DELEGATION
             || account == SEPOLIA_DELEGATION;
     }
 
@@ -326,7 +329,7 @@ library DeployGuards {
     ///         destination in 7 days, SUCCESSOR_SETTER; the others in 3, FUNDS_SETTER), and the
     ///         deployer's key, used once to deploy, is not a network-held account (owner decision
     ///         18).
-    function checkRecipients(DeployV1.Params memory p) internal pure {
+    function checkRecipients(DeployCore.Params memory p) internal pure {
         if (p.museum == p.deployer) revert RecipientIsTheDeployer("MUSEUM", p.museum);
         if (p.marketOwner == p.deployer) {
             revert RecipientIsTheDeployer("MARKETPLACE_OWNER", p.marketOwner);
@@ -346,14 +349,14 @@ library DeployGuards {
     ///         that fails fails the check, except off mainnet when the coordinator has no such
     ///         function (it reverts with no data).
     function checkSubscription(
-        DeployV1.Deployment memory d,
+        DeployCore.Deployment memory d,
         GovernanceConfig.Config memory cfg,
         bool mainnet
     ) internal view {
-        address module = address(d.entropyModule);
+        address module = d.entropyModule;
         if (module == address(0)) return;
-        address coordinator = d.entropyModule.coordinator();
-        uint256 id = d.entropyModule.config().subscriptionId;
+        address coordinator = VrfEntropyModule(module).coordinator();
+        uint256 id = VrfEntropyModule(module).config().subscriptionId;
         (bool ok, bytes memory ret) =
             coordinator.staticcall(abi.encodeWithSignature("getSubscription(uint256)", id));
         // Off mainnet, a coordinator without `getSubscription` (empty revert data) is skipped;
@@ -391,11 +394,11 @@ library DeployGuards {
     /// @notice Neither the network nor any holder is a contract of `d` or a dependency it was
     ///         deployed with (M-1).
     function checkHoldersAgainst(
-        DeployV1.Deployment memory d,
-        DeployV1.Params memory p,
+        DeployCore.Deployment memory d,
+        DeployCore.Params memory p,
         GovernanceConfig.Config memory cfg
     ) internal pure {
-        string[] memory names = DeployV1.names();
+        string[] memory names = DeployCore.order(p);
         _notADeploymentContract(d, p, names, Roles.NETWORK, cfg.network);
         for (uint256 i; i < cfg.grants.length; ++i) {
             _notADeploymentContract(d, p, names, cfg.grants[i].role, cfg.grants[i].account);
@@ -405,55 +408,41 @@ library DeployGuards {
     /// @dev Reverts (`HolderIsADeploymentContract`) when `account`, holding `role`, is a
     ///      contract of `d` (`names`) or a dependency it was deployed with.
     function _notADeploymentContract(
-        DeployV1.Deployment memory d,
-        DeployV1.Params memory p,
+        DeployCore.Deployment memory d,
+        DeployCore.Params memory p,
         string[] memory names,
         uint64 role,
         address account
     ) private pure {
-        bool forbidden = account == p.delegation || account == p.permit2
-            || account == p.vrfCoordinator;
+        bool forbidden = account == p.delegation || account == p.vrfCoordinator
+            || account == address(d.manager);
         for (uint256 j; j < names.length && !forbidden; ++j) {
-            forbidden = account == DeployV1.addressOf(d, names[j]);
+            forbidden = account == DeployCore.addressOf(d, names[j]);
         }
         if (forbidden) revert HolderIsADeploymentContract(role, account);
     }
 
     /// @notice The genesis file's policy is the committed one (M-2): for the same deployment and
     ///         manifest, its governed targets (every selector, role and target) and its wiring
-    ///         equal what `example` (config/genesis.example.json) produces. Only the holders,
-    ///         the network and brake addresses, and addresses that `DeployV1` substitutes by name,
+    ///         equal what `example` (config/genesis.core.example.json) produces. Only the
+    ///         holders, the network and brake addresses, and addresses that `DeployCore`
+    ///         substitutes by name,
     ///         may differ.
     function checkPolicy(
-        DeployV1.Deployment memory d,
+        DeployCore.Deployment memory d,
         string memory json,
         string memory example,
-        DeployV1.Manifest memory manifest
+        DeployCore.Manifest memory manifest
     ) internal view {
-        GovernanceConfig.Config memory cfg = DeployV1.config(d, json);
-        GovernanceConfig.Config memory pinned = DeployV1.config(d, example);
+        GovernanceConfig.Config memory cfg = DeployCore.config(d, json);
+        GovernanceConfig.Config memory pinned = DeployCore.config(d, example);
         if (keccak256(abi.encode(cfg.targets)) != keccak256(abi.encode(pinned.targets))) {
             revert PolicyMismatch("targets");
         }
         if (
-            keccak256(abi.encode(DeployV1.wiring(d, json, manifest)))
-                != keccak256(abi.encode(DeployV1.wiring(d, example, manifest)))
+            keccak256(abi.encode(DeployCore.wiring(d, json, manifest)))
+                != keccak256(abi.encode(DeployCore.wiring(d, example, manifest)))
         ) revert PolicyMismatch("wiring");
-    }
-
-    /// @notice Nothing the genesis names is silently left out (M-4): every governed contract
-    ///         and every wiring call applies, except the entropy module when it was declined
-    ///         (`noVrf`, recorded as `"entropy": "none"`).
-    function checkNothingDropped(DeployV1.Deployment memory d, string memory json, bool noVrf)
-        internal
-        view
-    {
-        string[] memory gone = DeployV1.dropped(d, json);
-        for (uint256 i; i < gone.length; ++i) {
-            if (!(noVrf && keccak256(bytes(gone[i])) == keccak256("EntropyModule"))) {
-                revert DroppedFromGenesis(gone[i]);
-            }
-        }
     }
 
     function _holder(uint256 i, string memory field) private pure returns (string memory) {

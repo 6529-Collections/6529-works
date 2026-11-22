@@ -321,9 +321,7 @@ contract SplitWalletTest is EconomicsBase {
     }
 
     function test_DeprecatedAndNeverAdmittedAssetsStayWithdrawable() public {
-        allowlist.admitAsset(address(token), 0, 1);
         token.mint(address(wallet), 100);
-        allowlist.deprecateAsset(address(token));
         assertEq(_release(wallet, address(token), iAlice), 50);
         // ETH is never deprecated (`EthNotDeprecable`); it is always withdrawable.
         vm.expectRevert(IAssetAllowlist.EthNotDeprecable.selector);

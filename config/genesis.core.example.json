@@ -1143,13 +1143,21 @@
   ],
   "wiring": [
     {
-      "contract": "EnglishAuction",
-      "signature": "setTarget(address,bool)",
+      "contract": "PackageRegistry",
+      "signature": "bindStream(address)",
       "args": [
-        "Stream",
-        true
+        "Stream"
       ],
-      "note": "pending lane 4: kept only if the auction keeps a target list"
+      "note": "the one Stream the package registry admits for"
+    },
+    {
+      "contract": "PackageRegistry",
+      "signature": "setEntropyModule(address,address)",
+      "args": [
+        "0x0000000000000000000000000000000000000000",
+        "EntropyModule"
+      ],
+      "note": "left out when there is no entropy module"
     },
     {
       "contract": "UniformEditionAuction",
@@ -1157,8 +1165,7 @@
       "args": [
         "Editions",
         true
-      ],
-      "note": "pending lane 2"
+      ]
     },
     {
       "contract": "AssetAllowlist",
@@ -1176,8 +1183,7 @@
       "args": [
         "EnglishAuction",
         true
-      ],
-      "note": "pending lane 5"
+      ]
     },
     {
       "contract": "FederationRegistry",
@@ -1185,30 +1191,33 @@
       "args": [
         "FederatedEditionAuction",
         true
-      ],
-      "note": "pending lane 5"
+      ]
     },
     {
       "contract": "FederationRegistry",
-      "signature": "approveTemplate(bytes32,address,uint32,uint8)",
+      "signature": "approveTemplate(address,uint32,uint8)",
       "args": [
-        "FederatedStream",
         "FederatedStreamDeployer",
         1,
         0
-      ],
-      "note": "pending lane 5"
+      ]
     },
     {
       "contract": "FederationRegistry",
-      "signature": "approveTemplate(bytes32,address,uint32,uint8)",
+      "signature": "approveTemplate(address,uint32,uint8)",
       "args": [
-        "FederatedEditions",
         "FederatedEditionsDeployer",
         1,
         1
+      ]
+    },
+    {
+      "contract": "FederationRegistry",
+      "signature": "setEntropyModule(address)",
+      "args": [
+        "EntropyModule"
       ],
-      "note": "pending lane 5"
+      "note": "left out when there is no entropy module"
     },
     {
       "contract": "StatementLog",
@@ -1250,7 +1259,7 @@
   ],
   "initialInstalls": {
     "constructor": "Genesis modules and minters of Stream, Editions and Directory (their addresses are predicted before deployment); every immutable dependency and every dependency pinned by code hash.",
-    "wiring": "Sale targets, the ETH opening bid, the federation's adapters and templates, and the epoch-0 governance manifest.",
+    "wiring": "The package registry's Stream bind and entropy module, the edition auction's sale target, the ETH opening bid, the federation module's adapters, templates and entropy module, and the epoch-0 governance manifest.",
     "grants": "Curation signers are active once granted CURATION_SIGNER in holders."
   },
   "unusedRoles": [

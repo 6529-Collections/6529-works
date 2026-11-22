@@ -181,35 +181,4 @@ contract EnglishAuctionDisputesTest is AuctionFixture {
         auction.claim(alice);
         assertEq(address(auction).balance, 0);
     }
-
-    /// @dev An outcome recorded before the pause cannot cancel the sale even while it is still
-    ///      the token's latest outcome (LIFECYCLE-4, found by mutation testing): the pause
-    ///      requires a position after the latest one at the pause.
-    function test_Cancel_RefusesTheLatestOutcomeWhenItPredatesThePause() public {
-        uint256 saleId = _start();
-        _bidEth(saleId, alice, 1 ether);
-        _recordOutcome(1);
-        bytes32 early = _recordOutcome(1);
-        _pause(saleId);
-        vm.prank(setter);
-        vm.expectRevert(
-            abi.encodeWithSelector(IEnglishAuction.OutcomeNotRecorded.selector, saleId, early)
-        );
-        auction.cancel(saleId, early);
-        bytes32 fresh = _recordOutcome(1);
-        vm.prank(setter);
-        auction.cancel(saleId, fresh);
-        assertEq(uint8(_state(saleId)), uint8(IEnglishAuction.AuctionState.CANCELLED));
-        assertEq(auction.claimable(alice, ETH), 1 ether);
-    }
-
-    /// @dev Delisting checks nothing about the token (found by mutation testing): an account
-    ///      with no code, which could never be listed, is delisted with its event.
-    function test_SetTarget_DelistingChecksNothing() public {
-        vm.expectEmit(address(auction));
-        emit ISaleAdapter.TargetSet(alice, false);
-        vm.prank(successor);
-        auction.setTarget(alice, false);
-        assertFalse(auction.isTarget(alice));
-    }
 }

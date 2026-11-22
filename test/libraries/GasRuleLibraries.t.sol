@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { IMintTarget } from "src/interfaces/IMintTarget.sol";
-import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
+import { IEditions } from "src/interfaces/core/IEditions.sol";
+import { IStream } from "src/interfaces/core/IStream.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
 import { ProtocolContracts } from "src/libraries/ProtocolContracts.sol";
 import { SignatureVerifier } from "src/libraries/SignatureVerifier.sol";
@@ -89,7 +89,7 @@ contract GasRuleLibrariesTest is GasRuleAssertions {
     ///      of gas the check reverts, never answering "not a protocol contract" (which would
     ///      accept it as a payout). A plain contract is "not one" at every multiple.
     function test_GasRule_ProtocolContracts_SameAnswerAtEveryMultipleAndShortfallReverts() public {
-        bytes4[2] memory ids = [type(IMintTarget).interfaceId, type(IWorkRecords).interfaceId];
+        bytes4[2] memory ids = [type(IStream).interfaceId, type(IEditions).interfaceId];
         for (uint256 i; i < ids.length; ++i) {
             Burner protocol = new Burner(
                 address(new Erc165Shapes(Erc165Shapes.Shape.COMPLIANT, ids[i])), 10_000
