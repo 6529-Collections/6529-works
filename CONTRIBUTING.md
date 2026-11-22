@@ -26,7 +26,7 @@
    - invariants for anything that moves money;
    - gas checks where the budgets apply.
 8. `forge build` and `forge test` must pass, and the CI budgets must hold. The
-   [quickstart](docs/quickstart.md) has the commands, their timings and a local end-to-end run.
+   [quickstart](docs/quickstart.md) has the commands and a local end-to-end run.
 9. A new or changed `restricted` function is mapped in
    [`config/genesis.core.example.json`](config/genesis.core.example.json) in the same PR
    (`tools/check_genesis.py` fails otherwise). Then regenerate the

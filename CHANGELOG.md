@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+- **The plain permanent core, integrated** ([ADR 0010](docs/adr/0010-plain-permanent-core.md)).
+  The permanent contracts (`Stream`, `Editions`, `WorkFacts`, `Directory`, the split ledger and
+  its vaults, the escrow, the content store) hold only token ownership and the collection
+  address, the facts of a finished work and money already owed; every rule moved to a
+  replaceable module (`StreamTerms`, `WorkRules` and `WorkDelivery`, `Renderer`, `Accounts`,
+  `FederationRegistry`, `PackageRegistry`, the sale contracts). Modules and minters are added
+  after `moduleDelay` and removed at once. Every waiting period in a permanent contract is a
+  network setting with a launch value: `moduleDelay` 7 days, `rescueDelay` 14 days,
+  `rebindDelay` 14 days, `unclaimedPeriod` 180 days. ETH only at launch. One credit rule for both
+  auctions (`AgedCredits`): only money that has itself waited the unclaimed period goes to the
+  network. The old `Stream`, `WorkRecords`, `Editions`, `ArtistRegistry`, the English auction's
+  lens, the old deploy and verify scripts and their tests are removed.
+- Developer path on the new contracts: `script/DeployCore.s.sol` and `VerifyCore.s.sol`; the local
+  walkthrough (a full sale, an edition sale, a federated work and a module swap on anvil); the
+  reference keeper; nine integrator examples, one of them new (a module swap seen by an
+  integrator); Sepolia round r6 tooling, simulated.
+- Documentation: the curation, entropy, disputes and declarations pages cut to the new code;
+  known limitations pruned to what is true of it (removed and closed rows reduced to their IDs);
+  the invariants catalogue on the core, with the campaigns still being ported listed as
+  placeholders; trust assumptions and the runbook gain the points of care found by review
+  (federated tokens need an immediate role, an edition can be sealed at zero, a replacement
+  module carries state over, a finalized work's copies are named by the delivery module, an
+  unreleased share can still be forfeited); every event and topic0 and the module interface IDs
+  regenerated from the build; the audit scope regenerated; the testing guide rewritten; the
+  mutation baseline kept as a historical record of the earlier contracts; every broken link
+  repaired, and documents cite only tests that exist.
+
 - Escrow credit expiry by windows (ECO-45, R12; `RevenueEscrow`, permanent): a credit opens a
   180-day window or joins the open one, and a window's credits may move to the network 180 days
   after its last credit. Every amount waits at least 180 days from its own arrival and under 360
