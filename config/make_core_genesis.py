@@ -156,6 +156,7 @@ CONTRACTS = [
             fn("setDelivery(address,address)", "SUCCESSOR_SETTER"),
             fn("addStore(address,bytes32)", "SUCCESSOR_SETTER"),
             fn("retireStore(uint256)", "PARAMETER_SETTER"),
+            fn("setFileStore(address,uint256,bytes32,uint256)", "STORAGE_OPERATOR", "or a wallet of the lead artist's account"),
         ],
         "lane 3 (RECORDS module of Stream and, through Directory, of federated tokens)",
     ),

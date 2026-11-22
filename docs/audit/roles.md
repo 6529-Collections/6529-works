@@ -65,7 +65,7 @@ assume the number.
 | `NETWORK` | 1 | immediate | `network()` only | the network | 37 |
 | `PAUSER` | 2 | immediate | operational keys | Pauser key 1, Pauser key 2, Pauser key 3 | 4 |
 | `CURATION_SIGNER` | 4 | immediate | operational keys | Curation signer key 1, Curation signer key 2 | 0 |
-| `STORAGE_OPERATOR` | 5 | immediate | operational keys | Storage operator key | 4 |
+| `STORAGE_OPERATOR` | 5 | immediate | operational keys | Storage operator key | 5 |
 | `MINTER` | 6 | immediate | operational keys | none (unused in v1) | 0 |
 | `KEEPER` | 7 | immediate | operational keys | none (unused in v1) | 0 |
 | `PLATFORM` | 8 | immediate | operational keys | Platform key | 3 |
@@ -85,11 +85,11 @@ once; the network roles answer for `network()` only ([`Roles.sol`](../../src/gov
 
 | Class | Delay | Mapped selectors |
 | --- | --- | ---: |
-| No delay | immediate | 49 |
+| No delay | immediate | 50 |
 | 24 hours | 24 hours | 30 |
 | 3 days | 3 days | 9 |
 | 7 days | 7 days | 19 |
-| **Total** | | **107** |
+| **Total** | | **108** |
 
 ## Matrix by contract
 
@@ -154,6 +154,7 @@ Source: [`src/records/WorkRules.sol`](../../src/records/WorkRules.sol).
 | `setDelivery(address,address)` | `0x118e803d` | `SUCCESSOR_SETTER` | 7 days | 7 days | The network or the scheduler, during the delay; the brake may delay it once | Replaces the delivery contract (locators and preferences). No fact of any work changes. |
 | `addStore(address,bytes32)` | `0xce8238dd` | `SUCCESSOR_SETTER` | 7 days | 7 days | The network or the scheduler, during the delay; the brake may delay it once | Adds a store media may be found complete in, for good; code-hash pinned. |
 | `retireStore(uint256)` | `0x2dc3d993` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once | Nothing new is counted against a retired store. |
+| `setFileStore(address,uint256,bytes32,uint256)` | `0x52f2eb11` | `STORAGE_OPERATOR` | No delay | immediate | No: executes at once |  |
 
 ### WorkDelivery
 
