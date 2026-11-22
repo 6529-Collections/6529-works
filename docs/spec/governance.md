@@ -7,7 +7,11 @@ One OpenZeppelin 5.7.0 `AccessManager`, subclassed as `WorksAccessManager`, gove
   6529 Safe; later it is the executor of TDH governance, bridged from 6529chain. The network can
   hand over to a new address in two steps.
 - **Three fixed delays.** Each network power is in a class: at once, 24 hours, 3 days or 7 days.
-  The numbers are compiled into the code; nobody can change them.
+  The numbers are compiled into the code, but a class's delay holds for a function only until a
+  7-day remap changes it: the network (ADMIN, 7 days) can move a selector to another role, to
+  NETWORK (immediate) or to a new manager. The waits a contract enforces in its own code (a
+  replacement's notice, a freeze's length, the 180-day expiries, a rescue's 14 days, the edition
+  timers) are what no remap changes.
 - **One optional brake.** A second address that can make one scheduled network action wait 7
   more days, once. It cannot cancel, act or delay anything twice. There may be no brake at all.
 - **Operational keys.** Pauser, curation signers, storage operator, platform and curator keys
@@ -238,7 +242,7 @@ Rule IDs use the prefix `GV`.
 | ID | Rule | Enforced in | Tested by |
 | --- | --- | --- | --- |
 | GV-1 | Only `network()` holds the network roles (`ADMIN`, `NETWORK`, `PARAMETER_SETTER`, `FUNDS_SETTER`, `SUCCESSOR_SETTER`); nobody can be granted one; the zero address never holds one. The installer holds them with no delay only until it renounces. | `WorksAccessManager.hasRole`, `_grantRole` | [`NetworkAndBrake.t.sol`](../../test/governance/NetworkAndBrake.t.sol): `test_NobodyCanBeGrantedANetworkRole`, `testFuzz_OnlyTheNetworkHoldsTheNetworkRoles`, `test_NoNetworkBeforeAcceptance`; [`GovernanceConfigurator.t.sol`](../../test/governance/GovernanceConfigurator.t.sol): `test_ConfiguratorDeploysAndOwnsAWorksAccessManager`; `test_SafeAcceptedTheNetworkAtGenesis`, `test_HandoverToASecondSafe` |
-| GV-2 | The network acts with a fixed delay per class: `NETWORK` none, `PARAMETER_SETTER` 24 hours, `FUNDS_SETTER` 3 days, `SUCCESSOR_SETTER` and `ADMIN` 7 days. Nothing runs before its delay. | `Roles.executionDelay`, OpenZeppelin `schedule` and `_consumeScheduledOp` | `NetworkAndBrake.t.sol`: `test_EachClassRunsAtItsDelayAndNotBefore`, `test_ManagerAdministrationIsTheSevenDayClass`, `test_TheNetworkActsAtOnceThroughTheNetworkRole`, `test_UnmappedSelectorFallsBackToTheSevenDayClass`; [`Roles.t.sol`](../../test/governance/Roles.t.sol); `test_SafeSchedulesAndExecutesTwoFundsSettersInOneBatch`, `test_DelayedSetterCalledDirectlyIsRefused` |
+| GV-2 | The network acts with a fixed delay per class: `NETWORK` none, `PARAMETER_SETTER` 24 hours, `FUNDS_SETTER` 3 days, `SUCCESSOR_SETTER` and `ADMIN` 7 days. Nothing runs before its delay while its selector stays in that class; a remap (ADMIN, 7 days) can move a selector to another class, so a class's delay holds until a 7-day remap changes it. | `Roles.executionDelay`, OpenZeppelin `schedule` and `_consumeScheduledOp` | `NetworkAndBrake.t.sol`: `test_EachClassRunsAtItsDelayAndNotBefore`, `test_ManagerAdministrationIsTheSevenDayClass`, `test_TheNetworkActsAtOnceThroughTheNetworkRole`, `test_UnmappedSelectorFallsBackToTheSevenDayClass`; [`Roles.t.sol`](../../test/governance/Roles.t.sol); `test_SafeSchedulesAndExecutesTwoFundsSettersInOneBatch`, `test_DelayedSetterCalledDirectlyIsRefused` |
 | GV-3 | Operational keys act with no delay. The network grants and revokes them at once (their role admin is `NETWORK`); a key can renounce its own role at once. | `GovernanceConfig.install` (`setRoleAdmin`) | `NetworkAndBrake.t.sol`: `test_OperationalKeysAreGrantedAndRevokedAtOnce`; `GovernanceConfigurator.t.sol`: `test_EveryRoleIsLabelledAndOperationalKeysAnswerToTheNetworkAtOnce` |
 | GV-4 | `transferNetwork(next)` (7 days) only proposes; `next` takes over only by calling `acceptNetwork` itself; a new proposal or zero replaces or withdraws it. After acceptance the former network holds nothing and its scheduled operations cannot run. | `WorksAccessManager.transferNetwork`, `acceptNetwork`, `hasRole` | `NetworkAndBrake.t.sol`: `test_TransferNetworkTakesEffectOnlyOnAccept`, `test_TransferCanBeWithdrawnOrReplaced`, `test_OnlyTheNetworkCanStartATransfer` |
 | GV-5 | `setBrake(next)` is the network at 7 days; zero means no brake. | `WorksAccessManager.setBrake` | `NetworkAndBrake.t.sol`: `test_OnlyTheBrakeCanBrake`, `test_TheBrakeCanDelayItsOwnRemovalOnce`; `GovernanceConfigurator.t.sol`: `test_NoBrakeIsAllowed`; `test_BrakeSafeDelaysAScheduledSafeOperation` |
@@ -299,7 +303,8 @@ so the network, the brake and every brake mark can be rebuilt from logs alone.
 | Genesis wiring calls | At most 64 | `GovernanceConfig.MAX_WIRING_CALLS` |
 | Raise step and ceiling | At most double per step; ceiling fixed per target | `BoundedParameter.raise` |
 
-Each number is compiled in; the number is the guarantee.
+Each number is compiled in. A role delay holds until a 7-day remap changes it (above); a wait a
+contract enforces in its own code is the guarantee, and no remap changes it.
 
 ## Differences from the ADRs
 

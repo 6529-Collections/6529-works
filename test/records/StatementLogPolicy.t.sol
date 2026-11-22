@@ -17,7 +17,8 @@ import {
     OZERC1155Mock,
     OZERC721Mock
 } from "../mocks/records/RecordsMocks.sol";
-import { IStream } from "src/interfaces/IStream.sol";
+import { IERC721Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
+import { IStream } from "src/interfaces/core/IStream.sol";
 import { BoundedCall } from "src/libraries/BoundedCall.sol";
 import { ReturnDataMock } from "../mocks/libraries/AdversarialTargets.sol";
 import { EvilResolverMock, ForwardingResolverMock } from "../mocks/records/RecordsResolvers.sol";
@@ -362,10 +363,10 @@ contract StatementLogPolicyTest is StatementLogFixture {
         );
     }
 
-    /// @dev The item fallback follows only a Stream's full `coreOf` answer, 192 bytes: an
-    ///      answer of any other length, even one whose first word names an item with an outcome,
-    ///      is a failed read of a declared Stream and reverts (found by mutation testing).
-    function test_LatestDisputeOutcome_FollowsOnlyAFullCoreOfAnswer() public {
+    /// @dev The item fallback follows only a Stream's one-word `itemHashOf` answer: an answer of
+    ///      any other length, even one whose first word names an item with an outcome, is a
+    ///      failed read of a declared Stream and reverts (found by mutation testing).
+    function test_LatestDisputeOutcome_FollowsOnlyAOneWordItemHashAnswer() public {
         bytes32 itemHash = keccak256("an item");
         Statement memory dispute = _statement(address(0), uint256(itemHash));
         dispute.kind = StatementKinds.DISPUTE_OUTCOME;
@@ -373,15 +374,13 @@ contract StatementLogPolicyTest is StatementLogFixture {
         bytes32 outcome = stmtLog.appendPlatform(dispute);
 
         StreamCoreMock token = new StreamCoreMock(itemHash);
-        token.setRawAnswer(abi.encode(itemHash, 1, 1, 1, 1, 6_529));
+        token.setRawAnswer(abi.encode(itemHash));
         assertEq(stmtLog.latestDisputeOutcome(address(token), 1), outcome, "a full answer");
 
-        bytes[4] memory others = [ // 191, 224, 32 and 0 bytes
-            abi.encodePacked(
-                itemHash, uint256(1), uint256(1), uint256(1), uint256(1), uint248(6_529)
-            ),
-            abi.encode(itemHash, 1, 1, 1, 1, 6_529, 0),
-            abi.encode(itemHash),
+        bytes[4] memory others = [ // 31, 36, 64 and 0 bytes
+            abi.encodePacked(bytes31(itemHash)),
+            abi.encodePacked(itemHash, bytes4(0)),
+            abi.encode(itemHash, 1),
             bytes("")
         ];
         for (uint256 i; i < others.length; ++i) {
@@ -393,7 +392,7 @@ contract StatementLogPolicyTest is StatementLogFixture {
         }
     }
 
-    /// @dev A token that does not declare `IStream` reads zero even when its `coreOf` gives a
+    /// @dev A token that does not declare `IStream` reads zero even when its `itemHashOf` gives a
     ///      full, well-formed answer naming an item that has an outcome: the declaration is
     ///      checked before any answer is accepted. Declaring `IStream`, the same answer is
     ///      followed.
@@ -412,9 +411,10 @@ contract StatementLogPolicyTest is StatementLogFixture {
         assertEq(stmtLog.latestDisputeOutcome(address(token), 1), outcome, "a Stream");
     }
 
-    /// @dev A token that declares `IStream` by ERC-165 and whose `coreOf` fails is refused: a
-    ///      failed read must not pass for "no outcome". Its definitive `UnknownWork` (a burned
-    ///      or unminted token) still reads as zero, and a full answer is followed.
+    /// @dev A token that declares `IStream` by ERC-165 and whose `itemHashOf` fails is refused:
+    ///      a failed read must not pass for "no outcome". Its definitive
+    ///      `ERC721NonexistentToken` (a burned or unminted token) still reads as zero, and a full
+    ///      answer is followed.
     /// Regression: RFX-REC-2
     function test_LatestDisputeOutcome_AStreamWhoseCoreReadFailsReverts() public {
         bytes32 itemHash = keccak256("an item");
@@ -444,7 +444,7 @@ contract StatementLogPolicyTest is StatementLogFixture {
         );
         stmtLog.latestDisputeOutcome(address(token), 1);
 
-        // A token's own outcome is answered without reading `coreOf` at all.
+        // A token's own outcome is answered without reading `itemHashOf` at all.
         Statement memory own = _statement(address(token), 1);
         own.kind = StatementKinds.DISPUTE_OUTCOME;
         vm.prank(platform);
@@ -453,20 +453,23 @@ contract StatementLogPolicyTest is StatementLogFixture {
     }
 
     /// @dev A token that does not declare `IStream` keeps the tolerant answer, zero, whatever
-    ///      its `coreOf` does (the artist registry asks about itself this way).
+    ///      its `itemHashOf` does (the artist registry asks about itself this way).
     /// Regression: RFX-REC-2
     function test_LatestDisputeOutcome_ANonStreamTokenStillReadsZero() public {
         ReturnDataMock token = new ReturnDataMock();
         token.configure(abi.encodeWithSignature("Error(string)", "no"), true);
         assertEq(stmtLog.latestDisputeOutcome(address(token), 1), bytes32(0));
-        token.configure(abi.encodeWithSelector(IStream.UnknownWork.selector, 1), true);
+        token.configure(
+            abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, 1), true
+        );
         assertEq(stmtLog.latestDisputeOutcome(address(token), 1), bytes32(0));
         assertEq(stmtLog.latestDisputeOutcome(address(0xC0DE), 1), bytes32(0), "no code");
     }
 
     /// @dev A contract that answers every call with a true word declares nothing: the full
     ///      ERC-165 check (its `0xffffffff` probe) refuses it, so it reads zero instead of being
-    ///      asked for `coreOf` and reverting. Fails with the one-probe check: `BoundedCallFailed`.
+    ///      asked for `itemHashOf` and reverting. Fails with the one-probe check:
+    ///      `BoundedCallFailed`.
     function test_LatestDisputeOutcome_AnAlwaysTrueFallbackIsNoStream() public {
         ReturnDataMock token = new ReturnDataMock();
         token.configure(abi.encode(uint256(1)), false);
@@ -782,11 +785,66 @@ contract StatementLogPolicyTest is StatementLogFixture {
         vm.prank(governor);
         manager.execute(address(stmtLog), viaGovernance);
     }
+
+    // --------------------------------------------------------- exact checks (mutation, batch 2)
+
+    /// @dev A contract that answers true to every call declares no ERC-165, so it is no token
+    ///      subject: an outcome about it is recorded unchecked, as about any other contract.
+    function test_DisputeOutcome_ATokenAnsweringTrueToEveryCallIsUnchecked() public {
+        ReturnDataMock token = new ReturnDataMock();
+        token.configure(abi.encode(uint256(1)), false);
+        Statement memory dispute = _statement(address(token), 1);
+        dispute.kind = StatementKinds.DISPUTE_OUTCOME;
+        vm.prank(platform);
+        bytes32 outcome = stmtLog.appendPlatform(dispute);
+        (bytes32 latest,) = stmtLog.disputeOutcomeOf(address(token), 1);
+        assertEq(latest, outcome);
+    }
+
+    /// @dev Only `ERC721NonexistentToken` with its one word (36 bytes) reads as no work: the
+    ///      selector alone, the selector with two words, and the selectors either side of it in
+    ///      36 bytes are failed reads (`BoundedCallFailed`).
+    function test_LatestDisputeOutcome_OnlyAnExactNonexistentTokenReadsZero() public {
+        RawRevertCoreStream token = new RawRevertCoreStream();
+        bytes4 unknown = IERC721Errors.ERC721NonexistentToken.selector;
+        token.setReason(abi.encodeWithSelector(unknown, uint256(1)));
+        assertEq(stmtLog.latestDisputeOutcome(address(token), 1), bytes32(0));
+        bytes[4] memory failed = [
+            abi.encodePacked(unknown),
+            abi.encodeWithSelector(unknown, uint256(1), uint256(2)),
+            abi.encodeWithSelector(bytes4(uint32(unknown) - 1), uint256(1)),
+            abi.encodeWithSelector(bytes4(uint32(unknown) + 1), uint256(1))
+        ];
+        for (uint256 i; i < failed.length; ++i) {
+            token.setReason(failed[i]);
+            vm.expectRevert(
+                abi.encodeWithSelector(BoundedCall.BoundedCallFailed.selector, address(token))
+            );
+            stmtLog.latestDisputeOutcome(address(token), 1);
+        }
+    }
+
+    /// @dev The governance path takes only the governance kind: a kind that sorts above it is
+    ///      refused like one below.
+    function test_GovernanceManifest_RefusesAKindAboveTheGovernanceKind() public {
+        StatementLog direct =
+            new StatementLog(address(manager), address(resolver), address(resolver).codehash);
+        bytes4[] memory selectors = new bytes4[](1);
+        selectors[0] = direct.appendGovernanceManifest.selector;
+        vm.prank(admin);
+        manager.setTargetFunctionRole(address(direct), selectors, CURATOR_ROLE);
+        Statement memory s = _governanceStatement();
+        s.kind = bytes32(type(uint256).max);
+        assertGt(uint256(s.kind), uint256(StatementKinds.GOVERNANCE_MANIFEST));
+        vm.expectRevert(IStatementLog.InvalidGovernanceManifest.selector);
+        vm.prank(curator);
+        direct.appendGovernanceManifest(s);
+    }
 }
 
 /// @dev A Stream-shaped token for the dispute fallback: declares `IStream` by ERC-165 (unless
-///      told not to) and answers `coreOf` in full, with `UnknownWork`, another revert, by
-///      running out of gas, with a short answer, or with any raw bytes.
+///      told not to) and answers `itemHashOf` in full, with `ERC721NonexistentToken`, another
+///      revert, by running out of gas, with a short answer, or with any raw bytes.
 contract StreamCoreMock {
     enum Mode {
         ANSWER,
@@ -824,13 +882,9 @@ contract StreamCoreMock {
         return interfaceId == type(IStream).interfaceId && !undeclared;
     }
 
-    function coreOf(uint256 tokenId)
-        external
-        view
-        returns (bytes32, uint256, uint256, uint8, uint8, uint32)
-    {
+    function itemHashOf(uint256 tokenId) external view returns (bytes32) {
         Mode m = mode;
-        if (m == Mode.UNKNOWN_WORK) revert IStream.UnknownWork(tokenId);
+        if (m == Mode.UNKNOWN_WORK) revert IERC721Errors.ERC721NonexistentToken(tokenId);
         if (m == Mode.OTHER_REVERT) revert("broken");
         if (m == Mode.OUT_OF_GAS) {
             assembly ("memory-safe") {
@@ -841,7 +895,7 @@ contract StreamCoreMock {
             bytes32 word = item;
             assembly ("memory-safe") {
                 mstore(0, word)
-                return(0, 32)
+                return(0, 16)
             }
         }
         if (m == Mode.RAW) {
@@ -850,6 +904,27 @@ contract StreamCoreMock {
                 return(add(answer, 0x20), mload(answer))
             }
         }
-        return (item, 1, 1, 0, 0, 0);
+        return item;
+    }
+}
+
+/// @dev A token that declares the core `IStream` and reverts `itemHashOf` with the bytes the test
+///      sets.
+contract RawRevertCoreStream {
+    bytes internal _reason;
+
+    function setReason(bytes calldata reason) external {
+        _reason = reason;
+    }
+
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return interfaceId == 0x01ffc9a7 || interfaceId == type(IStream).interfaceId;
+    }
+
+    function itemHashOf(uint256) external view returns (bytes32) {
+        bytes memory reason = _reason;
+        assembly ("memory-safe") {
+            revert(add(reason, 0x20), mload(reason))
+        }
     }
 }

@@ -285,6 +285,13 @@ contract CallbackToken is MockERC20("Callback", "CBT") {
 contract MockArtistResolver is IArtistPayoutResolver {
     mapping(uint256 => address) public payout;
     bool public down;
+    /// @dev `IDirectory.unclaimedPeriod`, which the split ledger reads at a forfeit (the
+    ///      Directory's launch value by default).
+    uint48 public unclaimedPeriod = 180 days;
+
+    function setUnclaimedPeriod(uint48 next) external {
+        unclaimedPeriod = next;
+    }
 
     function set(uint256 artistId, address account) external {
         payout[artistId] = account;

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { Vm } from "forge-std/Vm.sol";
 import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
 import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
 import { Roles } from "src/governance/Roles.sol";
@@ -269,6 +270,15 @@ contract GovernanceConfiguratorTest is GovernanceFixture {
         configurator.verify(cfg);
     }
 
+    /// @dev The duplicate check compares roles for equality: a key may take a lower role after a
+    ///      higher one (the platform key, PLATFORM first, then PAUSER).
+    function test_OneKeyMayHoldALowerRoleAfterAHigherOne() public {
+        GovernanceConfig.Config memory cfg = _withGrant(Roles.PAUSER, platform);
+        configurator.configure(cfg, MANIFEST, _noWiring());
+        _accept();
+        configurator.verify(cfg);
+    }
+
     // ------------------------------------------------------------ target validation
 
     function test_RejectsInvalidTargets() public {
@@ -395,6 +405,68 @@ contract GovernanceConfiguratorTest is GovernanceFixture {
             abi.encodeWithSelector(GovernanceConfig.RoleMismatch.selector, Roles.PAUSER)
         );
         configurator.verify(_config());
+    }
+
+    /// @dev A selector remapped to a higher role than configured is drift, like one remapped
+    ///      to a lower role.
+    function test_ReadbackDetectsASelectorRemappedToAHigherRole() public {
+        _configured();
+        _adminExecute(
+            abi.encodeCall(
+                IAccessManager.setTargetFunctionRole,
+                (address(target), _one(GovernedTargetMock.pause.selector), Roles.PLATFORM)
+            )
+        );
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GovernanceConfig.FunctionRoleMismatch.selector,
+                address(target),
+                GovernedTargetMock.pause.selector,
+                Roles.PLATFORM
+            )
+        );
+        configurator.verify(_config());
+    }
+
+    /// @dev An operational role's admin is the network role: an admin moved to `ADMIN` below
+    ///      it, or to an operational role above it, is drift.
+    function test_ReadbackDetectsARoleAdminMovedEitherWay() public {
+        _configured();
+        uint64[2] memory moved = [Roles.ADMIN, Roles.PLATFORM];
+        for (uint256 i; i < moved.length; ++i) {
+            _adminExecute(abi.encodeCall(IAccessManager.setRoleAdmin, (Roles.PAUSER, moved[i])));
+            vm.expectRevert(
+                abi.encodeWithSelector(GovernanceConfig.RoleMismatch.selector, Roles.PAUSER)
+            );
+            configurator.verify(_config());
+        }
+        _adminExecute(abi.encodeCall(IAccessManager.setRoleAdmin, (Roles.PAUSER, Roles.NETWORK)));
+        configurator.verify(_config());
+    }
+
+    /// @dev A grant delay on a role, once in effect, is drift.
+    function test_ReadbackDetectsARoleGivenAGrantDelay() public {
+        _configured();
+        _adminExecute(abi.encodeCall(IAccessManager.setGrantDelay, (Roles.PAUSER, 1 days)));
+        vm.warp(block.timestamp + manager.minSetback());
+        assertEq(manager.getRoleGrantDelay(Roles.PAUSER), 1 days);
+        vm.expectRevert(
+            abi.encodeWithSelector(GovernanceConfig.RoleMismatch.selector, Roles.PAUSER)
+        );
+        configurator.verify(_config());
+    }
+
+    /// @dev Installing without a brake leaves the brake unset and logs no brake change.
+    function test_NoBrakeLogsNoBrakeChange() public {
+        GovernanceConfig.Config memory cfg = _config();
+        cfg.brake = address(0);
+        vm.recordLogs();
+        configurator.configure(cfg, MANIFEST, _noWiring());
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        for (uint256 i; i < logs.length; ++i) {
+            assertTrue(logs[i].topics[0] != WorksAccessManager.BrakeSet.selector, "no BrakeSet");
+        }
+        assertEq(manager.brake(), address(0));
     }
 
     function test_ReadbackDetectsAChangedNetworkOrBrake() public {

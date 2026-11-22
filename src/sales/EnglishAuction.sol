@@ -460,9 +460,9 @@ contract EnglishAuction is
     ///      neither a token from within its own settlement nor a caller running inside the escrow
     ///      can make another sale's attempt fail on a guard. It takes no guard itself: {settle}
     ///      takes it for the attempt, and the close after a failure makes no external call.
-    ///      The escrow probe forwards all gas and accepts only the escrow's `ZeroAmount` refusal;
-    ///      anything else, a shortfall included, reverts (`BoundedCall.tryCallAll`'s rule, written
-    ///      out: the library call costs about 300 bytes this contract does not have). The attempt
+    ///      The escrow probe reads its `locked()` with all gas and accepts only a one-word `false`;
+    ///      anything else, a failure or shortfall included, reverts (`BoundedCall.tryReadWordAll`'s
+    ///      rule, written out: the library call costs bytes this contract does not have). The attempt
     ///      is the one bounded call (AUC-47): it gets exactly `refusalGas`, and a caller that
     ///      cannot forward it in full is refused before anything happens (the comparison is
     ///      `BoundedCall.hasSufficientGas`'s), so a shortfall is never taken for a refusal. It
@@ -484,10 +484,9 @@ contract EnglishAuction is
         // A currency freeze is the auction's own wait, not the token's refusal (MARKET-2).
         _frozenOut(s);
         uint256 gasLimit = _settings.refusalGas;
-        (address escrow, bytes4 probe, bytes4 zeroAmount, bytes4 short, bytes4 attempt) = (
+        (address escrow, bytes4 probe, bytes4 short, bytes4 attempt) = (
             _escrow,
-            IRevenueEscrow.depositETH.selector,
-            IRevenueEscrow.ZeroAmount.selector,
+            IRevenueEscrow.locked.selector,
             BoundedCall.BoundedCallInsufficientGas.selector,
             this.settle.selector
         );
@@ -497,12 +496,10 @@ contract EnglishAuction is
         assembly ("memory-safe") {
             // The escrow's guard must be free, as this contract's is: the attempt escrows a payout
             // its wallet refuses, so a caller running inside the escrow (a flush to its own
-            // contract) could otherwise fail any sale's attempt. A zero deposit reverts with
-            // `ZeroAmount` unless the escrow's guard is held.
+            // contract) could otherwise fail any sale's attempt. `locked()` answers whether it is.
             mstore(0, probe)
-            mstore(4, address())
-            pop(call(gas(), escrow, 0, 0, 0x24, 0, 0x04))
-            free := and(eq(returndatasize(), 4), eq(shr(224, mload(0)), shr(224, zeroAmount)))
+            free := staticcall(gas(), escrow, 0, 4, 0, 0x20)
+            free := and(free, and(eq(returndatasize(), 0x20), iszero(mload(0))))
         }
         if (!free || _reentrancyGuardEntered()) revert ReentrancyGuardReentrantCall();
         assembly ("memory-safe") {

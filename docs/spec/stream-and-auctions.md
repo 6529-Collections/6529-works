@@ -606,7 +606,7 @@ sequenceDiagram
     participant Token as The token
     Keeper->>Auction: settleOrRefund(saleId), from refusableAt(saleId)
     Note over Auction: ENDED, 2 days past its end, currency not frozen short of its exit
-    Auction->>Escrow: depositETH(0) - reverts ZeroAmount unless the escrow's guard is held
+    Auction->>Escrow: locked() - must answer false: the escrow's guard is not held
     Note over Auction: neither guard held, and the caller can forward refusalGas in full
     Auction->>Auction: settle(saleId) with exactly refusalGas
     Auction->>Token: primarySale, settlePrimary, ownerOf, primaryTerms, delivery
@@ -640,7 +640,8 @@ sequenceDiagram
   guarded calls and inside the escrow's (`ReentrancyGuardReentrantCall`): a token re-entering from
   its own settlement could otherwise make another sale's attempt fail on the auction's guard, and
   a caller running inside the escrow's `flush` (paid to its own contract) could make any attempt
-  that escrows a refused payout fail on the escrow's guard. Every other call in the attempt either
+  that escrows a refused payout fail on the escrow's guard. The auction reads the escrow's guard
+  from its `locked()` view, and anything but a one-word `false` refuses the call. Every other call in the attempt either
   belongs to the token or already absorbs its failure: the delivery is bounded and leaves a
   pending delivery, a refusing wallet's ETH is escrowed with bounded gas, and an ERC-20 payout runs
   in its own frame with a credit fallback.

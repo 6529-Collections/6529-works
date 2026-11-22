@@ -555,7 +555,7 @@
     "type": "function"
   },
   {
-    "id": "0x8633cbc2",
+    "id": "0x637cd7f0",
     "inputs": [
       {
         "internalType": "address",
@@ -568,15 +568,40 @@
         "type": "address"
       }
     ],
-    "name": "creditedAt",
+    "name": "credits",
     "outputs": [
       {
+        "internalType": "uint256",
+        "name": "aged",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "maturing",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "recent",
+        "type": "uint256"
+      },
+      {
         "internalType": "uint48",
-        "name": "",
+        "name": "maturesAt",
+        "type": "uint48"
+      },
+      {
+        "internalType": "uint48",
+        "name": "openedAt",
+        "type": "uint48"
+      },
+      {
+        "internalType": "uint48",
+        "name": "lastAt",
         "type": "uint48"
       }
     ],
-    "signature": "creditedAt(address,address)",
+    "signature": "credits(address,address)",
     "stateMutability": "view",
     "type": "function"
   },
@@ -618,6 +643,37 @@
     "outputs": [],
     "signature": "depositETH(address)",
     "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "id": "0x9404ca60",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "wallet",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "asset",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "time",
+        "type": "uint256"
+      }
+    ],
+    "name": "expirableAt",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "signature": "expirableAt(address,address,uint256)",
+    "stateMutability": "view",
     "type": "function"
   },
   {
@@ -699,6 +755,21 @@
       }
     ],
     "signature": "isConsumingScheduledOp()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xcf309012",
+    "inputs": [],
+    "name": "locked",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "signature": "locked()",
     "stateMutability": "view",
     "type": "function"
   },

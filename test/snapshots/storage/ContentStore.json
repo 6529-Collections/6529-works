@@ -106,6 +106,13 @@
       "offset": 0,
       "slot": 4,
       "type": "mapping(bytes32 => mapping(uint256 => address))"
+    },
+    {
+      "contract": "ContentStore",
+      "label": "completeThrough",
+      "offset": 0,
+      "slot": 5,
+      "type": "mapping(bytes32 => uint256)"
     }
   ]
 }

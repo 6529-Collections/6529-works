@@ -7,8 +7,7 @@ import { Limits } from "src/interfaces/types/Limits.sol";
 import { Renderer } from "src/content/Renderer.sol";
 import { IRenderer } from "src/interfaces/IRenderer.sol";
 import { IStatementLog } from "src/interfaces/IStatementLog.sol";
-import { IStream } from "src/interfaces/IStream.sol";
-import { IStreamViews } from "src/interfaces/IStreamViews.sol";
+import { CollectionInfo, WorkCore } from "./RendererCoreMocks.sol";
 import { JsonScan } from "src/content/JsonScan.sol";
 import { FileRole, Locator, LocatorKind, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { License, SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
@@ -329,12 +328,12 @@ contract RendererGasAdversarialTest is RendererBase {
         m[1] = MediaFile(licenseText, _sha(licenseText), uint8(FileRole.AUXILIARY));
         if (prev != 0) m[2] = MediaFile(prev, _sha(prev), uint8(FileRole.PREVIEW));
         _installRawAt(id, json, m);
-        IStreamViews.WorkCore memory core = _core();
+        WorkCore memory core = _core();
         core.collectionId = 1;
         core.serial = 9;
         core.seedPolicy = uint8(SeedPolicy.ARTIST);
         stream.setWork(id, core);
-        records.setSeed(id, SeedPolicy.ARTIST, bytes32(uint256(1)));
+        stream.setSeed(id, bytes32(uint256(1)));
         disputeLog.set(address(stream), id, bytes32(uint256(1)));
         records.setLicense(id, License("LicenseRef-Studio-1", licenseText));
         records.addLocator(id, licenseText, Locator(LocatorKind.ARWEAVE, "ar://licence"));
@@ -393,7 +392,7 @@ contract RendererGasAdversarialTest is RendererBase {
         bytes32 tiny = _file(hex"89504e47", IDENTITY, "image/png");
         licenseText = _file("The terms of the license.", IDENTITY, "text/plain");
         // A collection whose name is all `%`, which the renderer escapes.
-        stream.setCollection(1, IStreamViews.Collection(string(_fill("%", 256)), bytes32(0), 9));
+        stream.setCollection(1, CollectionInfo(string(_fill("%", 256)), bytes32(0), 9));
         bytes memory open = '{"name":"N","description":"';
         bytes memory close = '"}';
 
@@ -830,12 +829,12 @@ contract RendererGasBudgetTest is RendererBase {
         m[1] = MediaFile(licenseText, _sha(licenseText), uint8(FileRole.AUXILIARY));
         m[2] = MediaFile(preview, _sha(preview), uint8(FileRole.PREVIEW));
         _installRawAt(id, json, m);
-        IStreamViews.WorkCore memory core = _core();
+        WorkCore memory core = _core();
         core.collectionId = 1;
         core.serial = 9;
         core.seedPolicy = uint8(SeedPolicy.ARTIST);
         stream.setWork(id, core);
-        records.setSeed(id, SeedPolicy.ARTIST, bytes32(uint256(1)));
+        stream.setSeed(id, bytes32(uint256(1)));
         disputeLog.set(address(stream), id, bytes32(uint256(1)));
         records.setLicense(id, License("LicenseRef-Studio-1", licenseText));
         records.addLocator(id, licenseText, Locator(LocatorKind.ARWEAVE, "ar://licence"));
@@ -953,7 +952,7 @@ contract RendererGasBudgetTest is RendererBase {
         );
         scriptU8 = _file(_fill(hex"61e0a080", SCRIPT_LIMIT), IDENTITY, "text/javascript");
         licenseText = _file("The terms of the license.", IDENTITY, "text/plain");
-        stream.setCollection(1, IStreamViews.Collection(string(_fill("%", 256)), bytes32(0), 9));
+        stream.setCollection(1, CollectionInfo(string(_fill("%", 256)), bytes32(0), 9));
 
         // Against 256 KiB of `Base64`: every fill, every shape.
         bytes[8] memory fills = [

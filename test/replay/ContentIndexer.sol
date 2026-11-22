@@ -8,7 +8,8 @@ import { ReplayIndexer } from "./ReplayIndexer.sol";
 /// @notice Rebuilds the content store's index from its own logs (WS-27, WS-50 to WS-52, WS-54):
 ///         every chunk written or linked (with its parts), every manifest (its chunk hashes,
 ///         length, encoding, digest kind, digest and MIME type), each file's completeness and
-///         largest part count derived as the docs describe, and each base64 attestation.
+///         largest part count derived as the docs describe, each base64 attestation and each file's
+///         attested prefix of present chunks.
 /// @dev The chunk bytes themselves live in SSTORE2 data contracts, not in the logs; the index
 ///      the logs rebuild names them by `keccak256`, so `chunkData` is checked against the hash
 ///      and length the logs give, not copied.
@@ -27,6 +28,7 @@ contract ContentIndexer is ReplayIndexer {
         bytes32[] chunkHashes;
         uint256 validated;
         bool attested;
+        uint256 present;
     }
 
     uint256 private constant CHUNK_SIZE = 24_575;
@@ -70,6 +72,12 @@ contract ContentIndexer is ReplayIndexer {
         } else if (sig == IContentStore.Base64Attested.selector) {
             File storage f = _files[key];
             (f.validated, f.attested) = (f.chunkHashes.length, true);
+        } else if (sig == IContentStore.CompletenessProgress.selector) {
+            uint256 present = abi.decode(log.data, (uint256));
+            assertGe(present, _files[key].present, "indexer: the prefix went back");
+            _files[key].present = present;
+        } else if (sig == IContentStore.CompletenessAttested.selector) {
+            _files[key].present = _files[key].chunkHashes.length;
         } else {
             _unknown(sig);
         }
@@ -164,6 +172,8 @@ contract ContentIndexer is ReplayIndexer {
             }
         }
         assertEq(s.isComplete(id), missing == 0, "isComplete");
+        assertEq(s.completeThrough(id), f.present, "completeThrough");
+        assertLe(f.present, firstMissing, "the prefix passed a missing chunk");
         assertEq(s.maxParts(id), missing == 0 ? maxParts : 0, "maxParts");
         assertEq(s.firstMissing(id, 0, count, target), firstMissing, "firstMissing");
         assertEq(s.missingChunks(id).length, missing, "missingChunks");

@@ -460,6 +460,42 @@
   },
   {
     "anonymous": false,
+    "id": "0x2e1a6e20709fd29e201d8bbca654dc8e2798b38dae8856a0996ea1413a0ee461",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "fileId",
+        "type": "bytes32"
+      }
+    ],
+    "name": "CompletenessAttested",
+    "signature": "CompletenessAttested(bytes32)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x53b3afaf7bbb300e84a01a90b3649d20b3de9b3f9119e660ca910abe94e62aec",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "fileId",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "chunksPresent",
+        "type": "uint256"
+      }
+    ],
+    "name": "CompletenessProgress",
+    "signature": "CompletenessProgress(bytes32,uint256)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
     "id": "0x9d2280aa98b792abae06fab8602782374ae1ba5da821d3bf33469828424a6fea",
     "inputs": [
       {
@@ -596,6 +632,32 @@
     "type": "function"
   },
   {
+    "id": "0x13361284",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "fileId",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint256",
+        "name": "maxChunks",
+        "type": "uint256"
+      }
+    ],
+    "name": "attestComplete",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "done",
+        "type": "bool"
+      }
+    ],
+    "signature": "attestComplete(bytes32,uint256)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
     "id": "0x81c8e452",
     "inputs": [
       {
@@ -660,6 +722,27 @@
       }
     ],
     "signature": "chunkPointer(bytes32)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x62a61267",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "fileId",
+        "type": "bytes32"
+      }
+    ],
+    "name": "completeThrough",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "signature": "completeThrough(bytes32)",
     "stateMutability": "view",
     "type": "function"
   },

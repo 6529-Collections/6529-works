@@ -519,7 +519,7 @@ contract SplitWalletTest is EconomicsBase {
         uint256 iB = _indexOf(w, bob);
         cb.mint(w, 1000);
         ledger.mark(_payeesOf(w), bytes32(0), address(cb), iA);
-        vm.warp(block.timestamp + ledger.UNCLAIMED_PERIOD());
+        vm.warp(block.timestamp + resolver.unclaimedPeriod());
         cb.setHook(
             address(ledger),
             abi.encodeCall(ISplitWallet.release, (_payeesOf(w), bytes32(0), address(cb), iB))

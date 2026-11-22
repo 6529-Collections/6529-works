@@ -53,11 +53,15 @@ interface IConsolidationSource is IERC165 {
 ///      freeze early (`unfreeze`). While frozen the account has no acting wallet, its payout
 ///      reads zero (split wallets hold its money) and no pending change executes, with one
 ///      exception: the network's own `resolveContested` may uphold a contested replacement
-///      while the account is frozen (the freeze then still runs for the new identity). A freeze
-///      cannot be extended while it runs; it can be placed again once it ended.
+///      while the account is frozen (the freeze then still runs for the new identity). A second
+///      `freeze` is refused while one runs, but `unfreeze` then `freeze` (both immediate) renews
+///      it at once. A frozen account cannot contest: a freeze and a replacement together leave no
+///      moment to contest, and the network can withdraw a contested replacement, freeze and
+///      restage it, so the right to contest binds only a network that does not freeze.
 ///
-///      The 2-day, 14-day, 90-day and 14-day numbers are compiled constants: each is the
-///      guarantee, and no setter exists.
+///      The 2-day, 14-day, 90-day and 14-day numbers are compiled constants enforced in this
+///      contract's code: no setter exists and no role remap changes them. The network's delay
+///      classes named here (24 hours) are role delays, which a 7-day action can change.
 ///
 ///      Federation directory (ADR 0001 section 16): one entry per federated token, written by
 ///      the current federation registry (`listFederatedContract`, `setFederatedStatus`). A first
@@ -396,7 +400,7 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver, IAccoun
     /// @param artistId The account whose change nonce is burned.
     function revokeNonce(uint256 artistId) external;
     /// @notice Freezes the account for 14 days. A network action with no delay. Refused while a
-    ///         freeze runs (`AccountIsFrozen`).
+    ///         freeze runs (`AccountIsFrozen`); `unfreeze` then `freeze` renews one at once.
     /// @param artistId The account to freeze.
     function freeze(uint256 artistId) external;
     /// @notice Ends the account's freeze now. A network action with no delay.

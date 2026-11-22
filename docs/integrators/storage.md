@@ -64,7 +64,10 @@ cast call $STORE "readChunk(bytes32,uint256)(bytes)" $FILE_ID 0
 2. Check completeness: `firstMissing(fileId, from, to, store)` returns the first chunk in the
    range that is not stored (or the capped `to`), so a file of any size is checked in ranges of
    your choice; `isComplete(fileId)` and `missingChunks(fileId)` check the whole file in one
-   call.
+   call. `isComplete` skips the prefix anyone attested with `attestComplete(fileId, count)`
+   (`completeThrough`), so once a file is attested it is one storage read; a file of more than
+   about 2,500 chunks must be attested, in pieces, before a contract can check it in a
+   transaction (WS-55).
 3. Read chunks `0` to `chunkCount − 1` with `readChunk(fileId, i)` and concatenate them. Every
    chunk but the last is exactly 24,575 bytes (`CHUNK_SIZE`). A chunk may be stored whole or
    linked from smaller parts; both read the same. The default renderer reads no file with a chunk

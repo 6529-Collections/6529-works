@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import { Vm } from "forge-std/Vm.sol";
 import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
 import { GovernedVault } from "src/economics/GovernedVault.sol";
+import { IDirectory } from "src/interfaces/core/IDirectory.sol";
 import { SplitLedger } from "src/economics/SplitLedger.sol";
 import { IClaimRouter } from "src/economics/interfaces/IClaimRouter.sol";
 import { IReleaseVerifier } from "src/economics/interfaces/IReleaseVerifier.sol";
@@ -42,12 +43,13 @@ contract ReleaseProbe {
 ///         - every release from a wallet that names the network fee vault also pays the vault
 ///           its due share of the same asset, by every release path; a token that refuses the
 ///           vault does not block the release, and no other fixed payee is pushed;
-///         - a share anyone marked and its payee left unreleased for 180 days goes to the
-///           network, never more than was due at the mark;
+///         - a share anyone marked and its payee left unreleased for the unclaimed period
+///           (the Directory's setting, 180 days at launch; the mock resolver answers it) goes to
+///           the network, never more than was due at the mark;
 ///         - an escrow credit nobody claimed for 180 days moves to the network;
 ///         - the network moves its own escrow credits without consent, and nobody else's.
 /// @dev Each test fails without the change: before it, a release moved one payee only, the
-///      ledger had no `mark`/`forfeit`, the escrow no `expire`/`creditedAt`, and `recover` needed
+///      ledger had no `mark`/`forfeit`, the escrow no `expire`/`credits`, and `recover` needed
 ///      the fee vault's recorded consent.
 contract NetworkShareTest is EconomicsBase, GasRuleAssertions {
     uint256 internal constant PERIOD = 180 days;
@@ -308,7 +310,7 @@ contract NetworkShareTest is EconomicsBase, GasRuleAssertions {
 
     // ------------------------------------------------------------------ R12: marks
 
-    function test_AMarkedShareUnclaimedFor180DaysGoesToTheNetwork() public {
+    function test_AMarkedShareUnclaimedForThePeriodGoesToTheNetwork() public {
         address wallet = _wallet(_list(_fixed(alice, 80_000), _artist(ARTIST, 20_000)));
         vm.deal(wallet, 10 ether);
         uint256 artistIndex = _artistIndex(wallet, ARTIST);
@@ -456,7 +458,10 @@ contract NetworkShareTest is EconomicsBase, GasRuleAssertions {
     function test_AnEscrowCreditExpiresToTheNetworkAfter180Days() public {
         vm.deal(address(this), 1 ether);
         escrow.depositETH{ value: 1 ether }(alice);
-        assertEq(escrow.creditedAt(alice, ETH), block.timestamp);
+        (,, uint256 recent,, uint48 openedAt, uint48 lastAt) = escrow.credits(alice, ETH);
+        assertEq(recent, 1 ether);
+        assertEq(openedAt, block.timestamp);
+        assertEq(lastAt, block.timestamp);
         uint256 dueAt = block.timestamp + PERIOD;
         vm.warp(dueAt - 1);
         vm.expectRevert(
@@ -475,9 +480,10 @@ contract NetworkShareTest is EconomicsBase, GasRuleAssertions {
         assertEq(address(feeVault).balance, 1 ether);
     }
 
-    /// @dev Later additions, by anyone, never move a credit's clock: it expires 180 days after it
-    ///      went from zero; once emptied, the next credit starts a new clock.
-    function test_LaterCreditsDoNotMoveTheClock() public {
+    /// @dev Later additions, by anyone, within the 180 days after the first join its window: the
+    ///      window's credits move together, 180 days after its last one, never sooner for any of
+    ///      them; once emptied, the next credit opens a new window.
+    function test_LaterCreditsJoinTheOpenWindow() public {
         uint256 start = block.timestamp;
         vm.deal(address(this), 1 ether);
         escrow.depositETH{ value: 1 ether }(alice);
@@ -488,15 +494,25 @@ contract NetworkShareTest is EconomicsBase, GasRuleAssertions {
             vm.prank(other);
             escrow.depositETH{ value: 1 }(alice);
         }
-        assertEq(escrow.creditedAt(alice, ETH), start, "clock unchanged");
+        (,,,, uint48 openedAt, uint48 lastAt) = escrow.credits(alice, ETH);
+        assertEq(openedAt, start, "window opened by the first credit");
+        assertEq(lastAt, start + 150 days, "last credit");
         vm.warp(start + PERIOD);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IRevenueEscrow.CreditNotExpired.selector, alice, ETH, start + 150 days + PERIOD
+            )
+        );
+        escrow.expire(alice, ETH);
+        vm.warp(start + 150 days + PERIOD);
         vm.expectEmit(address(escrow));
         emit IRevenueEscrow.Expired(alice, ETH, address(feeVault), 1 ether + 5, 1 ether + 5);
         assertEq(escrow.expire(alice, ETH), 1 ether + 5);
         // Emptied: the next credit starts a new clock.
         vm.deal(address(this), 1);
         escrow.depositETH{ value: 1 }(alice);
-        assertEq(escrow.creditedAt(alice, ETH), block.timestamp, "new clock");
+        (,,,, openedAt,) = escrow.credits(alice, ETH);
+        assertEq(openedAt, block.timestamp, "new window");
     }
 
     function test_ExpireRefusals() public {
@@ -521,7 +537,9 @@ contract NetworkShareTest is EconomicsBase, GasRuleAssertions {
         emit IRevenueEscrow.Recovered(address(feeVault), next, ETH, 1 ether, 1 ether, false);
         escrow.recover(address(feeVault), next, ETH);
         assertEq(escrow.owed(next, ETH), 1 ether);
-        assertEq(escrow.creditedAt(next, ETH), block.timestamp);
+        (,, uint256 recent,, uint48 openedAt,) = escrow.credits(next, ETH);
+        assertEq(recent, 1 ether, "a recovery is a new credit to the replacement");
+        assertEq(openedAt, block.timestamp);
     }
 
     function test_TheNetworkCannotMoveAnotherAccountsCredit() public {
@@ -552,8 +570,12 @@ contract NetworkShareTest is EconomicsBase, GasRuleAssertions {
 
     function test_TheLedgerNamesTheNetwork() public view {
         assertEq(ledger.network(), address(feeVault));
-        assertEq(ledger.UNCLAIMED_PERIOD(), PERIOD);
-        assertEq(escrow.UNCLAIMED_PERIOD(), PERIOD);
+        assertEq(resolver.unclaimedPeriod(), PERIOD, "the ledger reads the resolver's period");
+        assertEq(
+            IDirectory(address(ledger.resolver())).unclaimedPeriod(),
+            PERIOD,
+            "the escrow reads it too"
+        );
     }
 
     function _bal(address asset, address account) internal view returns (uint256) {

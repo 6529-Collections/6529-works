@@ -143,8 +143,9 @@ contract LedgerIndexer is ReplayIndexer {
 }
 
 /// @notice Rebuilds the revenue escrow from its own logs (ECO-27, ECO-28, ECO-40, ECO-45): every
-///         credit per wallet and asset, `totalOwed` per asset, each credit's 180-day clock and
-///         every recovery consent.
+///         credit per wallet and asset in its three parts and their window times (`credits`),
+///         `totalOwed` per asset and every recovery consent. The parts age by the escrow's rule
+///         at each logged change, from the log's block time, so they match the stored record.
 /// @dev A recovery consumes the consent of an ordinary account only; for a split wallet and for
 ///      the network's own credit it leaves the consent as it is. `Recovered` says which case
 ///      applied (`consentUsed`), so the indexer clears a consent exactly when the log says so.
@@ -155,9 +156,21 @@ contract EscrowIndexer is ReplayIndexer {
     mapping(address wallet => bool) internal _knownWallet;
     address[] internal _assets;
     mapping(address asset => bool) internal _knownAsset;
-    mapping(address wallet => mapping(address asset => uint256)) internal _owed;
+
+    /// @dev A credit as the escrow stores it: aged, maturing, recent, maturesAt, openedAt,
+    ///      lastAt.
+    struct Credit {
+        uint256 aged;
+        uint256 maturing;
+        uint256 recent;
+        uint256 maturesAt;
+        uint256 openedAt;
+        uint256 lastAt;
+    }
+
+    uint256 internal constant PERIOD = 180 days;
+    mapping(address wallet => mapping(address asset => Credit)) internal _credits;
     mapping(address asset => uint256) internal _totalOwed;
-    mapping(address wallet => mapping(address asset => uint256)) internal _creditedAt;
     address[] internal _consenters;
     mapping(address account => address) internal _consent;
 
@@ -181,8 +194,8 @@ contract EscrowIndexer is ReplayIndexer {
         } else if (sig == IRevenueEscrow.Flushed.selector) {
             address asset = _track(log.topics[1], log.topics[2]);
             uint256 amount = abi.decode(log.data, (uint256));
-            assertEq(amount, _owed[_addr(log.topics[1])][asset], "indexer: flushed amount");
-            _owed[_addr(log.topics[1])][asset] = 0;
+            assertEq(amount, _owedOf(_addr(log.topics[1]), asset), "indexer: flushed amount");
+            delete _credits[_addr(log.topics[1])][asset];
             _totalOwed[asset] -= amount;
         } else if (sig == IRevenueEscrow.Recovered.selector) {
             address wallet = _addr(log.topics[1]);
@@ -191,13 +204,20 @@ contract EscrowIndexer is ReplayIndexer {
             _track(log.topics[2], log.topics[3]);
             (uint256 amount, uint256 owed, bool consentUsed) =
                 abi.decode(log.data, (uint256, uint256, bool));
-            _move(wallet, replacement, asset, amount, owed);
+            assertEq(amount, _owedOf(wallet, asset), "indexer: recovered amount");
+            delete _credits[wallet][asset];
+            _set(replacement, asset, owed, amount);
             if (consentUsed) delete _consent[wallet];
         } else if (sig == IRevenueEscrow.Expired.selector) {
             address asset = _track(log.topics[1], log.topics[2]);
             _track(log.topics[3], log.topics[2]);
             (uint256 amount, uint256 owed) = abi.decode(log.data, (uint256, uint256));
-            _move(_addr(log.topics[1]), _addr(log.topics[3]), asset, amount, owed);
+            // Only the aged part moves; the rest stays with the wallet.
+            Credit memory c = _rolled(_credits[_addr(log.topics[1])][asset]);
+            assertEq(amount, c.aged, "indexer: expired amount");
+            c.aged = 0;
+            _credits[_addr(log.topics[1])][asset] = c;
+            _set(_addr(log.topics[3]), asset, owed, amount);
         } else if (sig == IRevenueEscrow.RecoveryConsentSet.selector) {
             address account = _addr(log.topics[1]);
             _consenters.push(account);
@@ -210,17 +230,38 @@ contract EscrowIndexer is ReplayIndexer {
         }
     }
 
-    function _move(address from, address to, address asset, uint256 amount, uint256 owed) private {
-        assertEq(amount, _owed[from][asset], "indexer: moved amount");
-        _owed[from][asset] = 0;
-        _set(to, asset, owed, amount);
+    /// @dev Adds a credit at this block: it joins the open window, or opens one when there is
+    ///      none or it has closed (R12, ECO-45).
+    function _set(address wallet, address asset, uint256 owed, uint256 amount) private {
+        Credit memory c = _rolled(_credits[wallet][asset]);
+        if (c.recent == 0) c.openedAt = _now;
+        c.recent += amount;
+        c.lastAt = _now;
+        _credits[wallet][asset] = c;
+        assertEq(owed, c.aged + c.maturing + c.recent, "indexer: owed");
     }
 
-    /// @dev Sets a credit; one that went from zero starts its clock at this block.
-    function _set(address wallet, address asset, uint256 owed, uint256 amount) private {
-        assertEq(owed, _owed[wallet][asset] + amount, "indexer: owed");
-        _owed[wallet][asset] = owed;
-        if (owed == amount) _creditedAt[wallet][asset] = _now;
+    /// @dev The escrow's ageing rule, written from the spec: a closed window's credits mature
+    ///      180 days after its last credit; the open window closes 180 days after it opened.
+    function _rolled(Credit memory c) private view returns (Credit memory) {
+        if (c.maturing != 0 && _now >= c.maturesAt) {
+            c.aged += c.maturing;
+            c.maturing = 0;
+        }
+        if (c.recent != 0 && _now >= c.openedAt + PERIOD) {
+            assertEq(c.maturing, 0, "indexer: two maturing windows");
+            (c.maturing, c.recent, c.maturesAt) = (c.recent, 0, c.lastAt + PERIOD);
+            if (_now >= c.maturesAt) {
+                c.aged += c.maturing;
+                c.maturing = 0;
+            }
+        }
+        return c;
+    }
+
+    function _owedOf(address wallet, address asset) private view returns (uint256) {
+        Credit storage c = _credits[wallet][asset];
+        return c.aged + c.maturing + c.recent;
     }
 
     function _track(bytes32 walletTopic, bytes32 assetTopic) private returns (address asset) {
@@ -244,12 +285,30 @@ contract EscrowIndexer is ReplayIndexer {
             assertEq(e.totalOwed(asset), _totalOwed[asset], "totalOwed");
             for (uint256 w; w < _wallets.length; ++w) {
                 address wallet = _wallets[w];
-                assertEq(e.owed(wallet, asset), _owed[wallet][asset], "owed");
-                assertEq(e.creditedAt(wallet, asset), _creditedAt[wallet][asset], "creditedAt");
+                assertEq(e.owed(wallet, asset), _owedOf(wallet, asset), "owed");
+                _assertCredit(e, wallet, asset);
             }
         }
         for (uint256 i; i < _consenters.length; ++i) {
             assertEq(e.recoveryConsent(_consenters[i]), _consent[_consenters[i]], "recoveryConsent");
         }
+    }
+
+    function _assertCredit(IRevenueEscrow e, address wallet, address asset) private view {
+        Credit storage c = _credits[wallet][asset];
+        (
+            uint256 aged,
+            uint256 maturing,
+            uint256 recent,
+            uint48 maturesAt,
+            uint48 openedAt,
+            uint48 lastAt
+        ) = e.credits(wallet, asset);
+        assertEq(aged, c.aged, "credits.aged");
+        assertEq(maturing, c.maturing, "credits.maturing");
+        assertEq(recent, c.recent, "credits.recent");
+        assertEq(maturesAt, c.maturesAt, "credits.maturesAt");
+        assertEq(openedAt, c.openedAt, "credits.openedAt");
+        assertEq(lastAt, c.lastAt, "credits.lastAt");
     }
 }
