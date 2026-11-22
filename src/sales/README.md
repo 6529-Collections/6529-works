@@ -67,8 +67,8 @@ events and their ordering: [Events and indexing](../../docs/integrators/events-a
   the auction
   itself with exactly `refusalGas` (the one governed gas bound, raise-only) and, if that fails,
   closes the sale with refunds in `_closeWithRefund`, which makes no external call. It takes no
-  guard but refuses to run inside the auction's or the escrow's (`_reentrancyGuardEntered`, and a
-  zero `depositETH` that must revert with `ZeroAmount`). The start writes its `Sale` word in one
+  guard but refuses to run inside the auction's or the escrow's (`_reentrancyGuardEntered`, and
+  the escrow's `locked()`, which must answer `false`). The start writes its `Sale` word in one
   `sstore`.
 - **Money (R18, R12).** At settlement the seller gets `floor(price × (100,000 − share) /
   100,000)` and the network the rest, paid to the recipient the economics resolver names then

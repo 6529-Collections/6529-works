@@ -11,6 +11,9 @@
   `creditedAt`, `owed` is their sum, `expirableAt(wallet, asset, time)` is new, and `expire` moves
   only the due part. Log replay, the economics invariants, the Medusa ledger harness, the Halmos
   escrow proofs and the reference keeper follow the new rule.
+- `RevenueEscrow.locked()` answers whether its reentrancy guard is held; the English auction's
+  `settleOrRefund` reads it instead of a zero deposit's revert reason. `IRevenueEscrow`'s
+  interface ID changes.
 
 - Developer path: a [quickstart](docs/quickstart.md) from clone to a local run, with measured
   build and test times; `script/local/walkthrough.sh`, which deploys on anvil with test accounts,

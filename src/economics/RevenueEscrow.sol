@@ -215,6 +215,11 @@ contract RevenueEscrow is IRevenueEscrow, AccessManaged, ReentrancyGuardTransien
         return _rolled(wallet, asset, time).aged;
     }
 
+    /// @inheritdoc IRevenueEscrow
+    function locked() external view returns (bool) {
+        return _reentrancyGuardEntered();
+    }
+
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
         return

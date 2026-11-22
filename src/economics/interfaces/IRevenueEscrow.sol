@@ -165,6 +165,11 @@ interface IRevenueEscrow is IERC165 {
         view
         returns (uint256);
 
+    /// @notice Whether a call holds the escrow's reentrancy guard, so its guarded functions would
+    ///         revert; the English auction reads it before a settlement attempt.
+    /// @return True while the guard is held.
+    function locked() external view returns (bool);
+
     /// @notice Moves the part of `wallet`'s credit in `asset` that may expire (every unit of it
     ///         credited at least 180 days ago, see `RevenueEscrow`) to the network fee vault
     ///         (`factory().network()`) as a credit; the rest stays. Anyone may call; anyone may

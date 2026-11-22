@@ -1,15 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {
-    ReentrancyGuardTransient
-} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import { IRevenueEscrow } from "src/economics/interfaces/IRevenueEscrow.sol";
 import { EconomicsBase } from "./EconomicsBase.sol";
 import { BlocklistToken, ReentrantRecipient } from "../mocks/economics/EconomicsMocks.sol";
 
-/// @notice The escrow's credit clock (R12, ECO-45) and the order of its deposit checks, which the
-///         English auction's `settleOrRefund` reads as a lock probe.
+/// @notice The escrow's credit clock (R12, ECO-45) against a stranger's deposit, and the explicit
+///         lock view the English auction's `settleOrRefund` reads.
 contract RevenueEscrowCreditClockTest is EconomicsBase {
     /// @dev Anyone may deposit for any wallet. A stranger's one-unit deposit opens the wallet's
     ///      window; a real payout escrowed for that wallet on day 179 (a USDC-style token blocks
@@ -62,24 +59,21 @@ contract RevenueEscrowCreditClockTest is EconomicsBase {
         assertEq(escrow.owed(address(feeVault), address(usdb)), 5_000e6 + 1, "now the network's");
     }
 
-    /// @dev Pins the order `settleOrRefund` relies on: a zero deposit reverts with `ZeroAmount`
-    ///      when the escrow's guard is free, and with `ReentrancyGuardReentrantCall` (not
-    ///      `ZeroAmount`) while a call holds it. If the amount check ran before the guard, the
-    ///      auction would read a held guard as free.
-    function test_DepositETH_AZeroDepositRevertsOnTheGuardBeforeTheAmount() public {
+    /// @dev `locked()` is false outside the escrow's guarded calls and true inside one: a wallet
+    ///      paid by a flush reads it from within the flush. A zero deposit still reverts on the
+    ///      guard before the amount, as it always has.
+    function test_Locked_IsTrueOnlyWhileACallHoldsTheGuard() public {
+        assertFalse(escrow.locked());
         vm.expectRevert(IRevenueEscrow.ZeroAmount.selector);
         escrow.depositETH(alice);
 
         ReentrantRecipient inside = new ReentrantRecipient();
-        inside.configure(address(escrow), abi.encodeCall(IRevenueEscrow.depositETH, (alice)));
+        inside.configure(address(escrow), abi.encodeCall(IRevenueEscrow.locked, ()));
         vm.deal(address(this), 1);
         escrow.depositETH{ value: 1 }(address(inside));
-        escrow.flush(address(inside), ETH); // pays `inside`, which probes from within the guard
-        assertFalse(inside.lastOk());
-        assertEq(
-            inside.lastResult(),
-            abi.encodeWithSelector(ReentrancyGuardTransient.ReentrancyGuardReentrantCall.selector),
-            "the guard is checked first"
-        );
+        escrow.flush(address(inside), ETH); // pays `inside`, which reads `locked()` inside it
+        assertTrue(inside.lastOk());
+        assertEq(inside.lastResult(), abi.encode(true), "locked inside the flush");
+        assertFalse(escrow.locked(), "free again");
     }
 }
