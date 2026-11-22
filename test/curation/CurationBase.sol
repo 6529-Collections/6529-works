@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { Directory } from "src/core/Directory.sol";
 import { Test } from "forge-std/Test.sol";
 import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
@@ -336,8 +337,11 @@ abstract contract CurationBase is CurationHelpers {
             address(manager),
             ICurationVerifier(address(verifier)),
             address(verifier).codehash,
-            address(artists),
-            address(artists).codehash,
+            address(
+                new Directory(
+                    address(manager), address(artists), address(0), address(0), address(0)
+                )
+            ),
             IEconomicsResolver(address(_policyStub)),
             address(entropy)
         );

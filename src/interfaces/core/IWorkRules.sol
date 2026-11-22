@@ -145,7 +145,9 @@ interface IWorkRules {
         bytes calldata artistSignature
     ) external;
 
-    /// @notice Replaces the delivery contract. The network only.
+    /// @notice Replaces the delivery contract. The network only. The new contract must name this
+    ///         module and the record contract; that it serves its predecessor's locators is the
+    ///         network's check before the call (`IWorkDelivery`).
     /// @param expected The current contract.
     /// @param next The new contract.
     function setDelivery(address expected, address next) external;

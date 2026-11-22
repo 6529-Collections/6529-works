@@ -235,7 +235,6 @@ contract WorkDeliveryTest is RulesFixture {
         assertEq(delivery.records(), address(rules));
         assertEq(delivery.facts(), address(facts));
         assertEq(delivery.directory(), address(directory));
-        assertEq(delivery.predecessor(), address(0));
     }
 
     /// @dev Nothing the delivery contract does changes a fact of the work.

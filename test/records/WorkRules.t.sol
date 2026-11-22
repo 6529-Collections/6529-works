@@ -653,10 +653,9 @@ contract WorkRulesTest is RulesFixture {
 
     // ------------------------------------------------------------------- delivery
 
-    function test_SetDelivery_TheNetworkSwapsToASuccessorThatNamesItsPredecessor() public {
-        WorkDelivery next = new WorkDelivery(
-            address(manager), address(rules), address(facts), address(directory), address(delivery)
-        );
+    function test_SetDelivery_TheNetworkSwapsToASuccessorThatNamesThisModule() public {
+        WorkDelivery next =
+            new WorkDelivery(address(manager), address(rules), address(facts), address(directory));
         vm.prank(stranger);
         vm.expectRevert(
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, stranger)
@@ -664,14 +663,8 @@ contract WorkRulesTest is RulesFixture {
         rules.setDelivery(address(delivery), address(next));
         vm.expectRevert(WorkRules.DeliveryMismatch.selector);
         rules.setDelivery(address(0), address(next));
-        WorkDelivery orphan = new WorkDelivery(
-            address(manager), address(rules), address(facts), address(directory), address(0)
-        );
-        vm.expectRevert(abi.encodeWithSelector(WorkRules.InvalidDelivery.selector, address(orphan)));
-        rules.setDelivery(address(delivery), address(orphan));
-        WorkDelivery foreign = new WorkDelivery(
-            address(manager), address(1), address(facts), address(directory), address(delivery)
-        );
+        WorkDelivery foreign =
+            new WorkDelivery(address(manager), address(1), address(facts), address(directory));
         vm.expectRevert(
             abi.encodeWithSelector(WorkRules.InvalidDelivery.selector, address(foreign))
         );

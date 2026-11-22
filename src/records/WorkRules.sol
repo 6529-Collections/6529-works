@@ -102,7 +102,7 @@ contract WorkRules is AccessManaged, EIP712, IWorkRules, IWorkPowers, IDeliveryH
 
     /// @notice The expected delivery contract is not the current one.
     error DeliveryMismatch();
-    /// @notice The new delivery contract does not name this module, its predecessor or the
+    /// @notice The new delivery contract has no code, or does not name this module or the
     ///         record contract.
     error InvalidDelivery(address delivery);
     /// @notice The record file is not a registered, complete, one-chunk file stored as it is.
@@ -312,7 +312,6 @@ contract WorkRules is AccessManaged, EIP712, IWorkRules, IWorkPowers, IDeliveryH
         if (current != expected) revert DeliveryMismatch();
         if (
             next.code.length == 0 || IWorkDelivery(next).records() != address(this)
-                || IWorkDelivery(next).predecessor() != current
                 || IWorkDelivery(next).facts() != facts
         ) revert InvalidDelivery(next);
         delivery = next;

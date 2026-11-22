@@ -54,8 +54,6 @@ contract WorkDelivery is AccessManaged, ERC165, IWorkDelivery {
     address public immutable facts;
     /// @inheritdoc IWorkDelivery
     address public immutable directory;
-    /// @inheritdoc IWorkDelivery
-    address public immutable predecessor;
 
     mapping(address token => LocatorKind) private _preferredKinds;
     mapping(address token => mapping(uint256 collectionId => LocatorKind)) private _collectionKinds;
@@ -75,18 +73,12 @@ contract WorkDelivery is AccessManaged, ERC165, IWorkDelivery {
     /// @param records_ The RECORDS module this contract serves (`WorkRules`).
     /// @param facts_ The permanent record contract (`IWorkFacts`).
     /// @param directory_ The directory, through which the accounts module is found.
-    /// @param predecessor_ The delivery contract this one replaces, or zero for the first.
-    constructor(
-        address authority_,
-        address records_,
-        address facts_,
-        address directory_,
-        address predecessor_
-    ) AccessManaged(authority_) {
+    constructor(address authority_, address records_, address facts_, address directory_)
+        AccessManaged(authority_)
+    {
         records = records_;
         facts = facts_;
         directory = directory_;
-        predecessor = predecessor_;
     }
 
     /// @inheritdoc IWorkDelivery

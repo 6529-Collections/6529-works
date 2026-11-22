@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { Directory } from "src/core/Directory.sol";
 import { IMintPolicy } from "src/interfaces/core/IMintPolicy.sol";
 import { IModules } from "src/interfaces/core/IModules.sol";
 import { MintFacts, MintTerms } from "src/interfaces/core/CoreTypes.sol";
@@ -126,19 +127,15 @@ contract PackageRegistryTest is CurationBase {
         address eoa = makeAddr("eoa");
         ICurationVerifier v = ICurationVerifier(address(verifier));
         bytes32 vh = address(verifier).codehash;
-        bytes32 ah = address(artists).codehash;
+        address dir = address(
+            new Directory(address(manager), address(artists), address(0), address(0), address(0))
+        );
+        // The directory: code that declares `IDirectory` (the accounts module is read from it
+        // at every use, so nothing about the module is pinned here).
         vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
         new PackageRegistry(
-            address(manager),
-            v,
-            vh,
-            eoa,
-            eoa.codehash,
-            IEconomicsResolver(address(_policyStub)),
-            address(0)
+            address(manager), v, vh, eoa, IEconomicsResolver(address(_policyStub)), address(0)
         );
-        // A contract without the artist registry's ERC-165 interface.
-        bytes32 wrongHash = address(verifier).codehash;
         vm.expectRevert(
             abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(verifier))
         );
@@ -147,23 +144,10 @@ contract PackageRegistryTest is CurationBase {
             v,
             vh,
             address(verifier),
-            wrongHash,
             IEconomicsResolver(address(_policyStub)),
             address(0)
         );
-        // Code hashes are pinned: the artist registry's and the verifier's.
-        vm.expectRevert(
-            abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(artists))
-        );
-        new PackageRegistry(
-            address(manager),
-            v,
-            vh,
-            address(artists),
-            keccak256("other"),
-            IEconomicsResolver(address(_policyStub)),
-            address(0)
-        );
+        // The verifier's code hash is pinned.
         vm.expectRevert(
             abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(verifier))
         );
@@ -171,8 +155,7 @@ contract PackageRegistryTest is CurationBase {
             address(manager),
             v,
             keccak256("other"),
-            address(artists),
-            ah,
+            dir,
             IEconomicsResolver(address(_policyStub)),
             address(0)
         );
@@ -181,8 +164,7 @@ contract PackageRegistryTest is CurationBase {
             address(manager),
             ICurationVerifier(eoa),
             vh,
-            address(artists),
-            ah,
+            dir,
             IEconomicsResolver(address(_policyStub)),
             address(0)
         );
@@ -192,14 +174,15 @@ contract PackageRegistryTest is CurationBase {
         address delegated = makeAddr("7702 account");
         vm.etch(delegated, abi.encodePacked(hex"ef0100", address(verifier)));
         bytes32 h = delegated.codehash;
-        bytes32 ah = address(artists).codehash;
+        address dir = address(
+            new Directory(address(manager), address(artists), address(0), address(0), address(0))
+        );
         vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, delegated));
         new PackageRegistry(
             address(manager),
             ICurationVerifier(delegated),
             h,
-            address(artists),
-            ah,
+            dir,
             IEconomicsResolver(address(_policyStub)),
             address(0)
         );
@@ -1455,8 +1438,9 @@ contract PackageRegistryTest is CurationBase {
             address(manager),
             ICurationVerifier(address(verifier)),
             address(verifier).codehash,
-            address(odd),
-            address(odd).codehash,
+            address(
+                new Directory(address(manager), address(odd), address(0), address(0), address(0))
+            ),
             IEconomicsResolver(address(_policyStub)),
             address(0)
         );
@@ -1475,8 +1459,9 @@ contract PackageRegistryTest is CurationBase {
             address(manager),
             ICurationVerifier(address(verifier)),
             address(verifier).codehash,
-            address(odd),
-            address(odd).codehash,
+            address(
+                new Directory(address(manager), address(odd), address(0), address(0), address(0))
+            ),
             IEconomicsResolver(address(_policyStub)),
             address(0)
         );

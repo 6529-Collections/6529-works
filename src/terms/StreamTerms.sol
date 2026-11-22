@@ -10,6 +10,7 @@ import { IFederationGate } from "../interfaces/core/IFederationGate.sol";
 import { IModuleSlots } from "../interfaces/core/IModules.sol";
 import { IStream } from "../interfaces/core/IStream.sol";
 import { ITerms } from "../interfaces/core/ITerms.sol";
+import { IFederationRegistry } from "../interfaces/IFederationRegistry.sol";
 
 /// @title StreamTerms
 /// @notice The TERMS module (replaceable): the royalty policy of existing works, for 6529 Stream
@@ -25,7 +26,11 @@ import { ITerms } from "../interfaces/core/ITerms.sol";
 ///           code.
 /// @dev For a federated token (any token but `stream` and its editions) the new share may not
 ///      exceed the federation module's current share for that token
-///      (`IFederationGate.feeShareOf`), which only ever goes down.
+///      (`IFederationGate.feeShareOf`), which only ever goes down. A federated pair needs no
+///      pairing here: unless the network paired a token itself (`setEditions`), a token's
+///      partner is the one the federation module lists (`IFederationRegistry.entry(token)
+///      .partner`), read when it is needed, so a master's rate change reaches its edition and
+///      the share of a federated edition can be lowered.
 contract StreamTerms is AccessManaged, ITerms {
     /// @notice The network paired an editions contract with a token contract.
     /// @param token The ERC-721 token contract.
@@ -46,10 +51,8 @@ contract StreamTerms is AccessManaged, ITerms {
     /// @notice The directory, through which the federation module is found.
     address public immutable directory;
 
-    /// @inheritdoc ITerms
-    mapping(address token => address editions) public editionsOf;
-    /// @notice The ERC-721 token contract an editions contract is paired with, or zero.
-    mapping(address editions => address token) public tokenOfEditions;
+    mapping(address token => address editions) private _editionsOf;
+    mapping(address editions => address token) private _tokenOfEditions;
 
     /// @param authority_ The AccessManager (the network).
     /// @param splitFactory_ The split factory.
@@ -77,7 +80,7 @@ contract StreamTerms is AccessManaged, ITerms {
         _onlyRecords(token);
         Work memory w = IStream(token).workOf(tokenId);
         IStream(token).setRoyalty(tokenId, w.royaltyReceiver, rate);
-        address editions = editionsOf[token];
+        address editions = editionsOf(token);
         if (editions == address(0)) return;
         Edition memory e = IEditions(editions).editionOf(tokenId);
         if (e.minter != address(0)) {
@@ -106,7 +109,7 @@ contract StreamTerms is AccessManaged, ITerms {
         uint32 currentShare,
         uint32 newShare
     ) external restricted {
-        address master = tokenOfEditions[token];
+        address master = tokenOfEditions(token);
         bool isEdition = master != address(0);
         if (!isEdition) master = token;
         if (newShare >= currentShare) revert InvalidFeeShare();
@@ -133,7 +136,7 @@ contract StreamTerms is AccessManaged, ITerms {
             IEditions(token).setRoyalty(tokenId, receiver, rate);
         } else {
             IStream(token).setRoyalty(tokenId, receiver, rate);
-            address editions = editionsOf[token];
+            address editions = editionsOf(token);
             if (editions != address(0)) {
                 Edition memory e = IEditions(editions).editionOf(tokenId);
                 if (e.minter != address(0) && e.royaltyReceiver == previous) {
@@ -154,16 +157,48 @@ contract StreamTerms is AccessManaged, ITerms {
         _pair(token, editions);
     }
 
+    /// @inheritdoc ITerms
+    /// @dev The pairing the network set here, else, for a token other than 6529 Stream, the
+    ///      ERC1155 partner the federation module lists for it (zero while none is listed or
+    ///      the FEDERATION slot is empty).
+    function editionsOf(address token) public view returns (address editions) {
+        editions = _editionsOf[token];
+        if (editions == address(0) && token != stream) {
+            IFederationRegistry.Entry memory e = _entry(token);
+            if (e.form == IFederationRegistry.Form.ERC721) editions = e.partner;
+        }
+    }
+
+    /// @notice The ERC-721 token contract an editions contract is paired with, or zero: the
+    ///         pairing the network set here, else the ERC721 partner the federation module lists
+    ///         (never for 6529 Stream, which is no editions contract).
+    /// @param editions The editions contract.
+    /// @return token The token contract.
+    function tokenOfEditions(address editions) public view returns (address token) {
+        token = _tokenOfEditions[editions];
+        if (token == address(0) && editions != stream) {
+            IFederationRegistry.Entry memory e = _entry(editions);
+            if (e.form == IFederationRegistry.Form.ERC1155) token = e.partner;
+        }
+    }
+
     // ---------------------------------------------------------------------------- internal
 
     function _pair(address token, address editions) private {
-        if (tokenOfEditions[editions] != address(0) || IEditions(editions).stream() != token) {
+        if (_tokenOfEditions[editions] != address(0) || IEditions(editions).stream() != token) {
             revert InvalidEditions(token, editions);
         }
-        delete tokenOfEditions[editionsOf[token]];
-        editionsOf[token] = editions;
-        tokenOfEditions[editions] = token;
+        delete _tokenOfEditions[_editionsOf[token]];
+        _editionsOf[token] = editions;
+        _tokenOfEditions[editions] = token;
         emit EditionsSet(token, editions);
+    }
+
+    /// @dev The federation module's entry for `token` (empty while it is unlisted or the
+    ///      FEDERATION slot is empty).
+    function _entry(address token) private view returns (IFederationRegistry.Entry memory e) {
+        address gate = IModuleSlots(directory).moduleOf(Slots.FEDERATION);
+        if (gate != address(0)) e = IFederationRegistry(gate).entry(token);
     }
 
     /// @dev Only the token's RECORDS module.

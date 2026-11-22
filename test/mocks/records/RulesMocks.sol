@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import { IWorkFacts } from "src/interfaces/core/IWorkFacts.sol";
+import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
 
 /// @notice An accounts module whose wallets the test sets and whose `requireSigned` checks a
 ///         real ECDSA signature: a proof is `abi.encodePacked(wallet, r, s, v)`.
@@ -117,6 +118,9 @@ contract FeeGate {
     function canMint(address, address) external pure returns (bool) {
         return false;
     }
+
+    /// @dev No federated listing (StreamTerms reads a federated pair from it).
+    function entry(address) external pure returns (IFederationRegistry.Entry memory e) { }
 
     function wasMinter(address) external pure returns (bool) {
         return false;

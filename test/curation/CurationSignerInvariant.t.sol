@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { Directory } from "src/core/Directory.sol";
 import { Eip712CurationVerifier } from "src/curation/Eip712CurationVerifier.sol";
 import { PackageRegistry } from "src/curation/PackageRegistry.sol";
 import { Roles } from "src/governance/Roles.sol";
@@ -256,8 +257,11 @@ contract CurationSignerInvariantTest is CurationHelpers {
             address(manager),
             ICurationVerifier(address(verifier)),
             address(verifier).codehash,
-            address(artists),
-            address(artists).codehash,
+            address(
+                new Directory(
+                    address(manager), address(artists), address(0), address(0), address(0)
+                )
+            ),
             IEconomicsResolver(address(_policyStub)),
             address(0)
         );

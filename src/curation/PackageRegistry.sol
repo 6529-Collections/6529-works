@@ -15,9 +15,10 @@ import { IEconomicsResolver } from "../interfaces/IEconomicsResolver.sol";
 import { IEntropyModule } from "../interfaces/IEntropyModule.sol";
 import { IItemApprovals } from "../interfaces/IItemApprovals.sol";
 import { IPackageRegistry } from "../interfaces/IPackageRegistry.sol";
-import { MintFacts, MintTerms } from "../interfaces/core/CoreTypes.sol";
+import { MintFacts, MintTerms, Slots } from "../interfaces/core/CoreTypes.sol";
+import { IDirectory } from "../interfaces/core/IDirectory.sol";
 import { IMintPolicy } from "../interfaces/core/IMintPolicy.sol";
-import { IModules } from "../interfaces/core/IModules.sol";
+import { IModuleSlots, IModules } from "../interfaces/core/IModules.sol";
 import { IStream } from "../interfaces/core/IStream.sol";
 import { IWorkFacts } from "../interfaces/core/IWorkFacts.sol";
 import {
@@ -66,6 +67,16 @@ import { SpdxId } from "../stream/SpdxId.sol";
 ///      slot that the identity-creating acceptance already wrote. Tools should use each artist's
 ///      nonces in order from 0.
 ///
+///      Accounts. Every read of an artist (acceptance, move signatures, `register`, releases)
+///      asks the accounts module the directory's ACCOUNTS slot names at that moment, so the
+///      network's swap of that module reaches this registry at once.
+///
+///      Replacement. A replacement mint policy starts with no releases and no barred items:
+///      content uniqueness still holds through `IStream.tokenOfContent`, so a burned work's
+///      content stays unmintable until the network releases it again in the replacement
+///      (`releaseContent`), which bars the burned item there too; a release made here and not
+///      yet used must be made again.
+///
 ///      Approvals are per root: revoking a root stops only that root. Disabling a curation
 ///      signer in the verifier stops future registrations; `killSignerApprovals` also stops
 ///      every package that signer approved before the kill.
@@ -98,7 +109,9 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, IItemApprovals, Acces
         uint256 beneficiary;
     }
 
-    IArtistRegistry private immutable _artists;
+    /// @notice The permanent directory: its ACCOUNTS slot names the accounts module this
+    ///         registry asks at every use, so a swap of that module takes effect here at once.
+    address public immutable directory;
 
     /// @inheritdoc IPackageRegistry
     IEconomicsResolver public immutable economics;
@@ -127,28 +140,24 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, IItemApprovals, Acces
     /// @param authority_ The AccessManager that governs this registry.
     /// @param verifier_ The initial curation verifier.
     /// @param verifierCodeHash The reviewed code hash `verifier_` must have.
-    /// @param artistRegistry_ The artist registry (immutable), which must bind this registry as
-    ///        its only `register` caller.
-    /// @param artistRegistryCodeHash The reviewed code hash `artistRegistry_` must have.
+    /// @param directory_ The permanent directory (`IDirectory`, immutable). The accounts module
+    ///        its ACCOUNTS slot names must bind this registry as its only `register` caller.
     /// @param economics_ The economics resolver (immutable): the terms of new works.
     /// @param entropyModule_ The VRF entropy module, or zero (VRF items are then refused).
     constructor(
         address authority_,
         ICurationVerifier verifier_,
         bytes32 verifierCodeHash,
-        address artistRegistry_,
-        bytes32 artistRegistryCodeHash,
+        address directory_,
         IEconomicsResolver economics_,
         address entropyModule_
     )
         AccessManaged(authority_)
         EIP712(Typehashes.PACKAGE_REGISTRY_NAME, Typehashes.DOMAIN_VERSION)
     {
-        Dependency.checkPinned(
-            artistRegistry_, type(IArtistRegistry).interfaceId, artistRegistryCodeHash
-        );
+        Dependency.check(directory_, type(IDirectory).interfaceId);
         Dependency.check(address(economics_), type(IEconomicsResolver).interfaceId);
-        _artists = IArtistRegistry(artistRegistry_);
+        directory = directory_;
         economics = economics_;
         _setVerifier(verifier_, verifierCodeHash);
         _setEntropyModule(entropyModule_);
@@ -210,14 +219,15 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, IItemApprovals, Acces
         _requireApproved(packageRoot);
         SignatureVerifier.checkDeadline(acceptance.deadline);
         address account = acceptance.account;
-        artistId = _artists.artistIdOf(account);
-        _artists.requireSigned(
+        IArtistRegistry artists = _artists();
+        artistId = artists.artistIdOf(account);
+        artists.requireSigned(
             uint256(uint160(account)), acceptanceDigest(packageRoot, acceptance), proof
         );
         mapping(address => uint256) storage accepted = _acceptedAs[packageRoot];
         if (accepted[account] != 0) return accepted[account];
         if (artistId != 0) {
-            (ArtistIdentity memory identity,) = _artists.artist(artistId);
+            (ArtistIdentity memory identity,) = artists.artist(artistId);
             if (
                 identity.profileId != acceptance.profileId
                     || identity.profileDocHash != acceptance.profileDocHash
@@ -230,15 +240,15 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, IItemApprovals, Acces
             _moveNonces[artistId][0] |= SENTINEL;
             emit PackageAccepted(packageRoot, artistId, account);
             if (
-                _artists.register(account, acceptance.profileId, acceptance.profileDocHash)
+                artists.register(account, acceptance.profileId, acceptance.profileDocHash)
                     != artistId
-            ) revert Dependency.InvalidDependency(address(_artists));
+            ) revert Dependency.InvalidDependency(address(artists));
         }
     }
 
     /// @inheritdoc IPackageRegistry
     function revokeMove(uint256 artistId, uint256 nonce) external {
-        if (!_artists.isWallet(artistId, msg.sender)) revert NotAuthority(artistId, msg.sender);
+        if (!_artists().isWallet(artistId, msg.sender)) revert NotAuthority(artistId, msg.sender);
         _spendMoveNonce(artistId, nonce);
         emit MoveRevoked(artistId, nonce);
     }
@@ -312,10 +322,10 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, IItemApprovals, Acces
         StreamMintRequest calldata req = _request(request);
         PackageItem calldata item = req.item;
         _checkItem(item);
-        uint256 artistId = _artists.artistIdOf(item.parties[0].account);
+        uint256 artistId = _artists().artistIdOf(item.parties[0].account);
         if (artistId == 0) revert InvalidLeadArtist();
         _fill(facts, terms, item, WorksHashing.itemHashCalldata(item), artistId, req.packageRoot);
-        terms.creator = _artists.activeAuthorityOf(artistId);
+        terms.creator = _artists().activeAuthorityOf(artistId);
         if (item.seedPolicy == uint8(SeedPolicy.ARTIST)) {
             facts.seed = item.seed;
         } else if (item.seedPolicy == uint8(SeedPolicy.VRF)) {
@@ -338,7 +348,7 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, IItemApprovals, Acces
             token != stream || tokenId == 0 || IStream(token).tokenOfContent(contentHash) != tokenId
                 || _isLive(token, tokenId)
         ) revert ContentUsed(contentHash, tokenId);
-        if (beneficiary > type(uint160).max || _artists.authorityOf(beneficiary) == address(0)) {
+        if (beneficiary > type(uint160).max || _artists().authorityOf(beneficiary) == address(0)) {
             revert IArtistRegistry.UnknownArtist(beneficiary);
         }
         _releases[token][contentHash] = Release(tokenId, beneficiary);
@@ -376,7 +386,7 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, IItemApprovals, Acces
 
     /// @inheritdoc IPackageRegistry
     function artistRegistry() external view returns (address) {
-        return address(_artists);
+        return address(_artists());
     }
 
     /// @inheritdoc IPackageRegistry
@@ -456,6 +466,12 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, IItemApprovals, Acces
     }
 
     // ----------------------------------------------------------------------------- internal
+
+    /// @dev The accounts module the directory names now (`IArtistRegistry`: the current
+    ///      `Accounts`). An empty slot makes every call that needs it revert.
+    function _artists() private view returns (IArtistRegistry) {
+        return IArtistRegistry(IModuleSlots(directory).moduleOf(Slots.ACCOUNTS));
+    }
 
     /// @dev Decodes `abi.encode(StreamMintRequest)`.
     function _request(bytes calldata data) private pure returns (StreamMintRequest calldata req) {
@@ -675,12 +691,13 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, IItemApprovals, Acces
         _spendMoveNonce(artistId, move.nonce);
         bytes32 digest = moveDigest(packageRoot, itemHash, move.nonce, move.deadline);
         bytes calldata proof = move.signature;
-        address root = _artists.activeAuthorityOf(artistId);
+        IArtistRegistry artists = _artists();
+        address root = artists.activeAuthorityOf(artistId);
         if (root != address(0) && proof.length >= 20 && address(bytes20(proof[:20])) == root) {
             SignatureVerifier.check(root, digest, proof[20:]);
             return root;
         }
-        wallet = _artists.requireSigned(artistId, digest, proof);
+        wallet = artists.requireSigned(artistId, digest, proof);
     }
 
     function _spendMoveNonce(uint256 artistId, uint256 nonce) private {

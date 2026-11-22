@@ -7,6 +7,7 @@ import { IEditions } from "src/interfaces/core/IEditions.sol";
 import { IStream } from "src/interfaces/core/IStream.sol";
 import { IWorkFacts } from "src/interfaces/core/IWorkFacts.sol";
 import { License } from "src/interfaces/types/PackageTypes.sol";
+import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
 
 /// @notice A renderer module that answers a fixed string.
 contract MockRenderer {
@@ -135,6 +136,9 @@ contract MockFederationGate {
     function remove(address minter, uint256 when) external {
         minterRemovedAt[minter] = when;
     }
+
+    /// @dev No federated listing (StreamTerms reads a federated pair from it).
+    function entry(address) external pure returns (IFederationRegistry.Entry memory e) { }
 }
 
 /// @notice A module that misbehaves in any seam position: as a renderer it reverts, burns all

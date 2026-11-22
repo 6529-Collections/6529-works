@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { Directory } from "src/core/Directory.sol";
 import { console2 } from "forge-std/console2.sol";
 import { PackageRegistry } from "src/curation/PackageRegistry.sol";
 import { Eip712CurationVerifier } from "src/curation/Eip712CurationVerifier.sol";
@@ -47,8 +48,11 @@ contract EnglishAuctionEndToEndTest is AuctionFixture, CurationHelpers {
             address(manager),
             ICurationVerifier(address(verifier)),
             address(verifier).codehash,
-            address(artists),
-            address(artists).codehash,
+            address(
+                new Directory(
+                    address(manager), address(artists), address(0), address(0), address(0)
+                )
+            ),
             IEconomicsResolver(address(economics)),
             address(0)
         );

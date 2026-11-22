@@ -108,9 +108,8 @@ abstract contract RulesFixture is CoreFixture {
         );
         _install(address(stream), Slots.TERMS, address(streamTerms));
         _install(address(editions), Slots.TERMS, address(streamTerms));
-        delivery = new WorkDelivery(
-            address(manager), address(rules), address(facts), address(directory), address(0)
-        );
+        delivery =
+            new WorkDelivery(address(manager), address(rules), address(facts), address(directory));
         rules.setDelivery(address(0), address(delivery));
         bare = new Stream(
             address(manager),

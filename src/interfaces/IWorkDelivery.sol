@@ -40,10 +40,11 @@ interface IDeliveryHost {
 ///      who made it, so a successor or an indexer can rebuild it.
 ///
 ///      Obligations of a successor (checked by review and the network's waiting period, not by
-///      code): it names the contract it replaces as `predecessor()`; it keeps serving every
-///      locator a predecessor registered, reading or importing the predecessor's state; it
-///      never answers ONCHAIN for a work that is not on-chain complete, nor a URI that is not a
-///      copy of the file asked for.
+///      code): it keeps serving every locator the contract it replaces registered, reading or
+///      importing that contract's state (rebuildable from its events); it never answers ONCHAIN
+///      for a work that is not on-chain complete, nor a URI that is not a copy of the file asked
+///      for. This contract is the first: it reads no predecessor, so a successor of the same
+///      code starts empty and the network must import the locators before installing it.
 interface IWorkDelivery {
     /// @notice A served location, the same ABI as `ILocators.Location` (kinds 0 to 3 are
     ///         `LocatorKind`). Kept here for readers that name it through this interface.
@@ -130,9 +131,6 @@ interface IWorkDelivery {
     /// @return The `IDirectory` contract.
     function directory() external view returns (address);
 
-    /// @notice The delivery contract this one replaces, or zero for the first.
-    /// @return The predecessor.
-    function predecessor() external view returns (address);
 
     /// @notice Appends an ARWEAVE or IPFS locator for one of a work's media files. A wallet of
     ///         the lead artist's account until finalize; the PLATFORM role at any time. Before

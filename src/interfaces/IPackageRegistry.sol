@@ -179,8 +179,9 @@ interface IPackageRegistry is IERC165 {
     /// @notice The current curation verifier.
     /// @return The verifier `registerPackage` asks.
     function verifier() external view returns (ICurationVerifier);
-    /// @notice The artist registry used for parties and the lead artist (immutable).
-    /// @return The artist registry.
+    /// @notice The accounts module used for parties and the lead artist: the one the
+    ///         directory's ACCOUNTS slot names now.
+    /// @return The accounts module (`IArtistRegistry`).
     function artistRegistry() external view returns (address);
     /// @notice The bound 6529 Stream.
     /// @return The 6529 Stream contract, or zero before it is bound.
