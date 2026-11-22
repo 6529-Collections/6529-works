@@ -162,6 +162,8 @@ contract GovernedVaultTest is EconomicsBase {
 
         VaultTest1155 editions = new VaultTest1155();
         editions.mint(address(vault), 7, 4);
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit IGovernedVault.TokenForwarded(address(editions), 7, safe, 3);
         vm.prank(stranger);
         vault.forwardERC1155(address(editions), 7, 3);
         assertEq(editions.balanceOf(safe, 7), 3);
