@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { Vm } from "forge-std/Vm.sol";
+import { IERC2981 } from "@openzeppelin/contracts/interfaces/IERC2981.sol";
 import { IERC721Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { IFederatedStream } from "src/interfaces/IFederatedStream.sol";
@@ -100,8 +101,17 @@ contract FederatedRecordTest is FederationBase {
         vm.prank(fedArtist);
         vm.expectRevert(abi.encodeWithSelector(IFederatedStream.UnknownWork.selector, tokenId));
         fed.setLocator(tokenId, 1, 1, "ar://none");
+        vm.prank(fedArtist);
+        vm.expectRevert(abi.encodeWithSelector(IFederatedStream.UnknownWork.selector, tokenId));
+        fed.setLocator(tokenId, 2, 1, "ar://none");
         vm.expectRevert(abi.encodeWithSelector(IFederatedStream.UnknownWork.selector, tokenId));
         fed.preferredLocator(tokenId, keccak256("not a file"));
+        // Neither a file ID above or below the work's, nor zero, is one of its files.
+        bytes32[3] memory others = [bytes32(type(uint256).max), bytes32(uint256(1)), bytes32(0)];
+        for (uint256 i; i < others.length; ++i) {
+            vm.expectRevert(abi.encodeWithSelector(IFederatedStream.UnknownWork.selector, tokenId));
+            fed.preferredLocator(tokenId, others[i]);
+        }
     }
 
     function test_SyncOnChain_OnlyOnceEveryFileIsComplete() public {
@@ -129,6 +139,37 @@ contract FederatedRecordTest is FederationBase {
         fed.syncOnChain(second);
         assertTrue(fed.record(second).onChainComplete);
         assertTrue(fed.record(second).finalized, "the sync keeps finalized");
+    }
+
+    /// @dev An on-chain complete work that is not finalized reads neither finalized nor pinned:
+    ///      it still renders through the default renderer and its record still changes.
+    function test_SyncOnChain_LeavesAnOpenWorkOpen() public {
+        (, uint256 tokenId) = _startFed(fed, fedArtist, _storedWork(fedArtist), RATE);
+        assertFalse(fed.record(tokenId).finalized);
+        assertFalse(fed.record(tokenId).onChainComplete);
+        fed.syncOnChain(tokenId);
+        assertFalse(fed.record(tokenId).finalized);
+        assertEq(fed.rendererOf(tokenId), address(renderer));
+        bytes32 next = _record("Still open");
+        vm.prank(fedArtist);
+        fed.setRecord(tokenId, next);
+        assertEq(fed.record(tokenId).version, 1);
+    }
+
+    function test_SupportsInterface_OnlyTheExactIds() public view {
+        bytes4[5] memory ids = [
+            type(IERC2981).interfaceId,
+            type(IMintTarget).interfaceId,
+            type(IFederatedToken).interfaceId,
+            type(IFederatedStream).interfaceId,
+            bytes4(0x49064906)
+        ];
+        for (uint256 i; i < ids.length; ++i) {
+            assertTrue(fed.supportsInterface(ids[i]));
+            assertFalse(fed.supportsInterface(bytes4(uint32(ids[i]) - 1)));
+            assertFalse(fed.supportsInterface(bytes4(uint32(ids[i]) + 1)));
+        }
+        assertFalse(fed.supportsInterface(0xffffffff));
     }
 
     /// @dev A second sync of a work already on-chain complete logs nothing.
@@ -307,6 +348,8 @@ contract FederatedRecordTest is FederationBase {
         assertEq(c.name, fed.name());
         vm.expectRevert(abi.encodeWithSelector(IFederatedStream.UnknownWork.selector, 2));
         fed.collection(2);
+        vm.expectRevert(abi.encodeWithSelector(IFederatedStream.UnknownWork.selector, 0));
+        fed.collection(0);
     }
 
     /// @dev A work whose media are uploaded in full, so `syncOnChain` can mark it complete.

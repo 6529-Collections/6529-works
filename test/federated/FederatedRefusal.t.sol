@@ -145,6 +145,12 @@ contract FederatedRefusalTest is FederationBase {
         fed.reclaim(tokenId);
     }
 
+    /// @dev A token that was never minted has nothing to reclaim.
+    function test_Reclaim_RefusesATokenNeverMinted() public {
+        vm.expectRevert(abi.encodeWithSelector(IFederatedStream.WorkNotRestartable.selector, 0));
+        fed.reclaim(999);
+    }
+
     /// @dev A token its adapter burned (a cancelled sale) is unsettled but no longer held by the
     ///      adapter: nothing to reclaim, refused before any call to the adapter.
     function test_Reclaim_RefusesATokenItsAdapterBurned() public {
