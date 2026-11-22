@@ -129,7 +129,10 @@ FULL_SPLIT_FILES = {
     "src/economics/RevenueEscrow.sol",
     "src/economics/SplitLedger.sol",
     "src/federated/FederatedEditions.sol",
+    "src/federated/FederatedMembership.sol",
     "src/federated/FederatedStream.sol",
+    "src/federated/FederationRegistry.sol",
+    "src/stream/WorkDelivery.sol",
 }
 FULL_SPLIT_GROUPS = {**SPLIT_GROUPS, "others": SKIPPED_ON_SPLIT_FILES}
 # The split files' relational shard uses two replacements per comparison instead of five.
