@@ -92,7 +92,7 @@ contract EscrowSymbolicTest is SymHelpers {
 
     /// @notice ECO-45: an expiry moves only money credited 180 days or more before it, always
     ///         every unit credited 360 days or more before it, keeps the rest, makes the moved
-    ///         amount the vault's credit, and never touches the network's own credit. The
+    ///         amount the vault's credit, and never touches the fee vault's own credit. The
     ///         credits come from any payer, so this holds whoever deposits.
     /// @dev Bounds: three 64-bit credits (zero skips one) at nondecreasing times spaced by any
     ///      delays below 2**32 seconds, then an expiry by any caller after any such delay.
@@ -165,10 +165,10 @@ contract EscrowSymbolicTest is SymHelpers {
         }
     }
 
-    /// @notice ECO-45: a deposit by anyone, made when a first credit is already 180 days old,
-    ///         never lowers what of that credit may expire at any later time, and changes nothing
-    ///         that may expire at the moment it is made. A second credit may be younger (it may
-    ///         share a window with the deposit). Two escrows get the same two credits at the same
+    /// @notice ECO-45: a deposit by anyone never lowers what may expire, at any later time, of the
+    ///         credits already 180 days old when it is made, and changes nothing that may expire
+    ///         at the moment it is made. The first credit is always 180 days old; the second may
+    ///         be too, or younger (then it may share a window with the deposit). Two escrows get the same two credits at the same
     ///         times; the first also gets the extra deposit. Fails for a rule whose window stays
     ///         open while credits keep arriving.
     /// @dev Bounds: two 64-bit credits, a 64-bit extra deposit 180 days to 2**32 seconds after
@@ -195,8 +195,11 @@ contract EscrowSymbolicTest is SymHelpers {
         vm.prank(PAYER);
         escrow.depositETH{ value: extra }(W1);
         assert(escrow.expirableAt(W1, ETH, t) == atDeposit);
+        // The credits already 180 days old at the deposit: the first, and the second when it
+        // is. Expiry takes the oldest first, so what of them the twin projects is min(before, old).
+        uint256 old = uint256(c1) + _pick(uint256(late) - gap >= 180 days, c2, 0);
         uint256 before = twin.expirableAt(W1, ETH, t + read);
-        uint256 floor = before < c1 ? before : c1;
+        uint256 floor = before < old ? before : old;
         assert(escrow.expirableAt(W1, ETH, t + read) >= floor);
     }
 

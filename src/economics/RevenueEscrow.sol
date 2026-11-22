@@ -39,8 +39,9 @@ import { TokenTransfer } from "./TokenTransfer.sol";
 ///        so nothing anyone does moves the time from which such an amount may expire;
 ///      - a credit into an open window (all of whose credits are younger than 180 days) delays
 ///        that window's credits by at most the rest of the window, never past 360 days from each.
-///      A recovery counts as a new credit to its replacement. The network's own credits never
-///      expire. Storage: four words per account and asset ({credits}); every change follows from
+///      A recovery counts as a new credit to its replacement. The network fee vault's credit
+///      (`factory().network()`) never expires; any other account's, the museum vault's and other
+///      network accounts' included, expires into the fee vault like anyone's. Storage: four words per account and asset ({credits}); every change follows from
 ///      the logged deposits, flushes, recoveries and expiries and their block times.
 ///      Funds force-sent or transferred here without a deposit are owed to nobody; only
 ///      {sweepExcess} moves them, and it can reach nothing beyond `balance - totalOwed` of the

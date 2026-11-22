@@ -82,8 +82,9 @@ clears it with `expireContest`.
 acts, `requireSigned` reverts, the payout reads zero (split wallets hold the money) and no
 pending change executes. `unfreeze` ends it early. A second `freeze` is refused while one runs,
 but `unfreeze` and `freeze` are both immediate, so the network can renew a running freeze at once
-for 14 days from then, with no moment in between; a freeze lasts as long as the network keeps
-renewing it.
+for 14 days from then; sent as one Safe batch (one transaction) they leave no moment in between,
+while as separate transactions another transaction can act in the gap, when the account is
+unfrozen and a due change may execute. A freeze lasts as long as the network keeps renewing it.
 
 **A freeze and the right to contest.** A frozen account cannot contest. A freeze placed with a
 replacement covers the replacement's whole 14-day notice to the second, so the replacement

@@ -155,7 +155,9 @@ interface IRevenueEscrow is IERC165 {
         );
 
     /// @notice What {expire} would move from `wallet`'s credit in `asset` at `time` if nothing
-    ///         else happened first; zero for the network's own credit.
+    ///         else happened first; zero for the network fee vault (`factory().network()`), whose
+    ///         credit never expires. Any other account's credit, the museum vault's included,
+    ///         is projected like anyone's.
     /// @param wallet The credited account.
     /// @param asset The asset to look up (ETH is `address(0)`).
     /// @param time The time to age the credit to; an earlier time than now counts as now.
@@ -175,7 +177,8 @@ interface IRevenueEscrow is IERC165 {
     ///         (`factory().network()`) as a credit; the rest stays. Anyone may call; anyone may
     ///         then {flush} it to the vault.
     /// @dev Reverts with {CreditNotExpired} when no part may move yet, {NothingOwed} when nothing
-    ///      is owed and {InvalidWallet} for the network itself.
+    ///      is owed and {InvalidWallet} for the network fee vault itself; the museum vault and
+    ///      other network accounts expire into the fee vault like anyone.
     /// @param wallet The credited account.
     /// @param asset The asset (ETH is `address(0)`).
     /// @return amount The amount moved.

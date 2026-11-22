@@ -489,7 +489,7 @@ contract LedgerMedusa is MedusaBase {
     }
 
     /// `expire`: anyone; it moves the credits of every window whose last credit is 180 days
-    /// old, never the network's own credit; they become a credit of the fee vault (ECO-45).
+    /// old, never the fee vault's own credit; they become a credit of the fee vault (ECO-45).
     function expire(uint8 sel, bool eth) public {
         address account = _creditee(sel);
         address asset = _asset(eth);
