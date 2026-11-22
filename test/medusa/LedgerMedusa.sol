@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { Directory } from "../../src/core/Directory.sol";
 import { GovernedVault } from "../../src/economics/GovernedVault.sol";
 import { IReleaseVerifier } from "../../src/economics/interfaces/IReleaseVerifier.sol";
 import { ISplitWallet } from "../../src/economics/interfaces/ISplitWallet.sol";
@@ -10,59 +11,125 @@ import { SplitLedger } from "../../src/economics/SplitLedger.sol";
 import { SplitVault } from "../../src/economics/SplitVault.sol";
 import { Actor, Gate, MedusaBase, PlainToken } from "./MedusaBase.sol";
 
-/// @dev The harness's own model of the escrow's expiry windows (ECO-45), window by window: a
-///      credit joins the latest window while it holds credit and is younger than 180 days, and
-///      opens a new one otherwise; a window's credit may expire from 180 days after its last.
+/// @dev The harness's own model of the escrow's expiry windows (ECO-45), window by window, under
+///      an unclaimed period the network may change at any time (zero allowed). The escrow looks
+///      at an account's windows only when it writes them (a deposit, a recovery to it, an expiry)
+///      or when asked (`expirableAt`), each time under the period then in force: a closed window
+///      whose last credit is a period old is aged, and stays aged whatever the period becomes;
+///      the open window closes a period after it opened. Should the open window close while an
+///      older closed window is not yet aged (the period grew), the two become one, due a period
+///      after the later last credit. A credit joins the open window, or opens a new one.
 library MedusaWindows {
-    uint256 internal constant PERIOD = 180 days;
+    struct Window {
+        uint256 amount;
+        uint256 openedAt;
+        uint256 lastAt;
+        bool closed;
+        bool aged;
+    }
 
     struct Book {
-        uint256[] amount;
-        uint256[] openedAt;
-        uint256[] lastAt;
-        uint256 head;
+        Window[] list;
     }
 
-    function credit(Book storage b, uint256 value, uint256 nowAt) internal {
-        uint256 n = b.amount.length;
-        if (b.head < n && nowAt < b.openedAt[n - 1] + PERIOD) {
-            b.amount[n - 1] += value;
-            b.lastAt[n - 1] = nowAt;
+    /// The windows as the escrow sees them at `t` under `period`, without writing them.
+    function rolled(Book storage b, uint256 t, uint256 period)
+        internal
+        view
+        returns (Window[] memory ws)
+    {
+        uint256 n = b.list.length;
+        ws = new Window[](n);
+        for (uint256 i; i < n; ++i) {
+            ws[i] = b.list[i];
+        }
+        for (uint256 i; i < n; ++i) {
+            Window memory w = ws[i];
+            if (w.closed && !w.aged && w.amount != 0 && t >= w.lastAt + period) w.aged = true;
+        }
+        if (n == 0) return ws;
+        Window memory last = ws[n - 1];
+        if (!last.closed && last.amount != 0 && t >= last.openedAt + period) {
+            last.closed = true;
+            for (uint256 i; i + 1 < n; ++i) {
+                Window memory w = ws[i];
+                if (w.closed && !w.aged && w.amount != 0) {
+                    last.amount += w.amount;
+                    if (w.openedAt < last.openedAt) last.openedAt = w.openedAt;
+                    w.amount = 0;
+                }
+            }
+            if (t >= last.lastAt + period) last.aged = true;
+        }
+    }
+
+    /// The escrow writes the account's credit at `t`: the windows are aged as seen then.
+    function roll(Book storage b, uint256 t, uint256 period) internal {
+        Window[] memory ws = rolled(b, t, period);
+        for (uint256 i; i < ws.length; ++i) {
+            b.list[i] = ws[i];
+        }
+    }
+
+    function credit(Book storage b, uint256 value, uint256 t, uint256 period) internal {
+        roll(b, t, period);
+        uint256 n = b.list.length;
+        if (n != 0 && !b.list[n - 1].closed && b.list[n - 1].amount != 0) {
+            b.list[n - 1].amount += value;
+            b.list[n - 1].lastAt = t;
         } else {
-            b.amount.push(value);
-            b.openedAt.push(nowAt);
-            b.lastAt.push(nowAt);
+            b.list.push(Window(value, t, t, false, false));
         }
     }
 
-    function expirable(Book storage b, uint256 t) internal view returns (uint256 sum) {
-        for (uint256 i = b.head; i < b.amount.length; ++i) {
-            if (b.lastAt[i] + PERIOD <= t) sum += b.amount[i];
+    /// What may move to the network at `t` under `period`.
+    function expirable(Book storage b, uint256 t, uint256 period)
+        internal
+        view
+        returns (uint256 sum)
+    {
+        Window[] memory ws = rolled(b, t, period);
+        for (uint256 i; i < ws.length; ++i) {
+            if (ws[i].aged) sum += ws[i].amount;
         }
     }
 
-    /// @dev The credit of every window that opened at least 360 days before `t`: its last
-    ///      credit came within 180 days of its opening, so all of it must be expirable by `t`.
-    function veryOld(Book storage b, uint256 t) internal view returns (uint256 sum) {
-        for (uint256 i = b.head; i < b.amount.length; ++i) {
-            if (b.openedAt[i] + 2 * PERIOD <= t) sum += b.amount[i];
+    /// The credit of every window that opened at least two periods before `t`, counting only
+    /// windows opened after the period last changed: under one period, its last credit came
+    /// within a period of its opening, so all of it must be expirable by `t`.
+    function veryOld(Book storage b, uint256 t, uint256 period, uint256 changedAt)
+        internal
+        view
+        returns (uint256 sum)
+    {
+        for (uint256 i; i < b.list.length; ++i) {
+            Window storage w = b.list[i];
+            if (w.openedAt >= changedAt && w.openedAt + 2 * period <= t) sum += w.amount;
         }
     }
 
-    function expire(Book storage b, uint256 t) internal {
-        while (b.head < b.amount.length && b.lastAt[b.head] + PERIOD <= t) {
-            ++b.head;
+    /// `expire` at `t`: every aged window's credit leaves; returns it.
+    function expire(Book storage b, uint256 t, uint256 period) internal returns (uint256 sum) {
+        roll(b, t, period);
+        for (uint256 i; i < b.list.length; ++i) {
+            if (b.list[i].aged) {
+                sum += b.list[i].amount;
+                b.list[i].amount = 0;
+            }
         }
     }
 
     function takeAll(Book storage b) internal {
-        b.head = b.amount.length;
+        for (uint256 i; i < b.list.length; ++i) {
+            b.list[i].amount = 0;
+        }
     }
 }
 
-/// @dev The artist payout resolver as the harness sets it: one artist, whose payout address the
-///      harness rotates between two keys or freezes (zero, unresolved).
-contract PayoutBook is IArtistPayoutResolver {
+/// @dev The ACCOUNTS module as the harness sets it: one artist, whose payout address the harness
+///      rotates between two keys or freezes (zero, unresolved). The real `Directory` answers the
+///      ledger's `payoutAddress` from it.
+contract PayoutBook {
     address internal immutable _keeper;
     mapping(uint256 artistId => address) public payoutAddress;
 
@@ -73,12 +140,6 @@ contract PayoutBook is IArtistPayoutResolver {
     function set(uint256 artistId, address payout) external {
         require(msg.sender == _keeper, "not keeper");
         payoutAddress[artistId] = payout;
-    }
-
-    /// @dev The directory's unclaimed period at its launch value, which the ledger and the
-    ///      escrow read through their resolver.
-    function unclaimedPeriod() external pure returns (uint48) {
-        return 180 days;
     }
 }
 
@@ -96,6 +157,10 @@ contract PayoutBook is IArtistPayoutResolver {
 ///      model with the contracts. No cheatcodes: time passes by Medusa's block timestamp delay,
 ///      or by the Forge runner's clock contract.
 ///
+///      The ledger's resolver is the real `Directory`, whose unclaimed period the governor changes
+///      mid-run (`setPeriod`, zero allowed); the ledger's forfeits and the escrow's windows read
+///      it, and the model keeps its own copy.
+///
 ///      Wallets: W0 is a royalty wallet `(fee vault 10%, alice 90%)`, deployed at construction;
 ///      W1 and W1b are the same three-payee list `(alice 30%, bob 30%, artist 7 40%)` under salts
 ///      0 and 1, deployed by the `createWallet` action, so payments may reach them first (ECO-11)
@@ -103,7 +168,6 @@ contract PayoutBook is IArtistPayoutResolver {
 contract LedgerMedusa is MedusaBase {
     uint256 internal constant DENOMINATOR = 100_000;
     uint256 internal constant ARTIST = 7;
-    uint256 internal constant PERIOD = 180 days;
     uint256 internal constant WALLETS = 3;
     uint256 internal constant MAX_PAYMENT = 1e24;
 
@@ -112,6 +176,7 @@ contract LedgerMedusa is MedusaBase {
     GovernedVault public vault;
     PlainToken public token;
     PayoutBook public book;
+    Directory public directory;
     Gate public gate;
 
     Actor public governor;
@@ -149,6 +214,10 @@ contract LedgerMedusa is MedusaBase {
     address public mPayout;
     address public mDestination;
     uint64 public mRevision = 1;
+    /// @dev The unclaimed period the model expects the Directory to answer, and when it last
+    ///      changed.
+    uint256 public mPeriod = 180 days;
+    uint256 public mPeriodChangedAt;
 
     bool public unauthorizedSucceeded;
     bool public networkLeftDue;
@@ -166,7 +235,8 @@ contract LedgerMedusa is MedusaBase {
         book = new PayoutBook();
         gate = new Gate(address(governor));
         vault = new GovernedVault(address(gate), address(sinkA));
-        ledger = new SplitLedger(book, address(vault));
+        directory = new Directory(address(gate), address(book), address(0), address(0), address(0));
+        ledger = new SplitLedger(IArtistPayoutResolver(address(directory)), address(vault));
         escrow = new RevenueEscrow(address(gate), ledger);
         book.set(ARTIST, address(keyA));
         mPayout = address(keyA);
@@ -371,7 +441,7 @@ contract LedgerMedusa is MedusaBase {
         }
     }
 
-    /// `forfeit`: anyone, 180 days after the mark, of what of the marked level is unreleased, at
+    /// `forfeit`: anyone, once the unclaimed period in force now has passed since the mark, of what of the marked level is unreleased, at
     /// most what is releasable now; it pays the network and clears the mark (ECO-44).
     function forfeit(uint8 w, bool eth, uint8 index) public {
         w = uint8(w % WALLETS);
@@ -382,7 +452,7 @@ contract LedgerMedusa is MedusaBase {
         uint256 amount = target > done ? target - done : 0;
         uint256 due = _due(w, asset, i);
         if (amount > due) amount = due;
-        bool matured = mMarked[w][asset][i] && block.timestamp >= mMarkAt[w][asset][i] + PERIOD;
+        bool matured = mMarked[w][asset][i] && block.timestamp >= mMarkAt[w][asset][i] + mPeriod;
         bytes memory data = abi.encodeCall(ledger.forfeit, (_payees(w), _salt(w), asset, i));
         (bool ok,) = _expect(stranger, address(ledger), data, matured && amount != 0, "forfeit");
         if (ok) {
@@ -405,6 +475,22 @@ contract LedgerMedusa is MedusaBase {
         bool next = !mRefuse[address(who)];
         who.setRefuseETH(next);
         mRefuse[address(who)] = next;
+    }
+
+    /// `setUnclaimedPeriod` on the Directory: governed; any value, zero included. It reaches
+    /// marks already made and escrow windows already open or closed, never an amount already
+    /// aged (ECO-44, ECO-45).
+    function setPeriod(uint8 sel, bool asGovernor) public {
+        uint256 k = sel % 5;
+        uint48 next = k == 0 ? 0 : k == 1 ? 3 days : k == 2 ? 30 days : k == 3 ? 180 days : 400 days;
+        bytes memory data = abi.encodeCall(directory.setUnclaimedPeriod, (next));
+        (bool ok,) = _expect(
+            asGovernor ? governor : stranger, address(directory), data, asGovernor, "setPeriod"
+        );
+        if (!ok) return;
+        if (!asGovernor) unauthorizedSucceeded = true;
+        mPeriod = next;
+        mPeriodChangedAt = block.timestamp;
     }
 
     // ---------------------------------------------------------------------------------------
@@ -494,18 +580,20 @@ contract LedgerMedusa is MedusaBase {
         _addCredit(rep, asset, amount);
     }
 
-    /// `expire`: anyone; it moves the credits of every window whose last credit is 180 days
-    /// old, never the fee vault's own credit; they become a credit of the fee vault (ECO-45).
+    /// `expire`: anyone; it moves the credits of every aged window (see `MedusaWindows`), never
+    /// the fee vault's own credit; they become a credit of the fee vault (ECO-45).
     function expire(uint8 sel, bool eth) public {
         address account = _creditee(sel);
         address asset = _asset(eth);
         MedusaWindows.Book storage book = mBooks[account][asset];
-        uint256 due = MedusaWindows.expirable(book, block.timestamp);
+        uint256 due = MedusaWindows.expirable(book, block.timestamp, mPeriod);
         bool expected = account != address(vault) && due != 0;
         bytes memory data = abi.encodeCall(escrow.expire, (account, asset));
         (bool ok,) = _expect(stranger, address(escrow), data, expected, "expire");
         if (!ok) return;
-        MedusaWindows.expire(book, block.timestamp);
+        if (MedusaWindows.expire(book, block.timestamp, mPeriod) != due) {
+            _record(false, true, "expired amount");
+        }
         mOwed[account][asset] -= due;
         _addCredit(address(vault), asset, due);
     }
@@ -675,7 +763,8 @@ contract LedgerMedusa is MedusaBase {
             }
             if (sum != mTotalOwed[asset]) return false;
         }
-        return escrow.recoveryConsent(address(alice)) == mConsent[address(alice)];
+        return escrow.recoveryConsent(address(alice)) == mConsent[address(alice)]
+            && directory.unclaimedPeriod() == mPeriod;
     }
 
     /// ECO-15 to ECO-17, ECO-5: no release by anyone but who the spec allows, no governed call
@@ -729,17 +818,18 @@ contract LedgerMedusa is MedusaBase {
 
     function _addCredit(address account, address asset, uint256 amount) internal {
         mOwed[account][asset] += amount;
-        MedusaWindows.credit(mBooks[account][asset], amount, block.timestamp);
+        MedusaWindows.credit(mBooks[account][asset], amount, block.timestamp, mPeriod);
     }
 
     function _expiryMatches(address account, address asset) internal view returns (bool) {
         MedusaWindows.Book storage book = mBooks[account][asset];
         uint256 t = block.timestamp;
-        uint256[3] memory at = [t, t + PERIOD, t + 2 * PERIOD];
-        for (uint256 i; i < 3; ++i) {
+        uint256 p = mPeriod;
+        uint256[4] memory at = [t, t + p / 2, t + p, t + 2 * p];
+        for (uint256 i; i < 4; ++i) {
             uint256 e = escrow.expirableAt(account, asset, at[i]);
-            if (e != MedusaWindows.expirable(book, at[i])) return false;
-            if (e < MedusaWindows.veryOld(book, at[i])) return false;
+            if (e != MedusaWindows.expirable(book, at[i], p)) return false;
+            if (e < MedusaWindows.veryOld(book, at[i], p, mPeriodChangedAt)) return false;
         }
         return true;
     }
