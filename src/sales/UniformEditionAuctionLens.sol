@@ -139,10 +139,14 @@ abstract contract UniformEditionAuctionLensBase is IUniformEditionAuctionLens {
                 || e.params.length != 0
         ) revert ISaleAdapter.InvalidSaleTerms(token, id);
         if (adopting) {
+            // The sale seals the edition at the count it clears, at most its cap (no cap: up to
+            // `type(uint40).max`), so an edition whose maximum is below that could never settle.
             Edition memory ed = IEditions(token).editionOf(id);
-            if (ed.minter != msg.sender || ed.minted != 0 || ed.supplySealed) {
-                revert ISaleAdapter.InvalidSaleTerms(token, id);
-            }
+            uint256 needed = e.maxCount == 0 ? type(uint40).max : e.maxCount;
+            if (
+                ed.minter != msg.sender || ed.minted != 0 || ed.supplySealed
+                    || ed.maxSupply < needed
+            ) revert ISaleAdapter.InvalidSaleTerms(token, id);
         }
         if (adopting && work.outcome != Outcome.NONE) {
             // The master's sale ended: the adopted sale runs on its own from now.

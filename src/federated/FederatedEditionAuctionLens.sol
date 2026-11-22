@@ -161,9 +161,11 @@ contract FederatedEditionAuctionLens is UniformEditionAuctionLensBase {
         return (_economics, PRODUCT_FEDERATED);
     }
 
-    /// @dev Whether the current federation module serves `token`.
+    /// @dev Whether the current federation module serves `token` and its master contract: a
+    ///      delisted master voids its edition's sale as it refunds its 1/1.
     function _served(address token) private view returns (bool) {
         address gate = federationRegistry();
-        return gate != address(0) && IFederationListing(gate).isActive(token);
+        return gate != address(0) && IFederationListing(gate).isActive(token)
+            && IFederationListing(gate).isActive(IEditions(token).stream());
     }
 }

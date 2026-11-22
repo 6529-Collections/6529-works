@@ -371,6 +371,12 @@ interface IUniformEditionAuction is ISaleAdapter {
     ///         the edition at zero: `IEditions.EditionSupplySealed(id, 0)`).
     /// @param saleId The sale ID.
     event AuctionVoided(uint256 indexed saleId);
+    /// @notice The network closed, with a seal at zero, an edition moved to this adapter that
+    ///         has no sale here (`closeEdition`).
+    /// @param saleId The sale ID the edition would have had.
+    /// @param token The edition contract.
+    /// @param id The edition ID.
+    event EditionClosed(uint256 indexed saleId, address indexed token, uint256 id);
     /// @notice The network opened the sale of an edition moved to this adapter (`adopt`).
     /// @param saleId The sale ID.
     /// @param token The edition contract.
@@ -493,12 +499,23 @@ interface IUniformEditionAuction is ISaleAdapter {
     ///         the usual soft close, and settles without reading the 1/1. Emits
     ///         `EditionAdopted`, `AuctionOpened` and `ISaleAdapter.SaleStarted`. Reverts as
     ///         `open` does, and with `InvalidSaleTerms` for an edition this adapter does not
-    ///         mint, or that has copies or a seal.
+    ///         mint, that has copies or a seal, or whose maximum is below the item's cap (or,
+    ///         for an uncapped item, below `type(uint40).max`), which the sale could never seal.
     /// @param token A served edition contract.
     /// @param id The edition ID.
     /// @param data As for `open`.
     /// @return saleId `saleIdOf(token, id)`.
     function adopt(address token, uint256 id, bytes calldata data) external returns (uint256 saleId);
+
+    /// @notice Closes an edition the network moved to this adapter that has no sale here and
+    ///         will not be sold, such as one whose master's sale was cancelled (`adopt` refuses
+    ///         it): seals it at zero (`IEditions.seal(id, 0)`), so it has no copies for good. The
+    ///         network only. Reverts with `AuctionExists` if a sale of it was opened here, and as
+    ///         `IEditions.seal` does for an edition this adapter does not mint, or that has
+    ///         copies or a seal.
+    /// @param token The edition contract.
+    /// @param id The edition ID.
+    function closeEdition(address token, uint256 id) external;
 
     /// @notice Places a bid of `quantity` units at `step`, paying exactly
     ///         `quantity * stepPrice(saleId, step)` as `msg.value`. Anyone, while bidding is open

@@ -142,6 +142,7 @@ contract FederatedEditionAuctionTest is Test {
         ua = IUniformEditionAuction(address(auction));
         gate.set(address(token), address(auction), true);
         gate.setActive(address(token), true);
+        gate.setActive(address(master), true); // its master contract is served too
         gate.setFeeShare(address(token), SHARE);
         english.set(
             address(master),

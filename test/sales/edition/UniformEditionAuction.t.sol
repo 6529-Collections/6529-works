@@ -34,7 +34,7 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
     address internal carol = makeAddr("carol");
     /// @dev `IUniformEditionAuction`'s interface ID: the plain core added `adopt` and took the
     ///      item from `abandon` (was 0xcced0690).
-    uint32 internal constant INTERFACE_ID = 0xa34e53aa;
+    uint32 internal constant INTERFACE_ID = 0x327daaaf;
 
     // ================================================================== construction
 

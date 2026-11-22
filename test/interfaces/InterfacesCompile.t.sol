@@ -39,7 +39,7 @@ contract InterfacesCompileTest is Test {
     function test_interfaceIds() public pure {
         assertEq(type(IStream).interfaceId, bytes4(0xe38078e5), "IStream");
         assertEq(type(IWorkPowers).interfaceId, bytes4(0xf2f560e3), "IWorkPowers");
-        assertEq(type(IEditions).interfaceId, bytes4(0xa7c1a138), "IEditions");
+        assertEq(type(IEditions).interfaceId, bytes4(0xb4dad938), "IEditions");
         assertEq(type(ISaleAdapter).interfaceId, bytes4(0x312dc1e1), "ISaleAdapter");
         assertEq(type(IEnglishAuction).interfaceId, bytes4(0x54df3713), "IEnglishAuction");
         // An integration view, never reported through ERC-165.
@@ -49,7 +49,7 @@ contract InterfacesCompileTest is Test {
             type(IEnglishAuctionRefusal).interfaceId, bytes4(0x625761b5), "IEnglishAuctionRefusal"
         );
         assertEq(
-            type(IUniformEditionAuction).interfaceId, bytes4(0xa34e53aa), "IUniformEditionAuction"
+            type(IUniformEditionAuction).interfaceId, bytes4(0x327daaaf), "IUniformEditionAuction"
         );
         // Errors only: no function, so the ID is zero and nothing reports it.
         assertEq(type(ICurationVerifier).interfaceId, bytes4(0x492733ca), "ICurationVerifier");

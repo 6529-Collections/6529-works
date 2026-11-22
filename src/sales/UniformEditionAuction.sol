@@ -263,6 +263,23 @@ abstract contract UniformEditionAuctionBase is
         saleId = _start(token, id, data, true);
     }
 
+    /// @notice Closes, with a seal at zero, an edition the network moved to this adapter for
+    ///         which no sale was opened here and none will be (`IUniformEditionAuction.
+    ///         closeEdition`): for example one whose master's sale was cancelled, which `adopt`
+    ///         refuses. The network only.
+    /// @param token The edition contract.
+    /// @param id The edition ID.
+    function closeEdition(address token, uint256 id) external restricted nonReentrant {
+        uint256 saleId = _saleIdOf(token, id);
+        _checkTarget(token, saleId, _settings.listed);
+        SaleWord storage a = _sales[saleId];
+        if (a.status != IUniformEditionAuction.AuctionStatus.NONE) {
+            revert IUniformEditionAuction.AuctionExists(saleId);
+        }
+        IEditions(token).seal(id, 0);
+        emit IUniformEditionAuction.EditionClosed(saleId, token, id);
+    }
+
     /// @dev `open` (creating the edition) or `adopt` (taking over an existing one).
     function _start(address token, uint256 id, bytes calldata data, bool adopting)
         private
