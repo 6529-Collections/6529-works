@@ -3,6 +3,8 @@ pragma solidity ^0.8.24;
 
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { FederatedStream } from "src/federated/FederatedStream.sol";
+import { ArtistRegistry } from "src/identity/ArtistRegistry.sol";
+import { IConsolidationSource } from "src/interfaces/IArtistRegistry.sol";
 import { FederationRegistry } from "src/federated/FederationRegistry.sol";
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
@@ -256,6 +258,41 @@ contract FederationGovernanceTest is FederationBase {
     }
 
     // ------------------------------------------------------------------ replacement
+
+    /// @dev Once replaced, the old registry answers every read as the current one does: here
+    ///      the version the replacement approved, not its own.
+    function test_Replacement_TheOldRegistryForwardsItsReads() public {
+        FederationRegistry next = new FederationRegistry(
+            address(manager), address(artists), address(economics), address(store)
+        );
+        _mapRegistryRoles(address(next));
+        _approveTemplate(
+            next, type(FederatedStream).creationCode, streamHash, 7, IFederationRegistry.Form.ERC721
+        );
+        _govern(
+            hotAdmin,
+            address(artists),
+            abi.encodeCall(artists.setFederationRegistry, (address(fedRegistry), address(next)))
+        );
+        assertEq(next.entry(address(fed)).templateVersion, 7);
+        assertEq(fedRegistry.entry(address(fed)).templateVersion, 7, "forwarded");
+    }
+
+    /// @dev A registry the artist registry does not name yet answers for itself (an unlisted
+    ///      token reads empty) rather than forwarding to nobody.
+    function test_Registry_AnswersItselfBeforeItIsBound() public {
+        ArtistRegistry fresh = new ArtistRegistry(
+            address(manager),
+            IConsolidationSource(address(consolidation)),
+            address(consolidation).codehash
+        );
+        FederationRegistry unbound = new FederationRegistry(
+            address(manager), address(fresh), address(economics), address(store)
+        );
+        IFederationRegistry.Entry memory e = unbound.entry(address(fed));
+        assertEq(uint8(e.status), uint8(IFederationRegistry.Status.NONE));
+        assertEq(e.artistId, 0);
+    }
 
     function test_Replacement_InheritsEveryListingWithNothingToMigrate() public {
         (uint256 saleId, uint256 tokenId) = _startFed(_fedWork(fedArtist));
