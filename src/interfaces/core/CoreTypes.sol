@@ -135,9 +135,13 @@ struct Facts {
 /// @notice A minter's standing in a token contract.
 /// @param activeFrom When it may first mint; zero if it was never added.
 /// @param removedAt When the network removed it; zero while it is not removed.
+/// @param firstActiveFrom When it was first to become active; kept when it is removed and added
+///        again. Zero if it was never added; a first addition removed before it became active is
+///        cancelled and its whole record deleted.
 struct Minter {
     uint48 activeFrom;
     uint48 removedAt;
+    uint48 firstActiveFrom;
 }
 
 /// @notice A module announced for a slot and not yet installed.

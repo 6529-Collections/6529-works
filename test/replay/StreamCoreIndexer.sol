@@ -143,13 +143,18 @@ contract StreamCoreIndexer is ReplayIndexer {
             delete _pending[log.topics[1]];
         } else if (t == IModules.MinterAdded.selector) {
             address m = _addr(log.topics[1]);
-            _minters[m] = Minter(abi.decode(log.data, (uint48)), 0);
+            uint48 activeFrom = abi.decode(log.data, (uint48));
+            uint48 first = _minters[m].firstActiveFrom;
+            _minters[m] = Minter(activeFrom, 0, first == 0 ? activeFrom : first);
             if (!_knownMinter[m]) {
                 _knownMinter[m] = true;
                 _minterList.push(m);
             }
         } else if (t == IModules.MinterRemoved.selector) {
-            _minters[_addr(log.topics[1])].removedAt = uint48(_now);
+            // A removal before the first activation is a cancellation: the record goes.
+            Minter storage r = _minters[_addr(log.topics[1])];
+            if (_now < r.firstActiveFrom) delete _minters[_addr(log.topics[1])];
+            else r.removedAt = uint48(_now);
         } else if (
             t == IERC4906.MetadataUpdate.selector || t == IERC4906.BatchMetadataUpdate.selector
         ) {

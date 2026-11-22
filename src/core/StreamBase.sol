@@ -22,8 +22,9 @@ import { IWorkFacts } from "../interfaces/core/IWorkFacts.sol";
 /// @title StreamBase
 /// @notice The plain permanent ERC-721 of works (ADR 0010): who owns each token, the facts fixed
 ///         at mint, and how the first sale ended. Shared by 6529 Stream (`Stream`) and each
-///         federated artist's token (`FederatedStream`), which differ only in the six hooks at
-///         the end: who the minters are, where the modules are, and who the admin is.
+///         federated artist's token (`FederatedStream`), which differ only in the hooks at the
+///         end: who the minters are, which artists the token takes, where the modules are, and
+///         who the admin is.
 /// @dev What a module or minter can do here, and nothing more:
 ///      - an active minter mints, stating the work's facts; the contract checks them;
 ///      - a minter (active or removed) that holds a token with no outcome recorded records the
@@ -83,6 +84,7 @@ abstract contract StreamBase is ERC721, IStream {
             f.itemHash == 0 || f.contentHash == 0 || f.artistId == 0
                 || f.artistId > type(uint160).max || f.royaltyRate > Core.DENOMINATOR
                 || (f.royaltyReceiver == address(0) && f.royaltyRate != 0)
+                || !_takesArtist(f.artistId)
         ) revert InvalidMint();
         uint256 existing = tokenOfContent[f.contentHash];
         if (existing != 0 && _ownerOf(existing) != address(0)) {
@@ -141,9 +143,11 @@ abstract contract StreamBase is ERC721, IStream {
     /// @dev Rescuable exactly when the token is live, its holder is reported removed by the
     ///      hooks (`_minterRemovedAt` nonzero), no outcome is recorded, and `rescueDelay` as it
     ///      stands now has passed since that removal. A minter added again is no longer removed.
-    ///      Records RESCUED, then moves the token without a receiver callback.
+    ///      Records RESCUED, then moves the token without a receiver callback. Never to this
+    ///      contract, where the token could never move again, nor to the zero address.
     function rescue(uint256 tokenId, address to) external {
         _checkNetwork();
+        if (to == address(this) || to == address(0)) revert ERC721InvalidReceiver(to);
         address holder = _requireOwned(tokenId);
         Work storage w = _works[tokenId];
         uint256 removedAt = _minterRemovedAt(holder);
@@ -337,6 +341,12 @@ abstract contract StreamBase is ERC721, IStream {
 
     /// @dev Whether `account` is or was an active minter.
     function _wasMinter(address account) internal view virtual returns (bool);
+
+    /// @dev Whether this token takes works of `artistId`: every artist unless the concrete
+    ///      token narrows it (a federated token takes its own artist only).
+    function _takesArtist(uint256) internal view virtual returns (bool) {
+        return true;
+    }
 
     /// @dev When `account` was removed as a minter, or zero.
     function _minterRemovedAt(address account) internal view virtual returns (uint256);

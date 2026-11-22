@@ -231,7 +231,7 @@ contract FederatedStreamTest is FederatedTokenFixture {
         assertTrue(fs.isMinter(address(sale)));
         assertFalse(fs.hasMinted(address(sale)));
         vm.expectEmit(address(fs));
-        emit IStream.WorkMinted(1, 1, ARTIST, address(sale), 1, _facts(1));
+        emit IStream.WorkMinted(1, 1, FED_ARTIST, address(sale), 1, _ffacts(1));
         uint256 id = _fmint(1);
         assertEq(id, 1);
         assertEq(fs.ownerOf(1), address(sale));
@@ -303,7 +303,7 @@ contract FederatedStreamTest is FederatedTokenFixture {
         // A sale contract mints straight to another sale contract the gate also admits.
         MockSale other = new MockSale();
         gate.setMinter(address(fs), address(other), true);
-        uint256 id = sale.mintTo(address(fs), address(other), _facts(1));
+        uint256 id = sale.mintTo(address(fs), address(other), _ffacts(1));
         assertFalse(fs.hasMinted(address(other)));
         vm.expectRevert(abi.encodeWithSelector(IStream.NotInPrimarySale.selector, id));
         other.record(address(fs), id, true, collector, 1);
@@ -370,7 +370,7 @@ contract FederatedStreamTest is FederatedTokenFixture {
     /// A gate that says a collector was a removed sale contract reaches nothing: only an account
     /// that minted here counts.
     function test_Rescue_ALyingGateCannotMakeACollectorRescuable() public {
-        uint256 id = sale.mintTo(address(fs), collector, _facts(1));
+        uint256 id = sale.mintTo(address(fs), collector, _ffacts(1));
         gate.remove(collector, 1);
         vm.warp(block.timestamp + 365 days);
         vm.expectRevert(abi.encodeWithSelector(IStream.NotRescuable.selector, id));

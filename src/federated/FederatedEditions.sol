@@ -23,7 +23,9 @@ import { FederatedMembership } from "./FederatedMembership.sol";
 ///      - TERMS: the directory's shared `FEDERATED_TERMS`.
 ///      - Admin: any wallet of the artist's account (the collection page).
 ///      - Network: whoever the directory's AccessManager lets call the same function on the
-///        directory at once (`rebind`, `setRebindDelay`).
+///        directory at once (`rebind`, `setRebindDelay`): only a direct call by a member of a
+///        role with no execution delay; a call through the manager's `execute`, or by a role
+///        with a delay, is refused.
 ///      An edition's ID is its master's token ID in the partner `stream`, and `uri` is drawn by
 ///      the master's renderer.
 contract FederatedEditions is EditionsBase, FederatedMembership {

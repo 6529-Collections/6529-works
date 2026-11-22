@@ -74,7 +74,8 @@ interface IStream is IERC4906, IERC2981 {
 
     /// @notice The mint facts are malformed (a zero item hash, content hash or artist ID, an
     ///         artist ID over 160 bits, a rate over 100,000, a nonzero rate with a zero
-    ///         royalty receiver).
+    ///         royalty receiver), or name an artist this token does not take (a federated
+    ///         token takes only its own artist).
     error InvalidMint();
     /// @notice A live token already has this content hash.
     error ContentAlreadyMinted(bytes32 contentHash, uint256 tokenId);
@@ -112,7 +113,11 @@ interface IStream is IERC4906, IERC2981 {
     ///      artist ID within 160 bits; rate at most 100,000; a nonzero royalty receiver unless
     ///      the rate is zero (royalties paid to the zero address would be lost); an existing
     ///      collection; no live
-    ///      token with this content hash (a burned token's content may be minted again).
+    ///      token with this content hash (a burned token's content may be minted again); an
+    ///      artist the token takes (a federated token: its own artist only). A minter mints to
+    ///      itself and records the outcome before the token leaves it: a token minted to anyone
+    ///      else is left with no outcome, so any minter that later holds it may record or burn
+    ///      it, and the network may rescue it from a removed minter.
     /// @param to The first holder (the sale contract itself, while the sale runs).
     /// @param f The work's facts.
     /// @return tokenId The new token ID: the next in one sequence from 1, never reused.
@@ -136,6 +141,8 @@ interface IStream is IERC4906, IERC2981 {
     /// @notice Moves a token that a removed minter still holds with no outcome recorded,
     ///         `rescueDelay` after the removal. The network only. The only way anyone but its
     ///         owner moves a token; it can never reach a token whose sale was recorded.
+    ///         Refuses this token contract itself and the zero address as `to`
+    ///         (`ERC721InvalidReceiver`).
     /// @param tokenId The token.
     /// @param to Where it goes.
     function rescue(uint256 tokenId, address to) external;

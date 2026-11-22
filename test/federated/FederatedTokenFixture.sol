@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { FederatedEditions } from "src/federated/FederatedEditions.sol";
 import { FederatedStream } from "src/federated/FederatedStream.sol";
+import { MintFacts } from "src/interfaces/core/CoreTypes.sol";
 import { CoreFixture } from "../mocks/core/CoreFixture.sol";
 
 /// @notice One federated pair built straight on `CoreFixture`'s directory, whose modules are the
@@ -39,9 +40,16 @@ abstract contract FederatedTokenFixture is CoreFixture {
         accounts.setWallet(FED_ARTIST, artistWallet2, true);
     }
 
+    /// @dev Mint facts for work `n` of the federated artist (a federated token takes only its
+    ///      own artist).
+    function _ffacts(uint256 n) internal pure returns (MintFacts memory f) {
+        f = _facts(n);
+        f.artistId = FED_ARTIST;
+    }
+
     /// @dev Mints work `n` into the sale contract's custody in the federated stream.
     function _fmint(uint256 n) internal returns (uint256) {
-        return sale.mint(address(fs), _facts(n));
+        return sale.mint(address(fs), _ffacts(n));
     }
 
     /// @dev Mints work `n`, records it sold and delivers it to `to`.

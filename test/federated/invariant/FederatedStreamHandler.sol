@@ -95,7 +95,7 @@ contract FederatedStreamHandler is CommonBase, StdCheats, StdUtils {
         MintFacts memory f;
         f.itemHash = keccak256(abi.encode("item", mints, seed));
         f.contentHash = contentHash(c);
-        f.artistId = bound(seed, 1, type(uint160).max);
+        f.artistId = token.artistId(); // a federated token takes only its own artist
         f.collectionId = 1;
         f.kind = uint8(seed % 2);
         f.seedPolicy = uint8(seed % 3);

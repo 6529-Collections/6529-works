@@ -17,8 +17,9 @@ contract ModulesHarness is Modules {
         _addMinter(genesisMinter, uint48(block.timestamp));
     }
 
+    /// @dev The slot check the token bases use (`_onlyTerms`), applied to slot "A".
     function onlyA() external view {
-        _onlyModule("A");
+        if (msg.sender != moduleOf("A")) revert NotModule("A", msg.sender);
     }
 
     function wasActive(address a) external view returns (bool) {

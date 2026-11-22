@@ -73,8 +73,11 @@ abstract contract FederatedMembership is IFederatedMembership {
     /// @dev Reverts unless the directory's AccessManager lets the caller call this same function
     ///      on the directory at once (`IAccessManager.canCall`, immediate). The network maps the
     ///      token functions it holds (`rescue`, `setRescueDelay`, `rebind`, `setRebindDelay`,
-    ///      `setModuleDelay`) on the directory target once, for every federated token. A role
-    ///      with an execution delay cannot be used here: such a call is refused.
+    ///      `setModuleDelay`) on the directory target once, for every federated token. Only a
+    ///      direct call by a member of a role with no execution delay passes: a role with a delay
+    ///      is refused, and so is a call relayed by the manager's `execute` (the manager is then
+    ///      the caller). One selector on the directory target governs both
+    ///      `Directory.setModuleDelay` and every federated token's `setModuleDelay`.
     function _requireNetwork() internal view {
         address manager = IAccessManaged(directory).authority();
         (bool immediate,) = IAccessManager(manager).canCall(msg.sender, directory, msg.sig);

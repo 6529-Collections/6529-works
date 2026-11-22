@@ -77,7 +77,8 @@ interface IEditions is IERC1155, IERC2981 {
     error EditionExists(uint256 editionId);
     /// @notice The edition does not exist.
     error UnknownEdition(uint256 editionId);
-    /// @notice The caller is not the edition's minter, or was removed before sealing it.
+    /// @notice The caller is not the edition's minter; or, to seal, it is removed; or, to mint
+    ///         an edition that is not sealed, it is not an active minter.
     error NotEditionMinter(uint256 editionId, address caller);
     /// @notice The mint would pass the maximum.
     error SupplyExceeded(uint256 editionId);
@@ -106,7 +107,10 @@ interface IEditions is IERC1155, IERC2981 {
     function stream() external view returns (address);
 
     /// @notice Creates the edition of an existing, live master. An active minter only; it
-    ///         becomes the edition's only minter.
+    ///         becomes the edition's only minter. An edition ID is used once: the master's
+    ///         token ID can never get a second edition, so whichever active minter creates it
+    ///         first holds it (until a rebind), and a seal at zero closes that master's edition
+    ///         for ever.
     /// @param editionId The master's token ID.
     /// @param maxSupply The creator's cap, or zero for none until the seal.
     /// @param royaltyReceiver The royalty receiver.
@@ -119,7 +123,9 @@ interface IEditions is IERC1155, IERC2981 {
     ) external;
 
     /// @notice Mints copies within the maximum. The edition's minter only; a removed minter
-    ///         mints only an edition it has sealed.
+    ///         mints only an edition it sealed before its removal. The master is not read here:
+    ///         an edition whose master was burned (its sale cancelled) can still be minted by its
+    ///         minter, and its `uri` then reverts for ever, since the master has no renderer.
     /// @param to The buyer.
     /// @param editionId The edition.
     /// @param amount The copies.
@@ -127,7 +133,9 @@ interface IEditions is IERC1155, IERC2981 {
     function mint(address to, uint256 editionId, uint256 amount, uint256 unitPrice) external;
 
     /// @notice Fixes the supply, once, between the count minted and the maximum. The edition's
-    ///         minter only, removed or not.
+    ///         minter only, while it is not removed: a removed minter seals nothing, so an
+    ///         edition still open at its removal waits for the network's `rebind`. A seal is
+    ///         one-way; a seal at zero closes the edition for good.
     /// @param editionId The edition.
     /// @param supply The final maximum.
     function seal(uint256 editionId, uint40 supply) external;
@@ -168,6 +176,12 @@ interface IEditions is IERC1155, IERC2981 {
     /// @param editionId The edition.
     /// @return The edition.
     function editionOf(uint256 editionId) external view returns (Edition memory);
+
+    /// @notice When `account` was removed as a minter of this contract; zero while it is not
+    ///         removed. A removed minter seals nothing.
+    /// @param account The account.
+    /// @return The removal time, or zero.
+    function minterRemovedAt(address account) external view returns (uint256);
 
     /// @notice The marketplace owner.
     /// @return The owner.

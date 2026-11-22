@@ -22,8 +22,10 @@ import { IStream } from "../interfaces/core/IStream.sol";
 ///      - only the edition's own minter mints it, and copies minted never pass the maximum;
 ///      - the supply is sealed once, between the copies minted and the maximum, and a sealed
 ///        maximum never grows; burned copies still count toward it;
-///      - a removed minter can still seal its editions and then mint up to the seal, so the
-///        winners of its sales are never stranded; it mints nothing it has not sealed;
+///      - only a minter that is not removed seals; a removed minter mints only the editions it
+///        sealed before its removal, up to the seal, so the winners of its sealed sales are
+///        served, and an edition still open at its removal is frozen (no seal, no copy) until
+///        the network rebinds it;
 ///      - the minter of an edition changes only by `rebind`: the network moves an edition with no
 ///        copies and no seal to another active minter, once `rebindDelay` (the network's setting,
 ///        read when the rebind is attempted) has passed since its minter's removal;
@@ -82,6 +84,8 @@ abstract contract EditionsBase is ERC1155, IEditions {
     /// @dev The supply is written and logged before the ERC-1155 acceptance check, so a
     ///      receiver that re-enters sees the new count; a receiver that refuses fails only its
     ///      own mint.
+    ///      A removed minter passes only for a sealed edition, which it sealed before its removal
+    ///      (`seal` refuses a removed minter).
     function mint(address to, uint256 editionId, uint256 amount, uint256 unitPrice) external {
         Edition storage e = _editions[editionId];
         if (e.minter != msg.sender || !(e.supplySealed || _isMinter(msg.sender))) {
@@ -96,9 +100,12 @@ abstract contract EditionsBase is ERC1155, IEditions {
     }
 
     /// @inheritdoc IEditions
+    /// @dev The caller is the edition's minter, never the zero address; a minter reported
+    ///      removed (`_minterRemovedAt` nonzero) seals nothing.
     function seal(uint256 editionId, uint40 supply) external {
         Edition storage e = _editions[editionId];
-        if (e.minter != msg.sender || msg.sender == address(0)) {
+        if (e.minter != msg.sender || msg.sender == address(0) || _minterRemovedAt(msg.sender) != 0)
+        {
             revert NotEditionMinter(editionId, msg.sender);
         }
         if (e.supplySealed || supply < e.minted || supply > e.maxSupply) {
@@ -112,7 +119,8 @@ abstract contract EditionsBase is ERC1155, IEditions {
     /// @inheritdoc IEditions
     /// @dev The wait in force when the rebind is attempted decides, counted from the removal.
     ///      A minter added again after its removal is no longer removed, so its editions cannot
-    ///      be rebound.
+    ///      be rebound. A removed minter can neither seal nor mint an unsealed edition, so an
+    ///      edition with no copies and no seal at the removal stays so until the rebind.
     function rebind(uint256 editionId, address minter) external {
         _checkNetwork();
         Edition storage e = _editions[editionId];
@@ -139,10 +147,9 @@ abstract contract EditionsBase is ERC1155, IEditions {
     }
 
     /// @inheritdoc IEditions
+    /// @dev Any other caller reverts with `IModuleSlots.NotModule`.
     function setRoyalty(uint256 editionId, address receiver, uint24 rate) external {
-        if (msg.sender != _moduleOf(Slots.TERMS) || msg.sender == address(0)) {
-            revert IModuleSlots.NotModule(Slots.TERMS, msg.sender);
-        }
+        _onlyTerms();
         Edition storage e = _editions[editionId];
         if (e.minter == address(0)) revert UnknownEdition(editionId);
         if (rate > Core.DENOMINATOR || (receiver == address(0) && rate != 0)) {
@@ -183,6 +190,11 @@ abstract contract EditionsBase is ERC1155, IEditions {
         return _editions[editionId];
     }
 
+    /// @inheritdoc IEditions
+    function minterRemovedAt(address account) external view returns (uint256) {
+        return _minterRemovedAt(account);
+    }
+
     /// @inheritdoc IERC2981
     /// @dev This contract's storage only: no module is asked. Exact for any price: the product
     ///      is taken in full precision before the division. An edition that does not exist
@@ -216,6 +228,14 @@ abstract contract EditionsBase is ERC1155, IEditions {
     {
         return interfaceId == type(IERC2981).interfaceId || interfaceId == bytes4(0x49064906)
             || interfaceId == type(IEditions).interfaceId || super.supportsInterface(interfaceId);
+    }
+
+    /// @dev Reverts unless the caller is the TERMS module. The caller is never the zero address,
+    ///      so an empty slot admits nobody.
+    function _onlyTerms() private view {
+        if (msg.sender != _moduleOf(Slots.TERMS)) {
+            revert IModuleSlots.NotModule(Slots.TERMS, msg.sender);
+        }
     }
 
     // --------------------------------------------------------------------- hooks (frozen)

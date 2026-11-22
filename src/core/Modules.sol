@@ -12,10 +12,12 @@ import { IModuleSlots, IModules } from "../interfaces/core/IModules.sol";
 /// @dev The wait before an announced module or an added minter becomes active is `moduleDelay`,
 ///      a setting of the network: 7 days at deployment, changed at once by `setModuleDelay`,
 ///      zero allowed. It is not a fixed promise. A change applies to modules announced and
-///      minters added after it; one already announced keeps the time it was given. The only
-///      writes to a slot are the constructor of the inheriting contract (`_setModule`, for the
-///      genesis modules), `activateModule` once the announced time has come, and
-///      `removeModule`, which only empties a slot.
+///      minters added after it; one already announced keeps the time it was given. A wait so
+///      large that the current time plus the wait passes 2^48 seconds makes `proposeModule` and
+///      `addMinter` revert until the network lowers it. The only writes to a slot are the
+///      constructor of the inheriting contract (`_setModule`, for the genesis modules),
+///      `activateModule` once the announced time has come, and `removeModule`, which only
+///      empties a slot; `cancelModule` withdraws an announcement and leaves the slot as it is.
 abstract contract ModuleSlots is AccessManaged, IModuleSlots {
     /// @inheritdoc IModuleSlots
     uint48 public moduleDelay = 7 days;
@@ -63,6 +65,15 @@ abstract contract ModuleSlots is AccessManaged, IModuleSlots {
     }
 
     /// @inheritdoc IModuleSlots
+    function cancelModule(bytes32 slot) external {
+        _checkModuleAdmin();
+        PendingModule memory p = _pending[slot];
+        if (p.readyAt == 0) revert ModuleNotReady(slot);
+        delete _pending[slot];
+        emit ModuleCancelled(slot, p.module);
+    }
+
+    /// @inheritdoc IModuleSlots
     function removeModule(bytes32 slot) external {
         _checkModuleAdmin();
         delete _pending[slot];
@@ -81,20 +92,15 @@ abstract contract ModuleSlots is AccessManaged, IModuleSlots {
         emit ModuleSet(slot, _modules[slot], module);
         _modules[slot] = module;
     }
-
-    /// @dev Reverts unless the caller is the module installed in `slot`.
-    function _onlyModule(bytes32 slot) internal view {
-        if (msg.sender != _modules[slot] || msg.sender == address(0)) {
-            revert NotModule(slot, msg.sender);
-        }
-    }
 }
 
 /// @title Modules
 /// @notice `ModuleSlots` plus the set of minters (sale contracts) of a token contract. A minter
 ///         is added with the same wait (`moduleDelay`, the network's setting) and removed at once.
 /// @dev A removed minter keeps its record (`removedAt`), so it can still finish the sales it
-///      started and the rescue and rebind waits can be counted from its removal.
+///      started and the rescue and rebind waits can be counted from its removal. A minter removed
+///      before it was ever active (a cancelled addition) leaves no record: it never counts as a
+///      minter that was active, so it records, burns and is rescued from nothing.
 abstract contract Modules is ModuleSlots, IModules {
     mapping(address minter => Minter) private _minters;
 
@@ -123,15 +129,18 @@ abstract contract Modules is ModuleSlots, IModules {
         _checkModuleAdmin();
         Minter storage m = _minters[minter];
         if (m.activeFrom == 0 || m.removedAt != 0) revert NotMinter(minter);
-        m.removedAt = uint48(block.timestamp);
+        if (block.timestamp < m.firstActiveFrom) delete _minters[minter];
+        else m.removedAt = uint48(block.timestamp);
         emit MinterRemoved(minter);
     }
 
-    /// @dev True for a minter that is or was active: a removed minter still settles its sales.
-    ///      A minter still waiting to become active is not one.
+    /// @dev True for a minter that is active, or was active and is removed: a removed minter
+    ///      still settles its sales. A minter waiting to become active (added again after a
+    ///      removal included) is not one. A removed record always belongs to a minter that was
+    ///      active, since `removeMinter` deletes the record of one that never was.
     function _wasActiveMinter(address account) internal view returns (bool) {
-        uint48 activeFrom = _minters[account].activeFrom;
-        return activeFrom != 0 && block.timestamp >= activeFrom;
+        Minter memory m = _minters[account];
+        return m.removedAt != 0 || (m.activeFrom != 0 && block.timestamp >= m.activeFrom);
     }
 
     /// @dev When `account` was removed, or zero.
@@ -141,8 +150,10 @@ abstract contract Modules is ModuleSlots, IModules {
 
     /// @dev Records a minter. Called from constructors (genesis minters, active at once) and
     ///      `addMinter` only.
+    ///      The first time it was to become active is kept through removals and re-additions.
     function _addMinter(address minter, uint48 activeFrom) internal {
-        _minters[minter] = Minter(activeFrom, 0);
+        uint48 first = _minters[minter].firstActiveFrom;
+        _minters[minter] = Minter(activeFrom, 0, first == 0 ? activeFrom : first);
         emit MinterAdded(minter, activeFrom);
     }
 }

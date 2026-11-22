@@ -126,7 +126,7 @@ contract FederatedEditionsTest is FederatedTokenFixture {
 
         uint256 m2 = 2;
         gate.setMinter(address(fs), address(next), true);
-        assertEq(next.mint(address(fs), _facts(2)), m2);
+        assertEq(next.mint(address(fs), _ffacts(2)), m2);
         next.createEdition(address(fe), m2, 10, address(0xFEE), 700);
         _gateRemove(address(next), block.timestamp);
         MockSale third = new MockSale();

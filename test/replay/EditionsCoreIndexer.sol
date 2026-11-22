@@ -97,9 +97,15 @@ contract EditionsCoreIndexer {
             // An installation or a removal ends any announcement for the slot.
             delete _pending[l.topics[1]];
         } else if (t == IModules.MinterAdded.selector) {
-            _minters[_address(l.topics[1])] = Minter(abi.decode(l.data, (uint48)), 0);
+            address m = _address(l.topics[1]);
+            uint48 activeFrom = abi.decode(l.data, (uint48));
+            uint48 first = _minters[m].firstActiveFrom;
+            _minters[m] = Minter(activeFrom, 0, first == 0 ? activeFrom : first);
         } else if (t == IModules.MinterRemoved.selector) {
-            _minters[_address(l.topics[1])].removedAt = uint48(time);
+            // A removal before the first activation is a cancellation: the record goes.
+            Minter storage r = _minters[_address(l.topics[1])];
+            if (time < r.firstActiveFrom) delete _minters[_address(l.topics[1])];
+            else r.removedAt = uint48(time);
         }
     }
 

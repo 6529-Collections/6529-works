@@ -766,8 +766,10 @@ abstract contract UniformEditionAuctionBase is
     ///      unitsAbove << 64 | demand`; zero for an empty book): SETTLED, or SETTLING while the
     ///      clearing step's departures wait to be swept. Returns the count and the price, which
     ///      `settle` pays after its last write. If the edition is no longer this adapter's (the
-    ///      network rebound it, which needs no copies and no seal), the sale is voided instead:
-    ///      every bid is refunded in full and nothing is paid.
+    ///      network rebound it, which needs no copies and no seal), or this adapter was removed
+    ///      as its minter (a removed minter can no longer seal, so the edition waits for the
+    ///      network's rebind), the sale is voided instead: every bid is refunded in full and
+    ///      nothing is paid.
     function _finish(
         uint256 saleId,
         SaleWord storage stored,
@@ -785,7 +787,10 @@ abstract contract UniformEditionAuctionBase is
         // forge-lint: disable-end(unsafe-typecast)
         PayoutWord memory p = _payouts[saleId];
         address editions = _editionsOf(saleId);
-        if (IEditions(editions).editionOf(p.id).minter != address(this)) {
+        if (
+            IEditions(editions).editionOf(p.id).minter != address(this)
+                || IEditions(editions).minterRemovedAt(address(this)) != 0
+        ) {
             _void(saleId, stored);
             return (0, 0);
         }
@@ -1221,16 +1226,20 @@ abstract contract UniformEditionAuctionBase is
     }
 
     /// @dev Marks a sale VOID: every bid is refunded in full at its claim. Seals the edition at
-    ///      zero when it is still this adapter's and unsealed, so the supply question is final
-    ///      (a void sale mints nothing); an edition the network moved to another adapter is left
-    ///      to that adapter.
+    ///      zero when it is still this adapter's and unsealed and this adapter is not removed,
+    ///      so the supply question is final (a void sale mints nothing). An edition the network
+    ///      moved to another adapter is left to that adapter, and one this adapter can no longer
+    ///      seal (removed) is left open for the network's rebind.
     function _void(uint256 saleId, SaleWord storage stored) internal {
         stored.status = IUniformEditionAuction.AuctionStatus.VOID;
         emit IUniformEditionAuction.AuctionVoided(saleId);
         IEditions editions = IEditions(_editionsOf(saleId));
         uint256 id = _payouts[saleId].id;
         Edition memory e = editions.editionOf(id);
-        if (e.minter == address(this) && !e.supplySealed) editions.seal(id, 0);
+        if (
+            e.minter == address(this) && !e.supplySealed
+                && editions.minterRemovedAt(address(this)) == 0
+        ) editions.seal(id, 0);
     }
 
     // ------------------------------------------------------------------------- the deployment

@@ -30,7 +30,10 @@ import { FederatedMembership } from "./FederatedMembership.sol";
 ///        the waiting period `moduleDelay` (the network's setting, 7 days at deployment).
 ///      - Admin: any wallet of the artist's account (the collection page and the renderer).
 ///      - Network: whoever the directory's AccessManager lets call the same function on the
-///        directory at once (`rescue`, `setRescueDelay`, `setModuleDelay`).
+///        directory at once (`rescue`, `setRescueDelay`, `setModuleDelay`): only a direct call
+///        by a member of a role with no execution delay; a call through the manager's `execute`,
+///        or by a role with a delay, is refused.
+///      - Artist: every work minted here names this token's artist (`InvalidMint` otherwise).
 ///      One collection, created at deployment and named by the token. No records, items,
 ///      locators, vaults or custody live here: records are in the shared `WorkFacts`, the rules in
 ///      the shared modules, and an unsold work stays in the network's sale contract.
@@ -107,6 +110,17 @@ contract FederatedStream is StreamBase, FederatedMembership, IFederatedStream {
 
     /// @inheritdoc IModuleSlots
     /// @dev Any wallet of the artist's account; RENDERER only (`NotLocalSlot`).
+    function cancelModule(bytes32 slot) external {
+        _requireArtist();
+        _requireLocal(slot);
+        PendingModule memory p = _pendingRenderer;
+        if (p.readyAt == 0) revert ModuleNotReady(slot);
+        delete _pendingRenderer;
+        emit ModuleCancelled(slot, p.module);
+    }
+
+    /// @inheritdoc IModuleSlots
+    /// @dev Any wallet of the artist's account; RENDERER only (`NotLocalSlot`).
     function removeModule(bytes32 slot) external {
         _requireArtist();
         _requireLocal(slot);
@@ -165,6 +179,11 @@ contract FederatedStream is StreamBase, FederatedMembership, IFederatedStream {
 
     function _minterRemovedAt(address account) internal view override returns (uint256) {
         return hasMinted[account] ? _gateRemovedAt(account) : 0;
+    }
+
+    /// @dev Only this token's own artist.
+    function _takesArtist(uint256 artistId_) internal view override returns (bool) {
+        return artistId_ == artistId;
     }
 
     /// @dev The artist; `createCollection` is refused for everyone (one collection).

@@ -17,6 +17,10 @@ interface IModuleSlots {
     /// @param previous The module before.
     /// @param module The module now.
     event ModuleSet(bytes32 indexed slot, address previous, address module);
+    /// @notice The announcement of `module` for `slot` was withdrawn; the installed module stays.
+    /// @param slot The slot.
+    /// @param module The module that was announced.
+    event ModuleCancelled(bytes32 indexed slot, address module);
 
     /// @notice The wait for modules and minters added from now on was set: by the network, or
     ///         at deployment with its launch value (`previous` zero).
@@ -38,7 +42,8 @@ interface IModuleSlots {
 
     /// @notice Sets the wait, at once. The contract's admin only (the network). Zero is
     ///         allowed. A module already announced, or a minter already added, keeps the time
-    ///         it was given.
+    ///         it was given. A wait that takes the current time plus the wait past 2^48 seconds
+    ///         makes every announcement and addition revert until it is lowered.
     /// @param next The new wait, in seconds.
     function setModuleDelay(uint48 next) external;
 
@@ -58,6 +63,11 @@ interface IModuleSlots {
     /// @param module The module: nonzero, with code.
     function proposeModule(bytes32 slot, address module) external;
 
+    /// @notice Withdraws the announcement for `slot`; the installed module stays. The admin only.
+    ///         Reverts with `ModuleNotReady` if nothing is announced.
+    /// @param slot The slot.
+    function cancelModule(bytes32 slot) external;
+
     /// @notice Installs the module announced for `slot` once its wait has passed. Anyone.
     /// @param slot The slot.
     function activateModule(bytes32 slot) external;
@@ -75,6 +85,8 @@ interface IModules is IModuleSlots {
     /// @param activeFrom When it may first mint.
     event MinterAdded(address indexed minter, uint48 activeFrom);
     /// @notice A minter was removed: it mints nothing new. It still finishes what it started.
+    ///         Removed before it was ever active (before its first `activeFrom`), its record is
+    ///         deleted instead: a cancelled addition, which never counts as a minter.
     /// @param minter The minter.
     event MinterRemoved(address indexed minter);
 
@@ -98,7 +110,9 @@ interface IModules is IModuleSlots {
     /// @param minter The minter: nonzero, with code.
     function addMinter(address minter) external;
 
-    /// @notice Removes a minter at once. The network only.
+    /// @notice Removes a minter at once. The network only. A minter that was never active loses
+    ///         its record (a cancellation); one that was active keeps it, with `removedAt`, and
+    ///         finishes the sales it started.
     /// @param minter An added minter that is not removed.
     function removeMinter(address minter) external;
 }
