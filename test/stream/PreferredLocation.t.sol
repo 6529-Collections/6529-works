@@ -230,6 +230,33 @@ contract PreferredLocationTest is RecordsFixture {
         vm.stopPrank();
     }
 
+    /// @dev The dead check reads the locator's own bit: a dead locator cannot be marked again
+    ///      or preferred, a live one beside it can.
+    function test_delivery_theDeadCheckReadsTheLocatorsOwnBit() public {
+        (uint256 tokenId, bytes32 file,,) = _workWithLocators(3, 0, 0, false, false);
+        vm.startPrank(storageOperator);
+        delivery.markLocatorDead(tokenId, file, 1);
+        vm.expectRevert(IWorkLocators.InvalidLocator.selector);
+        delivery.markLocatorDead(tokenId, file, 1);
+        vm.expectRevert(IWorkLocators.InvalidLocator.selector);
+        delivery.setFilePreference(tokenId, file, 1);
+        delivery.setFilePreference(tokenId, file, 0);
+        delivery.setFilePreference(tokenId, file, 2);
+        vm.stopPrank();
+        assertEq(delivery.deadLocators(tokenId, file), 2);
+    }
+
+    /// @dev Who added each locator is recorded at every index up to the last: here the
+    ///      artist's first locator lands at index 8, after the platform's eight.
+    function test_delivery_recordsTheArtistsLocatorAtAHighIndex() public {
+        (uint256 tokenId, bytes32 file,,) = _workWithLocators(9, 0, 1 << 8, false, false);
+        (uint256 artistCount, uint256 platformCount, uint256 byArtist) =
+            delivery.locatorCounts(tokenId, file);
+        assertEq(artistCount, 1);
+        assertEq(platformCount, 8);
+        assertEq(byArtist, 1 << 8);
+    }
+
     function test_delivery_supportsOnlyTheExactIds() public view {
         bytes4[3] memory ids = [
             type(IWorkDelivery).interfaceId,
