@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- The plain permanent core ([ADR 0010](docs/adr/0010-plain-permanent-core.md)), lane 7:
+  a three-page entry point, [docs/overview.md](docs/overview.md); the spec, integrator,
+  governance and audit pages rewritten for the core and cut (about 12,700 lines of Markdown, net,
+  removed); every waiting period in a permanent contract described as a network setting with a
+  launch value, never a guarantee; dated amendment notes on ADRs 0001, 0004, 0007, 0008 and 0009;
+  ADR 0004's start gate is 370,000 Prague gas and 8 new slots. Removed pages: the threat model
+  (folded into trust assumptions), build-and-test (in the quickstart, Testing and AGENTS.md), the
+  integrators' storage page, the generated mutation log, the October 2026 internal review and the
+  two release-candidate notes (all kept in git history; release facts now come from this
+  changelog), and `ops/DELIVERY_PLAN.md`. New deploy library `script/DeployCore.sol` with
+  readback, the genesis policy `config/genesis.core.example.json`, a 3,000-byte size floor for
+  `src/core/`, and `tools/check_comment_codes.py`, which lists internal codes in comments.
+
 - Developer path: a [quickstart](docs/quickstart.md) from clone to a local run, with measured
   build and test times; `script/local/walkthrough.sh`, which deploys on anvil with test accounts,
   accepts, verifies and sells one work end to end (store, curate, accept, start with a bid,
@@ -429,7 +442,7 @@
 - Release candidate 2, pre-audit and not production-ready: the code deployed as Sepolia
   rehearsal r4 (`1e7022b`; `src/`, the deploy and verify scripts, the genesis policy and
   `foundry.toml` have not changed since). The release notes,
-  [docs/releases/v1.0.0-rc.2.md](docs/releases/v1.0.0-rc.2.md), are linked from the README's
+  docs/releases/v1.0.0-rc.2.md, are linked from the README's
   status table and the docs index, and `docs/facts.json` names the release. The README's status
   table, the delivery plan's status, the testing guide's test counts and the auditor pack's
   Sepolia entry are brought to rc.2. The entries below are grouped by area, newest first in each
@@ -546,7 +559,7 @@
   selector and event that carries a `PackageItem` changed (`createEdition` is `0x26c8844c`), and
   with them the interface IDs of `IWorkRecords`, `IEditions`, `IPackageRegistry` and
   `IEntropyModule`
-  ([docs/integrators/abis-and-interface-ids.md](docs/integrators/abis-and-interface-ids.md#changes-since-the-sepolia-r3-build)).
+  (docs/integrators/abis-and-interface-ids.md).
 - Sales: the fixed-price and Dutch adapters are deleted (ADR 0005, decision 8): `FixedPriceSale`,
   `DutchSale`, `MintSaleBase`, `DutchPricing`, their interfaces and typehashes,
   `Limits.MAX_PHASES`, and their tests, mocks and invariant suites. The specification retires
@@ -841,7 +854,7 @@
   about 45 seconds to the "other invariants" CI job. Mutation and coverage floors for the
   edition auction's contracts follow their first weekly and `main` runs.
 - Tests: the mutation baseline's 78 open gaps are closed
-  ([docs/testing/mutation-baseline.md](docs/testing/mutation-baseline.md)). 51 new and 4
+  (docs/testing/mutation-baseline.md). 51 new and 4
   extended tests kill 69 of them (one-sided hash and code-hash comparisons, boundary seconds,
   answers an arbitrary token or resolver may give, costly inputs such as a work with every
   trait slot filled); 2 are re-triaged as equivalent and 1 as defensive, and 6 mutated code #66
@@ -854,7 +867,7 @@
   paid by Permit2 still asks Permit2 to move 0 tokens.
 - Tests: the mutation baseline's last four contracts, Editions, FixedPriceSale, MintSaleBase
   and GovernanceConfig
-  ([docs/testing/mutation-baseline.md](docs/testing/mutation-baseline.md)). The baseline now
+  (docs/testing/mutation-baseline.md). The baseline now
   covers 11,735 mutants in 50 contracts: 88.2% killed by the campaign, 90.0% by the final
   suite, 98.3% leaving out the equivalent mutants. 10 new and 6 extended tests close the gaps
   the four shards found (interface IDs below the supported ones, a consent's deadline second, a
@@ -867,14 +880,14 @@
 
 - Release candidate 1, pre-audit and not production-ready: the code deployed as Sepolia
   rehearsal r3. The release notes,
-  [docs/releases/v1.0.0-rc.1.md](docs/releases/v1.0.0-rc.1.md), are linked from the README's
+  docs/releases/v1.0.0-rc.1.md, are linked from the README's
   status table and the docs index. ADR 0004's Sepolia column gives the r3 receipts (an
   amendment note; rows r3 has not run keep r2's receipt or show r3's simulation, marked, and
   r2's column is kept below the table), and the known limitations quote r3. The fork tests take
   r3's inputs: the deploy simulation uses r3's record, holders and manifest, and the VRF test
   the code hash r3 pinned. The delivery plan's status is rewritten for the release.
 - Tests: the first full mutation baseline
-  ([docs/testing/mutation-baseline.md](docs/testing/mutation-baseline.md)). 9,606 mutants of
+  (docs/testing/mutation-baseline.md). 9,606 mutants of
   `src/` at 054442d, 88.5% killed by the campaign and 90.4% by the final suite (98.1% leaving
   out the equivalent mutants), with every survivor triaged as equivalent, a gas margin,
   defensive, caught by a Halmos proof, or a missing test. 62 new and 38 extended tests close
