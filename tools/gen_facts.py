@@ -5,10 +5,11 @@ Nothing in the file is written by hand. Every value is read from the source that
 
   - deployed addresses: the newest deployment record of each network under deployments/, with
     the instance's date and source commit from that network's deployments README;
-  - governed parameters and their launch defaults: the deploy script's defaults
-    (`script/Deploy.s.sol`) and the contracts' constants and bounds under src/; the edition
-    auction's launch configuration from `DeployV1.editionAuctionDefaults`, checked against ADR
-    0005 §4 and the step ladder's defaults in code;
+  - governed parameters and their launch defaults: the deploy library's genesis configuration
+    (`DeployCore.auctionConfig` and `DeployCore.editionAuctionConfig` in script/DeployCore.sol,
+    the increment floor in script/ScriptIO.sol) and the contracts' constants and bounds under
+    src/; the edition auction's launch configuration is checked against ADR 0005 §4 and the step
+    ladder's defaults in code;
   - gas: ADR 0004's table (docs/adr/0004-gas-budgets-under-glamsterdam.md), with the labels the
     table's preface gives its columns;
   - collection names and symbols: the token contracts' sources;
@@ -43,15 +44,16 @@ SCHEMA = "6529-works/facts/1"
 README = "README.md"
 CHANGELOG = "CHANGELOG.md"
 DEPLOYMENTS = "deployments"
-DEPLOY_SCRIPT = "script/Deploy.s.sol"
+DEPLOY_SCRIPT = "script/ScriptIO.sol"
 ADR_0004 = "docs/adr/0004-gas-budgets-under-glamsterdam.md"
 GAS_TABLE_HEADING = "### The table"
 ADR_0005 = "docs/adr/0005-stream-editions-auction.md"
 EDITION_PARAMETERS_HEADING = "### 4. Governed parameters and delay classes"
 STEP_LADDER = "src/interfaces/types/StepLadder.sol"
 EDITION_AUCTION = "src/sales/UniformEditionAuction.sol"
-EDITIONS = "src/editions/Editions.sol"
-DEPLOY_LIBRARY = "script/DeployV1.sol"
+EDITIONS = "src/core/Editions.sol"
+STREAM = "src/core/Stream.sol"
+DEPLOY_LIBRARY = "script/DeployCore.sol"
 
 # ADR 0005 §4's rows for the edition auction's `AuctionConfig`, by name (less any parenthetical).
 EDITION_ROWS = {
@@ -207,13 +209,27 @@ class Constants:
         return hits[0]
 
 
-def deploy_default(root: Path, env: str) -> int:
-    """The launch default the deploy script uses when the environment does not set `env`."""
-    source = strip_comments(read(root, DEPLOY_SCRIPT))
-    m = re.search(r'_envUint\(\s*"' + re.escape(env) + r'"\s*,\s*([^)]+?)\s*\)', source)
+def deploy_default(root: Path, name: str) -> int:
+    """A launch value genesis deploys: a field of `DeployCore.auctionConfig()` (the English
+    auction's `AuctionConfig`, written positionally), or the ETH increment floor the deploy
+    parameters set (`p.ethIncrementFloor` in script/ScriptIO.sol)."""
+    if name == "ETH_INCREMENT_FLOOR":
+        source = strip_comments(read(root, DEPLOY_SCRIPT))
+        m = re.search(r"\bp\.ethIncrementFloor\s*=\s*([^;]+);", source)
+        if not m:
+            raise FactError(f"{DEPLOY_SCRIPT}: no ethIncrementFloor")
+        return literal(m.group(1))
+    source = strip_comments(read(root, DEPLOY_LIBRARY))
+    m = re.search(r"function auctionConfig\b.*?AuctionConfig\(([^()]*)\)", source, re.S)
     if not m:
-        raise FactError(f"{DEPLOY_SCRIPT}: no default for {env}")
-    return literal(m.group(1))
+        raise FactError(f"{DEPLOY_LIBRARY}: no auctionConfig")
+    values = [v.strip() for v in m.group(1).split(",")]
+    order = ["AUCTION_DURATION", "AUCTION_EXTENSION_WINDOW", "AUCTION_INCREMENT_SHARE", "REFUSAL_GAS"]
+    if len(values) != len(order):
+        raise FactError(f"{DEPLOY_LIBRARY}: auctionConfig sets {len(values)} fields")
+    if name not in order:
+        raise FactError(f"{DEPLOY_LIBRARY}: no launch value {name}")
+    return literal(values[order.index(name)])
 
 
 def ratio(value: int, denominator: int) -> dict:
@@ -367,7 +383,7 @@ def parameters(root: Path) -> dict:
     return {
         "denominator": denominator,
         "oneOfOneAuction": {
-            "source": [DEPLOY_SCRIPT, auction],
+            "source": [DEPLOY_LIBRARY, DEPLOY_SCRIPT, auction],
             "governedBy": "PARAMETER_SETTER",
             "durationSeconds": {
                 "default": deploy_default(root, "AUCTION_DURATION"),
@@ -389,7 +405,7 @@ def parameters(root: Path) -> dict:
                 "default": str(deploy_default(root, "ETH_INCREMENT_FLOOR")),
                 "governedBy": "FUNDS_SETTER",
             },
-            "maxDisputePauseSeconds": c.integer(auction, "_MAX_PAUSE"),
+            "maxDisputePauseSeconds": c.integer(auction, "MAX_PAUSE"),
         },
         "editionAuction": edition_auction(root, c, denominator),
         "economics": {
@@ -405,6 +421,16 @@ def parameters(root: Path) -> dict:
             "chunkSizeBytes": c.integer("src/content/ContentStore.sol", "CHUNK_SIZE"),
             "inlineThresholdBytes": c.integer("src/content/Renderer.sol", "DEFAULT_INLINE_THRESHOLD"),
         },
+        # The four waiting periods of the permanent contracts (ADR 0010): network settings, each
+        # changed by the network at once; these are the values genesis sets.
+        "networkSettingsSeconds": {
+            "source": [DEPLOY_LIBRARY],
+            "governedBy": "NETWORK",
+            "moduleDelay": c.integer(DEPLOY_LIBRARY, "LAUNCH_MODULE_DELAY"),
+            "rescueDelay": c.integer(DEPLOY_LIBRARY, "LAUNCH_RESCUE_DELAY"),
+            "rebindDelay": c.integer(DEPLOY_LIBRARY, "LAUNCH_REBIND_DELAY"),
+            "unclaimedPeriod": c.integer(DEPLOY_LIBRARY, "LAUNCH_UNCLAIMED_PERIOD"),
+        },
         "governanceDelaysSeconds": {
             "source": ["src/governance/Roles.sol"],
             "immediate": 0,
@@ -418,7 +444,7 @@ def parameters(root: Path) -> dict:
 
 def edition_auction(root: Path, c: Constants, denominator: int) -> dict:
     """The edition auction's governed configuration: the launch values genesis deploys
-    (`DeployV1.editionAuctionDefaults`), which ADR 0005 §4 and the step ladder's code defaults
+    (`DeployCore.editionAuctionConfig`), which ADR 0005 §4 and the step ladder's code defaults
     must equal, and the bounds fixed in code."""
     launch = _deploy_edition_defaults(root)
     limits = _deploy_edition_limits(root)
@@ -501,26 +527,27 @@ def edition_auction(root: Path, c: Constants, denominator: int) -> dict:
 
 
 def _deploy_edition_defaults(root: Path) -> dict:
-    """`DeployV1.editionAuctionDefaults()`: the `AuctionConfig` genesis deploys."""
+    """The `AuctionConfig` of `DeployCore.editionAuctionConfig()`, the one genesis deploys."""
     source = strip_comments(read(root, DEPLOY_LIBRARY))
-    m = re.search(r"function editionAuctionDefaults\b.*?AuctionConfig\(\{(.*?)\}\)", source, re.S)
+    m = re.search(r"function editionAuctionConfig\b.*?AuctionConfig\(\{(.*?)\}\)", source, re.S)
     if not m:
-        raise FactError(f"{DEPLOY_LIBRARY}: no editionAuctionDefaults")
+        raise FactError(f"{DEPLOY_LIBRARY}: no editionAuctionConfig")
     fields = dict(re.findall(r"(\w+)\s*:\s*([^,]+?)\s*(?:,|$)", m.group(1).strip()))
     if set(fields) != set(EDITION_ROWS):
-        raise FactError(f"{DEPLOY_LIBRARY}: editionAuctionDefaults sets {sorted(fields)}")
+        raise FactError(f"{DEPLOY_LIBRARY}: editionAuctionConfig sets {sorted(fields)}")
     return {key: literal(value) for key, value in fields.items()}
 
 
 def _deploy_edition_limits(root: Path) -> dict:
-    """`DeployV1.editionAuctionLimits()`: the governed limits genesis deploys (ADR 0005 §14)."""
+    """The `Limits` of `DeployCore.editionAuctionConfig()`: the governed limits genesis deploys
+    (ADR 0005 §14)."""
     source = strip_comments(read(root, DEPLOY_LIBRARY))
-    m = re.search(r"function editionAuctionLimits\b.*?Limits\(\{(.*?)\}\)", source, re.S)
+    m = re.search(r"function editionAuctionConfig\b.*?Limits\(\{(.*?)\}\)", source, re.S)
     if not m:
-        raise FactError(f"{DEPLOY_LIBRARY}: no editionAuctionLimits")
+        raise FactError(f"{DEPLOY_LIBRARY}: no edition auction Limits")
     fields = dict(re.findall(r"(\w+)\s*:\s*([^,]+?)\s*(?:,|$)", m.group(1).strip()))
     if set(fields) != {"payoutGas"}:
-        raise FactError(f"{DEPLOY_LIBRARY}: editionAuctionLimits sets {sorted(fields)}")
+        raise FactError(f"{DEPLOY_LIBRARY}: the edition auction Limits set {sorted(fields)}")
     return {key: literal(value) for key, value in fields.items()}
 
 
@@ -561,10 +588,10 @@ def _launch_value(key: str, cell: str) -> int:
 
 
 def collections(root: Path) -> list[dict]:
-    stream = strip_comments(read(root, "src/stream/Stream.sol"))
-    m = re.search(r'\bERC721\(\s*"([^"]+)"\s*,\s*"([^"]+)"\s*\)', stream)
+    stream = strip_comments(read(root, STREAM))
+    m = re.search(r'\bStreamBase\(\s*"([^"]+)"\s*,\s*"([^"]+)"', stream)
     if not m:
-        raise FactError("src/stream/Stream.sol: no ERC721(name, symbol)")
+        raise FactError(f"{STREAM}: no StreamBase(name, symbol, ...)")
     c = Constants(root)
     return [
         {"contract": "Stream", "standard": "ERC-721", "name": m.group(1), "symbol": m.group(2)},

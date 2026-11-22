@@ -78,7 +78,8 @@
     "denominator": 100000,
     "oneOfOneAuction": {
       "source": [
-        "script/Deploy.s.sol",
+        "script/DeployCore.sol",
+        "script/ScriptIO.sol",
         "src/sales/EnglishAuction.sol"
       ],
       "governedBy": "PARAMETER_SETTER",
@@ -106,8 +107,8 @@
     },
     "editionAuction": {
       "source": [
-        "script/DeployV1.sol",
-        "script/Deploy.s.sol",
+        "script/DeployCore.sol",
+        "script/ScriptIO.sol",
         "docs/adr/0005-stream-editions-auction.md",
         "src/interfaces/types/StepLadder.sol",
         "src/sales/UniformEditionAuction.sol"
@@ -210,6 +211,16 @@
       "maxChunks": 4096,
       "chunkSizeBytes": 24575,
       "inlineThresholdBytes": 262144
+    },
+    "networkSettingsSeconds": {
+      "source": [
+        "script/DeployCore.sol"
+      ],
+      "governedBy": "NETWORK",
+      "moduleDelay": 604800,
+      "rescueDelay": 1209600,
+      "rebindDelay": 1209600,
+      "unclaimedPeriod": 15552000
     },
     "governanceDelaysSeconds": {
       "source": [
