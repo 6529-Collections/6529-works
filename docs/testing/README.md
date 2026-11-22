@@ -376,7 +376,12 @@ python tools/mutation.py report mutation --markdown mutation/report.md
   `storage` read as `memory`, a `constant` read as `immutable`); every other file runs all
   fifteen. On those files the
   relational shard makes two replacements per comparison (the boundary shift and the equality
-  flip, which subsume the other three) instead of five. Each mutant runs the tests of its
+  flip, which subsume the other three) instead of five. Seven more files whose single shard
+  does not finish in a job keep every operator and all five relational replacements
+  (`RevenueEscrow`, `SplitLedger`, `FederatedEditions`, `FederatedMembership`, `FederatedStream`,
+  `FederationRegistry`, `WorkDelivery`; `FULL_SPLIT_FILES`): they run as five shards, the four
+  groups plus the eight operators the others skip, so their mutants are exactly a single
+  shard's and their floors were measured on the same mutants. Each mutant runs the tests of its
   module first, under the `lite` profile with `--fail-fast`; every survivor then runs against
   the whole suite, so a mutant an integration test kills counts as killed. A mutant whose
   tests time out (20 minutes) counts as killed, as slither-mutate counts it; the report
@@ -434,6 +439,20 @@ past the input's end; a token that refuses `approve` by
 reverting, returns more than one word, or sets the upper bits of its `true`, and balances above
 2**128; the resolver's bounds on each side; and CC0 license texts either side of the pinned
 one.
+
+**Second campaign (21 to 22 November 2026).** The files the permanence passes added had no
+floor, and the permanent contracts the second pass rewrote had stale ones. A second campaign on
+eac9dd2e measured 19 files (two with nothing to mutate) in about 153 hours of shard time on 22
+checkouts: 5,093 mutants, 4,518 killed by the campaign (88.7%) and 4,819 by the final suite
+(94.6%), every remaining survivor argued equivalent, gas-only or defensive. It set or raised
+their floors; its tables and the triage of every survivor are in
+[mutation-baseline.md](mutation-baseline.md#second-campaign-21-to-22-november-2026). It wrote
+107 new tests, and extended about 26, for its gaps, each run against the mutant it kills. None
+of its survivors was a defect in a contract; three were access checks no test pinned
+(`ArtistRegistry.resolveContested`, `FederationRegistry.setStatus`, and `FederatedStream`'s
+`setLocator` and `setDefaultRenderer`), now pinned. It did not reach every stale floor, and two
+of its shards ran longer than the weekly job allows: see
+[what it did not reach](mutation-baseline.md#not-reached).
 
 ## Symbolic proofs (Halmos)
 
@@ -669,9 +688,8 @@ survivors, and only a lying mock of a trusted contract the defensive ones.
   the shared edition auction base), GV-18 (every governed setter emits old and new values) and
   GV-20 (dependency checks across setters). The 30
   declaration rules are off-chain conventions ([rule traceability](#rule-traceability)).
-- **Unmeasured code.** Fourteen implementation files have no mutation floor, among them
-  `SplitLedger`, `SplitVault`, `GovernedVault`, `WorkDelivery`, `StreamViews`, `StreamLayout`,
-  `SaleStarter` and the seven federated contracts. Since 21 November 2026 every src/ file with
-  executable code has its own coverage floor ([coverage](#coverage)). One trial,
-  `GovernedVault` on 93d10d42's code, killed 91 of 101 mutants (about 84 s a mutant); its ten
-  survivors are not yet triaged ([mutation testing](#mutation-testing)).
+- **Mutation floors.** Every file the weekly run mutates has a floor. Four permanent files
+  (`WorkRecords`, `Editions`, `StatementLog`, `ContentStore`) and nine replaceable ones keep
+  first-campaign floors measured before later rewrites, and `Stream` and `GovernanceConfig`
+  were re-measured only in part ([not reached](mutation-baseline.md#not-reached)). Since 21 November 2026 every src/ file
+  with executable code has its own coverage floor ([coverage](#coverage)).
