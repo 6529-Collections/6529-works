@@ -359,6 +359,8 @@ contract FederatedSaleTest is FederationBase {
         fed.mint(address(auction), 1, 1, data);
         vm.expectRevert(IMintTarget.InvalidMintRequest.selector);
         fed.mint(address(auction), 0, 2, data);
+        vm.expectRevert(IMintTarget.InvalidMintRequest.selector);
+        fed.mint(address(auction), 0, 0, data);
         vm.stopPrank();
         assertEq(fed.liveTokenOf(1), 0, "no work opened");
     }

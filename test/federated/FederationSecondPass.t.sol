@@ -306,6 +306,30 @@ contract FederationSecondPassTest is FederationBase {
         assertEq(fed.work(tokenId).seller, splitFactory.walletFor(w.item.payees, 0));
     }
 
+    /// @dev With several collaborators each consent is checked against its own party, in order:
+    ///      the consents in party order mint, and the same consents swapped are refused.
+    function test_Collaborators_EachPartyConsentsInItsOwnPosition() public {
+        address collab2 = _actor("secondCollaborator");
+        Work memory w = _withCollaborator(_fedWork(fedArtist));
+        Party[] memory parties = new Party[](3);
+        (parties[0], parties[1]) = (w.item.parties[0], w.item.parties[1]);
+        parties[2] = Party(collab2, uint8(PartyRole.COLLABORATOR));
+        w.item.parties = parties;
+        vm.prank(fedArtist);
+        fed.approveItem(_itemHash(w), RATE);
+        bytes[] memory consents = new bytes[](2);
+        consents[0] = _consent(collab2, address(fed), w)[0];
+        consents[1] = _consent(collab, address(fed), w)[0];
+        bytes memory swapped = _mintData(w, consents);
+        vm.expectRevert(
+            abi.encodeWithSelector(SignatureVerifier.InvalidSignature.selector, collab2)
+        );
+        auction.start(address(fed), swapped);
+        (consents[0], consents[1]) = (consents[1], consents[0]);
+        uint256 saleId = auction.start(address(fed), _mintData(w, consents));
+        assertGt(saleId, 0);
+    }
+
     /// @dev Consent is counted by account: any wallet of the collaborator's consolidated account
     ///      signs (the artist registry answers `isWallet`).
     function test_Collaborators_AnyWalletOfTheAccountConsents() public {

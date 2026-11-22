@@ -136,8 +136,13 @@ contract FederatedRecordTest is FederationBase {
             abi.encodeWithSelector(IFederatedStream.NotMintingAdapter.selector, address(this))
         );
         fed.burn(tokenId, 1);
-        vm.prank(address(auction));
+        vm.startPrank(address(auction));
+        vm.expectRevert(IMintTarget.InvalidMintRequest.selector);
+        fed.burn(tokenId, 0);
+        vm.expectRevert(IMintTarget.InvalidMintRequest.selector);
+        fed.burn(tokenId, 2);
         fed.burn(tokenId, 1);
+        vm.stopPrank();
         assertEq(fed.liveTokenOf(1), 0);
         vm.expectRevert(abi.encodeWithSelector(IFederatedStream.UnknownWork.selector, tokenId));
         fed.work(tokenId);
@@ -169,6 +174,11 @@ contract FederatedRecordTest is FederationBase {
         fed.settlePrimary(tokenId, PrimaryOutcome.UNBID, collector, address(0), 0);
         vm.expectRevert(invalid);
         fed.settlePrimary(tokenId, PrimaryOutcome.FROZEN_OUT, address(0), address(0), 1);
+        // NONE is never a sale, even with a buyer; RESCUED is no outcome of this template.
+        vm.expectRevert(invalid);
+        fed.settlePrimary(tokenId, PrimaryOutcome.NONE, collector, address(0), 1);
+        vm.expectRevert(invalid);
+        fed.settlePrimary(tokenId, PrimaryOutcome.RESCUED, address(0), address(0), 0);
         vm.stopPrank();
         (,, uint8 state) = fed.tokenInfo(tokenId);
         assertEq(state, 1, "still in sale");
