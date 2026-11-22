@@ -3,18 +3,34 @@ pragma solidity ^0.8.24;
 
 import { Test } from "forge-std/Test.sol";
 import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
-import { ArtistRegistry } from "src/identity/ArtistRegistry.sol";
+import { Accounts } from "src/identity/Accounts.sol";
 import { ConsolidationAdapter, IDelegationManagement } from "src/identity/ConsolidationAdapter.sol";
 import { ArtistIdentity } from "src/interfaces/types/IdentityTypes.sol";
 import { DelegationManagementMock } from "../mocks/identity/DelegationManagementMock.sol";
-import { PackageRegistryStub } from "../mocks/identity/IdentityWorksMocks.sol";
+import {
+    DisputeOutcomeLogMock,
+    PackageRegistryStub,
+    SplitFactoryWalletsMock
+} from "../mocks/identity/IdentityWorksMocks.sol";
+
+/// @notice A directory whose module slots the test sets: `Accounts` asks it for the federation
+///         module (the only `registerFederated` caller).
+contract DirectoryStub {
+    mapping(bytes32 slot => address) public moduleOf;
+
+    function setModule(bytes32 slot, address module) external {
+        moduleOf[slot] = module;
+    }
+}
 
 /// @notice Shared setup for the identity tests: an AccessManager whose one network role holds
-///         every restricted selector of the registry with no delay (the delay classes are the
-///         governance lane's), the delegation-contract mock, the consolidation adapter and the
-///         registry with its package registry bound (genesis wiring), plus one registered artist
-///         whose root `artist` is consolidated (both ways, all collections) with `wallet`.
-abstract contract IdentityFixture is Test {
+///         every restricted selector of `Accounts` with no delay, the delegation-contract mock,
+///         the consolidation adapter, and the accounts module deployed with its wiring (a
+///         directory stub, stand-in Stream and Editions addresses, a split factory whose vaults
+///         the test sets, a statement log whose outcomes the test sets, a package registry), plus
+///         one registered artist whose root `artist` is consolidated (both ways, all
+///         collections) with `wallet`.
+abstract contract AccountsFixture is Test {
     /// @dev The network's role in these tests.
     uint64 internal constant NETWORK = 1;
 
@@ -26,8 +42,13 @@ abstract contract IdentityFixture is Test {
     AccessManager internal manager;
     DelegationManagementMock internal delegation;
     ConsolidationAdapter internal adapter;
-    ArtistRegistry internal registry;
+    Accounts internal registry;
+    DirectoryStub internal directory;
+    SplitFactoryWalletsMock internal factory;
+    DisputeOutcomeLogMock internal outcomes;
     address internal packageRegistry;
+    address internal streamAddr = makeAddr("stream");
+    address internal editionsAddr = makeAddr("editions");
 
     address internal admin = makeAddr("admin");
     address internal network = makeAddr("network");
@@ -61,29 +82,46 @@ abstract contract IdentityFixture is Test {
         manager = new AccessManager(admin);
         delegation = new DelegationManagementMock();
         adapter = new ConsolidationAdapter(IDelegationManagement(address(delegation)));
-        registry = new ArtistRegistry(address(manager), adapter, address(adapter).codehash);
+        directory = new DirectoryStub();
+        factory = new SplitFactoryWalletsMock();
         packageRegistry = address(new PackageRegistryStub());
+        address predicted = vm.computeCreateAddress(address(this), vm.getNonce(address(this)) + 1);
+        outcomes = new DisputeOutcomeLogMock(predicted);
+        registry = _deploy(address(outcomes));
+        assertEq(address(registry), predicted, "predicted accounts address");
         _configureRoles(address(registry));
-        vm.prank(admin);
-        registry.bindPackageRegistry(packageRegistry);
 
         _consolidate(artist, wallet);
         artistId = _register(artist);
     }
 
+    /// @dev An accounts module with this fixture's wiring and the given statement log.
+    function _deploy(address statementLog) internal returns (Accounts) {
+        return new Accounts(
+            address(manager),
+            adapter,
+            address(adapter).codehash,
+            Accounts.Wiring(
+                address(directory),
+                streamAddr,
+                editionsAddr,
+                address(factory),
+                statementLog,
+                packageRegistry
+            )
+        );
+    }
+
     function _configureRoles(address target) internal {
-        bytes4[] memory s = new bytes4[](11);
-        s[0] = ArtistRegistry.stageReplacement.selector;
-        s[1] = ArtistRegistry.cancelReplacement.selector;
-        s[2] = ArtistRegistry.resolveContested.selector;
-        s[3] = ArtistRegistry.freeze.selector;
-        s[4] = ArtistRegistry.unfreeze.selector;
-        s[5] = ArtistRegistry.setFederationDelisted.selector;
-        s[6] = ArtistRegistry.lowerFederatedFeeShare.selector;
-        s[7] = ArtistRegistry.setConsolidationSource.selector;
-        s[8] = ArtistRegistry.setPackageRegistry.selector;
-        s[9] = ArtistRegistry.setFederationRegistry.selector;
-        s[10] = ArtistRegistry.cancelOwnChange.selector;
+        bytes4[] memory s = new bytes4[](8);
+        s[0] = Accounts.stageReplacement.selector;
+        s[1] = Accounts.cancelReplacement.selector;
+        s[2] = Accounts.resolveContested.selector;
+        s[3] = Accounts.freeze.selector;
+        s[4] = Accounts.unfreeze.selector;
+        s[5] = Accounts.setConsolidationSource.selector;
+        s[6] = Accounts.setPackageRegistry.selector;
+        s[7] = Accounts.cancelOwnChange.selector;
         vm.startPrank(admin);
         manager.setTargetFunctionRole(target, s, NETWORK);
         manager.grantRole(NETWORK, network, 0);
@@ -138,7 +176,7 @@ abstract contract IdentityFixture is Test {
         bytes32 digest =
             registry.changeDigest(artistId, next, registry.changeNonce(artistId), deadline);
         return abi.encodeCall(
-            ArtistRegistry.stageChange, (artistId, next, deadline, _proof(signerKey, digest))
+            Accounts.stageChange, (artistId, next, deadline, _proof(signerKey, digest))
         );
     }
 
@@ -162,7 +200,7 @@ abstract contract IdentityFixture is Test {
         bytes memory acceptance =
             _sign(acceptKey, registry.replacementDigest(artistId, next, EVIDENCE, deadline));
         return abi.encodeCall(
-            ArtistRegistry.stageReplacement, (artistId, next, EVIDENCE, deadline, acceptance)
+            Accounts.stageReplacement, (artistId, next, EVIDENCE, deadline, acceptance)
         );
     }
 

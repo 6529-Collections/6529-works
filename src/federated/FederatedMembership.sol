@@ -1,213 +1,83 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
-import { ISplitFactory } from "../economics/interfaces/ISplitFactory.sol";
-import { ISplitWallet } from "../economics/interfaces/ISplitWallet.sol";
-import { Splits } from "../economics/Splits.sol";
-import { IAccounts } from "../interfaces/IAccounts.sol";
-import { IArtistRegistry } from "../interfaces/IArtistRegistry.sol";
-import { IFederatedToken } from "../interfaces/IFederatedToken.sol";
-import { IFederationRegistry } from "../interfaces/IFederationRegistry.sol";
-import { Dependency } from "../libraries/Dependency.sol";
+import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
+import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
+import { IFederatedMembership } from "../interfaces/IFederatedMembership.sol";
+import { Slots } from "../interfaces/core/CoreTypes.sol";
+import { IAccounts } from "../interfaces/core/IAccounts.sol";
+import { IFederationGate } from "../interfaces/core/IFederationGate.sol";
+import { IModuleSlots } from "../interfaces/core/IModules.sol";
 
 /// @title FederatedMembership
-/// @notice What both federated templates share: the terms fixed at deployment, the artist's
-///         authority, joining the federation, minter admission and marketplace metadata (FED-1
-///         to FED-7 in `docs/spec/federation.md`). A contract that joined stays in the
-///         federation for good: there is no way out, and it mints only through the adapters the
-///         current federation registry admits.
-/// @dev Source shared by inheritance, never deployed logic. No immutables: every value is in
-///      storage, so each template version has one runtime code hash. Every call out is a plain
-///      call, which forwards all the gas EIP-150 allows and reverts the whole transaction on any
-///      failure, so no shortfall is ever read as an answer.
-abstract contract FederatedMembership is IFederatedToken {
-    /// @dev The canonical artist registry: it answers who acts for the artist (`IAccounts`).
-    address internal _artistRegistry;
-    /// @dev The canonical split ledger: every payout vault's factory.
-    address internal _splitLedger;
-    /// @dev Slot: the artist, the network share and whether the contract joined.
-    uint160 internal _artistId;
-    uint32 internal _feeShare;
-    bool private _joined;
-    address internal _feeRecipient;
-    address internal _partner;
-    address private _owner;
-    string private _contractURI;
+/// @notice What both federated token contracts share: the artist, the permanent directory, and
+///         the answers the token bases' hooks need from them (ADR 0010: the same plain token
+///         with a different gate).
+/// @dev Inherited source, never deployed alone. Every answer is a plain call to the directory or
+///      to a module it names; a failing call reverts the whole call, so no default is ever read
+///      from a failure. The one exception is a missing module: an empty FEDERATION slot answers
+///      "may not mint" and "never removed", so a missing gate stops minting only.
+abstract contract FederatedMembership is IFederatedMembership {
+    /// @inheritdoc IFederatedMembership
+    address public immutable directory;
+    /// @inheritdoc IFederatedMembership
+    uint256 public immutable artistId;
 
-    /// @param artistRegistry_ The artist registry (code, not EIP-7702 delegated).
-    /// @param splitLedger_ The split ledger (likewise).
-    /// @param artistId_ The artist, nonzero and below 2^160.
-    /// @param feeShare_ The network share, below 100,000.
-    /// @param feeRecipient_ The network fee recipient, nonzero with a nonzero share.
-    /// @param partner_ The other half of a pair, or zero.
-    /// @param owner_ The marketplace owner.
-    constructor(
-        address artistRegistry_,
-        address splitLedger_,
-        uint256 artistId_,
-        uint32 feeShare_,
-        address feeRecipient_,
-        address partner_,
-        address owner_
-    ) {
-        if (
-            artistId_ == 0 || artistId_ > type(uint160).max || feeShare_ >= Splits.DENOMINATOR
-                || (feeShare_ != 0 && feeRecipient_ == address(0))
-        ) revert InvalidConfig();
-        Dependency.check(artistRegistry_);
-        Dependency.check(splitLedger_);
-        _artistRegistry = artistRegistry_;
-        _splitLedger = splitLedger_;
-        // Checked above: below 2^160.
-        // forge-lint: disable-next-line(unsafe-typecast)
-        _artistId = uint160(artistId_);
-        _feeShare = feeShare_;
-        _feeRecipient = feeRecipient_;
-        _partner = partner_;
-        _owner = owner_;
-        emit FederationTermsLocked(
-            artistId_, artistRegistry_, splitLedger_, feeShare_, feeRecipient_, partner_
-        );
-        emit OwnershipTransferred(address(0), owner_);
-    }
-
-    // ------------------------------------------------------------------ the federation
-
-    /// @inheritdoc IFederatedToken
-    function joinFederation(IFederationRegistry.Join calldata j) external {
-        _onlyArtist();
-        IArtistRegistry ar = IArtistRegistry(_artistRegistry);
-        (, IArtistRegistry.FederationStatus before) = ar.federatedListing(address(this));
-        if (_joined || before != IArtistRegistry.FederationStatus.NONE) {
-            revert FederationStateInvalid();
+    /// @param directory_ The permanent directory (nonzero).
+    /// @param artistId_ The artist (nonzero, at most 160 bits).
+    constructor(address directory_, uint256 artistId_) {
+        if (directory_ == address(0) || artistId_ == 0 || artistId_ > type(uint160).max) {
+            revert InvalidConfig();
         }
-        address registry = ar.federationRegistry();
-        IFederationRegistry(registry).register(j);
-        (uint256 listedAs, IArtistRegistry.FederationStatus status) =
-            ar.federatedListing(address(this));
-        if (listedAs != _artistId || status != IArtistRegistry.FederationStatus.ACTIVE) {
-            revert FederationStateInvalid();
-        }
-        _joined = true;
-        emit FederationJoined(_artistId, registry, _feeShare, _feeRecipient, _partner);
+        directory = directory_;
+        artistId = artistId_;
     }
 
-    /// @notice Refused, always (`FederationStateInvalid`): `IMintTarget` declares it, and a
-    ///         federated contract has no minters of its own. The federation registry decides.
-    function setAdmittedMinter(address, bool) external pure {
-        revert FederationStateInvalid();
+    /// @dev The directory's module of `slot`, or zero.
+    function _directoryModule(bytes32 slot) internal view returns (address) {
+        return IModuleSlots(directory).moduleOf(slot);
     }
 
-    /// @notice Whether `adapter` may mint now (see `IFederatedToken`): never before joining;
-    ///         after it, as the current federation registry's `canMint` answers.
-    /// @param adapter The sale adapter.
-    /// @return True while it may mint.
-    function isAdmittedMinter(address adapter) public view returns (bool) {
-        return _joined
-            && IFederationRegistry(IArtistRegistry(_artistRegistry).federationRegistry())
-                .canMint(address(this), adapter);
+    /// @dev A shared module of federated tokens: TERMS is the directory's `FEDERATED_TERMS`,
+    ///      RECORDS its `FEDERATED_RECORDS`; any other slot is zero here.
+    function _sharedModule(bytes32 slot) internal view returns (address) {
+        if (slot == Slots.TERMS) return _directoryModule(Slots.FEDERATED_TERMS);
+        if (slot == Slots.RECORDS) return _directoryModule(Slots.FEDERATED_RECORDS);
+        return address(0);
     }
 
-    /// @inheritdoc IFederatedToken
-    function federationTerms()
-        external
-        view
-        returns (address, address, uint256, uint32, address, address)
-    {
-        return (_artistRegistry, _splitLedger, _artistId, _feeShare, _feeRecipient, _partner);
+    /// @dev Whether the federation module lets `account` mint for this token now; false while
+    ///      the FEDERATION slot is empty.
+    function _gateCanMint(address account) internal view returns (bool) {
+        address gate = _directoryModule(Slots.FEDERATION);
+        return gate != address(0) && IFederationGate(gate).canMint(address(this), account);
     }
 
-    /// @inheritdoc IFederatedToken
-    function federationState() external view returns (bool joined) {
-        return _joined;
+    /// @dev When the federation module removed `account` as a sale contract; zero while the
+    ///      FEDERATION slot is empty.
+    function _gateRemovedAt(address account) internal view returns (uint256) {
+        address gate = _directoryModule(Slots.FEDERATION);
+        return gate == address(0) ? 0 : IFederationGate(gate).minterRemovedAt(account);
     }
 
-    // ------------------------------------------------------------------ metadata
-
-    /// @inheritdoc IFederatedToken
-    function setContractURI(string calldata uri) external {
-        _onlyArtist();
-        _contractURI = uri;
-        emit ContractURIUpdated();
-    }
-
-    /// @inheritdoc IFederatedToken
-    function setOwner(address next) external {
-        _onlyArtist();
-        emit OwnershipTransferred(_owner, next);
-        _owner = next;
-    }
-
-    /// @inheritdoc IFederatedToken
-    function contractURI() external view returns (string memory) {
-        return _contractURI;
-    }
-
-    /// @inheritdoc IFederatedToken
-    function owner() external view returns (address) {
-        return _owner;
-    }
-
-    // ------------------------------------------------------------------ internal
-
-    /// @dev Reverts unless the caller is a wallet of the artist's account now
-    ///      (`IAccounts.isWallet`): any wallet of the consolidated account, none while it is
-    ///      frozen, and before the artist has an identity the address that is the artist ID.
-    function _onlyArtist() internal view {
-        if (!IAccounts(_artistRegistry).isWallet(_artistId, msg.sender)) {
+    /// @dev Reverts unless the caller is a wallet of the artist's account now, as the accounts
+    ///      module answers (`IAccounts.isWallet`): any wallet of the consolidated account, none
+    ///      while it is frozen or being replaced. An empty ACCOUNTS slot refuses everyone.
+    function _requireArtist() internal view {
+        address accounts = _directoryModule(Slots.ACCOUNTS);
+        if (accounts == address(0) || !IAccounts(accounts).isWallet(artistId, msg.sender)) {
             revert NotArtist(msg.sender);
         }
     }
 
-    /// @dev Reverts unless the caller may mint now.
-    function _onlyMinter() internal view {
-        if (!isAdmittedMinter(msg.sender)) revert NotAdmittedMinter(msg.sender);
-    }
-
-    /// @dev Whether the directory lists `token` ACTIVE.
-    function _listedActive(address token) internal view returns (bool) {
-        (, IArtistRegistry.FederationStatus status) =
-            IArtistRegistry(_artistRegistry).federatedListing(token);
-        return status == IArtistRegistry.FederationStatus.ACTIVE;
-    }
-
-    /// @dev Whether the contract joined (its partner is then final).
-    function _settled() internal view returns (bool) {
-        return _joined;
-    }
-
-    /// @dev The network's fee terms now: the recipient fixed at deployment and the smaller of
-    ///      the share fixed at deployment and the share the artist registry records for this
-    ///      contract (`IAccounts.federatedFeeShare`, which the network can only lower). The
-    ///      minimum means no answer from anywhere can raise the share above the deployed one.
-    function _feeTerms() internal view returns (address, uint32 share) {
-        share = _feeShare;
-        uint32 recorded = IAccounts(_artistRegistry).federatedFeeShare(address(this));
-        if (recorded < share) share = recorded;
-        return (_feeRecipient, share);
-    }
-
-    /// @dev Deploys (or finds) the split ledger's salt-zero vault of `payees`.
-    function _vault(ISplitWallet.Payee[] memory payees) internal returns (address) {
-        return ISplitFactory(_splitLedger).createWallet(payees, bytes32(0));
-    }
-
-    /// @dev The royalty receiver of a work sold by `seller`: the vault in which `seller` takes
-    ///      the artist share and the fee recipient the network share now (`_feeTerms`), or
-    ///      `seller` itself when that share is zero.
-    function _royaltyReceiver(address seller) internal view returns (address) {
-        (address recipient, uint32 share) = _feeTerms();
-        return _royaltyReceiver(seller, recipient, share);
-    }
-
-    /// @dev The royalty receiver of a work sold by `seller` at fee terms already read.
-    function _royaltyReceiver(address seller, address recipient, uint32 share)
-        internal
-        view
-        returns (address)
-    {
-        if (share == 0) return seller;
-        return ISplitFactory(_splitLedger)
-            .walletFor(Splits.royaltyPayees(seller, recipient, share), bytes32(0));
+    /// @dev Reverts unless the directory's AccessManager lets the caller call this same function
+    ///      on the directory at once (`IAccessManager.canCall`, immediate). The network maps the
+    ///      token functions it holds (`rescue`, `setRescueDelay`, `rebind`, `setRebindDelay`,
+    ///      `setModuleDelay`) on the directory target once, for every federated token. A role
+    ///      with an execution delay cannot be used here: such a call is refused.
+    function _requireNetwork() internal view {
+        address manager = IAccessManaged(directory).authority();
+        (bool immediate,) = IAccessManager(manager).canCall(msg.sender, directory, msg.sig);
+        if (!immediate) revert NotNetwork(msg.sender);
     }
 }

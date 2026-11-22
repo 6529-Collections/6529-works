@@ -4,35 +4,25 @@ pragma solidity ^0.8.24;
 import { Vm } from "forge-std/Vm.sol";
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import { ArtistRegistry } from "src/identity/ArtistRegistry.sol";
+import { Accounts } from "src/identity/Accounts.sol";
 import { IArtistPayoutResolver } from "src/economics/interfaces/IArtistPayoutResolver.sol";
-import { IAccounts } from "src/interfaces/IAccounts.sol";
+import { IAccounts } from "src/interfaces/core/IAccounts.sol";
 import { IArtistRegistry, IConsolidationSource } from "src/interfaces/IArtistRegistry.sol";
 import { IArtistRoleResolver } from "src/interfaces/IArtistRoleResolver.sol";
 import { ArtistIdentity, ChangeKind, PendingChange } from "src/interfaces/types/IdentityTypes.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
-import { BoundedCall } from "src/libraries/BoundedCall.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
 import { SignatureVerifier } from "src/libraries/SignatureVerifier.sol";
-import { StreamMock } from "../mocks/stream/StreamMock.sol";
 import {
     AlwaysConsolidated,
-    BurningArtistStream,
     ConsolidationSourceMock,
-    DisputeOutcomeLogMock,
-    EditionsMastersMock,
-    FederationRegistryStub,
-    PackageRegistryStub,
-    PullOnlyPayeeMock,
-    RemappedEditionsMock,
-    SplitFactoryWalletsMock
+    PullOnlyPayeeMock
 } from "../mocks/identity/IdentityWorksMocks.sol";
-import { BurningEditionsMock } from "../mocks/identity/PermanenceMocks.sol";
-import { IdentityFixture } from "./IdentityFixture.sol";
+import { AccountsFixture } from "./AccountsFixture.sol";
 
-/// @notice The artist registry: accounts (every consolidated wallet acts for the account), the
+/// @notice The accounts module: accounts (every consolidated wallet acts for the account), the
 ///         account's own changes, network replacements, freezes, payouts and the role answers.
-contract ArtistRegistryTest is IdentityFixture {
+contract AccountsTest is AccountsFixture {
     bytes32 internal constant VOTE = keccak256("vote");
 
     // ----------------------------------------------------------------- registration
@@ -508,7 +498,6 @@ contract ArtistRegistryTest is IdentityFixture {
 
     /// @dev Only the network resolves a contest.
     function test_ResolveContested_IsRestricted() public {
-        DisputeOutcomeLogMock outcomes = _wireOutcomes();
         _stageReplacement(_identity(newRoot, newRoot), newKey);
         vm.prank(wallet);
         registry.cancelChange(artistId);
@@ -586,7 +575,6 @@ contract ArtistRegistryTest is IdentityFixture {
     ///      outcome the contest saw, and a due change may be upheld and executed later than its
     ///      exact due time.
     function test_Contest_UpheldLateByAVoteBelowThePriorOutcome() public {
-        DisputeOutcomeLogMock outcomes = _wireOutcomes();
         bytes32 prior = bytes32(type(uint256).max);
         bytes32 vote = bytes32(uint256(1));
         outcomes.setOutcome(address(registry), artistId, prior);
@@ -603,7 +591,6 @@ contract ArtistRegistryTest is IdentityFixture {
     /// @dev Only the latest recorded outcome resolves a contest: references on either side of it
     ///      are refused.
     function test_ResolveContested_RefusesOutcomesEitherSideOfTheLatest() public {
-        DisputeOutcomeLogMock outcomes = _wireOutcomes();
         _stageReplacement(_identity(newRoot, newRoot), newKey);
         vm.prank(wallet);
         registry.cancelChange(artistId);
@@ -683,7 +670,6 @@ contract ArtistRegistryTest is IdentityFixture {
     /// @dev A second contest of a contested replacement is a no-op: no event, and the contest
     ///      keeps its original time and prior outcome.
     function test_Contest_ASecondContestChangesNothing() public {
-        DisputeOutcomeLogMock outcomes = _wireOutcomes();
         outcomes.setOutcome(address(registry), artistId, keccak256("earlier"));
         _stageReplacement(_identity(newRoot, newRoot), newKey);
         vm.prank(wallet);
@@ -703,7 +689,6 @@ contract ArtistRegistryTest is IdentityFixture {
 
     /// @dev The network resolves only a live contest, and only by the latest recorded outcome.
     function test_ResolveContested_Refusals() public {
-        DisputeOutcomeLogMock outcomes = _wireOutcomes();
         vm.startPrank(network);
         vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.NotContested.selector, artistId));
         registry.resolveContested(artistId, true, VOTE);
@@ -747,7 +732,6 @@ contract ArtistRegistryTest is IdentityFixture {
     }
 
     function test_Contest_UpheldByAVoteRecordedAfterIt() public {
-        DisputeOutcomeLogMock outcomes = _wireOutcomes();
         outcomes.setOutcome(address(registry), artistId, keccak256("earlier"));
         _stageReplacement(_identity(newRoot, newRoot), newKey);
         // The contest logs the outcome it must be resolved after.
@@ -781,7 +765,6 @@ contract ArtistRegistryTest is IdentityFixture {
     }
 
     function test_Contest_VoidedByAVote() public {
-        DisputeOutcomeLogMock outcomes = _wireOutcomes();
         _stageReplacement(_identity(newRoot, newRoot), newKey);
         vm.prank(artist);
         registry.cancelChange(artistId);
@@ -880,7 +863,6 @@ contract ArtistRegistryTest is IdentityFixture {
     ///      `resolveContested` upholds a contested replacement during a freeze, and the freeze
     ///      keeps running for the new identity (accepted ruling; the NatSpec and spec say so).
     function test_Freeze_AnUpheldContestedReplacementStillExecutes() public {
-        DisputeOutcomeLogMock outcomes = _wireOutcomes();
         _stageReplacement(_identity(newRoot, newRoot), newKey);
         vm.prank(wallet);
         registry.cancelChange(artistId);
@@ -913,190 +895,7 @@ contract ArtistRegistryTest is IdentityFixture {
 
     // ----------------------------------------------------------------- payouts
 
-    function test_PayoutValidation_RejectsProtocolContractsAndSplitWallets() public {
-        (StreamMock stream, EditionsMastersMock editions) = _wireStream();
-        SplitFactoryWalletsMock factory = _wireSplitFactory();
-        address splitWallet = makeAddr("splitWallet");
-        factory.setWallet(splitWallet, true);
-        address[6] memory bad = [
-            packageRegistry,
-            address(stream),
-            address(editions),
-            address(registry),
-            splitWallet,
-            address(0)
-        ];
-        for (uint256 i; i < bad.length; ++i) {
-            (bool ok, bytes memory data) = _relay(_changeCall(artistKey, _identity(artist, bad[i])));
-            assertFalse(ok);
-            assertEq(data, abi.encodeWithSelector(IArtistRegistry.InvalidIdentity.selector));
-        }
-    }
-
-    function test_PayoutValidation_RecheckedAtExecution() public {
-        SplitFactoryWalletsMock factory = _wireSplitFactory();
-        _stage(artistKey, _identity(artist, payout));
-        factory.setWallet(payout, true);
-        vm.warp(block.timestamp + 2 days);
-        vm.expectEmit(address(registry));
-        emit IArtistRegistry.ChangeCancelled(artistId, address(registry), false);
-        registry.executeChange(artistId);
-        assertEq(registry.payoutAddress(artistId), artist);
-    }
-
     // ----------------------------------------------------------------- roles and wiring
-
-    /// @dev Any wallet of the lead's account speaks as the artist (fails on the old registry,
-    ///      which answered only for the active authority).
-    function test_IsArtist_AnyWalletOfTheLeadAccount() public {
-        (StreamMock stream, EditionsMastersMock editions) = _wireStream();
-        assertTrue(registry.isArtist(address(stream), 1, artist));
-        assertTrue(registry.isArtist(address(stream), 1, wallet));
-        assertTrue(registry.isArtist(address(editions), 1, wallet));
-        assertFalse(registry.isArtist(address(stream), 1, outsider));
-        assertFalse(registry.isArtist(address(stream), 2, artist), "unknown work");
-        assertFalse(registry.isArtist(address(editions), 3, artist), "foreign master");
-        assertFalse(registry.isArtist(address(0), 1, artist));
-        vm.prank(network);
-        registry.freeze(artistId);
-        assertFalse(registry.isArtist(address(stream), 1, artist), "frozen");
-    }
-
-    /// @dev A token that is neither the Stream nor its Editions is never answered for, and an
-    ///      edition the Editions contract does not know (its `masterOf` reverts) is "no".
-    function test_IsArtist_AnyOtherTokenOrAnUnknownEditionIsNo() public {
-        (StreamMock stream, EditionsMastersMock editions) = _wireStream();
-        EditionsMastersMock other = new EditionsMastersMock();
-        other.setEdition(1, address(stream));
-        assertFalse(registry.isArtist(address(other), 1, artist), "not the bound Editions");
-        assertFalse(registry.isArtist(address(editions), 2, artist), "unknown edition");
-        assertTrue(registry.isArtist(address(editions), 1, artist));
-    }
-
-    /// @dev An edition whose master is not the bound Stream is "no", even when the work ID it
-    ///      names is one of the artist's works.
-    function test_IsArtist_AnEditionOfAnotherMasterIsNo() public {
-        (StreamMock stream, EditionsMastersMock editions) = _wireStream();
-        assertTrue(registry.isArtist(address(editions), 1, artist));
-        editions.setEdition(1, stranger);
-        assertFalse(registry.isArtist(address(editions), 1, artist));
-        assertTrue(registry.isArtist(address(stream), 1, artist), "the work itself still answers");
-    }
-
-    /// @dev An edition is answered for through the work its master names, not through its own
-    ///      ID.
-    function test_IsArtist_AnEditionResolvesToTheWorkItsMasterNames() public {
-        (StreamMock stream,) = _wireStream();
-        RemappedEditionsMock remapped = new RemappedEditionsMock(address(stream), 5, 1);
-        stream.setEditions(address(remapped));
-        assertTrue(registry.isArtist(address(remapped), 5, artist), "edition 5 is work 1");
-        stream.setWork(5, uint160(outsider));
-        assertTrue(registry.isArtist(address(remapped), 5, artist), "not work 5's artist");
-        assertFalse(registry.isArtist(address(remapped), 5, outsider));
-    }
-
-    /// @dev An edition the Editions contract does not know is "no", even when a work of the
-    ///      artist has the same ID.
-    function test_IsArtist_AnUnknownEditionWithTheIdOfAWorkIsNo() public {
-        (StreamMock stream,) = _wireStream();
-        EditionsMastersMock empty = new EditionsMastersMock();
-        stream.setEditions(address(empty));
-        assertTrue(registry.isArtist(address(stream), 1, artist));
-        assertFalse(registry.isArtist(address(empty), 1, artist));
-    }
-
-    /// @dev Gas rule: a Stream `artistOf` that runs out of the gas forwarded to it reverts
-    ///      `BoundedCallShortfall`, never reads as "not the artist".
-    function test_IsArtist_AStreamShortfallReverts() public {
-        BurningArtistStream burning = new BurningArtistStream();
-        vm.prank(admin);
-        registry.bindStream(address(burning));
-        bytes memory call = abi.encodeCall(registry.isArtist, (address(burning), 1, artist));
-        (bool ok, bytes memory data) = address(registry).staticcall{ gas: 1_000_000 }(call);
-        assertFalse(ok);
-        assertEq(
-            data,
-            abi.encodeWithSelector(BoundedCall.BoundedCallShortfall.selector, address(burning))
-        );
-    }
-
-    /// @dev Before a Stream is bound every subject is "no", without calling anything.
-    function test_IsArtist_NoStreamBoundIsNo() public {
-        assertEq(registry.stream(), address(0));
-        assertFalse(registry.isArtist(makeAddr("token"), 1, artist));
-        assertFalse(registry.isArtist(address(0), 1, artist));
-    }
-
-    /// @dev Gas rule: an Editions `masterOf` that runs out of the gas forwarded to it reverts
-    ///      `BoundedCallShortfall`, never reads as "not the artist".
-    function test_IsArtist_AnEditionsShortfallReverts() public {
-        (StreamMock stream,) = _wireStream();
-        BurningEditionsMock burning = new BurningEditionsMock(address(stream));
-        stream.setEditions(address(burning));
-        assertTrue(registry.isArtist(address(burning), 1, artist), "answers when it fits");
-        burning.setBurn(type(uint256).max);
-        bytes memory call = abi.encodeCall(registry.isArtist, (address(burning), 1, artist));
-        (bool ok, bytes memory data) = address(registry).staticcall{ gas: 1_000_000 }(call);
-        assertFalse(ok);
-        assertEq(
-            data,
-            abi.encodeWithSelector(BoundedCall.BoundedCallShortfall.selector, address(burning))
-        );
-    }
-
-    function test_Bindings_AreOneShotAndChecked() public {
-        StreamMock stream = new StreamMock();
-        address federation = address(new FederationRegistryStub());
-        address another = address(new PackageRegistryStub());
-        vm.startPrank(admin);
-        registry.bindStream(address(stream));
-        registry.bindFederationRegistry(federation);
-        vm.expectRevert(
-            abi.encodeWithSelector(IArtistRegistry.AlreadyBound.selector, bytes32("STREAM"))
-        );
-        registry.bindStream(address(stream));
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IArtistRegistry.AlreadyBound.selector, bytes32("PACKAGE_REGISTRY")
-            )
-        );
-        registry.bindPackageRegistry(another);
-        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, stranger));
-        registry.bindSplitFactory(stranger);
-        vm.stopPrank();
-        address factory = address(new SplitFactoryWalletsMock());
-        vm.expectRevert(
-            abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, network)
-        );
-        vm.prank(network);
-        registry.bindSplitFactory(factory);
-    }
-
-    /// @dev The constructor checks the source against its pin, as the setter does.
-    function test_Constructor_ChecksTheSourceAgainstItsPin() public {
-        vm.expectRevert(
-            abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(adapter))
-        );
-        new ArtistRegistry(address(manager), adapter, keccak256("other code"));
-        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, stranger));
-        new ArtistRegistry(address(manager), IConsolidationSource(stranger), bytes32(0));
-    }
-
-    /// @dev Each one-shot binding checks its target before anything else, and logs it.
-    function test_Bindings_CheckTheTargetFirstAndLog() public {
-        vm.startPrank(admin);
-        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, stranger));
-        registry.bindPackageRegistry(stranger);
-        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, stranger));
-        registry.bindStream(stranger);
-        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, stranger));
-        registry.bindFederationRegistry(stranger);
-        StreamMock s = new StreamMock();
-        vm.expectEmit(address(registry));
-        emit IArtistRegistry.Bound("STREAM", address(s));
-        registry.bindStream(address(s));
-        vm.stopPrank();
-    }
 
     function test_SetConsolidationSource_SwapsTheSourceWithItsPin() public {
         ConsolidationSourceMock mock = new ConsolidationSourceMock();
@@ -1199,62 +998,10 @@ contract ArtistRegistryTest is IdentityFixture {
         );
     }
 
-    /// @dev The statement log binds only as an installable dependency: an address without code
-    ///      and an EIP-7702 delegated account (here delegated to a log that names this registry)
-    ///      are refused with `InvalidDependency` before anything is read. Fails without the
-    ///      check: the codeless address reverts `InvalidBinding` instead, and the delegated
-    ///      account binds.
-    function test_BindStatementLog_RefusesAnAccountThatIsNotAnInstallableContract() public {
-        address codeless = makeAddr("codelessLog");
-        vm.prank(admin);
-        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, codeless));
-        registry.bindStatementLog(codeless);
-        DisputeOutcomeLogMock answering = new DisputeOutcomeLogMock(address(registry));
-        address delegated = makeAddr("delegatedLog");
-        vm.etch(delegated, abi.encodePacked(hex"ef0100", address(answering)));
-        vm.prank(admin);
-        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, delegated));
-        registry.bindStatementLog(delegated);
-        assertEq(registry.statementLog(), address(0), "nothing bound");
-    }
-
-    /// @dev A statement log whose `artistResolver()` names another registry is refused with
-    ///      `InvalidBinding`, and nothing is bound.
-    function test_BindStatementLog_RefusesALogNamingAnotherResolver() public {
-        DisputeOutcomeLogMock foreign = new DisputeOutcomeLogMock(stranger);
-        vm.prank(admin);
-        vm.expectRevert(
-            abi.encodeWithSelector(IArtistRegistry.InvalidBinding.selector, address(foreign))
-        );
-        registry.bindStatementLog(address(foreign));
-        address[2] memory resolvers = [address(1), address(type(uint160).max)];
-        for (uint256 i; i < resolvers.length; ++i) {
-            DisputeOutcomeLogMock other = new DisputeOutcomeLogMock(resolvers[i]);
-            vm.prank(admin);
-            vm.expectRevert(
-                abi.encodeWithSelector(IArtistRegistry.InvalidBinding.selector, address(other))
-            );
-            registry.bindStatementLog(address(other));
-        }
-        assertEq(registry.statementLog(), address(0), "nothing bound");
-    }
-
     // ----------------------------------------------------------------- helpers
 
     function _identityNow() internal view returns (ArtistIdentity memory id) {
         (id,) = registry.artist(artistId);
-    }
-
-    function _wireOutcomes() internal returns (DisputeOutcomeLogMock outcomes) {
-        outcomes = new DisputeOutcomeLogMock(address(registry));
-        vm.prank(admin);
-        registry.bindStatementLog(address(outcomes));
-    }
-
-    function _wireSplitFactory() internal returns (SplitFactoryWalletsMock factory) {
-        factory = new SplitFactoryWalletsMock();
-        vm.prank(admin);
-        registry.bindSplitFactory(address(factory));
     }
 
     /// @dev How many logs since `vm.recordLogs` have `topic` as their first topic.
@@ -1266,16 +1013,5 @@ contract ArtistRegistryTest is IdentityFixture {
         for (uint256 i; i < logs.length; ++i) {
             if (logs[i].topics.length != 0 && logs[i].topics[0] == topic) ++n;
         }
-    }
-
-    function _wireStream() internal returns (StreamMock stream, EditionsMastersMock editions) {
-        stream = new StreamMock();
-        editions = new EditionsMastersMock();
-        stream.setEditions(address(editions));
-        stream.setWork(1, artistId);
-        editions.setEdition(1, address(stream));
-        editions.setEdition(3, stranger);
-        vm.prank(admin);
-        registry.bindStream(address(stream));
     }
 }

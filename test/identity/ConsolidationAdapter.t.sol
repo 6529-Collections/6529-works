@@ -5,10 +5,10 @@ import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol
 import { ConsolidationAdapter, IDelegationManagement } from "src/identity/ConsolidationAdapter.sol";
 import { IConsolidationSource } from "src/interfaces/IArtistRegistry.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
-import { IdentityFixture } from "./IdentityFixture.sol";
+import { AccountsFixture } from "./AccountsFixture.sol";
 
 /// @notice The v1 consolidation source: a live two-way all-collections consolidation, no age.
-contract ConsolidationAdapterTest is IdentityFixture {
+contract ConsolidationAdapterTest is AccountsFixture {
     function test_TwoWayAllCollectionsCounts() public {
         assertTrue(adapter.isConsolidated(artist, wallet));
         assertTrue(adapter.isConsolidated(wallet, artist));
