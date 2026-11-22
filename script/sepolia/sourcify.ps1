@@ -4,26 +4,30 @@
     the results as JSON.
 
 .DESCRIPTION
-    Runs `forge verify-contract --verifier sourcify` for each contract in the record, with its
-    creation transaction from forge's broadcast cache (broadcast/Deploy.s.sol/11155111/
-    run-latest.json, not committed), then reads Sourcify's v2 status for the address. The
-    manager is created inside the configurator's constructor, so its creation transaction is
-    the configurator's. Run it from the commit the record was deployed from, after
-    `forge build`. Nothing is signed.
+    Runs `forge verify-contract --verifier sourcify` for each contract in a record written by
+    script/DeployCore.s.sol (one `<name>: <address>` object; round r6 on), with its creation
+    transaction from forge's broadcast cache (broadcast/DeployCore.s.sol/11155111/
+    run-latest.json, not committed), then reads Sourcify's v2 status for the address. Every
+    contract is created inside a transaction to its one-use CREATE3 proxy, and the manager
+    inside the configurator's constructor: the creation transaction of each is the transaction
+    whose created contracts (`additionalContracts`) include it. The manager's address is read
+    from the configurator (`worksManager()`). Run it from the commit the record was deployed
+    from, after `forge build`. Nothing is signed.
 
     -StatusOnly re-reads every contract's status without submitting anything.
 
 .EXAMPLE
-    ./sourcify.ps1 -Record deployments/11155111/<timestamp>.json -Out sourcify.json
-    ./sourcify.ps1 -Record deployments/11155111/<timestamp>.json -Out sourcify.json -Only Stream,Editions
-    ./sourcify.ps1 -Record deployments/11155111/<timestamp>.json -Out sourcify.json -StatusOnly
+    ./sourcify.ps1 -Record deployments/11155111/core-<timestamp>.json -Out sourcify.json
+    ./sourcify.ps1 -Record deployments/11155111/core-<timestamp>.json -Out sourcify.json -Only Stream,Editions
+    ./sourcify.ps1 -Record deployments/11155111/core-<timestamp>.json -Out sourcify.json -StatusOnly
 #>
 param(
     [Parameter(Mandatory)] [string] $Record,
     [Parameter(Mandatory)] [string] $Out,
     [string[]] $Only = @(),
     [switch] $StatusOnly,
-    [string] $Run = 'broadcast/Deploy.s.sol/11155111/run-latest.json'
+    [string] $Run = 'broadcast/DeployCore.s.sol/11155111/run-latest.json',
+    [string] $Rpc = 'https://ethereum-sepolia-rpc.publicnode.com'
 )
 $ErrorActionPreference = 'Stop'
 # `powershell -File` passes `-Only A,B` as one string.
@@ -32,90 +36,82 @@ $Repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 Set-Location $Repo
 $Out = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Out)
 $rec = Get-Content -Raw -Encoding UTF8 (Join-Path $Repo $Record) | ConvertFrom-Json
+$addresses = [ordered]@{}
+foreach ($p in $rec.PSObject.Properties) { $addresses[$p.Name] = $p.Value }
+$addresses['WorksAccessManager'] = (& cast call $addresses['GovernanceConfigurator'] 'worksManager()(address)' --rpc-url $Rpc).Trim()
+if ($LASTEXITCODE -ne 0) { throw 'could not read the manager from the configurator' }
 $paths = [ordered]@{
-    WorksAccessManager        = 'src/governance/WorksAccessManager.sol:WorksAccessManager'
-    GovernanceConfigurator    = 'src/governance/GovernanceConfigurator.sol:GovernanceConfigurator'
-    ContentStore              = 'src/content/ContentStore.sol:ContentStore'
-    DependencyRegistry        = 'src/content/DependencyRegistry.sol:DependencyRegistry'
-    ConsolidationAdapter      = 'src/identity/ConsolidationAdapter.sol:ConsolidationAdapter'
-    ArtistRegistry            = 'src/identity/ArtistRegistry.sol:ArtistRegistry'
-    # The plain core (ADR 0010), from round r6: the permanent Directory and WorkFacts, and the
-    # Accounts, WorkRules and StreamTerms modules.
-    Directory                 = 'src/core/Directory.sol:Directory'
-    WorkFacts                 = 'src/core/WorkFacts.sol:WorkFacts'
-    Accounts                  = 'src/identity/Accounts.sol:Accounts'
-    WorkRules                 = 'src/records/WorkRules.sol:WorkRules'
-    StreamTerms               = 'src/terms/StreamTerms.sol:StreamTerms'
-    SplitFactory              = 'src/economics/SplitLedger.sol:SplitLedger'
-    FeeRecipientVault         = 'src/economics/GovernedVault.sol:GovernedVault'
-    MuseumVault               = 'src/economics/GovernedVault.sol:GovernedVault'
-    ClaimRouter               = 'src/economics/ClaimRouter.sol:ClaimRouter'
-    AssetAllowlist            = 'src/economics/AssetAllowlist.sol:AssetAllowlist'
-    EconomicsResolver         = 'src/economics/EconomicsResolver.sol:EconomicsResolver'
-    RevenueEscrow             = 'src/economics/RevenueEscrow.sol:RevenueEscrow'
-    CurationVerifier          = 'src/curation/Eip712CurationVerifier.sol:Eip712CurationVerifier'
-    PackageRegistry           = 'src/curation/PackageRegistry.sol:PackageRegistry'
-    StatementLog              = 'src/records/StatementLog.sol:StatementLog'
-    EntropyModule             = 'src/entropy/VrfEntropyModule.sol:VrfEntropyModule'
-    Renderer                  = 'src/content/Renderer.sol:Renderer'
-    # r6 on: the plain permanent tokens. Records up to r5 name the earlier contracts, which
-    # integration deletes; verify those from the commit they were deployed from.
-    Stream                    = 'src/core/Stream.sol:Stream'
-    WorkRecords               = 'src/stream/WorkRecords.sol:WorkRecords'
-    Editions                  = 'src/core/Editions.sol:Editions'
-    EnglishAuctionLens        = 'src/sales/EnglishAuctionLens.sol:EnglishAuctionLens'
-    EnglishAuction            = 'src/sales/EnglishAuction.sol:EnglishAuction'
-    UniformEditionAuctionLens = 'src/sales/UniformEditionAuctionLens.sol:UniformEditionAuctionLens'
-    UniformEditionAuction     = 'src/sales/UniformEditionAuction.sol:UniformEditionAuction'
-    # r5: created inside WorkRecords' constructor, so its creation transaction is WorkRecords'.
-    # r6: deployed on its own unless the WorkRules constructor creates it (see $createdBy).
-    WorkDelivery              = 'src/stream/WorkDelivery.sol:WorkDelivery'
-    FederationRegistry        = 'src/federated/FederationRegistry.sol:FederationRegistry'
+    WorksAccessManager          = 'src/governance/WorksAccessManager.sol:WorksAccessManager'
+    GovernanceConfigurator      = 'src/governance/GovernanceConfigurator.sol:GovernanceConfigurator'
+    ContentStore                = 'src/content/ContentStore.sol:ContentStore'
+    WorkFacts                   = 'src/core/WorkFacts.sol:WorkFacts'
+    Directory                   = 'src/core/Directory.sol:Directory'
+    FeeRecipientVault           = 'src/economics/GovernedVault.sol:GovernedVault'
+    MuseumVault                 = 'src/economics/GovernedVault.sol:GovernedVault'
+    SplitFactory                = 'src/economics/SplitLedger.sol:SplitLedger'
+    ClaimRouter                 = 'src/economics/ClaimRouter.sol:ClaimRouter'
+    RevenueEscrow               = 'src/economics/RevenueEscrow.sol:RevenueEscrow'
+    Stream                      = 'src/core/Stream.sol:Stream'
+    Editions                    = 'src/core/Editions.sol:Editions'
+    ConsolidationAdapter        = 'src/identity/ConsolidationAdapter.sol:ConsolidationAdapter'
+    Accounts                    = 'src/identity/Accounts.sol:Accounts'
+    AssetAllowlist              = 'src/economics/AssetAllowlist.sol:AssetAllowlist'
+    EconomicsResolver           = 'src/economics/EconomicsResolver.sol:EconomicsResolver'
+    CurationVerifier            = 'src/curation/Eip712CurationVerifier.sol:Eip712CurationVerifier'
+    PackageRegistry             = 'src/curation/PackageRegistry.sol:PackageRegistry'
+    EntropyModule               = 'src/entropy/VrfEntropyModule.sol:VrfEntropyModule'
+    StatementLog                = 'src/records/StatementLog.sol:StatementLog'
+    DependencyRegistry          = 'src/content/DependencyRegistry.sol:DependencyRegistry'
+    Renderer                    = 'src/content/Renderer.sol:Renderer'
+    WorkRules                   = 'src/records/WorkRules.sol:WorkRules'
+    WorkDelivery                = 'src/stream/WorkDelivery.sol:WorkDelivery'
+    StreamTerms                 = 'src/terms/StreamTerms.sol:StreamTerms'
+    EnglishAuction              = 'src/sales/EnglishAuction.sol:EnglishAuction'
+    UniformEditionAuctionLens   = 'src/sales/UniformEditionAuctionLens.sol:UniformEditionAuctionLens'
+    UniformEditionAuction       = 'src/sales/UniformEditionAuction.sol:UniformEditionAuction'
+    FederationRegistry          = 'src/federated/FederationRegistry.sol:FederationRegistry'
+    FederatedStreamDeployer     = 'src/federated/FederatedDeployer.sol:FederatedDeployer'
+    FederatedEditionsDeployer   = 'src/federated/FederatedDeployer.sol:FederatedDeployer'
     FederatedEditionAuctionLens = 'src/federated/FederatedEditionAuctionLens.sol:FederatedEditionAuctionLens'
-    FederatedEditionAuction   = 'src/federated/FederatedEditionAuction.sol:FederatedEditionAuction'
-    FederatedStreamDeployer   = 'src/federated/FederatedDeployer.sol:FederatedDeployer'
-    FederatedEditionsDeployer = 'src/federated/FederatedDeployer.sol:FederatedDeployer'
-    SaleStarter               = 'src/sales/SaleStarter.sol:SaleStarter'
+    FederatedEditionAuction     = 'src/federated/FederatedEditionAuction.sol:FederatedEditionAuction'
+    SaleStarter                 = 'src/sales/SaleStarter.sol:SaleStarter'
 }
-# Contracts created inside another contract's constructor: verified against that transaction.
-$createdBy = @{ WorksAccessManager = 'GovernanceConfigurator' }
-$names = @($rec.contracts.PSObject.Properties.Name)
-# r5 created WorkDelivery inside WorkRecords. From r6 the record says it: a `createdBy` field on
-# the WorkDelivery entry names its creator, if any.
-if ($names -contains 'WorkRecords') { $createdBy.WorkDelivery = 'WorkRecords' }
-elseif ($rec.contracts.WorkDelivery.createdBy) { $createdBy.WorkDelivery = $rec.contracts.WorkDelivery.createdBy }
-$unmapped = @($names | Where-Object { -not $paths.Contains($_) })
+$unmapped = @($addresses.Keys | Where-Object { -not $paths.Contains($_) })
 if ($unmapped.Count) { throw "unmapped contract in the record: $($unmapped -join ', ')" }
 # The creation transactions, from forge's broadcast cache: needed to submit, not to read status.
 $creation = @{}
 if (-not $StatusOnly) {
     $run = Get-Content -Raw -Encoding UTF8 (Join-Path $Repo $Run) | ConvertFrom-Json
     foreach ($t in $run.transactions) {
-        if ($t.transactionType -eq 'CREATE2' -and $t.contractAddress) { $creation[$t.contractAddress.ToLower()] = $t.hash }
+        if ($t.contractAddress) { $creation[$t.contractAddress.ToLower()] = $t.hash }
+        foreach ($c in @($t.additionalContracts)) {
+            if ($c -and $c.address) { $creation[$c.address.ToLower()] = $t.hash }
+        }
     }
 }
 # Earlier results are kept only for this record's addresses.
 $results = [ordered]@{}
 if ((Test-Path $Out) -and ($Only.Count -or $StatusOnly)) {
     (Get-Content -Raw $Out | ConvertFrom-Json).PSObject.Properties | ForEach-Object {
-        $current = $rec.contracts.PSObject.Properties[$_.Name]
-        if ($current -and $_.Value.address -and $current.Value.address.ToLower() -eq $_.Value.address.ToLower()) {
+        $current = $addresses[$_.Name]
+        if ($current -and $_.Value.address -and $current.ToLower() -eq $_.Value.address.ToLower()) {
             $results[$_.Name] = $_.Value
         }
     }
 }
 foreach ($name in $paths.Keys) {
-    if (-not ($names -contains $name)) { continue }
+    if (-not $addresses.Contains($name)) { continue }
     if ($Only.Count -and $Only -notcontains $name) { continue }
-    $addr = $rec.contracts.$name.address
-    $tx = if ($createdBy.ContainsKey($name)) { $creation[$rec.contracts.($createdBy[$name]).address.ToLower()] } else { $creation[$addr.ToLower()] }
+    $addr = $addresses[$name]
+    $tx = $creation[$addr.ToLower()]
     $text = ''
     if ($StatusOnly) {
         if ($results.Contains($name)) { $text = $results[$name].forge; $tx = $results[$name].creationTx }
     }
     else {
-        $a = @('verify-contract', '--verifier', 'sourcify', '--chain', '11155111', $addr, $paths[$name], '--watch')
-        if ($tx) { $a += @('--creation-transaction-hash', $tx) }
+        if (-not $tx) { throw "$name ($addr): no creation transaction in $Run" }
+        $a = @('verify-contract', '--verifier', 'sourcify', '--chain', '11155111', $addr, $paths[$name], '--watch',
+            '--creation-transaction-hash', $tx)
         $previous = $ErrorActionPreference
         $ErrorActionPreference = 'Continue'
         $text = (& forge @a 2>&1 | ForEach-Object { "$_" }) -join "`n"
@@ -136,6 +132,6 @@ foreach ($name in $paths.Keys) {
         match = $status.match; runtimeMatch = $status.runtimeMatch; creationMatch = $status.creationMatch
         forge = (($text -split "`n") | Select-Object -Last 2) -join ' | '
     }
-    Write-Host ("{0,-26} {1} match={2} runtime={3} creation={4}" -f $name, $addr, $status.match, $status.runtimeMatch, $status.creationMatch)
+    Write-Host ("{0,-28} {1} match={2} runtime={3} creation={4}" -f $name, $addr, $status.match, $status.runtimeMatch, $status.creationMatch)
 }
 [IO.File]::WriteAllText($Out, ($results | ConvertTo-Json -Depth 5), [Text.UTF8Encoding]::new($false))

@@ -9,7 +9,7 @@ names new holders: `network`, `description` (containing "rehearsal <new>") and `
 with `role`, `account` and `label`, in the committed policy's order within each role. It holds
 public addresses only.
 
-Reads config/genesis.example.json (the committed policy) and config/sepolia-<from>/genesis.json,
+Reads config/genesis.core.example.json (the committed policy) and config/sepolia-<from>/genesis.json,
 maps every placeholder holder of the policy, by role and position within the role, to the earlier
 instance's holder and label, names the earlier instance's network (its `network`, or, for an
 instance from before the single network address, its first ADMIN holder, the hot admin Safe), and
@@ -44,7 +44,7 @@ def from_accounts(path):
 
 def main(new, old):
     assert re.fullmatch(r"r\d+", new), new
-    example = json.loads((REPO / "config/genesis.example.json").read_text(encoding="utf-8"))
+    example = json.loads((REPO / "config/genesis.core.example.json").read_text(encoding="utf-8"))
     if old.endswith(".json"):
         # A new set of holders: config/sepolia-<new>/accounts.json (public addresses only).
         prev = from_accounts(old)

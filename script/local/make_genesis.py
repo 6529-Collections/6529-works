@@ -2,9 +2,9 @@
 
 Usage: python script/local/make_genesis.py
 
-Reads config/genesis.example.json (the committed policy), replaces the placeholder network and
+Reads config/genesis.core.example.json (the committed policy), replaces the placeholder network and
 every placeholder holder with an account of anvil's default test mnemonic ("test test ... junk",
-public test keys that exist only on a local node), and writes config/local/genesis.anvil.json,
+public test keys that exist only on a local node), and writes config/local/genesis.core.anvil.json,
 which .gitignore keeps out of the repository. Only the network, the holders and the description
 change, as `tools/check_genesis.py --config` allows. script/local/walkthrough.sh runs it.
 """
@@ -44,9 +44,10 @@ HOLDERS = {
 
 
 def main():
-    genesis = json.loads((REPO / "config/genesis.example.json").read_text(encoding="utf-8"))
+    genesis = json.loads((REPO / "config/genesis.core.example.json").read_text(encoding="utf-8"))
     genesis["network"] = ANVIL[NETWORK[0]]
     for h in genesis["holders"]:
+        # A KeyError here means the committed policy gained a holder this map does not know.
         index, label = HOLDERS[h["account"].lower()]
         h["account"], h["label"] = ANVIL[index], label
     genesis["description"] = (
@@ -56,7 +57,7 @@ def main():
     text = json.dumps(genesis, indent=2, ensure_ascii=False) + "\n"
     # No network or holder placeholder (0x...b0xx) may survive.
     assert not re.search(r"0x0{36}b0[0-9a-f]{2}", text, re.I)
-    out = REPO / "config/local/genesis.anvil.json"
+    out = REPO / "config/local/genesis.core.anvil.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(text, encoding="utf-8", newline="\n")
     print("wrote", out.relative_to(REPO).as_posix())
