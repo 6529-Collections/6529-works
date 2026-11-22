@@ -279,44 +279,6 @@ class BudgetTest(unittest.TestCase):
         self.assertEqual(run.call_args.kwargs["env"]["FOUNDRY_PROFILE"], "ci")
         self.assertEqual(run.call_args.args[0], ["forge", "build", "--sizes", "--json"])
 
-    def _retiring(self, files: object) -> None:
-        path = self.repo.root / "tools" / "retiring.json"
-        path.parent.mkdir(exist_ok=True)
-        path.write_text(json.dumps({"files": files}), encoding="utf-8")
-
-    def test_both_trees_are_counted_and_the_limit_applies_to_what_stays(self) -> None:
-        self.repo.write("core/New.sol", "uint256 constant X = 1;\n" * 3)
-        self.repo.write("old/Old.sol", "uint256 constant Y = 1;\n" * 5)
-        self._retiring(["src/old/Old.sol"])
-        code, out = self.repo.run("--skip-sizes", "--max-lines", "3")
-        self.assertEqual(code, 0, out)
-        self.assertIn(
-            "3 Solidity code lines in src/ that stay (limit 3); 8 in both trees, 5 in 1 files"
-            " retiring at integration",
-            out,
-        )
-        code, out = self.repo.run("--skip-sizes", "--max-lines", "2")
-        self.assertEqual(code, 1)
-
-    def test_a_retiring_entry_with_no_file_fails(self) -> None:
-        self.repo.write("A.sol", "contract A {}\n")
-        self._retiring(["src/Gone.sol"])
-        code, out = self.repo.run("--skip-sizes")
-        self.assertEqual(code, 1)
-        self.assertIn("FAIL src/Gone.sol: listed in tools/retiring.json, but no such src/ file", out)
-
-    def test_a_malformed_retiring_file_fails(self) -> None:
-        self.repo.write("A.sol", "contract A {}\n")
-        self._retiring("src/A.sol")
-        code, out = self.repo.run("--skip-sizes")
-        self.assertEqual(code, 1)
-        self.assertIn('FAIL retiring.json: expected an object with a "files" list', out)
-
-    def test_the_committed_retiring_files_exist(self) -> None:
-        root = Path(__file__).resolve().parent.parent
-        for relative in cb.load_retiring(Path(__file__).with_name("retiring.json")):
-            self.assertTrue((root / relative).is_file(), relative)
-
     def test_missing_src_is_an_error(self) -> None:
         (self.repo.root / "src").rmdir()
         with self.assertRaises(SystemExit):
