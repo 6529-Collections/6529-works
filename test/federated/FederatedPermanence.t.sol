@@ -111,6 +111,10 @@ contract FederatedPermanenceTest is FederationBase {
         for (uint256 i; i < longest.length; ++i) {
             longest[i] = "a";
         }
+        // One allowed byte more than the bound: only the length refuses it.
+        vm.prank(fedArtist);
+        vm.expectRevert(IFederatedStream.InvalidLocator.selector);
+        fed.setLocator(tokenId, 0, 1, string(abi.encodePacked(longest, "a")));
         vm.startPrank(fedArtist);
         fed.setLocator(tokenId, 0, 1, "https://x.test/a-b_c.d~e!$&'()*+,;=:@/?%20[]{}|^`<>");
         fed.setLocator(tokenId, 0, 1, string(longest));

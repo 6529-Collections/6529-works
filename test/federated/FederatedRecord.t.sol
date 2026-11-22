@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { Vm } from "forge-std/Vm.sol";
 import { IERC721Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { IFederatedStream } from "src/interfaces/IFederatedStream.sol";
@@ -128,6 +129,62 @@ contract FederatedRecordTest is FederationBase {
         fed.syncOnChain(second);
         assertTrue(fed.record(second).onChainComplete);
         assertTrue(fed.record(second).finalized, "the sync keeps finalized");
+    }
+
+    /// @dev A second sync of a work already on-chain complete logs nothing.
+    function test_SyncOnChain_LogsOnce() public {
+        (, uint256 stored) = _startFed(fed, fedArtist, _storedWork(fedArtist), RATE);
+        fed.syncOnChain(stored);
+        vm.recordLogs();
+        fed.syncOnChain(stored);
+        assertEq(vm.getRecordedLogs().length, 0);
+        assertTrue(fed.record(stored).onChainComplete);
+    }
+
+    /// @dev A new default renderer refreshes the metadata of every minted token, and logs no
+    ///      refresh while nothing is minted.
+    function test_SetDefaultRenderer_RefreshesOnlyMintedTokens() public {
+        address current = address(renderer);
+        vm.recordLogs();
+        vm.prank(fedArtist);
+        fed.setDefaultRenderer(current, current, current.codehash);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        for (uint256 i; i < logs.length; ++i) {
+            assertTrue(
+                logs[i].topics[0] != IFederatedToken.BatchMetadataUpdate.selector, "none minted"
+            );
+        }
+        _opened();
+        _opened();
+        vm.expectEmit(address(fed));
+        emit IFederatedToken.BatchMetadataUpdate(1, 2);
+        vm.prank(fedArtist);
+        fed.setDefaultRenderer(current, current, current.codehash);
+    }
+
+    /// @dev A finalized work keeps the renderer it pinned when the default changes; an open one
+    ///      follows the default.
+    function test_RendererOf_AFinalizedWorkKeepsItsPin() public {
+        (,, uint256 pinned) = _opened();
+        (,, uint256 open) = _opened();
+        vm.prank(fedArtist);
+        fed.finalize(pinned);
+        address other = makeAddr("rendererCopy");
+        vm.etch(other, address(renderer).code);
+        vm.prank(fedArtist);
+        fed.setDefaultRenderer(address(renderer), other, other.codehash);
+        assertEq(fed.rendererOf(pinned), address(renderer));
+        assertEq(fed.rendererOf(open), other);
+    }
+
+    /// @dev Only an ARTIST item keeps its seed: a seed on an item of no seed policy is ignored.
+    function test_SeedOf_ASeedWithoutTheArtistPolicyIsNotKept() public {
+        Work memory w = _fedWork(fedArtist);
+        w.item.seed = keccak256("ignored");
+        (, uint256 tokenId) = _startFed(w);
+        (uint8 policy, bytes32 seed) = fed.seedOf(tokenId);
+        assertEq(policy, 0);
+        assertEq(seed, bytes32(0));
     }
 
     function test_Burn_OnlyTheMintingAdapterBeforeSettlement() public {
