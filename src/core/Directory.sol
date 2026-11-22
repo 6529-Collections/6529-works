@@ -7,15 +7,20 @@ import { IArtistPayoutResolver } from "../economics/interfaces/IArtistPayoutReso
 import { Slots } from "../interfaces/core/CoreTypes.sol";
 import { IAccounts } from "../interfaces/core/IAccounts.sol";
 import { IDirectory } from "../interfaces/core/IDirectory.sol";
+import { IModuleSlots } from "../interfaces/core/IModules.sol";
 import { ModuleSlots } from "./Modules.sol";
 
 /// @title Directory
 /// @notice The one permanent address for the network's shared modules (ADR 0010): ACCOUNTS,
-///         FEDERATION, FEDERATED_TERMS and FEDERATED_RECORDS, each changed after the
-///         network's waiting period (`ModuleSlots.moduleDelay`). The split ledger is deployed with this contract as its
-///         payout resolver; every federated token is deployed with it as its gate.
-/// @dev lane 1 completes this. `payoutAddress` is a plain call: a missing or failing ACCOUNTS
-///      module reverts, and the ledger then leaves the money where it is.
+///         FEDERATION, FEDERATED_TERMS and FEDERATED_RECORDS, each installed after the network's
+///         waiting period (`moduleDelay`, a setting) and removed at once. The split ledger is
+///         deployed with this contract as its payout resolver; every federated token is deployed
+///         with it as its gate. It also holds `unclaimedPeriod`, the network's setting that the
+///         split ledger and the escrow read.
+/// @dev Genesis modules are constructor arguments, active at once and unchecked (predicted
+///      addresses). `payoutAddress` is a plain call: a missing, reverting or gas-exhausted
+///      ACCOUNTS module makes it revert, never answer a default, and the ledger then leaves the
+///      money where it is. No gas number, no `try`/`catch`.
 contract Directory is ModuleSlots, IDirectory, IArtistPayoutResolver, IERC165 {
     /// @inheritdoc IDirectory
     uint48 public unclaimedPeriod = 180 days;
@@ -55,9 +60,11 @@ contract Directory is ModuleSlots, IDirectory, IArtistPayoutResolver, IERC165 {
     }
 
     /// @inheritdoc IERC165
+    /// @dev ERC-165, `IArtistPayoutResolver`, `IDirectory` and `IModuleSlots`.
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
         return interfaceId == type(IERC165).interfaceId
             || interfaceId == type(IArtistPayoutResolver).interfaceId
+            || interfaceId == type(IModuleSlots).interfaceId
             || interfaceId == type(IDirectory).interfaceId;
     }
 }

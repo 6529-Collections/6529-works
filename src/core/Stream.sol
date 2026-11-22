@@ -11,9 +11,12 @@ import { StreamBase } from "./StreamBase.sol";
 /// @notice 6529 Stream: the one shared, network-curated ERC-721 of 1/1s (ADR 0010). `StreamBase`
 ///         with its own minter list and module slots (`Modules`); the admin is the network,
 ///         through the AccessManager.
-/// @dev lane 1 completes this. Genesis modules and minters are constructor arguments (the
-///      deployment predicts their CREATE2 addresses), so every later addition goes
-///      through the waiting period in force.
+/// @dev Genesis modules and minters are constructor arguments, active at once and unchecked
+///      (the deployment predicts their CREATE2 addresses, so they may have no code yet). Every
+///      later module or minter goes through `moduleDelay`, the network's setting in force when it
+///      is announced or added. The network's functions here (`createCollection`, `setOwner`,
+///      `setContractURI`, `rescue`, `setRescueDelay` and those of `Modules`) are whatever the
+///      AccessManager lets call them.
 contract Stream is StreamBase, Modules {
     /// @param authority_ The AccessManager.
     /// @param facts_ The permanent record contract (`IWorkFacts`).
