@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { Vm } from "forge-std/Vm.sol";
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { ArtistRegistry } from "src/identity/ArtistRegistry.sol";
@@ -28,6 +29,14 @@ import { IdentityFixture } from "./IdentityFixture.sol";
 
 /// @notice The artist registry: accounts (every consolidated wallet acts for the account), the
 ///         account's own changes, network replacements, freezes, payouts and the role answers.
+/// @dev A consolidation source that says yes to every pair: different code from the pinned
+///      adapter.
+contract AlwaysConsolidated {
+    function isConsolidated(address, address) external pure returns (bool) {
+        return true;
+    }
+}
+
 contract ArtistRegistryTest is IdentityFixture {
     bytes32 internal constant VOTE = keccak256("vote");
 
@@ -103,6 +112,25 @@ contract ArtistRegistryTest is IdentityFixture {
         assertTrue(registry.isWallet(id, outsider));
         assertFalse(registry.isWallet(id, wallet));
         assertFalse(registry.isWallet(uint256(type(uint160).max) + 1, address(1)));
+        assertFalse(registry.isWallet(0, address(0)), "the zero address is nobody's wallet");
+    }
+
+    /// @dev A consolidation source whose code no longer matches its pin answers "no" for every
+    ///      wallet but the root, without being asked.
+    function test_IsWallet_ASourceWhoseCodeChangedConsolidatesNobody() public {
+        assertTrue(registry.isWallet(artistId, wallet));
+        vm.etch(address(adapter), address(new AlwaysConsolidated()).code);
+        assertFalse(registry.isWallet(artistId, wallet));
+        assertFalse(registry.isWallet(artistId, outsider));
+        assertTrue(registry.isWallet(artistId, artist), "the root still is");
+    }
+
+    /// @dev A pending change reserves a new root for the account, and only a new one: a change
+    ///      that keeps the root reserves nothing.
+    function test_OwnChange_ReservesOnlyANewRoot() public {
+        _stage(artistKey, _identity(artist, payout));
+        assertEq(uint8(registry.pendingChange(artistId).kind), uint8(ChangeKind.OWN));
+        assertEq(registry.reservedFor(artist), 0);
     }
 
     /// @dev An account ID above 160 bits is never read as the address in its low bits: it names
@@ -309,7 +337,10 @@ contract ArtistRegistryTest is IdentityFixture {
 
     function test_Replacement_FourteenDaysThenExecutes() public {
         ArtistIdentity memory next = _identity(newRoot, newRoot);
+        vm.recordLogs();
         _stageReplacement(next, newKey);
+        assertEq(_logged(IArtistRegistry.ChangeCancelled.selector), 0, "nothing to cancel");
+        assertEq(registry.reservedFor(newRoot), artistId);
         PendingChange memory p = registry.pendingChange(artistId);
         assertEq(uint8(p.kind), uint8(ChangeKind.REPLACEMENT));
         assertEq(p.executableAt, block.timestamp + 14 days);
@@ -555,8 +586,10 @@ contract ArtistRegistryTest is IdentityFixture {
         vm.warp(block.timestamp + 14 days);
         vm.expectEmit(address(registry));
         emit IArtistRegistry.ContestResolved(artistId, true, true, VOTE);
+        vm.recordLogs();
         vm.prank(network);
         registry.resolveContested(artistId, true, VOTE);
+        assertEq(_logged(IArtistRegistry.ChangeCancelled.selector), 0, "executed, not cancelled");
         assertEq(registry.authorityOf(artistId), newRoot);
     }
 
@@ -948,6 +981,14 @@ contract ArtistRegistryTest is IdentityFixture {
         factory = new SplitFactoryWalletsMock();
         vm.prank(admin);
         registry.bindSplitFactory(address(factory));
+    }
+
+    /// @dev How many logs since `vm.recordLogs` have `topic` as their first topic.
+    function _logged(bytes32 topic) internal returns (uint256 n) {
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].topics.length != 0 && logs[i].topics[0] == topic) ++n;
+        }
     }
 
     function _wireStream() internal returns (StreamMock stream, EditionsMastersMock editions) {
