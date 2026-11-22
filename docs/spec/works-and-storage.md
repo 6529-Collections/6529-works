@@ -86,29 +86,29 @@ after that, completeness is one read.
 
 | ID | Rule | Tests |
 | --- | --- | --- |
-| WS-1 | Every per-token change of `WorkFacts` reverts with `RecordNotOpen` until the record is opened. | `test_views_revertBeforeOpen`, `check_perTokenCalls_revertUntilOpen` |
-| WS-2 | `open` is permissionless and accepts only the item the token was minted from and its committed media: 1 to 32 files, the primary first, each declared SHA-256 equal to the store's. | `test_openRecord_permissionless`, `test_openRecord_rejectsMismatches` |
-| WS-3 | A record opens once, for a live token. | `test_openRecord_rejectsMismatches` |
-| WS-4 | The approved record file and a non-CC0 license are stored as approved, so neither can keep a minted work from opening. | `test_openRecord_storesUnknownRecordFile`, `test_openRecord_storesUnregisteredLicenseText` |
-| WS-5 | A CC0 license names the deployment's CC0 text. | `test_openRecord_cc0TextMustBeTheDeploymentText`, `test_relicense_cc0TextOnlyToTheDeploymentText` |
-| WS-6 | The media list never changes after `open`. | `test_openRecord_multiFileWithRoles` |
-| WS-7 | Any wallet of the lead artist's account sets the record and finalizes, before finalize, against the current state hash; once the first sale has an outcome, anyone finalizes 14 days after a recorded notice. | `test_setRecord_followsCurrentAuthority`, `test_finalize_anyoneFourteenDaysAfterANotice`, `test_finalize_noticeNeedsASettledSaleAndTheArtistIsNeverHeldBack` |
-| WS-8 | A record file is accepted only if it is registered, `Identity`, SHA-256, one chunk and complete. | `test_recordBounds_rejectStructuralBreaks`, `test_finalize_needsCompleteRecordFile` |
-| WS-9 | Finalize needs a complete license text, and pins the token's current RENDERER module with its code hash. | `test_finalize_needsStoredLicenseText`, `test_finalize_pinsDefaultRenderer` |
-| WS-10 | The state hash commits to the token, version, record file, license, royalty rate and renderer. | `test_stateHash_golden` |
-| WS-11 | Every applied change bumps the version; identical re-publishes are no-ops; permissionless actions never change the state hash. | `test_setRecord_identicalIsNoOp`, `test_stateHash_ignoresPermissionlessActions` |
-| WS-12 | CC0 is never left, whatever module asks. | `test_relicense_cc0IsIrrevocableInAnyCase`, `check_cc0_isIrrevocable` |
-| WS-13 | A relicense needs the network's call and every party's signature, by a wallet of that party's account, before the deadline. | `test_relicense_withEveryConsent`, `test_relicense_rejectsMissingOrBadConsent`, `test_relicense_needsGovernance` |
-| WS-14 | A royalty-rate change needs the network's call and every party's signature, counted by account; it reaches the token through the TERMS module. | `test_setRoyaltyRate_lowersTheRate`, `test_setRoyaltyRate_aRiseNeedsEveryPartyAndTheNetwork` |
-| WS-15 | The network alone repins a finalized work's renderer, against the current state hash, until the pin is locked. | `test_repinRenderer_errataPath`, `test_repinRenderer_reverts` |
-| WS-16 | A pinned renderer is held with its code hash; a changed code is refused and `tokenURI` fails closed. | `test_PinnedRendererWithChangedCodeIsRefused`, `test_RepinRefusesARendererWhoseCodeChangedSincePinned` |
-| WS-17 | On-chain complete is one-way and set by anyone once every media file reads complete in the content store. | `test_syncOnChain` |
-| WS-18 | A locator is a canonical `ar://` or `ipfs://` content address; one spelling per address. | `test_Locator_OnlyContentAddressesAreAccepted`, `test_Locator_OneSpellingPerAddress` |
-| WS-19 | Before finalize 8 locators per file from the artist and 8 from the platform; after finalize only the platform adds, up to 16. | `test_addLocator_byArtistAndPlatform`, `test_Locator_ArtistCannotAddAfterFinalize` |
-| WS-20 | Locators are append-only and belong to one of the work's files; a locator marked dead is never served again. | `test_markLocatorDead_aDeadLocatorIsNeverServed` |
-| WS-21 | The preferred locator is the file's choice, else the collection's, else the global one, else the first registered, else the on-chain copy of a complete work. | `testFuzz_preferredLocator_matchesModel`, `test_preferredLocator_mostSpecificWins` |
-| WS-22 | The storage operator chooses only among copies registered for that file, or its on-chain bytes. | `testFuzz_preferredLocator_staysWithinFile` |
-| WS-23 | Every visible change emits ERC-4906 through the token. | `test_preferenceSetters_eventsAndRefresh` |
+| WS-1 | Every per-token change of `WorkFacts` reverts with `RecordNotOpen` until the record is opened. | |
+| WS-2 | `open` is permissionless and accepts only the item the token was minted from and its committed media: 1 to 32 files, the primary first, each declared SHA-256 equal to the store's. | |
+| WS-3 | A record opens once, for a live token. | |
+| WS-4 | The approved record file and a non-CC0 license are stored as approved, so neither can keep a minted work from opening. | |
+| WS-5 | A CC0 license names the deployment's CC0 text. | |
+| WS-6 | The media list never changes after `open`. | |
+| WS-7 | Any wallet of the lead artist's account sets the record and finalizes, before finalize, against the current state hash; once the first sale has an outcome, anyone finalizes 14 days after a recorded notice. | |
+| WS-8 | A record file is accepted only if it is registered, `Identity`, SHA-256, one chunk and complete. | |
+| WS-9 | Finalize needs a complete license text, and pins the token's current RENDERER module with its code hash. | |
+| WS-10 | The state hash commits to the token, version, record file, license, royalty rate and renderer. | |
+| WS-11 | Every applied change bumps the version; identical re-publishes are no-ops; permissionless actions never change the state hash. | |
+| WS-12 | CC0 is never left, whatever module asks. | |
+| WS-13 | A relicense needs the network's call and every party's signature, by a wallet of that party's account, before the deadline. | |
+| WS-14 | A royalty-rate change needs the network's call and every party's signature, counted by account; it reaches the token through the TERMS module. | |
+| WS-15 | The network alone repins a finalized work's renderer, against the current state hash, until the pin is locked. | |
+| WS-16 | A pinned renderer is held with its code hash; a changed code is refused and `tokenURI` fails closed. | |
+| WS-17 | On-chain complete is one-way and set by anyone once every media file reads complete in the content store. | |
+| WS-18 | A locator is a canonical `ar://` or `ipfs://` content address; one spelling per address. | |
+| WS-19 | Before finalize 8 locators per file from the artist and 8 from the platform; after finalize only the platform adds, up to 16. | |
+| WS-20 | Locators are append-only and belong to one of the work's files; a locator marked dead is never served again. | |
+| WS-21 | The preferred locator is the file's choice, else the collection's, else the global one, else the first registered, else the on-chain copy of a complete work. | |
+| WS-22 | The storage operator chooses only among copies registered for that file, or its on-chain bytes. | |
+| WS-23 | Every visible change emits ERC-4906 through the token. | |
 | WS-24 | A chunk is at most `CHUNK_SIZE` bytes; writing is idempotent. | `test_WriteChunk_AcceptsMaxAndRejectsOneMore`, `test_WriteChunk_IsIdempotent` |
 | WS-25 | The file ID commits to the whole manifest and nothing else; registering again is a no-op. | `test_FileId_CommitsToWholeManifest`, `test_RegisterManifest_IsIdempotent` |
 | WS-26 | A manifest has 1 to 4,096 chunks and a length that fits them. | `test_RegisterManifest_ChunkCountBounds`, `testFuzz_RegisterManifest_LengthFitsIffInRange` |
@@ -121,16 +121,16 @@ after that, completeness is one read.
 | WS-33 | The uploader's file IDs, chunk hashes and verdicts equal the contract's. | `test_Inline_ChunkHashesFileIdAndCalldataMatch` |
 | WS-34 | A dependency `(name, version)` maps to one complete file forever. | `test_Register_VersionsAreImmutable`, `test_Register_RequiresCompleteContent` |
 | WS-35 | Deprecating a dependency is a one-way flag; nothing is deleted. | `test_Deprecate_IsAFlagOnly` |
-| WS-36 | The governed selectors of the records and dependency modules match the role map. | `test_JsonMatchesTheCompiledSelectors` |
-| WS-37 | `renounce` needs the artist's signature on the current state; the royalty and license powers also need the network. | `test_renounce_onlyTheLeadArtistSigns`, `test_renounce_royaltyAndLicenceNeedTheNetwork` |
-| WS-38 | A renounced power is gone for that work: its function always reverts. | `test_renounce_royaltyRateThenEveryRateChangeReverts`, `test_renounce_relicenseThenEveryRelicenseReverts` |
-| WS-39 | The network replaces the delivery contract, compare-and-set; a hostile delivery changes no fact. | `test_setDelivery_swapsAndRefreshesEveryToken`, `test_aHostileDeliveryChangesNoFact` |
-| WS-40 | A served locator is printable ASCII without `"` or `\`, at most `Limits.MAX_URI_BYTES`; anything else is "no locator". The renderer applies this check. | `test_preferredLocator_failSoftOnEveryMalformedAnswer`, `test_preferredLocator_onlyPrintableAsciiIsServed` |
-| WS-41 | Added stores are append-only with a pinned code hash; a retired store counts nothing new. | `test_addStore_isGovernedAppendOnlyAndPinned`, `test_retireStore_countsNothingNewAndKeepsWhatWasCounted` |
+| WS-36 | The governed selectors of the records and dependency modules match the role map. | |
+| WS-37 | `renounce` needs the artist's signature on the current state; the royalty and license powers also need the network. | |
+| WS-38 | A renounced power is gone for that work: its function always reverts. | |
+| WS-39 | The network replaces the delivery contract, compare-and-set; a hostile delivery changes no fact. | |
+| WS-40 | A served locator is printable ASCII without `"` or `\`, at most `Limits.MAX_URI_BYTES`; anything else is "no locator". The renderer applies this check. | |
+| WS-41 | Added stores are append-only with a pinned code hash; a retired store counts nothing new. | |
 | WS-42 | Retired: the ranged sync walks are replaced by `attestComplete` in the content store. | |
 | WS-43 | Retired: the ranged sync walks are replaced by `attestComplete` in the content store. | |
-| WS-44 | `WorkFacts` logs every change; its state is rebuilt from its logs alone. | `test_recordOpened_carriesEveryFactOfTheOpen`, `test_EveryStreamAndRecordsEventReplaysToTheSameState` |
-| WS-45 | Item kinds, seed policies and roles are open `uint8`s, so a future policy's item still opens. | `test_openRecord_itemValuesTodaysEnumsDoNotName` |
+| WS-44 | `WorkFacts` logs every change; its state is rebuilt from its logs alone. | |
+| WS-45 | Item kinds, seed policies and roles are open `uint8`s, so a future policy's item still opens. | |
 | WS-46 | Retired: the seed is stored in the token at mint; `open` does not interpret seed policies. | |
 | WS-50 | A linked chunk reads exactly as the same bytes written whole. | `test_Link_IsTheSameChunkAsAWholeWrite`, `testFuzz_Link_AnySplitGivesTheSameChunk` |
 | WS-51 | `registerManifestList` registers the same file as `registerManifest`. | `test_List_GivesTheSameFileAsOneCall` |

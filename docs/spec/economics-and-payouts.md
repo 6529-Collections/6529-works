@@ -97,14 +97,14 @@ only when; the amounts are never more than the money that has itself waited.
 | --- | --- | --- |
 | ECO-1 | Rates and shares are out of 100,000; the launch royalty 6,529 is exactly 6.529%. | `test_RoyaltyRateIsExact`, `test_LaunchDefaults` |
 | ECO-2 | A product's fee share is below 100,000, its royalty rate at most 100,000, and a nonzero share names a nonzero recipient. | `test_ConstructorEmitsAndValidates`, `test_SetFeeTermsIsCompareAndSet` |
-| ECO-3 | The fee recipient is never the resolver, its dependencies or a recognised protocol contract. | `test_FeeRecipientRefusesSystemContracts` |
+| ECO-3 | The fee recipient is never the resolver, its dependencies or a recognised protocol contract. | |
 | ECO-4 | Every governed economics setter is compare-and-set on its own revision. | `test_SetRoyaltyRateIsCompareAndSetOnItsOwnRevision` |
 | ECO-5 | Setters are restricted to their roles and non-payable. | `test_RolesAndDelaysThroughAccessManager`, `check_everyGovernedWrite_needsItsRole` |
 | ECO-6 | Economics changes apply to new works only. | `test_ChangesApplyToNewWorksOnly` |
 | ECO-7 | The royalty receiver is the salt-zero vault of `Splits.royaltyPayees`, or the seller at a zero share; the policy, the terms module and the resolver derive the same address. | `test_RoyaltyReceiverMatchesTheSharedDerivation`, `test_ZeroFeeShareOmitsTheFeePayee` |
 | ECO-8 | A payee list is canonical: 1 to 64 entries, sorted, shares summing to 100,000. | `test_RejectsUnsortedAndDuplicatePayees`, `testFuzz_ValidationAcceptsExactlyCanonicalLists` |
 | ECO-9 | A vault's address is the documented CREATE2 derivation; the deployed vault is always at the prediction. | `test_AddressIsTheDocumentedCreate2Derivation`, `testFuzz_PredictionMatchesDeployment` |
-| ECO-10 | `createWallet` is permissionless, writes one word and logs the whole list. | `test_AnyoneCreatesAWalletForAnyCanonicalList`, `test_EveryLedgerEventReplaysToTheSameState` |
+| ECO-10 | `createWallet` is permissionless, writes one word and logs the whole list. | `test_AnyoneCreatesAWalletForAnyCanonicalList` |
 | ECO-11 | Funds sent to a predicted address before deployment are split once the vault exists. | `test_FundsSentBeforeDeploymentAreSplitAfterwards` |
 | ECO-12 | The ledger pins no code hash of its resolver; the resolver must have code at deployment. | `test_CreateWalletIgnoresTheResolversCodeHash` |
 | ECO-13 | A payee's releases never exceed its entitlement; dust stays below the payee count. | `invariant_ReleasedWithinEntitlement`, `invariant_DustIsBounded` |
