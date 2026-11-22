@@ -145,6 +145,36 @@ contract FederatedRefusalTest is FederationBase {
         fed.reclaim(tokenId);
     }
 
+    /// @dev A token its adapter burned (a cancelled sale) is unsettled but no longer held by the
+    ///      adapter: nothing to reclaim, refused before any call to the adapter.
+    function test_Reclaim_RefusesATokenItsAdapterBurned() public {
+        _joinedFed();
+        (, uint256 tokenId) = _startFed(_fedWork(fedArtist));
+        vm.prank(address(auction));
+        fed.burn(tokenId, 1);
+        vm.expectRevert(abi.encodeWithSelector(IFederatedStream.WorkNotRestartable.selector, 1));
+        fed.reclaim(tokenId);
+    }
+
+    /// @dev The recorded sale price is capped at 2**96 - 1, the width it is stored in, rather
+    ///      than wrapping; prices below the cap are kept exactly.
+    function test_SettlePrimary_RecordsAPriceAboveTheStoredWidthAsTheCap() public {
+        _joinedFed();
+        (, uint256 tokenId) = _startFed(_fedWork(fedArtist));
+        uint256 huge = uint256(type(uint96).max) + 5;
+        vm.prank(address(auction));
+        fed.settlePrimary(tokenId, PrimaryOutcome.SOLD, collector, address(0), huge);
+        (PrimaryOutcome outcome, address currency, uint256 price) = fed.primarySale(tokenId);
+        assertEq(uint8(outcome), uint8(PrimaryOutcome.SOLD));
+        assertEq(currency, address(0));
+        assertEq(price, type(uint96).max);
+        (, uint256 second) = _startFed(_fedWork(fedArtist));
+        vm.prank(address(auction));
+        fed.settlePrimary(second, PrimaryOutcome.SOLD, collector, address(0), 3 ether);
+        (,, price) = fed.primarySale(second);
+        assertEq(price, 3 ether);
+    }
+
     function test_OnERC721Received_RefusesEverythingButItsOwnReturn() public {
         _joinedFed();
         (uint256 saleId, uint256 tokenId) = _startFed(_fedWork(fedArtist));

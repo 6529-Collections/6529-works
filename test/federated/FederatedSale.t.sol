@@ -322,6 +322,30 @@ contract FederatedSaleTest is FederationBase {
         auction.start(address(fed), _mintData(w));
     }
 
+    /// @dev Revoking an approval of an item that already has a work clears only the approval:
+    ///      the item no longer mints, and a fresh approval restarts the same work.
+    function test_RevokeItem_AfterAMintKeepsTheWorkForARestart() public {
+        _joinedFed();
+        Work memory w = _fedWork(fedArtist);
+        bytes32 h = _itemHash(w);
+        (uint256 saleId, uint256 tokenId) = _startFed(w);
+        _settleAtEnd(saleId);
+        bytes memory data = _mintData(w);
+        vm.startPrank(fedArtist);
+        fed.approveItem(h, RATE);
+        fed.revokeItem(h);
+        vm.stopPrank();
+        vm.expectRevert(IMintTarget.InvalidMintRequest.selector);
+        auction.start(address(fed), data);
+        vm.prank(fedArtist);
+        fed.approveItem(h, RATE);
+        uint256 again = auction.start(address(fed), data);
+        uint256 next = auction.auction(again).tokenId;
+        assertEq(next, tokenId + 1);
+        assertEq(fed.liveTokenOf(1), next, "the same work, restarted");
+        assertEq(fed.liveTokenOf(2), 0, "no second work");
+    }
+
     function test_Mint_RefusesARequestNotForTheAdaptersOwnCustody() public {
         _joinedFed();
         Work memory w = _fedWork(fedArtist);

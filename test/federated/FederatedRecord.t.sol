@@ -113,6 +113,23 @@ contract FederatedRecordTest is FederationBase {
         assertTrue(fed.record(stored).onChainComplete);
     }
 
+    /// @dev Finalizing and marking a work on-chain complete set separate flags: neither clears
+    ///      the other, in either order.
+    function test_SyncOnChainAndFinalize_KeepEachOthersFlag() public {
+        (, uint256 first) = _startFed(fed, fedArtist, _storedWork(fedArtist), RATE);
+        fed.syncOnChain(first);
+        vm.prank(fedArtist);
+        fed.finalize(first);
+        assertTrue(fed.record(first).finalized);
+        assertTrue(fed.record(first).onChainComplete, "finalize keeps on-chain complete");
+        (, uint256 second) = _startFed(fed, fedArtist, _storedWork(fedArtist), RATE);
+        vm.prank(fedArtist);
+        fed.finalize(second);
+        fed.syncOnChain(second);
+        assertTrue(fed.record(second).onChainComplete);
+        assertTrue(fed.record(second).finalized, "the sync keeps finalized");
+    }
+
     function test_Burn_OnlyTheMintingAdapterBeforeSettlement() public {
         (Work memory w, uint256 saleId, uint256 tokenId) = _opened();
         vm.expectRevert(
