@@ -41,6 +41,26 @@ import { Dependency } from "src/libraries/Dependency.sol";
 import { SignatureReverts } from "test/helpers/SignatureReverts.sol";
 import { CurationBase } from "./CurationBase.sol";
 
+/// @dev An artist registry that registers every account under an ID one below its address.
+contract UndernumberingArtistRegistry is IERC165 {
+    function artistIdOf(address) external pure returns (uint256) {
+        return 0;
+    }
+
+    function requireSigned(uint256, bytes32, bytes calldata) external pure returns (address) {
+        return address(0);
+    }
+
+    function register(address root, bytes32, bytes32) external pure returns (uint256) {
+        return uint256(uint160(root)) - 1;
+    }
+
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return interfaceId == type(IERC165).interfaceId
+            || interfaceId == type(IArtistRegistry).interfaceId;
+    }
+}
+
 /// @dev A verifier that approves every root: code that could take the place of the pinned one.
 contract ApproveEverythingVerifier {
     function isApproved(bytes32, bytes32, bytes calldata) external pure returns (bool, address) {
@@ -1049,6 +1069,29 @@ contract PackageRegistryTest is CurationBase {
         _expectInvalidWith(item, _keys(leadKey), reason);
     }
 
+    /// @dev A VRF item carries no seed of its own (the seed comes from the entropy module): with
+    ///      an entropy module in the context it is quoted.
+    function test_preview_aVrfItemWithoutASeed() public {
+        PackageItem memory item = _item(lead, SHA_A);
+        item.seedPolicy = uint8(SeedPolicy.VRF);
+        item.seed = 0;
+        bytes32 root = WorksHashing.leaf(_hash(item));
+        _register(root);
+        _accept(root, leadKey);
+        IMintPolicy.MintContext memory c = IMintPolicy.MintContext(
+            stream, address(_policyStub), makeAddr("entropyModule"), address(_policyStub)
+        );
+        PrimaryTerms memory t = registry.preview(
+            c,
+            abi.encode(
+                StreamMintRequest(
+                    root, item, new bytes32[](0), _move(leadKey, root, _hash(item), 0)
+                )
+            )
+        );
+        assertEq(t.creator, lead);
+    }
+
     /// @dev Kinds, seed policies and party roles are open `uint8`s in the package types; the
     ///      genesis policy refuses every value it does not know for a new item (a value above
     ///      today's enum used to fail the ABI decode instead).
@@ -1293,6 +1336,10 @@ contract PackageRegistryTest is CurationBase {
         vm.prank(stream);
         vm.expectRevert(reason);
         registry.authorize(c, request);
+        request[31] = bytes1(uint8(0)); // nor below it
+        vm.prank(stream);
+        vm.expectRevert(reason);
+        registry.authorize(c, request);
     }
 
     /// @dev The quote refuses product terms that cannot yield a valid royalty payee list: a
@@ -1302,9 +1349,10 @@ contract PackageRegistryTest is CurationBase {
         SettablePolicyStub stub = new SettablePolicyStub();
         address seller = address(0x5E11E7);
         address fee = makeAddr("feeRecipient");
-        ProductEconomics[4] memory bad = [
+        ProductEconomics[5] memory bad = [
             ProductEconomics(address(0), 0, 100_001),
             ProductEconomics(fee, 100_000, 5000),
+            ProductEconomics(fee, 100_001, 5000),
             ProductEconomics(address(0), 1, 5000),
             ProductEconomics(seller, 1, 5000)
         ];
@@ -1407,6 +1455,40 @@ contract PackageRegistryTest is CurationBase {
         vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(odd)));
         reg.acceptPackage(root, a, "");
         assertEq(reg.acceptedAs(root, lead), 0);
+    }
+
+    /// @dev The same refusal for an ID below the one asked for.
+    function test_acceptPackage_revertsWhenTheArtistRegistryAnswersALowerId() public {
+        UndernumberingArtistRegistry odd = new UndernumberingArtistRegistry();
+        PackageRegistry reg = new PackageRegistry(
+            address(manager),
+            ICurationVerifier(address(verifier)),
+            address(verifier).codehash,
+            address(odd),
+            address(odd).codehash
+        );
+        bytes32 root = keccak256("undernumbered");
+        reg.registerPackage(root, EVIDENCE, _attestation(signerKey1, root, EVIDENCE));
+        PartyAcceptance memory a = _acceptance(lead);
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(odd)));
+        reg.acceptPackage(root, a, "");
+    }
+
+    /// @dev A proof of exactly `Limits.MAX_PROOF_DEPTH` nodes places an item; one more does not.
+    function test_isApprovedItem_aProofAtTheMaximumDepth() public {
+        bytes32 itemHash = keccak256("deep item");
+        bytes32[] memory proof = new bytes32[](Limits.MAX_PROOF_DEPTH);
+        bytes32 node = WorksHashing.leaf(itemHash);
+        for (uint256 i; i < proof.length; ++i) {
+            proof[i] = keccak256(abi.encode("sibling", i));
+            node = _pairHash(node, proof[i]);
+        }
+        _register(node);
+        assertTrue(registry.isApprovedItem(node, itemHash, proof));
+    }
+
+    function _pairHash(bytes32 a, bytes32 b) internal pure returns (bytes32) {
+        return a < b ? keccak256(abi.encode(a, b)) : keccak256(abi.encode(b, a));
     }
 
     // ------------------------------------------------------------------- releaseContent
