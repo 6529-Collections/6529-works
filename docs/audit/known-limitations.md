@@ -9,7 +9,7 @@ it is, what follows, what mitigates it, and where it is recorded. Rows cite spec
 
 | Type | Meaning |
 | --- | --- |
-| **Accepted** | A risk recorded as accepted or residual by an ADR, an owner decision, the internal review or a module's design. Changing it needs a design decision. |
+| **Accepted** | A risk recorded as accepted or residual by an ADR or by a module's design. Changing it needs a design decision. |
 | **Gap** | Not implemented, or a v1 limitation. It may be fixed later without reopening a decision. |
 | **Removed or closed** | Left with the code it described, or resolved. Only the ID is kept, under [Removed and closed IDs](#removed-and-closed-ids); it is not reused. |
 
