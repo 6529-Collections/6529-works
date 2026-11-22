@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { Vm } from "forge-std/Vm.sol";
 import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
 import { GovernedVault } from "src/economics/GovernedVault.sol";
 import { SplitLedger } from "src/economics/SplitLedger.sol";
@@ -81,6 +82,26 @@ contract NetworkShareTest is EconomicsBase, GasRuleAssertions {
         assertEq(address(feeVault).balance, 1 ether, "the network is paid in the same call");
         assertEq(ledger.released(wallet, ETH, feeIndex), 1 ether);
         assertEq(wallet.balance, 0);
+    }
+
+    /// @dev A release whose network share rounds down to nothing pays and logs the payee only:
+    ///      no zero transfer to the vault and no zero `Released`.
+    function test_ReleaseWithNothingDueToTheNetworkLogsThePayeeOnly() public {
+        address wallet = _wallet(_list(_fixed(seller, 99_000), _fixed(address(feeVault), 1000)));
+        vm.deal(wallet, 50);
+        uint256 sellerIndex = _indexOf(wallet, seller);
+        uint256 feeIndex = _indexOf(wallet, address(feeVault));
+        vm.recordLogs();
+        vm.prank(alice);
+        assertEq(_release(wallet, ETH, sellerIndex), 49);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        uint256 released;
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].topics[0] == ISplitWallet.Released.selector) ++released;
+        }
+        assertEq(released, 1, "the payee's release only");
+        assertEq(ledger.released(wallet, ETH, feeIndex), 0);
+        assertEq(address(feeVault).balance, 0);
     }
 
     /// @dev The claim router over a royalty wallet that pays the network: the seller's item also
