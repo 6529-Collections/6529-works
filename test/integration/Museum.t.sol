@@ -187,7 +187,7 @@ contract MuseumTest is SaleFlowBase {
         vm.recordLogs();
         auction.settle(saleId);
         assertEq(vm.getRecordedLogs().length, 1, "RescuedSaleClosed only");
-        assertEq(auction.claimable(address(0)), 0);
+        assertEq(address(auction).balance, 0, "nothing held");
     }
 
     /// @dev `rescueDelay` is read when a rescue is attempted: lowering it opens a rescue at once;
