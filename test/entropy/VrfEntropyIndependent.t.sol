@@ -170,9 +170,7 @@ contract VrfEntropyIndependentTest is EntropyBase {
     /// @dev The gate reads the directory now: an empty INDEPENDENT_STREAM or ACCOUNTS slot, a
     ///      contract the registry does not serve, and a caller who is not a wallet of the
     ///      contract's artist are each refused, and nothing is paid or stamped.
-    function test_RequestIndependentSeed_RefusesAnEmptySlotAnUnservedContractAndAStranger()
-        public
-    {
+    function test_RequestIndependentSeed_RefusesAnEmptySlotAnUnservedContractAndAStranger() public {
         _setWrapper(address(wrapper));
         PackageItem memory item = _vrfItem();
         bytes memory refused = _notRequestable(_hash(item));
@@ -241,22 +239,22 @@ contract VrfEntropyIndependentTest is EntropyBase {
         PackageItem memory item = _vrfItem();
         bytes32 itemHash = _hash(item);
         uint256 first = _paidRequest(item);
-        uint64 at = uint64(block.timestamp);
+        uint64 stamped = uint64(block.timestamp);
 
         _expectRefused(
             item,
             abi.encodeWithSelector(
-                IEntropyModule.RequestPending.selector, itemHash, at + RETRY_DELAY
+                IEntropyModule.RequestPending.selector, itemHash, stamped + RETRY_DELAY
             )
         );
-        vm.warp(at + RETRY_DELAY - 1);
+        vm.warp(stamped + RETRY_DELAY - 1);
         _expectRefused(
             item,
             abi.encodeWithSelector(
-                IEntropyModule.RequestPending.selector, itemHash, at + RETRY_DELAY
+                IEntropyModule.RequestPending.selector, itemHash, stamped + RETRY_DELAY
             )
         );
-        vm.warp(at + RETRY_DELAY);
+        vm.warp(stamped + RETRY_DELAY);
         uint256 second = _paidRequest(item);
         assertEq(second, first + 1, "a new request");
         uint64 repeatedAt = uint64(block.timestamp);
@@ -575,11 +573,11 @@ contract VrfEntropyIndependentTest is EntropyBase {
         _setWrapper(address(next));
         uint256 newId = _paidRequest(item);
         assertEq(next.received(), next.price(), "the new provider was paid");
-        uint64 at = uint64(block.timestamp);
+        uint64 stamped = uint64(block.timestamp);
         _expectRefused(
             item,
             abi.encodeWithSelector(
-                IEntropyModule.RequestPending.selector, itemHash, at + RETRY_DELAY
+                IEntropyModule.RequestPending.selector, itemHash, stamped + RETRY_DELAY
             )
         );
 
@@ -601,8 +599,8 @@ contract VrfEntropyIndependentTest is EntropyBase {
     ///      coordinator does not restart a paid draw's.
     function test_SetWrapper_LeavesTheCuratedBackoffAndSetCoordinatorThePaidOne() public {
         _request(0);
-        uint64 at = uint64(block.timestamp);
-        vm.warp(at + RETRY_DELAY);
+        uint64 stamped = uint64(block.timestamp);
+        vm.warp(stamped + RETRY_DELAY);
         _request(0); // the first repeat
         uint64 repeatedAt = uint64(block.timestamp);
         _setWrapper(address(wrapper));

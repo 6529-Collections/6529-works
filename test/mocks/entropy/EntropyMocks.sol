@@ -312,7 +312,11 @@ contract EntropyIndependentRegistryMock {
         isActive[token] = active;
     }
 
-    function entry(address token) external view returns (IIndependentStreamRegistry.Entry memory e) {
+    function entry(address token)
+        external
+        view
+        returns (IIndependentStreamRegistry.Entry memory e)
+    {
         e.artistId = artistOf[token];
     }
 }
