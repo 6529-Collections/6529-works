@@ -3,6 +3,16 @@
 Deployment configuration for the 6529 Works `WorksAccessManager`
 ([src/governance](../src/governance/README.md)).
 
+`genesis.core.example.json` is the genesis configuration of the plain-core stack
+([ADR 0010](../docs/adr/0010-plain-permanent-core.md)), written by `python config/make_core_genesis.py`
+(`--check` fails if the committed file is stale). Genesis modules and minters are constructor
+arguments of Stream, Editions and Directory, so nothing is bound by wiring. Every function that
+changes a waiting period, a module or a minter, and the two timed moves (`rescue`, `rebind`),
+map to NETWORK: the wait that applies is the contract's own setting (launch values: 7 days to
+add a module or minter, 14 days before a rescue or a rebind, 180 days before unclaimed money goes
+to the network), which the network changes at once. It replaces `genesis.example.json` (the
+current stack's file) at integration.
+
 `genesis.example.json` is the committed genesis configuration. **Every address in it is a
 placeholder**: `0x…a0xx` stands for a contract and `0x…b0xx` for a holder.
 
