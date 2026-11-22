@@ -368,7 +368,8 @@ contract FederatedStreamIndexer is ReplayIndexer {
             (, renderer) = abi.decode(log.data, (address, address));
             delete _pending;
         } else if (
-            sig == IStream.ContractURIUpdated.selector || sig == IERC4906.MetadataUpdate.selector
+            sig == IStream.ContractURIUpdated.selector || sig == IStream.ContractURISet.selector
+                || sig == IERC4906.MetadataUpdate.selector
                 || sig == IERC4906.BatchMetadataUpdate.selector
         ) {
             // No state.

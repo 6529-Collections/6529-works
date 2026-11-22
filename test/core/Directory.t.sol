@@ -33,10 +33,21 @@ contract DirectoryTest is CoreFixture {
         new Directory(address(manager), address(1), address(2), address(3), address(4));
         Vm.Log[] memory logs = vm.getRecordedLogs();
         uint256 sets;
+        uint256 launch;
         for (uint256 i; i < logs.length; ++i) {
-            if (logs[i].topics[0] == IModuleSlots.ModuleSet.selector) ++sets;
+            bytes32 t = logs[i].topics[0];
+            if (t == IModuleSlots.ModuleSet.selector) ++sets;
+            if (t == IModuleSlots.ModuleDelaySet.selector) {
+                assertEq(logs[i].data, abi.encode(uint48(0), uint48(7 days)));
+                ++launch;
+            }
+            if (t == IDirectory.UnclaimedPeriodSet.selector) {
+                assertEq(logs[i].data, abi.encode(uint48(0), uint48(180 days)));
+                ++launch;
+            }
         }
         assertEq(sets, 4);
+        assertEq(launch, 2, "both settings' launch values are logged");
     }
 
     function testFuzz_PayoutAddress_ForwardsToTheAccountsModule(uint256 artistId, address payout)

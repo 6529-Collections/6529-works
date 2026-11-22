@@ -64,6 +64,13 @@ contract EditionsTest is EditionsFixture {
 
     // ------------------------------------------------------------------ create
 
+    function test_Create_RefusesAZeroReceiverWithANonzeroRate() public {
+        uint256 id = _sell(1, collector);
+        vm.expectRevert(IEditions.InvalidRoyalty.selector);
+        sale.createEdition(address(editions), id, 10, address(0), RATE);
+        sale.createEdition(address(editions), id, 10, address(0), 0);
+    }
+
     function test_Create_StoresTheEditionAndLogsIt() public {
         uint256 id = _sell(1, collector);
         vm.expectEmit(address(editions));
@@ -513,6 +520,8 @@ contract EditionsTest is EditionsFixture {
         uint256 id = _edition(1, 10);
         vm.expectRevert(IEditions.InvalidRoyalty.selector);
         terms.setEditionRoyalty(address(editions), id, ROYALTY, 100_001);
+        vm.expectRevert(IEditions.InvalidRoyalty.selector);
+        terms.setEditionRoyalty(address(editions), id, address(0), 1);
         terms.setEditionRoyalty(address(editions), id, ROYALTY, 100_000);
         (, uint256 amount) = editions.royaltyInfo(id, 7 ether);
         assertEq(amount, 7 ether);

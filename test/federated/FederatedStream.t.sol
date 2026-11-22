@@ -513,16 +513,22 @@ contract FederatedStreamTest is FederatedTokenFixture {
         (address r, uint256 amount) = fs.royaltyInfo(id, 100_000);
         assertEq(r, stranger);
         assertEq(amount, 100);
-        vm.expectRevert(IStream.InvalidRoyalty.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(IModuleSlots.NotModule.selector, Slots.TERMS, address(this))
+        );
         fs.setRoyalty(id, stranger, 1);
         vm.prank(address(records));
-        vm.expectRevert(IStream.InvalidRoyalty.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(IModuleSlots.NotModule.selector, Slots.TERMS, address(records))
+        );
         fs.lockRoyaltyRate(id);
         terms.lockRoyaltyRate(address(fs), id);
         vm.expectRevert(IStream.InvalidRoyalty.selector);
         terms.setRoyalty(address(fs), id, stranger, 101);
         directory.removeModule(Slots.FEDERATED_TERMS);
-        vm.expectRevert(IStream.InvalidRoyalty.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(IModuleSlots.NotModule.selector, Slots.TERMS, address(terms))
+        );
         terms.setRoyalty(address(fs), id, collector, 100);
     }
 

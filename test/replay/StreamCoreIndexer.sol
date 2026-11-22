@@ -26,8 +26,10 @@ import { ReplayIndexer } from "./ReplayIndexer.sol";
 ///         `tokenOfContent`, the counters, the minters, the module slots and announcements, the
 ///         marketplace owner and the two waiting-period settings. It never calls the contract
 ///         while applying logs; `assertMatches` then compares every value with the live getter.
-/// @dev `contractURI` is the one value no log carries (ERC-7572's `ContractURIUpdated` has no
-///      argument): an indexer reads the getter when it sees the event. A `MinterRemoved` log
+/// @dev `contractURI` comes from `ContractURISet`, which carries the value (ERC-7572's
+///      `ContractURIUpdated` has none). The settings' launch values are logged at construction;
+///      the defaults below are those values, for a replay that starts after deployment. A
+///      `MinterRemoved` log
 ///      carries no time; the removal time is the block's timestamp, as a real indexer reads it.
 contract StreamCoreIndexer is ReplayIndexer {
     // Rebuilt state.
@@ -46,8 +48,9 @@ contract StreamCoreIndexer is ReplayIndexer {
     uint256 public collectionCount;
     address public owner;
     address public authority;
-    uint48 public rescueDelay = 14 days; // the constructor's value, which emits no log
+    uint48 public rescueDelay = 14 days; // the launch value, also logged at construction
     uint48 public moduleDelay = 7 days; // idem
+    string public contractURI;
     uint256 public metadataUpdates;
 
     // What to compare.
@@ -124,7 +127,9 @@ contract StreamCoreIndexer is ReplayIndexer {
         } else if (t == IStream.OwnershipTransferred.selector) {
             owner = _addr(log.topics[2]);
         } else if (t == IStream.ContractURIUpdated.selector) {
-            // No value in the log (ERC-7572).
+            // No value in the log (ERC-7572); `ContractURISet` carries it.
+        } else if (t == IStream.ContractURISet.selector) {
+            contractURI = abi.decode(log.data, (string));
         } else if (t == IStream.RescueDelaySet.selector) {
             (, rescueDelay) = abi.decode(log.data, (uint48, uint48));
         } else if (t == IModuleSlots.ModuleDelaySet.selector) {
@@ -165,6 +170,7 @@ contract StreamCoreIndexer is ReplayIndexer {
         assertEq(s.owner(), owner, "owner");
         assertEq(s.authority(), authority, "authority");
         assertEq(s.rescueDelay(), rescueDelay, "rescueDelay");
+        assertEq(s.contractURI(), contractURI, "contractURI");
         assertEq(s.moduleDelay(), moduleDelay, "moduleDelay");
         for (uint256 id = 1; id <= totalMinted + 1; ++id) {
             (bool live, bytes memory ret) = target.staticcall(abi.encodeCall(IERC721.ownerOf, (id)));
@@ -236,7 +242,7 @@ contract StreamCoreIndexer is ReplayIndexer {
 contract CoreDirectoryIndexer is ReplayIndexer {
     mapping(bytes32 slot => address) public moduleOf;
     mapping(bytes32 slot => PendingModule) internal _pending;
-    uint48 public moduleDelay = 7 days; // the constructor's value, which emits no log
+    uint48 public moduleDelay = 7 days; // the launch value, also logged at construction
     uint48 public unclaimedPeriod = 180 days; // idem
     address public authority;
 

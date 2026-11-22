@@ -7,7 +7,7 @@ import { FederatedEditions } from "src/federated/FederatedEditions.sol";
 import { IFederatedMembership } from "src/interfaces/IFederatedMembership.sol";
 import { Edition, Slots } from "src/interfaces/core/CoreTypes.sol";
 import { IEditions } from "src/interfaces/core/IEditions.sol";
-import { IModules } from "src/interfaces/core/IModules.sol";
+import { IModules, IModuleSlots } from "src/interfaces/core/IModules.sol";
 import { MockSale } from "../mocks/core/CoreMocks.sol";
 import { FederatedTokenFixture } from "./FederatedTokenFixture.sol";
 
@@ -182,7 +182,9 @@ contract FederatedEditionsTest is FederatedTokenFixture {
         (address r, uint256 amount) = fe.royaltyInfo(master, 100_000);
         assertEq(r, stranger);
         assertEq(amount, 900);
-        vm.expectRevert(IEditions.InvalidRoyalty.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(IModuleSlots.NotModule.selector, Slots.TERMS, address(this))
+        );
         fe.setRoyalty(master, stranger, 1);
     }
 

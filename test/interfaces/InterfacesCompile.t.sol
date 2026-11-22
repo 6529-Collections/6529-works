@@ -37,12 +37,11 @@ import { SaleKind } from "../../src/interfaces/types/SaleTypes.sol";
 /// @dev An ID covers the functions an interface declares itself, not inherited ones.
 contract InterfacesCompileTest is Test {
     function test_interfaceIds() public pure {
-        assertEq(type(IStream).interfaceId, bytes4(0xced242c8), "IStream");
-        assertEq(type(IWorkPowers).interfaceId, bytes4(0xbd18229c), "IWorkPowers");
-        assertEq(type(IEditions).interfaceId, bytes4(0x566c4b4c), "IEditions");
+        assertEq(type(IStream).interfaceId, bytes4(0xe38078e5), "IStream");
+        assertEq(type(IWorkPowers).interfaceId, bytes4(0xf2f560e3), "IWorkPowers");
+        assertEq(type(IEditions).interfaceId, bytes4(0xa7c1a138), "IEditions");
         assertEq(type(ISaleAdapter).interfaceId, bytes4(0x312dc1e1), "ISaleAdapter");
-        // `setConfig` takes the refusal delay and gas (AUC-39, AUC-40).
-        assertEq(type(IEnglishAuction).interfaceId, bytes4(0xeb1a95c7), "IEnglishAuction");
+        assertEq(type(IEnglishAuction).interfaceId, bytes4(0x54df3713), "IEnglishAuction");
         // An integration view, never reported through ERC-165.
         assertEq(type(IEnglishAuctionClock).interfaceId, bytes4(0x968c7b07), "IEnglishAuctionClock");
         // The refusal exit (AUC-38), never reported through ERC-165.
@@ -50,14 +49,14 @@ contract InterfacesCompileTest is Test {
             type(IEnglishAuctionRefusal).interfaceId, bytes4(0x625761b5), "IEnglishAuctionRefusal"
         );
         assertEq(
-            type(IUniformEditionAuction).interfaceId, bytes4(0xcced0690), "IUniformEditionAuction"
+            type(IUniformEditionAuction).interfaceId, bytes4(0xa34e53aa), "IUniformEditionAuction"
         );
         // Errors only: no function, so the ID is zero and nothing reports it.
         assertEq(type(ICurationVerifier).interfaceId, bytes4(0x492733ca), "ICurationVerifier");
         assertEq(
             type(ICurationSignerVerifier).interfaceId, bytes4(0x9f12d97a), "ICurationSignerVerifier"
         );
-        assertEq(type(IPackageRegistry).interfaceId, bytes4(0x7bdc9b1d), "IPackageRegistry");
+        assertEq(type(IPackageRegistry).interfaceId, bytes4(0xfecfa933), "IPackageRegistry");
         assertEq(type(IContentStore).interfaceId, bytes4(0xe5a30736), "IContentStore");
         assertEq(type(IDependencyRegistry).interfaceId, bytes4(0xe5338d57), "IDependencyRegistry");
         assertEq(type(IRenderer).interfaceId, bytes4(0xa772216d), "IRenderer");
@@ -67,12 +66,12 @@ contract InterfacesCompileTest is Test {
         assertEq(
             type(IArtistPayoutResolver).interfaceId, bytes4(0x9b2c1793), "IArtistPayoutResolver"
         );
-        assertEq(type(IArtistRegistry).interfaceId, bytes4(0xe379ec77), "IArtistRegistry");
-        assertEq(type(IAccounts).interfaceId, bytes4(0x9f87c239), "IAccounts");
+        assertEq(type(IArtistRegistry).interfaceId, bytes4(0xb06572e4), "IArtistRegistry");
+        assertEq(type(IAccounts).interfaceId, bytes4(0xc27b4543), "IAccounts");
         assertEq(type(IItemApprovals).interfaceId, bytes4(0x881b19aa), "IItemApprovals");
         assertEq(type(IConsolidationSource).interfaceId, bytes4(0x42129132), "IConsolidationSource");
         assertEq(type(IEntropyModule).interfaceId, bytes4(0xa8a2a007), "IEntropyModule");
-        assertEq(type(IFederationRegistry).interfaceId, bytes4(0x279a77ec), "IFederationRegistry");
+        assertEq(type(IFederationRegistry).interfaceId, bytes4(0x74a7e21a), "IFederationRegistry");
     }
 
     /// @dev Decision D8: every interface a contract installs as a dependency extends IERC165, so

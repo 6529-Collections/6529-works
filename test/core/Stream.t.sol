@@ -89,15 +89,23 @@ contract StreamTest is CoreFixture {
             minters
         );
         Vm.Log[] memory logs = vm.getRecordedLogs();
-        // AuthorityUpdated, OwnershipTransferred, three ModuleSet, two MinterAdded.
-        assertEq(logs.length, 7);
+        // AuthorityUpdated, the two settings' launch values (ModuleDelaySet, RescueDelaySet),
+        // OwnershipTransferred, three ModuleSet, two MinterAdded.
+        assertEq(logs.length, 9);
         bytes32[] memory slots = new bytes32[](3);
         uint256 nSlots;
         uint256 nMinters;
         bool ownerLogged;
+        uint256 nSettings;
         for (uint256 i; i < logs.length; ++i) {
             bytes32 t = logs[i].topics[0];
-            if (t == IStream.OwnershipTransferred.selector) {
+            if (t == IModuleSlots.ModuleDelaySet.selector) {
+                assertEq(logs[i].data, abi.encode(uint48(0), uint48(7 days)), "moduleDelay launch");
+                ++nSettings;
+            } else if (t == IStream.RescueDelaySet.selector) {
+                assertEq(logs[i].data, abi.encode(uint48(0), uint48(14 days)), "rescueDelay launch");
+                ++nSettings;
+            } else if (t == IStream.OwnershipTransferred.selector) {
                 assertEq(logs[i].topics[2], bytes32(uint256(uint160(marketOwner))));
                 ownerLogged = true;
             } else if (t == IModuleSlots.ModuleSet.selector) {
@@ -107,6 +115,7 @@ contract StreamTest is CoreFixture {
             }
         }
         assertTrue(ownerLogged);
+        assertEq(nSettings, 2, "both settings' launch values are logged");
         assertEq(slots[0], Slots.RENDERER);
         assertEq(slots[1], Slots.TERMS);
         assertEq(slots[2], Slots.RECORDS);
@@ -224,6 +233,12 @@ contract StreamTest is CoreFixture {
         sale.mint(address(stream), f);
         f = _facts(1);
         f.royaltyRate = uint24(Core.DENOMINATOR + 1);
+        vm.expectRevert(IStream.InvalidMint.selector);
+        sale.mint(address(stream), f);
+        // A nonzero rate with a zero receiver would send royalties nowhere.
+        f = _facts(1);
+        f.royaltyReceiver = address(0);
+        f.royaltyRate = 1;
         vm.expectRevert(IStream.InvalidMint.selector);
         sale.mint(address(stream), f);
         // The edges are accepted.
@@ -659,7 +674,19 @@ contract StreamTest is CoreFixture {
         assertEq(stream.owner(), collector);
     }
 
+    function test_Mint_AZeroReceiverWithAZeroRateIsAccepted() public {
+        MintFacts memory f = _facts(1);
+        f.royaltyReceiver = address(0);
+        f.royaltyRate = 0;
+        uint256 id = sale.mint(address(stream), f);
+        (address r, uint256 amount) = stream.royaltyInfo(id, 1 ether);
+        assertEq(r, address(0));
+        assertEq(amount, 0);
+    }
+
     function test_SetContractURI_EventAndValue() public {
+        vm.expectEmit(address(stream));
+        emit IStream.ContractURISet("ipfs://contract");
         vm.expectEmit(address(stream));
         emit IStream.ContractURIUpdated();
         stream.setContractURI("ipfs://contract");
@@ -690,6 +717,9 @@ contract StreamTest is CoreFixture {
         uint256 id = _mint(1);
         vm.expectRevert(IStream.InvalidRoyalty.selector);
         terms.setRoyalty(address(stream), id, address(1), uint24(Core.DENOMINATOR + 1));
+        vm.expectRevert(IStream.InvalidRoyalty.selector);
+        terms.setRoyalty(address(stream), id, address(0), 1);
+        terms.setRoyalty(address(stream), id, address(0), 0);
         vm.expectRevert(_nonexistent(9));
         terms.setRoyalty(address(stream), 9, address(1), 1);
         vm.expectRevert(_nonexistent(9));

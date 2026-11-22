@@ -442,7 +442,7 @@ contract WorkFactsTest is RulesFixture {
     function test_Finalize_RefusesWhenTheTokenHasNoRenderer() public {
         (uint256 id,) = _open(1);
         bare.removeModule(Slots.RENDERER);
-        vm.expectRevert(abi.encodeWithSelector(IWorkFacts.RendererCodeChanged.selector, address(0)));
+        vm.expectRevert(abi.encodeWithSelector(IWorkFacts.NoRenderer.selector, b, id));
         records.finalize(b, id);
     }
 

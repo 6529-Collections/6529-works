@@ -74,6 +74,12 @@ contract PayoutBook is IArtistPayoutResolver {
         require(msg.sender == _keeper, "not keeper");
         payoutAddress[artistId] = payout;
     }
+
+    /// @dev The directory's unclaimed period at its launch value, which the ledger and the
+    ///      escrow read through their resolver.
+    function unclaimedPeriod() external pure returns (uint48) {
+        return 180 days;
+    }
 }
 
 /// @dev Stateful harness for Medusa (docs/testing/README.md, second fuzzer) over the money

@@ -81,7 +81,9 @@ contract CoreRoleMapTest is CoreDeployFixture {
                 ++checked;
             }
         }
-        assertEq(checked, 10 + 9 + 4);
+        // Directory also carries the four network functions every federated token asks it
+        // about (`rescue`, `setRescueDelay`, `rebind`, `setRebindDelay`).
+        assertEq(checked, 10 + 9 + 8);
     }
 
     function _contract(string memory json, string memory name)
