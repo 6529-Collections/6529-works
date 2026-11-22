@@ -8,7 +8,7 @@
     script/DeployCore.s.sol (one `<name>: <address>` object; round r6 on), with its creation
     transaction from forge's broadcast cache (broadcast/DeployCore.s.sol/11155111/
     run-latest.json, not committed), then reads Sourcify's v2 status for the address. Every
-    contract is created inside a transaction to its one-use CREATE3 proxy, and the manager
+    contract is created inside a transaction to the deployer's CoreFactory, and the manager
     inside the configurator's constructor: the creation transaction of each is the transaction
     whose created contracts (`additionalContracts`) include it. The manager's address is read
     from the configurator (`worksManager()`). Run it from the commit the record was deployed
@@ -37,10 +37,15 @@ Set-Location $Repo
 $Out = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Out)
 $rec = Get-Content -Raw -Encoding UTF8 (Join-Path $Repo $Record) | ConvertFrom-Json
 $addresses = [ordered]@{}
-foreach ($p in $rec.PSObject.Properties) { $addresses[$p.Name] = $p.Value }
+# The record also names the deployer, the delegation contract and the fork block (not contracts
+# of the deployment).
+foreach ($p in $rec.PSObject.Properties) {
+    if (@('deployer', 'delegation', 'forkBlock') -notcontains $p.Name) { $addresses[$p.Name] = $p.Value }
+}
 $addresses['WorksAccessManager'] = (& cast call $addresses['GovernanceConfigurator'] 'worksManager()(address)' --rpc-url $Rpc).Trim()
 if ($LASTEXITCODE -ne 0) { throw 'could not read the manager from the configurator' }
 $paths = [ordered]@{
+    CoreFactory                 = 'script/CoreFactory.sol:CoreFactory'
     WorksAccessManager          = 'src/governance/WorksAccessManager.sol:WorksAccessManager'
     GovernanceConfigurator      = 'src/governance/GovernanceConfigurator.sol:GovernanceConfigurator'
     ContentStore                = 'src/content/ContentStore.sol:ContentStore'

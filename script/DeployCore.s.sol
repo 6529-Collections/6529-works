@@ -12,8 +12,11 @@ import { VerifyCore } from "./VerifyCore.sol";
 
 /// @title DeployCoreScript
 /// @notice Broadcasts the plain-core stack (`DeployCore`) on anvil or Sepolia, installs the
-///         genesis policy and reads the permanent contracts back (`VerifyCore`). It refuses
-///         every other chain: this restructuring deploys to Sepolia only.
+///         genesis policy and reads the deployment back (`VerifyCore`). It refuses every other
+///         chain: this restructuring deploys to Sepolia only. The readback here runs in forge's
+///         simulation, before anything is sent; the check that counts is
+///         `script/VerifyCore.s.sol` against the chain after the broadcast (runtime code of
+///         every contract and the whole wiring).
 /// @dev `forge script script/DeployCore.s.sol --rpc-url <rpc> --sender <deployer> --broadcast`.
 ///      Environment: `GENESIS_CONFIG` (default on anvil: `config/genesis.core.example.json`),
 ///      `DEPLOY_NAMESPACE`, `NETWORK_FEE_RECIPIENT`, `MUSEUM`, `MARKETPLACE_OWNER`,
@@ -35,6 +38,9 @@ contract DeployCoreScript is ScriptIO {
             revert ChainNotAllowed(block.chainid);
         }
         checkChain();
+        // The last block before the deployment: `script/VerifyCore.s.sol` deploys the same build
+        // again from this block's state and compares the runtime code of every contract.
+        uint256 forkBlock = block.number;
         string memory path = _envString("GENESIS_CONFIG", local ? CORE_GENESIS : "");
         if (bytes(path).length == 0) revert MissingParameter("GENESIS_CONFIG");
         string memory json = _read(path);
@@ -73,15 +79,16 @@ contract DeployCoreScript is ScriptIO {
             vm.broadcast(cfg.network);
             d.manager.acceptNetwork();
         }
-        VerifyCore.verify(p, d, cfg, accepted);
+        VerifyCore.verify(p, d, cfg, json, accepted);
 
         log(p, d);
-        if (vm.isContext(VmSafe.ForgeContext.ScriptBroadcast)) record(p, d);
+        if (vm.isContext(VmSafe.ForgeContext.ScriptBroadcast)) record(p, d, forkBlock);
     }
 
     /// @notice Prints every address as `<name>: <address>` (the Sepolia manifest writer reads
     ///         these lines), the manager and the CC0 file ID.
     function log(DeployCore.Params memory p, DeployCore.Deployment memory d) internal pure {
+        console2.log(string.concat("CoreFactory: ", vm.toString(d.coreFactory)));
         console2.log(string.concat("WorksAccessManager: ", vm.toString(address(d.manager))));
         string[] memory list = DeployCore.order(p);
         for (uint256 i; i < list.length; ++i) {
@@ -92,11 +99,18 @@ contract DeployCoreScript is ScriptIO {
         console2.log(string.concat("cc0TextFileId: ", vm.toString(d.cc0TextFileId)));
     }
 
-    /// @notice Writes every deployed address to `deployments/<chain>/core-<time>.json`.
-    function record(DeployCore.Params memory p, DeployCore.Deployment memory d) internal {
+    /// @notice Writes every deployed address to `deployments/<chain>/core-<time>.json`, with
+    ///         what `script/VerifyCore.s.sol` needs to deploy the same build again: the deployer,
+    ///         the delegation contract and the last block before the deployment (`forkBlock`).
+    function record(DeployCore.Params memory p, DeployCore.Deployment memory d, uint256 forkBlock)
+        internal
+    {
         string memory o = "core";
         string[] memory list = DeployCore.order(p);
-        string memory out;
+        vm.serializeAddress(o, "CoreFactory", d.coreFactory);
+        vm.serializeAddress(o, "deployer", p.deployer);
+        vm.serializeAddress(o, "delegation", p.delegation);
+        string memory out = vm.serializeUint(o, "forkBlock", forkBlock);
         for (uint256 i; i < list.length; ++i) {
             out = vm.serializeAddress(o, list[i], DeployCore.addressOf(d, list[i]));
         }

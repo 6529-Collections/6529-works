@@ -8,9 +8,9 @@ committed): `broadcast/DeployCore.s.sol/11155111/run-latest.json` (the receipts)
 (the simulation without --broadcast, whose gas is Foundry's Prague estimate times its 1.3
 multiplier). The gas limit each transaction was sent with is read from the chain: with --slow
 and --skip-simulation forge takes it from the node's eth_estimateGas (Glamsterdam costs) just
-before sending, times the same multiplier. Every contract is created inside a transaction to
-its one-use CREATE3 proxy; the deployment record (`<name>: <address>`) names the contract each
-transaction created.
+before sending, times the same multiplier. Every contract is created inside one transaction to
+the deployer's `CoreFactory` (`create`); the deployment record (`<name>: <address>`) names the
+contract each transaction created.
 """
 import json
 import sys
@@ -32,7 +32,7 @@ def rpc(url, method, params):
 
 
 def label(t, names):
-    """The contract a transaction created (through its proxy), else forge's contract name."""
+    """The contract a transaction created (through the factory), else forge's contract name."""
     for c in t.get("additionalContracts") or []:
         name = names.get(c["address"].lower())
         if name:
