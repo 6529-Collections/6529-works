@@ -367,6 +367,8 @@ version of this page lists them.
 | `ManifestRegistered(bytes32 indexed fileId, uint256 length, uint8 encoding, uint8 digestKind, bytes32 digest, string mimeType, bytes32[] chunkHashes)` | `0x9d2280aa…` | `registerManifest` or `registerManifestList` (anyone), the first time | A file is declared, with its chunk hashes in order (the chunk count is their number). `encoding` and `digestKind` are open `uint8` ids ([WS-54][ws]); `digest` is the decoded media's SHA-256 when `digestKind` is 0. A manifest registered from list chunks has the same file ID and fields as one registered in one call ([WS-51][ws]). |
 | `Base64Progress(bytes32 indexed fileId, uint256 chunksValidated)` | `0x02b839e8…` | `attestBase64` (anyone) when more calls are needed | `chunksValidated` chunks are checked; each call checks as many as its caller asks for (`maxChunks`). |
 | `Base64Attested(bytes32 indexed fileId)` | `0xde611757…` | The `attestBase64` call that checks the last chunk | The whole file is strict base64, for good. Once per file. |
+| `CompletenessProgress(bytes32 indexed fileId, uint256 chunksPresent)` | `0x53b3afaf…` | `attestComplete` (anyone) when more calls are needed | The leading `chunksPresent` chunks are present at their layout lengths (`completeThrough`); it never decreases ([WS-55][ws]). |
+| `CompletenessAttested(bytes32 indexed fileId)` | `0x2e1a6e20…` | The `attestComplete` call that reaches the last chunk | Every chunk is present, for good: `isComplete` is one storage read from now on. Once per file. |
 
 ### DependencyRegistry
 
@@ -921,6 +923,8 @@ once, with their 6529 Works emitters.
 | `ClaimFailed(address,address,uint256,uint256,uint256,bytes)` | `0xdaabf7a59b4eba4a2596b828b3ea851d5c37ae2de75087cf6d2c2bdd159d7070` | ClaimRouter |
 | `CollectionCreated(uint256,string,bytes32)` | `0x8966ba956c90c682e7629fa1eff72812e2a5d54259d1e684285c761439588057` | Stream |
 | `CollectionPreferredKindSet(uint256,uint8,uint8)` | `0x57ab57edc511e68ceac9b1e49b80959a2aa7279eb6fa0a548dabba84f3f42d33` | WorkDelivery |
+| `CompletenessAttested(bytes32)` | `0x2e1a6e20709fd29e201d8bbca654dc8e2798b38dae8856a0996ea1413a0ee461` | ContentStore |
+| `CompletenessProgress(bytes32,uint256)` | `0x53b3afaf7bbb300e84a01a90b3649d20b3de9b3f9119e660ca910abe94e62aec` | ContentStore |
 | `ConfigSet((uint256,bytes32,uint32,uint16,bool),(uint256,bytes32,uint32,uint16,bool))` | `0xc5843e7141f604b3110f98ce25e5557fe89b0f64cff0657e5cefc993f00511a9` | VrfEntropyModule |
 | `ConfigSet((uint32,uint32,uint32,uint32),(uint32,uint32,uint32,uint32))` | `0x025b824563463f0ba9863c8fdb5ff2a80996d3d6625a22c1c94ed01c5e866e5b` | EnglishAuction |
 | `ConfigSet((uint96,uint16,uint16,uint32,uint32,uint32),(uint96,uint16,uint16,uint32,uint32,uint32))` | `0xfb9b971e8d5d17ae15a88f6bb9c0cca5b551b15393093171d0ae29aa9e33f2d7` | UniformEditionAuction |

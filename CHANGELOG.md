@@ -14,6 +14,12 @@
 - `RevenueEscrow.locked()` answers whether its reentrancy guard is held; the English auction's
   `settleOrRefund` reads it instead of a zero deposit's revert reason. `IRevenueEscrow`'s
   interface ID changes.
+- Content completeness in pieces (WS-55; `ContentStore`, permanent): `attestComplete(fileId,
+  maxChunks)` advances a permissionless per-file prefix of present chunks (`completeThrough`),
+  never past a missing or wrong-length chunk, with `CompletenessProgress` and
+  `CompletenessAttested`; `isComplete` walks only past the prefix, so an attested file is one
+  storage read and a 4,096-chunk file can be checked by `syncOnChain` and
+  `DependencyRegistry.register` once attested. `IContentStore`'s interface ID changes.
 
 - Developer path: a [quickstart](docs/quickstart.md) from clone to a local run, with measured
   build and test times; `script/local/walkthrough.sh`, which deploys on anvil with test accounts,

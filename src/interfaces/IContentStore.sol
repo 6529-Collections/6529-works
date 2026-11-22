@@ -21,7 +21,8 @@ import { IChunkStore } from "./IChunkStore.sol";
 ///
 ///      Every operation can be done in pieces of the caller's size: chunks and parts one per
 ///      call, a large manifest's hash list as ordinary chunks ({registerManifestList}),
-///      completeness by range ({firstMissing}), attestation by count ({attestBase64}), reads by
+///      completeness by range ({firstMissing}) or attested by count ({attestComplete}), base64
+///      attestation by count ({attestBase64}), reads by
 ///      chunk ({readChunk}) or byte range ({read}).
 ///
 ///      The file ID commits to the exact stored bytes (through the chunk hashes) and to the MIME
@@ -117,6 +118,17 @@ interface IContentStore is IChunkStore {
     /// @notice Every chunk of `fileId` is valid base64 text, once and for all. Emitted once.
     /// @param fileId The attested file.
     event Base64Attested(bytes32 indexed fileId);
+
+    /// @notice The leading `chunksPresent` chunks of `fileId` are all stored at the lengths the
+    ///         manifest requires; more calls to {attestComplete} are needed.
+    /// @param fileId The file being attested.
+    /// @param chunksPresent The number of leading chunks attested present so far.
+    event CompletenessProgress(bytes32 indexed fileId, uint256 chunksPresent);
+
+    /// @notice Every chunk of `fileId` is stored at the length the manifest requires, once and
+    ///         for all: {isComplete} is true for good. Emitted once.
+    /// @param fileId The attested file.
+    event CompletenessAttested(bytes32 indexed fileId);
 
     /// @notice No manifest is registered under `fileId`.
     error ContentFileUnknown(bytes32 fileId);
@@ -270,7 +282,13 @@ interface IContentStore is IChunkStore {
 
     /// @notice Whether every chunk of the file is stored, whole or linked, with the length the
     ///         manifest requires, which means {read} succeeds for the whole file. Reverts for an
-    ///         unknown file. One loop over the whole file: use {firstMissing} for pieces.
+    ///         unknown file. It checks only the chunks past the file's attested prefix
+    ///         ({completeThrough}): one storage read for an attested file, one loop over the
+    ///         whole file for a file nobody attested. The loop's cost grows with the chunks it
+    ///         checks, and for the largest files it exceeds one transaction's gas cap: a caller
+    ///         (or a contract that calls this in a transaction) must have such a file attested
+    ///         first, in pieces ({attestComplete}). Presence never goes away (chunks are immutable code and a
+    ///         link is only ever replaced by the same bytes), so the answer never turns false.
     /// @param fileId A registered file ID (`ContentFileUnknown` otherwise).
     /// @return True when the whole file can be read.
     function isComplete(bytes32 fileId) external view returns (bool);
@@ -374,6 +392,26 @@ interface IContentStore is IChunkStore {
     /// @param fileId Any file ID.
     /// @return True once the file's attestation is done.
     function isBase64Attested(bytes32 fileId) external view returns (bool);
+
+    /// @notice Attests, in pieces, that every chunk of `fileId` is stored at the length the
+    ///         manifest requires. Anyone may call. Each call checks up to `maxChunks` more
+    ///         chunks, continuing from {completeThrough}, and advances it over them; it reverts
+    ///         with `ContentChunkMissing(fileId, index, chunkHash)` at the first chunk not stored
+    ///         at its required length, so the prefix never passes a missing or wrong chunk. The
+    ///         call that reaches the end emits {CompletenessAttested}; from then on the call is a
+    ///         no-op that returns true. Repeat it until it returns true to attest a file of any
+    ///         size in pieces of the caller's size. Nothing lowers the prefix.
+    /// @param fileId A registered file ID (`ContentFileUnknown` otherwise).
+    /// @param maxChunks The most chunks this call checks; 0 checks none.
+    /// @return done True when the whole file is attested.
+    function attestComplete(bytes32 fileId, uint256 maxChunks) external returns (bool done);
+
+    /// @notice How many leading chunks of `fileId` {attestComplete} has attested present: the
+    ///         chunk count once the file is attested complete, zero for an unknown file or one
+    ///         never attested. Never reverts.
+    /// @param fileId Any file ID.
+    /// @return The attested prefix, in chunks.
+    function completeThrough(bytes32 fileId) external view returns (uint256);
 
     /// @notice The stored bytes `[offset, offset + length)` of `fileId`. Every chunk the range
     ///         touches is fully read and verified, so the cost is one chunk read per touched

@@ -53,15 +53,32 @@ contract ContentStoreCompletenessGasTest is Test {
         assertTrue(complete);
     }
 
-    /// @dev One file at `MAX_CHUNKS`: the walk alone exceeds the EIP-7825 cap, so no transaction
-    ///      can call `isComplete` on it, and `syncOnChain` of a work holding it can never succeed.
-    function test_Gas_IsCompleteAtMaxChunksExceedsTheTransactionCap() public {
+    /// @dev One file at `MAX_CHUNKS`: a walk of all of it is over the EIP-7825 cap, so nobody
+    ///      attested would leave `isComplete` uncallable in a transaction. Attested in two pieces
+    ///      of 2,048 chunks, each piece fits the cap with room, and `isComplete` is then one read.
+    function test_Gas_AMaxChunksFileIsAttestedInPiecesWithinTheTransactionCap() public {
         uint256 n = store.MAX_CHUNKS();
         (bytes32 fileId, address[] memory pointers) = _completeFile(n);
-        uint256 used = _coldIsCompleteGas(fileId, pointers);
-        emit log_named_uint("isComplete, 4,096 cold chunks, gas", used);
-        emit log_named_uint("per chunk", used / n);
-        emit log_named_uint("largest chunk count under the cap", TX_GAS_CAP / (used / n));
-        assertGt(used, TX_GAS_CAP, "over the transaction cap");
+        uint256 walk = _coldIsCompleteGas(fileId, pointers);
+        emit log_named_uint("isComplete unattested, 4,096 cold chunks, gas", walk);
+        assertGt(walk, TX_GAS_CAP, "a whole walk is over the cap");
+
+        uint256 piece = n / 2;
+        for (uint256 k; k < 2; ++k) {
+            vm.cool(address(store));
+            for (uint256 i; i < pointers.length; ++i) {
+                vm.cool(pointers[i]);
+            }
+            uint256 before = gasleft();
+            bool done = store.attestComplete{ gas: TX_GAS_CAP }(fileId, piece);
+            uint256 used = before - gasleft();
+            emit log_named_uint("attestComplete, 2,048 cold chunks, gas", used);
+            assertLt(used, TX_GAS_CAP * 9 / 10, "a piece fits the cap with room");
+            assertEq(done, k == 1);
+        }
+        assertEq(store.completeThrough(fileId), n);
+        uint256 attested = _coldIsCompleteGas(fileId, new address[](0));
+        emit log_named_uint("isComplete attested, gas", attested);
+        assertLt(attested, 20_000, "one storage read");
     }
 }
