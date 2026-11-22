@@ -204,6 +204,47 @@ contract FederationGovernanceTest is FederationBase {
         assertEq(fed.ownerOf(tokenId), address(adapter));
     }
 
+    /// @dev A template is one form (never the pair) under a nonzero code hash.
+    function test_Templates_RefuseThePairFormAndAZeroCodeHash() public {
+        address deployer = address(deployment.federatedStreamDeployer);
+        IFederationRegistry.Form pair = IFederationRegistry.Form.PAIR;
+        IFederationRegistry.Form one = IFederationRegistry.Form.ERC721;
+        assertFalse(
+            _governTry(
+                hotAdmin,
+                address(fedRegistry),
+                abi.encodeCall(fedRegistry.approveTemplate, (keccak256("pair"), deployer, 3, pair))
+            ),
+            "the pair form"
+        );
+        assertFalse(
+            _governTry(
+                hotAdmin,
+                address(fedRegistry),
+                abi.encodeCall(fedRegistry.approveTemplate, (bytes32(0), deployer, 3, one))
+            ),
+            "a zero code hash"
+        );
+        assertTrue(
+            _governTry(
+                hotAdmin,
+                address(fedRegistry),
+                abi.encodeCall(fedRegistry.approveTemplate, (keccak256("fresh"), deployer, 3, one))
+            )
+        );
+    }
+
+    /// @dev Removing an adapter checks nothing about it: even an account that is no adapter.
+    function test_Adapters_RemovalChecksNothing() public {
+        assertTrue(
+            _governTry(
+                hotAdmin,
+                address(fedRegistry),
+                abi.encodeCall(fedRegistry.setAdapter, (collector, false))
+            )
+        );
+    }
+
     function test_Adapters_MustBeSaleAdapters() public {
         assertFalse(
             _governTry(
