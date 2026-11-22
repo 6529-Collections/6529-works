@@ -529,6 +529,20 @@ contract Base64AttestTest is Base64Base {
         }
     }
 
+    /// @dev Encoding IDs are open, and only Base64 (2) and GzipBase64 (3) qualify: the IDs above
+    ///      them are refused like those below.
+    function test_Attest_RefusesEncodingIdsAboveTheBase64Ones() public {
+        uint8[2] memory wrong = [uint8(4), uint8(255)];
+        for (uint256 i; i < 2; ++i) {
+            bytes32 fileId = _publish(_text(100, 0, 70), wrong[i], "image/png");
+            vm.expectRevert(
+                abi.encodeWithSelector(IContentStore.ContentNotBase64.selector, fileId, wrong[i])
+            );
+            _attest(fileId);
+            assertFalse(store.isBase64Attested(fileId));
+        }
+    }
+
     function test_Attest_LengthMustBeAMultipleOfFour() public {
         uint256[7] memory lengths = [uint256(1), 2, 3, 5, 6, 7, 1001];
         for (uint256 i; i < lengths.length; ++i) {
