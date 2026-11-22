@@ -13,7 +13,8 @@ down, and each change must fail a test.
 
 Subcommands:
   list                     the shards: one per src/ file with code, the largest split into
-                           four mutator groups (SPLIT_FILES, SPLIT_GROUPS)
+                           four mutator groups (SPLIT_FILES, SPLIT_GROUPS) or into five that
+                           keep every operator (FULL_SPLIT_FILES, FULL_SPLIT_GROUPS)
   run SHARD [...]          mutate the shard's file against its module's tests, re-run every
                            survivor against the whole suite (--no-recheck skips that) and
                            write OUT/SHARD/results.json and the logs; --budget MINUTES stops
@@ -120,6 +121,17 @@ SPLIT_GROUPS = {
     "conditions": "MIA",
 }
 SKIPPED_ON_SPLIT_FILES = "ASOR,BOR,FHR,LIR,MVIE,MVIV,MWA,SBR"
+# Files too slow for one CI job that keep every operator: one shard per group of FULL_SPLIT_GROUPS,
+# the four groups above plus the eight operators split files skip, with all five relational
+# replacements. Their mutants are exactly the ones a single shard would make, so their floors
+# are measured on the same mutants (the 21 November 2026 campaign measured them this way).
+FULL_SPLIT_FILES = {
+    "src/economics/RevenueEscrow.sol",
+    "src/economics/SplitLedger.sol",
+    "src/federated/FederatedEditions.sol",
+    "src/federated/FederatedStream.sol",
+}
+FULL_SPLIT_GROUPS = {**SPLIT_GROUPS, "others": SKIPPED_ON_SPLIT_FILES}
 # The split files' relational shard uses two replacements per comparison instead of five.
 SUFFICIENT_ROR_ENV = "MUTATION_SUFFICIENT_ROR"
 
@@ -231,15 +243,22 @@ def shards(root: Path) -> dict[str, Shard]:
             raise MutationError(f"{rel}: no tests are mapped for module {module!r}")
         base = f"{module}-{Path(rel).stem}"
         tests = MODULE_TESTS[module]
-        if rel in SPLIT_FILES:
-            for group, mutators in SPLIT_GROUPS.items():
+        groups = (
+            SPLIT_GROUPS if rel in SPLIT_FILES
+            else FULL_SPLIT_GROUPS if rel in FULL_SPLIT_FILES
+            else None
+        )
+        if groups:
+            for group, mutators in groups.items():
                 name = f"{base}-{group}"
                 out[name] = Shard(name, rel, tests, mutators, group == "statements")
         else:
             out[base] = Shard(base, rel, tests, None, True)
-    missing = SPLIT_FILES - {s.path for s in out.values()}
+    missing = (SPLIT_FILES | FULL_SPLIT_FILES) - {s.path for s in out.values()}
     if missing:
         raise MutationError(f"SPLIT_FILES names files that do not exist: {sorted(missing)}")
+    if SPLIT_FILES & FULL_SPLIT_FILES:
+        raise MutationError(f"split two ways: {sorted(SPLIT_FILES & FULL_SPLIT_FILES)}")
     return out
 
 
@@ -681,7 +700,10 @@ def run_shard(root: Path, shard: Shard, out: Path, do_recheck: bool, timeout: in
         flush=True,
     )
     if result.status == "timeout":
-        hint = "" if shard.path in SPLIT_FILES else " (split it: SPLIT_FILES in tools/mutation.py)"
+        hint = (
+            "" if shard.path in SPLIT_FILES | FULL_SPLIT_FILES
+            else " (split it: FULL_SPLIT_FILES or SPLIT_FILES in tools/mutation.py)"
+        )
         print(
             f"[{shard.name}] stopped at its {budget / 60:.0f}-minute budget; the report lists "
             f"{shard.path} as `timeout`{hint}",

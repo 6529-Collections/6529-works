@@ -95,7 +95,12 @@ class ShardTest(unittest.TestCase):
         self.assertEqual(sorted({s.path for s in all_shards.values()}), files)
         for f in files:
             mine = [s for s in all_shards.values() if s.path == f]
-            self.assertEqual(len(mine), len(mt.SPLIT_GROUPS) if f in mt.SPLIT_FILES else 1, f)
+            expected = (
+                len(mt.SPLIT_GROUPS) if f in mt.SPLIT_FILES
+                else len(mt.FULL_SPLIT_GROUPS) if f in mt.FULL_SPLIT_FILES
+                else 1
+            )
+            self.assertEqual(len(mine), expected, f)
             # Every file gets the CONST pass exactly once.
             self.assertEqual(sum(s.constants for s in mine), 1, f)
         self.assertNotIn("src/interfaces/IStream.sol", files)  # an interface only
@@ -110,6 +115,22 @@ class ShardTest(unittest.TestCase):
             seen |= g
         self.assertEqual(len(seen), 15)  # slither-mutate 0.11.6 has 15 operators
         self.assertEqual(mt.SPLIT_GROUPS["statements"], "RR,CR")
+
+    def test_full_split_groups_cover_every_mutator_once_and_files_split_one_way(self) -> None:
+        seen: set[str] = set()
+        for g in (set(m.split(",")) for m in mt.FULL_SPLIT_GROUPS.values()):
+            self.assertFalse(seen & g, g)
+            seen |= g
+        self.assertEqual(len(seen), 15)
+        self.assertFalse(mt.SPLIT_FILES & mt.FULL_SPLIT_FILES)
+        shards = mt.shards(ROOT)
+        for f in mt.FULL_SPLIT_FILES:
+            mine = {s.name: s for s in shards.values() if s.path == f}
+            self.assertEqual(sorted(s.mutators for s in mine.values()),
+                             sorted(mt.FULL_SPLIT_GROUPS.values()), f)
+            # Only the statements group runs CONST, as on a four-way split file.
+            self.assertEqual([s.name for s in mine.values() if s.constants],
+                             [n for n in mine if n.endswith("-statements")], f)
 
     def test_every_module_runs_tests(self) -> None:
         for module, glob in mt.MODULE_TESTS.items():
