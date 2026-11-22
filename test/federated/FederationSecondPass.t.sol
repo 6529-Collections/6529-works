@@ -474,6 +474,22 @@ contract FederationSecondPassTest is FederationBase {
         auction.start(address(fed), _mintData(w));
     }
 
+    /// @dev Exactly `Splits.MAX_PAYEES` payees mint: the bound refuses only more.
+    function test_Collaborators_ExactlyMaxPayeesMint() public {
+        Work memory w = _fedWork(fedArtist);
+        uint256 n = Splits.MAX_PAYEES;
+        ISplitWallet.Payee[] memory payees = new ISplitWallet.Payee[](n);
+        uint32 each = uint32(Splits.DENOMINATOR / n);
+        for (uint256 i; i < n; ++i) {
+            payees[i] = ISplitWallet.Payee(0, address(uint160(0x1000 + i)), each);
+        }
+        payees[n - 1].share += uint32(Splits.DENOMINATOR - each * n);
+        w.item.payees = payees;
+        vm.prank(fedArtist);
+        fed.approveItem(_itemHash(w), RATE);
+        assertGt(auction.start(address(fed), _mintData(w)), 0);
+    }
+
     // ------------------------------------------------------------------ the artist's wallets
 
     /// @dev Every artist power asks the artist registry: another wallet of the account acts, and

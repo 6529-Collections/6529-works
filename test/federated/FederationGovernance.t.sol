@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import { Vm } from "forge-std/Vm.sol";
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
+import { FederatedEditions } from "src/federated/FederatedEditions.sol";
 import { FederatedStream } from "src/federated/FederatedStream.sol";
 import { ArtistRegistry } from "src/identity/ArtistRegistry.sol";
 import { IConsolidationSource } from "src/interfaces/IArtistRegistry.sol";
@@ -15,7 +16,7 @@ import { IFederatedToken } from "src/interfaces/IFederatedToken.sol";
 import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
-import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
+import { CURRENCY_ETH, PRODUCT_FEDERATED } from "src/interfaces/types/EconomicsTypes.sol";
 import { Payment, PaymentMethod, PrimaryOutcome } from "src/interfaces/types/SaleTypes.sol";
 import { NonDeliveringAdapter } from "../mocks/federated/FederatedMocks.sol";
 import { FaultyFederatedStream } from "./FederatedRefusal.t.sol";
@@ -242,6 +243,109 @@ contract FederationGovernanceTest is FederationBase {
             abi.encodeWithSelector(IFederationRegistry.NotListable.selector, address(higher))
         );
         _join(address(suspended), fedArtist);
+    }
+
+    function test_SupportsInterface_OnlyTheExactIds() public view {
+        bytes4[2] memory ids = [type(IFederationRegistry).interfaceId, bytes4(0x01ffc9a7)];
+        for (uint256 i; i < ids.length; ++i) {
+            assertTrue(fedRegistry.supportsInterface(ids[i]));
+            assertFalse(fedRegistry.supportsInterface(bytes4(uint32(ids[i]) - 1)));
+            assertFalse(fedRegistry.supportsInterface(bytes4(uint32(ids[i]) + 1)));
+        }
+    }
+
+    /// @dev An editions copy joins only beside a 1/1 partner of the same artist whose template
+    ///      is APPROVED: partners of artists on either side of its own, and a partner whose
+    ///      template is suspended, are refused.
+    function test_Register_AnEditionsPartnerOfTheSameArtistOnAnApprovedTemplate() public {
+        address[2] memory others = [address(0x1001), address(type(uint160).max - 1)];
+        for (uint256 i; i < others.length; ++i) {
+            FederatedStream s = _deployStream(_streamConfigFor(others[i]));
+            FederatedEditions ed = _deployEditions(fedArtist, address(s));
+            // The other artist's 1/1 names this editions contract back: only the artist differs.
+            vm.prank(others[i]);
+            s.linkEditions(address(ed));
+            _join(
+                address(ed),
+                fedArtist,
+                abi.encodeWithSelector(IFederationRegistry.NotListable.selector, address(ed))
+            );
+        }
+        FederatedStream partner = _deployStream(fedArtist);
+        FederatedEditions editions = _deployEditions(fedArtist, address(partner));
+        vm.prank(fedArtist);
+        partner.linkEditions(address(editions));
+        _govern(
+            hotAdmin,
+            address(fedRegistry),
+            abi.encodeCall(fedRegistry.suspendTemplate, (streamHash))
+        );
+        _join(
+            address(editions),
+            fedArtist,
+            abi.encodeWithSelector(IFederationRegistry.NotListable.selector, address(editions))
+        );
+        _govern(
+            hotAdmin, address(fedRegistry), abi.encodeCall(fedRegistry.resumeTemplate, (streamHash))
+        );
+        _join(address(editions), fedArtist);
+    }
+
+    /// @dev An editions copy joins only beside a partner on a reviewed template whose fee share
+    ///      is its own: a partner with no template, and partners whose fee share is one below
+    ///      or one above, are refused even when every other term matches.
+    function test_Register_AnEditionsPartnerOnATemplateWithTheSameFeeShare() public {
+        FederatedStream partner = _deployStream(fedArtist);
+        FederatedEditions editions = _deployEditions(fedArtist, address(partner));
+        vm.prank(fedArtist);
+        partner.linkEditions(address(editions));
+        uint32 share = economics.economics(PRODUCT_FEDERATED).feeShare;
+        for (uint256 i; i < 2; ++i) {
+            _mockTerms(
+                address(partner),
+                address(editions),
+                i == 0 ? share - 1 : share + 1,
+                address(editions)
+            );
+            _join(
+                address(editions),
+                fedArtist,
+                abi.encodeWithSelector(IFederationRegistry.NotListable.selector, address(editions))
+            );
+        }
+        vm.clearMockedCalls();
+
+        address untemplated = makeAddr("untemplated");
+        vm.etch(untemplated, hex"00");
+        _mockTerms(untemplated, address(editions), share, address(0));
+        FederatedEditions orphan = _deployEditions(fedArtist, untemplated);
+        _mockTerms(untemplated, address(editions), share, address(orphan));
+        _join(
+            address(orphan),
+            fedArtist,
+            abi.encodeWithSelector(IFederationRegistry.NotListable.selector, address(orphan))
+        );
+        _join(address(editions), fedArtist);
+    }
+
+    /// @dev Makes `token` answer the federation terms of `like`, with `share` and `partner`.
+    function _mockTerms(address token, address like, uint32 share, address partner) internal {
+        (address ar, address ledger, uint256 id,, address recipient,) =
+            IFederatedToken(like).federationTerms();
+        vm.mockCall(
+            token,
+            abi.encodeWithSelector(IFederatedToken.federationTerms.selector),
+            abi.encode(ar, ledger, id, share, recipient, partner)
+        );
+    }
+
+    function _streamConfigFor(address artistAccount)
+        internal
+        view
+        returns (IFederatedStream.Config memory c)
+    {
+        c = _streamConfig(fedArtist);
+        c.artistId = uint160(artistAccount);
     }
 
     /// @dev Only the network sets listings: a stranger's delisting is refused.
