@@ -739,6 +739,15 @@ contract FederatedPairTest is FederationBase {
         uint256 held = address(fea).balance;
         assertTrue(fea.settle(saleId, new uint256[](0)), "voided");
         assertEq(uint8(fl.auction(saleId).status), uint8(IUniformEditionAuction.AuctionStatus.VOID));
+        // A void sale is not voided again.
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IUniformEditionAuction.InvalidAuctionState.selector,
+                saleId,
+                IUniformEditionAuction.AuctionStatus.VOID
+            )
+        );
+        fea.settle(saleId, new uint256[](0));
         assertEq(address(fea).balance, held, "nothing paid");
         assertFalse(pairEditions.edition(tokenId).supplySealed, "nothing sealed");
         vm.prank(low);
@@ -748,5 +757,24 @@ contract FederatedPairTest is FederationBase {
         assertEq(wonLow + wonHigh, 0);
         assertEq(refundLow, paidLow);
         assertEq(refundHigh, paidHigh);
+    }
+
+    /// @dev A served sale between the settle calls of a wide book keeps settling: only an
+    ///      unserved one is voided mid-scan.
+    function test_Pair_AServedSaleMidScanSettlesNormally() public {
+        (Work memory w, uint256 oneSaleId, uint256 tokenId, uint256 saleId) = _openPair(0);
+        _editionBidFed(saleId, makeAddr("low"), 0, 40);
+        _editionBidFed(saleId, makeAddr("high"), 300, 1);
+        _settleAtEnd(oneSaleId);
+        pairEditions.createEdition(tokenId, w.item);
+        vm.warp(fl.endTimes(saleId).endTime);
+        assertFalse(fea.settle(saleId, new uint256[](0)), "the scan continues");
+        uint256 calls;
+        while (!fea.settle(saleId, new uint256[](0))) {
+            require(++calls < 20, "settles in a few calls");
+        }
+        assertEq(
+            uint8(fl.auction(saleId).status), uint8(IUniformEditionAuction.AuctionStatus.SETTLED)
+        );
     }
 }

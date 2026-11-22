@@ -91,7 +91,8 @@ contract FederatedPermanenceTest is FederationBase {
     function test_Locator_OnlyPrintableAsciiWithinTheBound() public {
         (, uint256 tokenId) = _startFed(_fedWork(fedArtist));
         string memory before = fed.tokenURI(tokenId);
-        string[8] memory bad = [
+        string[9] memory bad = [
+            _s(hex"610062"),
             _s(hex"61ff"),
             _s(hex"c3a9"),
             "a b",
