@@ -83,9 +83,16 @@ contract SplitLedger is ISplitLedger, EIP712 {
     /// @dev Bit `nonce % 256` of word `nonce / 256` is set once `account` used `nonce`.
     mapping(address account => mapping(uint256 word => uint256 bits)) private _nonceBitmap;
 
-    /// @dev A payee's mark: the time it was placed (top 48 bits) and the released level the payee
-    ///      must reach (low 208 bits). Zero when there is none.
-    mapping(address wallet => mapping(address asset => mapping(uint256 index => uint256))) private
+    /// @dev A payee's mark, one storage slot. `target` is never zero in a mark that exists.
+    /// @param target The released level the payee must reach to clear the mark.
+    /// @param markedAt The time the mark was placed.
+    struct Mark {
+        uint208 target;
+        uint48 markedAt;
+    }
+
+    /// @dev Each payee's mark; all zero when there is none.
+    mapping(address wallet => mapping(address asset => mapping(uint256 index => Mark))) private
         _marks;
 
     /// @param resolver_ The artist payout resolver (the `StreamDirectory6529`), which also answers
@@ -212,11 +219,12 @@ contract SplitLedger is ISplitLedger, EIP712 {
         uint256 done = released[wallet][asset][index];
         uint256 due = _dueNow(wallet, asset, index, share);
         if (due == 0) revert NothingToRelease(asset, index);
-        uint256 previous = _marks[wallet][asset][index];
         // A mark the payee has not yet released past keeps its clock: nobody can restart it.
-        if (previous != 0 && done < uint208(previous)) revert MarkPending(wallet, asset, index);
+        if (done < _marks[wallet][asset][index].target) revert MarkPending(wallet, asset, index);
         uint256 target = done + due;
-        _marks[wallet][asset][index] = block.timestamp << 208 | SafeCast.toUint208(target);
+        _marks[wallet][asset][index] = Mark({
+            target: SafeCast.toUint208(target), markedAt: SafeCast.toUint48(block.timestamp)
+        });
         emit Marked(wallet, asset, index, target, block.timestamp);
     }
 
@@ -242,8 +250,8 @@ contract SplitLedger is ISplitLedger, EIP712 {
         view
         returns (uint256 target, uint256 markedAt)
     {
-        uint256 m = _marks[wallet][asset][index];
-        return (uint208(m), m >> 208);
+        Mark memory m = _marks[wallet][asset][index];
+        return (m.target, m.markedAt);
     }
 
     // ------------------------------------------------------------------ nonces
@@ -337,16 +345,16 @@ contract SplitLedger is ISplitLedger, EIP712 {
         private
         returns (uint256 amount)
     {
-        uint256 m = _marks[wallet][asset][index];
+        Mark memory m = _marks[wallet][asset][index];
         {
-            uint256 dueAt =
-                m == 0 ? 0 : (m >> 208) + IDirectory(address(resolver)).unclaimedPeriod();
+            bool none = m.target == 0;
+            uint256 dueAt = none ? 0 : m.markedAt + IDirectory(address(resolver)).unclaimedPeriod();
             // forge-lint: disable-next-line(block-timestamp)
-            if (m == 0 || block.timestamp < dueAt) revert MarkNotDue(wallet, asset, index, dueAt);
+            if (none || block.timestamp < dueAt) revert MarkNotDue(wallet, asset, index, dueAt);
         }
         delete _marks[wallet][asset][index];
         uint256 done = released[wallet][asset][index];
-        amount = done < uint208(m) ? uint208(m) - done : 0;
+        amount = done < m.target ? m.target - done : 0;
         uint256 due = _dueNow(wallet, asset, index, share);
         if (amount > due) amount = due;
     }
