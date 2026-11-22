@@ -60,9 +60,7 @@ contract GatedEditions is EditionsBase {
     Directory public immutable directory;
     address public immutable network;
 
-    constructor(address stream_, Directory directory_)
-        EditionsBase(stream_, msg.sender)
-    {
+    constructor(address stream_, Directory directory_) EditionsBase(stream_, msg.sender) {
         directory = directory_;
         network = msg.sender;
     }
@@ -116,8 +114,9 @@ contract FederatedEditionAuctionTest is Test {
         vm.warp(1_800_000_000);
         manager = new AccessManager(address(this));
         gate = new MockGate();
-        directory =
-            new Directory(address(manager), address(0xACC), address(gate), address(0x7E), address(0));
+        directory = new Directory(
+            address(manager), address(0xACC), address(gate), address(0x7E), address(0)
+        );
         master = new MockMasterStream();
         master.setRenderer(address(new MockEditionRenderer()));
         token = new GatedEditions(address(master), directory);
@@ -145,7 +144,10 @@ contract FederatedEditionAuctionTest is Test {
         gate.setActive(address(token), true);
         gate.setFeeShare(address(token), SHARE);
         english.set(
-            address(master), ID, IEnglishAuction.AuctionState.ACTIVE, uint64(block.timestamp + 1 days)
+            address(master),
+            ID,
+            IEnglishAuction.AuctionState.ACTIVE,
+            uint64(block.timestamp + 1 days)
         );
     }
 

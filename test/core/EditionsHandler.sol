@@ -100,9 +100,8 @@ contract EditionsHandler is CommonBase, StdCheats, StdUtils {
         address next = address(_sale(s));
         Edition memory e = editions.editionOf(id);
         uint256 removedAt = editions.minterOf(e.minter).removedAt;
-        bool allowed = e.minter != address(0) && !e.supplySealed && e.minted == 0
-            && removedAt != 0 && block.timestamp >= removedAt + editions.rebindDelay()
-            && editions.isMinter(next);
+        bool allowed = e.minter != address(0) && !e.supplySealed && e.minted == 0 && removedAt != 0
+            && block.timestamp >= removedAt + editions.rebindDelay() && editions.isMinter(next);
         vm.prank(network);
         (bool ok,) = address(editions).call(abi.encodeCall(editions.rebind, (id, next)));
         require(ok == allowed, "rebind outcome differs from its rule");

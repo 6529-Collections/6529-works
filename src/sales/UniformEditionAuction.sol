@@ -540,9 +540,8 @@ abstract contract UniformEditionAuctionBase is
         if (to == address(0)) revert ISaleAdapter.InvalidRecipient(to);
         amount = c.aged;
         uint104 rest = c.total - c.aged;
-        _credits[account] = rest == 0
-            ? Credit(0, 0, 0)
-            : Credit(rest, rest, SafeCast.toUint48(block.timestamp));
+        _credits[account] =
+            rest == 0 ? Credit(0, 0, 0) : Credit(rest, rest, SafeCast.toUint48(block.timestamp));
         emit ISaleAdapter.Claimed(account, currency, to, amount);
         if (!TokenTransfer.sendETH(to, amount, gasleft())) revert ISaleAdapter.ClaimFailed(to);
     }
@@ -902,7 +901,7 @@ abstract contract UniformEditionAuctionBase is
     }
 
     /// @dev Pays `count × price` of sale `saleId`: the network fee to the recipient the lens
-    ///      resolves now (R18: the economics resolver's, else the edition's recorded one), then
+    ///      resolves now (R18: the economics resolver's, else the one it named at open), then
     ///      the rest to the seller, each escrowed on refusal, and emits `SaleSettled` (the event
     ///      the TDH pipeline weights, P29 section 1.2). The seller's part rounds down and the
     ///      network takes the leftover wei.

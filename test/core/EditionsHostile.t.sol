@@ -33,8 +33,7 @@ contract EditionsHostileTest is EditionsFixture {
         uint256[] memory amounts = new uint256[](1);
         (ids[0], amounts[0]) = (id, 1);
         calls = new bytes[](12);
-        calls[0] =
-            abi.encodeCall(IERC1155.safeTransferFrom, (buyer, address(hostile), id, 1, ""));
+        calls[0] = abi.encodeCall(IERC1155.safeTransferFrom, (buyer, address(hostile), id, 1, ""));
         calls[1] = abi.encodeCall(
             IERC1155.safeBatchTransferFrom, (buyer, address(hostile), ids, amounts, "")
         );
@@ -102,7 +101,8 @@ contract EditionsHostileTest is EditionsFixture {
             address(editions), abi.encodeCall(IEditions.setRoyalty, (id, address(hostile), 100_000))
         );
         assertTrue(ok);
-        (ok,) = hostile.exec(address(editions), abi.encodeCall(IEditions.emitMetadataUpdate, (1, 2)));
+        (ok,) =
+            hostile.exec(address(editions), abi.encodeCall(IEditions.emitMetadataUpdate, (1, 2)));
         assertTrue(ok);
         assertEq(editions.balanceOf(buyer, id), 2, "only the two test transfers moved copies");
         assertEq(editions.editionOf(id).minted, 4);
@@ -152,9 +152,8 @@ contract EditionsHostileTest is EditionsFixture {
         vm.expectRevert("hostile");
         editions.uri(id);
         hostile.setMode(HostileModule.Mode.BURN_GAS);
-        (bool ok,) = address(editions).staticcall{ gas: 2_000_000 }(
-            abi.encodeCall(editions.uri, (id))
-        );
+        (bool ok,) =
+            address(editions).staticcall{ gas: 2_000_000 }(abi.encodeCall(editions.uri, (id)));
         assertFalse(ok, "out of gas reverts; no default answer");
         _attackAll();
     }
@@ -163,7 +162,8 @@ contract EditionsHostileTest is EditionsFixture {
         stream.proposeModule(Slots.RECORDS, address(hostile));
         skip(stream.moduleDelay());
         stream.activateModule(Slots.RECORDS);
-        (bool ok,) = hostile.exec(address(editions), abi.encodeCall(IEditions.emitMetadataUpdate, (id, id)));
+        (bool ok,) =
+            hostile.exec(address(editions), abi.encodeCall(IEditions.emitMetadataUpdate, (id, id)));
         assertTrue(ok);
         _attackAll();
     }
@@ -180,9 +180,11 @@ contract EditionsHostileTest is EditionsFixture {
             address(editions), abi.encodeCall(IEditions.mint, (address(hostile), own, 1, 0))
         );
         assertFalse(ok);
-        (ok,) = hostile.exec(address(editions), abi.encodeCall(IEditions.mint, (stranger, own, 1, 0)));
+        (ok,) =
+            hostile.exec(address(editions), abi.encodeCall(IEditions.mint, (stranger, own, 1, 0)));
         assertTrue(ok);
-        (ok,) = hostile.exec(address(editions), abi.encodeCall(IEditions.mint, (stranger, own, 1, 0)));
+        (ok,) =
+            hostile.exec(address(editions), abi.encodeCall(IEditions.mint, (stranger, own, 1, 0)));
         assertFalse(ok);
         _attackAll();
     }
@@ -192,11 +194,14 @@ contract EditionsHostileTest is EditionsFixture {
     function test_HostileEditionsMinter_IsNotAStreamMinter() public {
         _addActive(address(hostile));
         MintFacts memory f = _facts(9);
-        (bool ok,) = hostile.exec(address(stream), abi.encodeWithSignature(
-            "mint(address,(bytes32,bytes32,uint256,uint256,uint8,uint8,bytes32,address,uint24,bytes32,bytes32,bytes32,address))",
-            address(hostile),
-            f
-        ));
+        (bool ok,) = hostile.exec(
+            address(stream),
+            abi.encodeWithSignature(
+                "mint(address,(bytes32,bytes32,uint256,uint256,uint8,uint8,bytes32,address,uint24,bytes32,bytes32,bytes32,address))",
+                address(hostile),
+                f
+            )
+        );
         assertFalse(ok);
     }
 }

@@ -58,7 +58,7 @@ contract EditionsCoreIndexer {
                 abi.decode(l.data, (uint40, address, uint24));
             Edition storage e = _editions[uint256(l.topics[1])];
             (e.minter, e.maxSupply, e.royaltyReceiver, e.royaltyRate) =
-                (_address(l.topics[2]), max, receiver, rate);
+            (_address(l.topics[2]), max, receiver, rate);
         } else if (t == IEditions.EditionMinted.selector) {
             (uint256 amount,) = abi.decode(l.data, (uint256, uint256));
             _editions[uint256(l.topics[1])].minted += uint40(amount);

@@ -192,9 +192,7 @@ contract UniformEditionAuctionAbandonTest is EditionAuctionBase {
     function test_Abandon_TheAdapterRefusesALensThatAnswersEarly() public {
         _setOneOfOne(IEnglishAuction.AuctionState.ENDED);
         address l = IUniformEditionAuctionStorage(address(auction)).lens();
-        vm.mockCall(
-            l, abi.encodeWithSelector(IUniformEditionAuctionLens.checkAbandon.selector), ""
-        );
+        vm.mockCall(l, abi.encodeWithSelector(IUniformEditionAuctionLens.checkAbandon.selector), "");
         uint256 floor = uint256(_oneEnd()) + 15 minutes + 21 days;
         vm.warp(floor - 1);
         _expectNotAbandonable();

@@ -89,8 +89,7 @@ abstract contract UniformEditionAuctionLensBase is IUniformEditionAuctionLens {
     /// @param escrow_ The adapter's revenue escrow.
     /// @param directory_ The adapter's directory.
     /// @param economics_ The economics resolver.
-    constructor(address englishAuction_, address escrow_, address directory_, address economics_)
-    {
+    constructor(address englishAuction_, address escrow_, address directory_, address economics_) {
         _englishAuction = englishAuction_;
         _escrow = escrow_;
         _directory = directory_;
@@ -417,8 +416,7 @@ abstract contract UniformEditionAuctionLensBase is IUniformEditionAuctionLens {
         // forge-lint: disable-start(block-timestamp)
         e.biddingOpen = a.status == IUniformEditionAuction.AuctionStatus.OPEN
             && (state == IEnglishAuction.AuctionState.PAUSED
-                || (state != IEnglishAuction.AuctionState.CANCELLED
-                    && block.timestamp < e.endTime));
+                || (state != IEnglishAuction.AuctionState.CANCELLED && block.timestamp < e.endTime));
         // forge-lint: disable-end(block-timestamp)
     }
 

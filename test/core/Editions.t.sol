@@ -171,7 +171,9 @@ contract EditionsTest is EditionsFixture {
     }
 
     function test_Mint_RefusesAnEditionNeverCreated() public {
-        vm.expectRevert(abi.encodeWithSelector(IEditions.NotEditionMinter.selector, 9, address(sale)));
+        vm.expectRevert(
+            abi.encodeWithSelector(IEditions.NotEditionMinter.selector, 9, address(sale))
+        );
         sale.mintEdition(address(editions), buyer, 9, 1, 1);
     }
 
@@ -283,7 +285,9 @@ contract EditionsTest is EditionsFixture {
             abi.encodeWithSelector(IEditions.NotEditionMinter.selector, id, address(other))
         );
         other.seal(address(editions), id, 1);
-        vm.expectRevert(abi.encodeWithSelector(IEditions.NotEditionMinter.selector, 99, address(sale)));
+        vm.expectRevert(
+            abi.encodeWithSelector(IEditions.NotEditionMinter.selector, 99, address(sale))
+        );
         sale.seal(address(editions), 99, 1);
         editions.removeMinter(address(sale));
         sale.seal(address(editions), id, 0);
@@ -436,9 +440,7 @@ contract EditionsTest is EditionsFixture {
 
     /// @dev The wait is read when the rebind is attempted: a change after the removal applies
     ///      to it, longer or shorter.
-    function testFuzz_Rebind_AChangeAfterTheRemovalApplies(uint48 before_, uint48 after_)
-        public
-    {
+    function testFuzz_Rebind_AChangeAfterTheRemovalApplies(uint48 before_, uint48 after_) public {
         before_ = uint48(bound(before_, 0, 365 days));
         after_ = uint48(bound(after_, 1, 365 days));
         uint256 id = _edition(1, 10);

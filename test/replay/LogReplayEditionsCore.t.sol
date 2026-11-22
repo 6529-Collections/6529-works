@@ -90,7 +90,10 @@ contract LogReplayEditionsCoreTest is CoreFixture {
         assertEq(indexer.moduleDelay(), ed.moduleDelay());
         assertEq(indexer.moduleOf(Slots.TERMS), ed.moduleOf(Slots.TERMS));
         assertEq(indexer.moduleOf(Slots.TERMS), address(pending));
-        assertEq(abi.encode(indexer.pendingModule(Slots.TERMS)), abi.encode(ed.pendingModule(Slots.TERMS)));
+        assertEq(
+            abi.encode(indexer.pendingModule(Slots.TERMS)),
+            abi.encode(ed.pendingModule(Slots.TERMS))
+        );
         address[2] memory minters = [address(sale), address(second)];
         for (uint256 m; m < 2; ++m) {
             assertEq(abi.encode(indexer.minterOf(minters[m])), abi.encode(ed.minterOf(minters[m])));

@@ -127,9 +127,7 @@ contract EditionsCoreSymbolicTest is Test {
 
     /// @dev Only the edition's own minter mints it; a removed one (no longer a minter) only once
     ///      it has sealed, and never another minter.
-    function check_OnlyTheEditionsMinterMints(address caller, bool removed, bool sealed_)
-        public
-    {
+    function check_OnlyTheEditionsMinterMints(address caller, bool removed, bool sealed_) public {
         _create(100);
         if (sealed_) assert(_seal(SALE, 50));
         if (removed) editions.setMinter(SALE, false);

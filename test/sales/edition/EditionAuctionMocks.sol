@@ -115,7 +115,7 @@ contract MockMasterStream {
     function setWork(uint256 id, bytes32 itemHash, ItemKind kind) external {
         Work storage w = _works[id];
         (w.itemHash, w.kind, w.artistId, w.collectionId, w.royaltyRate) =
-            (itemHash, uint8(kind), 1, 1, 6529);
+        (itemHash, uint8(kind), 1, 1, 6529);
     }
 
     function setOutcome(uint256 id, Outcome outcome) external {

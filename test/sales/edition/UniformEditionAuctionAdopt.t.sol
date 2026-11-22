@@ -60,7 +60,8 @@ contract UniformEditionAuctionAdoptTest is EditionAuctionBase {
         internal
         returns (uint256 bidId)
     {
-        uint256 amount = quantity * IUniformEditionAuction(address(next)).stepPrice(saleId, step);
+        uint256 amount =
+            quantity * IUniformEditionAuction(address(next)).stepPrice(saleId, step);
         vm.deal(bidder, bidder.balance + amount);
         vm.prank(bidder);
         bidId = next.bid{ value: amount }(saleId, step, quantity);
@@ -76,7 +77,10 @@ contract UniformEditionAuctionAdoptTest is EditionAuctionBase {
         _bid(saleId, bob, 50, 1);
         editions.removeMinter(address(auction));
         english.set(
-            address(stream), 8, IEnglishAuction.AuctionState.ACTIVE, uint64(block.timestamp + 1 days)
+            address(stream),
+            8,
+            IEnglishAuction.AuctionState.ACTIVE,
+            uint64(block.timestamp + 1 days)
         );
         PackageItem memory other = _item(8, 0);
         vm.expectRevert(abi.encodeWithSelector(IModules.NotMinter.selector, address(auction)));
@@ -210,7 +214,10 @@ contract UniformEditionAuctionAdoptTest is EditionAuctionBase {
         next.adopt(address(editions), ID, data);
         // Never created at all.
         english.set(
-            address(stream), 8, IEnglishAuction.AuctionState.ACTIVE, uint64(block.timestamp + 1 days)
+            address(stream),
+            8,
+            IEnglishAuction.AuctionState.ACTIVE,
+            uint64(block.timestamp + 1 days)
         );
         PackageItem memory item = _item(8, 0);
         vm.expectRevert(
@@ -230,9 +237,8 @@ contract UniformEditionAuctionAdoptTest is EditionAuctionBase {
             abi.encodeWithSelector(ISaleAdapter.InvalidSaleTerms.selector, address(editions), ID);
         vm.prank(address(direct));
         vm.expectRevert(terms);
-        IUniformEditionAuctionLens(lensAddress).masterTerms(
-            address(editions), ID, _openData(item), true
-        );
+        IUniformEditionAuctionLens(lensAddress)
+            .masterTerms(address(editions), ID, _openData(item), true);
         item = _item(8, 0);
         direct.create(editions, 8);
         direct.seal(editions, 8);
@@ -240,9 +246,8 @@ contract UniformEditionAuctionAdoptTest is EditionAuctionBase {
         vm.expectRevert(
             abi.encodeWithSelector(ISaleAdapter.InvalidSaleTerms.selector, address(editions), 8)
         );
-        IUniformEditionAuctionLens(lensAddress).masterTerms(
-            address(editions), 8, _openData(item), true
-        );
+        IUniformEditionAuctionLens(lensAddress)
+            .masterTerms(address(editions), 8, _openData(item), true);
     }
 
     function test_Adopt_RefusedWhilePausedOrForAnotherItem() public {

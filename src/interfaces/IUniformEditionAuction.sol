@@ -498,9 +498,7 @@ interface IUniformEditionAuction is ISaleAdapter {
     /// @param id The edition ID.
     /// @param data As for `open`.
     /// @return saleId `saleIdOf(token, id)`.
-    function adopt(address token, uint256 id, bytes calldata data)
-        external
-        returns (uint256 saleId);
+    function adopt(address token, uint256 id, bytes calldata data) external returns (uint256 saleId);
 
     /// @notice Places a bid of `quantity` units at `step`, paying exactly
     ///         `quantity * stepPrice(saleId, step)` as `msg.value`. Anyone, while bidding is open

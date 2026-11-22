@@ -66,7 +66,9 @@ contract EditionsReceiver is IERC1155Receiver {
             seenMinted = editions.editionOf(id).minted;
             (reenterSucceeded,) = address(via)
                 .call(
-                    abi.encodeCall(MockSale.mintEdition, (address(editions), address(this), id, 1, 0))
+                    abi.encodeCall(
+                        MockSale.mintEdition, (address(editions), address(this), id, 1, 0)
+                    )
                 );
         }
         return this.onERC1155Received.selector;
