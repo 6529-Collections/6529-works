@@ -46,6 +46,13 @@ EXPECTED_FORWARDED = {
     "UniformEditionAuction": "UniformEditionAuctionLens",
     "FederatedEditionAuction": "FederatedEditionAuctionLens",
 }
+# Where each forwarding contract is declared (the exporter matches by source path).
+FORWARDED_SOURCES = {
+    "Stream": "src/stream/Stream.sol",
+    "EnglishAuction": "src/sales/EnglishAuction.sol",
+    "UniformEditionAuction": "src/sales/UniformEditionAuction.sol",
+    "FederatedEditionAuction": "src/federated/FederatedEditionAuction.sol",
+}
 
 
 def _sel(sig: str, value: int) -> tuple[str, str]:
@@ -65,8 +72,11 @@ class FakeRepo:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")
 
-    def artifact(self, rel: str, name: str, abi: list, selectors: dict) -> None:
-        path = self.root / "out" / Path(rel).name / f"{name}.json"
+    def artifact(
+        self, rel: str, name: str, abi: list, selectors: dict, folder: str = ""
+    ) -> None:
+        # forge nests an artifact under part of its path when two sources share a file name.
+        path = self.root / "out" / folder / Path(rel).name / f"{name}.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         data = {
             "abi": abi,
@@ -116,11 +126,11 @@ def _standard(repo: FakeRepo) -> None:
     repo.artifact("src/Lib.sol", "Lib", [_fn("f")], {"f()": "22222222"})
     repo.artifact("src/Base.sol", "Base", [_fn("g")], {"g()": "33333333"})
     for name, lens in EXPECTED_FORWARDED.items():
-        repo.source(f"src/{name}.sol", f"contract {name} {{ function own() external {{}} }}\n")
+        repo.source(FORWARDED_SOURCES[name], f"contract {name} {{ function own() external {{}} }}\n")
         kind = "interface" if lens.startswith("I") else "contract"
         folder = "src/interfaces" if kind == "interface" else "src"
         repo.source(f"{folder}/{lens}.sol", f"{kind} {lens} {{ function view1() external; }}\n")
-        repo.artifact(f"src/{name}.sol", name, [_fn("own")], {"own()": "44444444"})
+        repo.artifact(FORWARDED_SOURCES[name], name, [_fn("own")], {"own()": "44444444"})
         ctor = {"type": "constructor", "inputs": [], "stateMutability": "nonpayable"}
         # write1 changes state, like a lens's masterTerms: the auction's read-only staticcall
         # cannot serve it, so it stays out of the full ABI.
@@ -245,6 +255,33 @@ class ExportTest(unittest.TestCase):
         after = sorted(p.name for p in (self.repo.root / "abi").glob("*.json"))
         self.assertEqual(after, before)
 
+    def test_APlainCoreNamesakeIsExportedUnderCore(self) -> None:
+        self.repo.source("src/core/Thing.sol", "contract Thing { function fresh() external {} }\n")
+        self.repo.artifact("src/core/Thing.sol", "Thing", [_fn("fresh")], {"fresh()": "66666666"}, "core")
+        self.assertEqual(self._run()[0], 0)
+        manifest = json.loads((self.repo.root / "abi" / "manifest.json").read_text("utf-8"))
+        by_file = {c["abi"]: c for c in manifest["contracts"]}
+        self.assertEqual(by_file["Thing.json"]["source"], "src/Thing.sol")
+        self.assertEqual(by_file["core/Thing.json"]["source"], "src/core/Thing.sol")
+        self.assertEqual(by_file["core/Thing.json"]["name"], "Thing")
+        self.assertTrue((self.repo.root / "abi" / "core" / "Thing.json").is_file())
+        self.assertEqual(self._run("--check")[0], 0)
+
+    def test_TwoNamesakesOutsideTheCoreFail(self) -> None:
+        self.repo.source("src/other/Thing.sol", "contract Thing { function x() external {} }\n")
+        self.repo.artifact("src/other/Thing.sol", "Thing", [_fn("x")], {"x()": "66666666"}, "other")
+        code, err = self._run()
+        self.assertEqual(code, 2)
+        self.assertIn("two exported contracts are named Thing", err)
+
+    def test_AForwardedSurfaceMissingFromTheBuildFails(self) -> None:
+        for f in (self.repo.root / "out" / "EnglishAuctionLens.sol").glob("*.json"):
+            f.unlink()
+        (self.repo.root / "src" / "EnglishAuctionLens.sol").unlink()
+        code, err = self._run()
+        self.assertEqual(code, 2)
+        self.assertIn("forwards to EnglishAuctionLens, which the build lacks", err)
+
     def test_InterfaceIdLeavesOutASameArityInheritedOverload(self) -> None:
         # Solidity accepts a child's f(address) beside its parent's f(uint256); the child's ID
         # counts only f(address).
@@ -345,7 +382,12 @@ class RealBuildTest(unittest.TestCase):
     def test_InterfaceIdsMatchThePinnedOnes(self) -> None:
         found = ea.collect(ROOT, ROOT / "out")
         manifest = json.loads(ea.render(found)[ea.MANIFEST])
-        ids = {c["name"]: c.get("interfaceId") for c in manifest["contracts"]}
+        # The pinned IDs are the old interfaces'; a plain-core namesake is under core/.
+        ids = {
+            c["name"]: c.get("interfaceId")
+            for c in manifest["contracts"]
+            if not c["abi"].startswith(ea.CORE_PREFIX)
+        }
         pinned = re.findall(
             r"type\((\w+)\)\.interfaceId,\s*bytes4\((0x[0-9a-f]{8})\)",
             (ROOT / "test" / "interfaces" / "InterfacesCompile.t.sol").read_text("utf-8"),
