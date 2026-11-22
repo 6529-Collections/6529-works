@@ -659,7 +659,7 @@ contract Flows is Script {
         require(artistId != 0, "artist not registered: accept the package first");
         _sign(
             string.concat("move-", index.toString()),
-            IArtistRegistry(a.artists).authorityOf(artistId),
+            _moveSigner(a, artistId),
             IDigests(a.registry)
                 .moveDigest(root, WorksHashing.itemHash(works[index].item), nonce, deadline)
         );
@@ -674,15 +674,48 @@ contract Flows is Script {
     ) internal view returns (bytes memory) {
         Work[] memory works = _works(a);
         bytes32[] memory leaves = _leaves(works);
-        // The move proof names the signing wallet, the account's root (IAccounts).
+        // The move proof names the signing wallet (IAccounts): the account's root, or the
+        // consolidated wallet `FLOWS_MOVE_SIGNER` names (r5 on).
         IArtistRegistry artists = IArtistRegistry(a.artists);
-        address root = artists.authorityOf(artists.artistIdOf(_artist()));
+        address root = _moveSigner(a, artists.artistIdOf(_artist()));
         return abi.encode(
             StreamMintRequest(
                 _root(leaves),
                 works[index].item,
                 _proof(leaves, index),
                 MoveAuthorization(nonce, deadline, abi.encodePacked(root, signature))
+            )
+        );
+    }
+
+    /// @dev The wallet that signs a move: `FLOWS_MOVE_SIGNER` when set (a wallet consolidated with
+    ///      the artist's account, which acts for it), else the account's root.
+    function _moveSigner(Addrs memory a, uint256 artistId) internal view returns (address) {
+        address signer = vm.envOr("FLOWS_MOVE_SIGNER", address(0));
+        return signer != address(0) ? signer : IArtistRegistry(a.artists).authorityOf(artistId);
+    }
+
+    /// @notice `SaleStarter.start` of item `index` (anyone sends it): the auction, the seller and
+    ///         royalty vaults and the record in one transaction (r5 on).
+    function starterTx(uint256 index, uint256 nonce, uint64 deadline, bytes calldata signature)
+        external
+        view
+    {
+        Addrs memory a = _addrs();
+        address starter = vm.parseJsonAddress(
+            vm.readFile(vm.envOr("FLOWS_RECORD", string(RECORD))), ".contracts.SaleStarter.address"
+        );
+        _tx(
+            string.concat("saleStarter-", index.toString()),
+            "any",
+            starter,
+            0,
+            abi.encodeWithSignature(
+                "start(address,address,bytes,(bytes32,bytes32,uint8)[])",
+                a.auction,
+                a.stream,
+                _mintData(a, index, nonce, deadline, signature),
+                _works(a)[index].media
             )
         );
     }

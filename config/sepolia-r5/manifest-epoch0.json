@@ -1,0 +1,117 @@
+{
+  "schema": "6529-works/governance-manifest/1",
+  "epoch": 0,
+  "chainId": 11155111,
+  "deployment": "sepolia-r5",
+  "status": "Testnet rehearsal with throwaway signers. Pre-audit; not for mainnet.",
+  "signatures": "Unsigned: testnet rehearsal. A mainnet manifest is signed by the network Safe's signers.",
+  "source": {
+    "repository": "https://github.com/6529-Collections/6529-works",
+    "commit": "ca02473304db31f7d6c0e68f7265628015579f9b",
+    "compiler": "solc 0.8.37, evm prague, optimizer 200 runs, via-ir off"
+  },
+  "deployer": "0x26A3f4505145b5E6164260cc868e50ddd9863697",
+  "namespace": {
+    "label": "6529-works/sepolia/r5",
+    "keccak256": "0xd511fee3f2b7440896b706847087712ba33d1609ee87dc87cef06b4c6b3d54aa"
+  },
+  "genesis": {
+    "path": "config/sepolia-r5/genesis.json",
+    "sha256": "2d523cf8e66cd5486cec62bc737061677577e7f88a24ee14b4512988723e371e"
+  },
+  "policy": {
+    "path": "config/genesis.example.json",
+    "sha256": "bc3067a4f00fad52a76195a91bf6271bb1a002903b386a85b88e567bd9c68bee"
+  },
+  "safes": {
+    "network": {
+      "address": "0x54a769fe591c3F47CF83d30b69e576497CE34454",
+      "threshold": 2,
+      "owners": [
+        "0xd4957eFe0D658A945D33e2D285D7ef103C3669de",
+        "0xe98BA252eA2f4cF9a4F16De84930b9E7Ec205553",
+        "0x56ec02E81f5Cd36E49cA5382A5f55a00A4906F94"
+      ],
+      "version": "Safe 1.4.1 (L1 singleton), no module, no guard; created 22 November 2026 in tx 0x4aa9971e8832fef1643a3f4cf86b92bf32245c9464f9a1d37c6a0bb45c20d16c"
+    }
+  },
+  "keys": {
+    "pausers": [
+      "0x521e65E87cECeb5BA4a494511507B3AAF6534Bd6",
+      "0x81B9D0267d39Ef1f2E45Ab7d06d8CAE652287d17",
+      "0x5F9e1473d99C1371397F2175191DEe84732C575d"
+    ],
+    "curationSigners": [
+      "0xa901A777C41e36B4Bd1caD3101140D8D12C5f9C9",
+      "0x760088bD696444cF66b9Fa7dc9db2c0E449761D1"
+    ],
+    "storageOperator": "0x738c6ffD3a57975FE0D79829267C674E177f00bD",
+    "platform": "0x0a69CdD0d8De0680779237aFF610C90b61B83b2D",
+    "curator": "0x73FC598b7140e50d96Cb9C26A016f20B26f526E6"
+  },
+  "parameters": {
+    "networkFeeRecipient": "0x54a769fe591c3F47CF83d30b69e576497CE34454",
+    "marketplaceOwner": "0x54a769fe591c3F47CF83d30b69e576497CE34454",
+    "museum": "0xB37A2a265044Ca0cB07839950D208D62B3944D25",
+    "museumNote": "The testnet museum: a dedicated EOA the operator holds, with no role.",
+    "auctionDuration": 3600,
+    "auctionDurationNote": "Testnet deviation: 1 hour (the governed minimum); mainnet is 24 hours."
+  },
+  "dependencies": {
+    "delegation": {
+      "address": "0x8f86c644f845A077999939C69Bc787662377d915",
+      "note": "The official 6529 NFTDelegation deployment on Sepolia (github.com/6529-Collections/nftdelegation). Its runtime bytecode is identical to mainnet 0x2202CB9c00487e7e8EF21e6d8E914B32e709f43d."
+    },
+    "permit2": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+    "create2Factory": "0x4e59b44847b379578588920cA78FbF26c0B4956C",
+    "vrf": {
+      "coordinator": "0x9DdfaCa8183c41ad55329BdeeD9F6A8d53168B1B",
+      "version": "Chainlink VRF v2.5",
+      "subscriptionId": "89333215533523544286942655033330382207138972885355549119019072655576170365979",
+      "keyHash": "0x787d74caea10b2b357790d5b5247c2f63d1d91572a9846f780606e4d953677ae",
+      "nativePayment": true,
+      "callbackGasLimit": 200000,
+      "confirmations": 3
+    }
+  },
+  "license": {
+    "default": "CC0 1.0 Universal",
+    "textSha256": "0xa2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499",
+    "contentStoreFileId": "0x16f36978ff2763eee543b9e8af4dc7c1ab5ed2966aff3485474569012cfdd22b",
+    "textPath": "test/fixtures/cc0-legalcode.txt"
+  },
+  "contracts": {
+    "configurator": "0x37610e1b120d68E9E402372D3D86E94751Ec15Dc",
+    "manager": "0x0D312D4FC9890aA81BD3D56825716ef3ceE08B76",
+    "contentStore": "0xc3846eB24293f0F4E3Ba36190562Da1b4707e087",
+    "dependencyRegistry": "0xBF6Af0d0652Bd79a3dED957E0543c8FDCabD6d93",
+    "consolidationAdapter": "0xf53334a5800CF6884b6dF8fc58A19A4252d68b29",
+    "artistRegistry": "0xaF9709B45c1F486654158c796B19367780aFcC6e",
+    "splitFactory": "0x835D765D5F24A462ca6d9a1caB639BA8559ceA35",
+    "feeRecipientVault": "0xB638C93e47aC281142dcBD69f4aDeDf368a5D517",
+    "museumVault": "0x8c8FA635cFD6d39d7ec1D520C3B3cb4C36E1Aabe",
+    "claimRouter": "0xbec5d387CcDE8a50E7Bf7C28a4A3D84EBa645134",
+    "assetAllowlist": "0xE98d7BEBa0018e7a4af6394f4b41e8AD26d81243",
+    "economicsResolver": "0x904Ef3d7F2B94E45715D2BDdBaEC64125C18bF1F",
+    "revenueEscrow": "0xCAe1D10F1A7421ee6829FDcbFF79f586F0F26201",
+    "curationVerifier": "0x81EEa94b0C7BCfFb2F02B41c720C55036895e123",
+    "packageRegistry": "0x4d7a7aad13AC4Df31E843C68bDF278d074C0B17D",
+    "statementLog": "0x911030BD0eEd5f659b022932AAF26425ca78B323",
+    "entropyModule": "0x2b5067dd458c9C01Ab70B5A290E10D185C3ae892",
+    "renderer": "0xE53a7762972783Ac190b5b3a2c9C4049417D452F",
+    "stream": "0x7c0Cc32805E26e1C9c53A46DEfbC2090345dd784",
+    "workRecords": "0x4DbC423C82b96080A6bc13358D89A8B40C0C72A3",
+    "workDelivery": "0xbF6cAaC5e5434a7Dd4deA4bEE0fDB46C0B73aa65",
+    "editions": "0xB6520da3c005ba60D1c3e6253a0B37e39748ce31",
+    "englishAuctionLens": "0x32b032Bb6381625b0842D03BfD011F8a8b05Ccb1",
+    "englishAuction": "0x73527a07c7F19B153EE32F14bE16e96c4219c67f",
+    "editionAuctionLens": "0x3C2CCe1E80C8d0310D7246a603811dC187527B3B",
+    "editionAuction": "0xFAb695D537d2C441D8Be6a8184c7cbE8646912a2",
+    "federationRegistry": "0xD674C284C89d1B63d7d82ac051a6daB5be4e1Fc4",
+    "federatedEditionAuctionLens": "0x7401C865A9cA473C3EFfCcd709311C8aF207De31",
+    "federatedEditionAuction": "0x896180534Fc8508894c40634776e914798F7CeDD",
+    "federatedStreamDeployer": "0xb7dA4f98894356c710030A02809BCA98a301ACeD",
+    "federatedEditionsDeployer": "0x58082Ff7cbC34EC300ee8FE9F9dF835977a2F71B",
+    "saleStarter": "0x7A1091b86f8FBCa97126EE75bb6805EFd80C446D"
+  }
+}

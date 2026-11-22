@@ -260,7 +260,9 @@ python tools/check_genesis.py --config config/genesis.sepolia.json
 
 For a new Sepolia rehearsal instance with an earlier instance's accounts,
 `python script/sepolia/make_genesis.py <new> <previous>` (for example `r5 r4`) writes
-`config/sepolia-<new>/genesis.json` from the committed policy. For an instance from before the
+`config/sepolia-<new>/genesis.json` from the committed policy. With new accounts, pass a public
+accounts file instead (`make_genesis.py r5 config/sepolia-r5/accounts.json`: the network, the
+holders by role, and the new Safe's owners for the manifest), as r5 did. For an instance from before the
 single network address (r1 to r4), it names that instance's first ADMIN holder, the hot admin
 Safe, as the network; run `check_genesis.py --config` on the result.
 
@@ -394,7 +396,15 @@ declines the module explicitly. The record says which (`"entropy": "vrf"` or `"n
 On Sepolia, set the module up as on mainnet; do not use `NO_VRF`.
 
 1. In the Chainlink VRF app on Sepolia, create a **dedicated** subscription. Fund it with LINK,
-   or with Sepolia ETH if `VRF_NATIVE_PAYMENT=1`.
+   or with Sepolia ETH if `VRF_NATIVE_PAYMENT=1`. No app is needed: the coordinator's
+   `createSubscription()` and `fundSubscriptionWithNative(subId)` can be called directly (r5).
+   Fund it for the gas lane's maximum price, not today's: r5's request stayed pending for
+   about 80 minutes on 0.02 ETH and was fulfilled two blocks after the balance reached 0.32 ETH
+   (r1 and r2, on 0.25 and 0.2 ETH, within five blocks). Sepolia's lane above is the 750 gwei
+   one; at that price a 200,000-gas callback with the coordinator's 24% native premium costs
+   about 0.2 ETH. A shared subscription does not work for Verify, which requires
+   the module to be the only consumer, and the coordinator refuses to remove a consumer while
+   any request on the subscription is pending (`PendingRequestExists`).
 2. Set the variables:
 
    | Variable | Value | Bounds |
@@ -542,16 +552,27 @@ forge script script/Deploy.s.sol --rpc-url "$SEPOLIA_RPC_URL" --sender <deployer
   - **Each auction's lens is its own transaction** (the rc.2 review's GAS M-2). Created inside
     its auction's deployment, a lens put both contracts' code in one transaction: the edition
     auction's would have needed about 68.9M with Glamsterdam costs, over a 60M block and the
-    50M `eth_estimateGas` cap of geth, reth and public RPCs. Deployed apart, every deploy
-    transaction is at most about 39.9M with Sepolia's measured Glamsterdam costs (the edition
-    auction; its lens about 30.7M, the English auction about 37.8M and its lens about 10.4M),
-    so no gas limit needs setting by hand: `--slow` takes each from `eth_estimateGas`. On Sepolia
-    r4 (1 November 2026) the node's estimates were at most 38.7M (Stream; the edition auction
-    38.3M, its lens 30.2M, the English auction 36.8M and its lens 10.2M), and the whole deploy
-    used 496M gas over 26 transactions
-    ([per transaction](../deployments/11155111/README.md#sepolia-r4-1-november-2026-current)).
-    [`sepolia/deploy.ps1`](sepolia/deploy.ps1) runs this step with an instance's public inputs
-    (`config/sepolia-r4/deploy.env`) and the operator's signer module;
+    50M `eth_estimateGas` cap of geth, reth and public RPCs. Deployed apart, the auctions and
+    lenses stay under 40M. On Sepolia r4 (1 November 2026) the node's estimates were at most
+    38.7M and the whole deploy used 496M gas over 26 transactions
+    ([per transaction](../deployments/11155111/README.md#sepolia-r4-1-november-2026-superseded-by-r5)).
+  - **WorkRecords now needs about 51M.** On Sepolia r5 (22 November 2026, `main` at `ca02473`)
+    WorkRecords' creation used 50.8M gas (node estimate 51.2M), above the 50M estimate cap:
+    `ethereum-sepolia-rpc.publicnode.com` answers its `eth_estimateGas` with an empty revert, and
+    forge stops after Stream with `Failed to estimate gas`. Tenderly's public gateway
+    (`https://sepolia.gateway.tenderly.co`) estimates it, and Sepolia's block limit is 200M. On
+    r5, forge still failed to estimate through that gateway (`--resume` also reuses the RPC saved
+    in its broadcast cache), so the remaining transactions were sent with forge's exact calldata
+    from the cache, in order, with gas limits of 8 times forge's Prague simulation (the r5
+    record says how). The whole deploy used 725M gas over 33 transactions
+    ([per transaction](../deployments/11155111/README.md#sepolia-r5-22-november-2026-current)).
+    Before a mainnet run, budget WorkRecords' creation against the private endpoint's estimate
+    cap, or set its gas limit by hand.
+  - [`sepolia/deploy.ps1`](sepolia/deploy.ps1) runs this step with an instance's public inputs
+    (`config/sepolia-r5/deploy.env`) and the operator's signer module. Its `-Broadcast` refuses
+    the env file's public RPC, whose 50M estimate cap stops at WorkRecords; pass `-Rpc` with an
+    endpoint whose cap is higher. No endpoint has yet been shown to carry the whole broadcast
+    through forge (r5 finished as above);
     [`sepolia/`](sepolia/) also has the genesis and manifest writers, the per-transaction gas
     rows, Sourcify verification and the flow driver.
   - **On Sepolia r1, with Glamsterdam costs,** the deploy took 445M gas over 25 transactions,
