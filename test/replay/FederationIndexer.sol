@@ -257,9 +257,9 @@ contract FederationRegistryIndexer is ReplayIndexer {
 ///         balances, works (facts, outcome, royalty), the one collection, `tokenOfContent` (a burn
 ///         does not clear it), the counters, `hasMinted`, the renderer slot and its announcement,
 ///         the two settings and the marketplace owner.
-/// @dev The two settings start at the published deployment values (7 and 14 days), which the
-///      constructor writes without an event. `contractURI` is not rebuilt: ERC-7572's
-///      `ContractURIUpdated` carries no value.
+/// @dev The two settings' launch values (7 and 14 days) are logged at construction, as are the
+///      first owner, the one collection and the first renderer. `contractURI` comes from
+///      `ContractURISet`, which carries the value (ERC-7572's `ContractURIUpdated` has none).
 contract FederatedStreamIndexer is ReplayIndexer {
     uint256 public totalMinted;
     uint256 public totalBurned;
@@ -268,6 +268,7 @@ contract FederatedStreamIndexer is ReplayIndexer {
     uint48 public moduleDelay = 7 days;
     uint48 public rescueDelay = 14 days;
     address public renderer;
+    string public contractURI;
     PendingModule internal _pending;
     mapping(uint256 => Work) internal _works;
     mapping(uint256 => address) internal _owners;
@@ -367,9 +368,10 @@ contract FederatedStreamIndexer is ReplayIndexer {
             assertEq(log.topics[1], Slots.RENDERER, "indexer: a slot not held here");
             (, renderer) = abi.decode(log.data, (address, address));
             delete _pending;
+        } else if (sig == IStream.ContractURISet.selector) {
+            contractURI = abi.decode(log.data, (string));
         } else if (
-            sig == IStream.ContractURIUpdated.selector || sig == IStream.ContractURISet.selector
-                || sig == IERC4906.MetadataUpdate.selector
+            sig == IStream.ContractURIUpdated.selector || sig == IERC4906.MetadataUpdate.selector
                 || sig == IERC4906.BatchMetadataUpdate.selector
         ) {
             // No state.
@@ -392,6 +394,7 @@ contract FederatedStreamIndexer is ReplayIndexer {
         assertEq(t.moduleDelay(), moduleDelay, "moduleDelay");
         assertEq(t.rescueDelay(), rescueDelay, "rescueDelay");
         assertEq(t.moduleOf(Slots.RENDERER), renderer, "renderer");
+        assertEq(t.contractURI(), contractURI, "contractURI");
         assertEq(abi.encode(t.pendingModule(Slots.RENDERER)), abi.encode(_pending), "pending");
         for (uint256 c = 1; c <= collectionCount; ++c) {
             assertEq(abi.encode(t.collectionOf(c)), abi.encode(_collections[c]), "collection");

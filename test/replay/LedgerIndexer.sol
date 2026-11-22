@@ -9,6 +9,7 @@ import { ISplitFactory } from "src/economics/interfaces/ISplitFactory.sol";
 import { ISplitLedger } from "src/economics/interfaces/ISplitLedger.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { ReplayIndexer } from "./ReplayIndexer.sol";
+import { CoreDirectoryIndexer } from "./StreamCoreIndexer.sol";
 
 /// @notice Rebuilds the split ledger from its own logs (ECO-10 to ECO-22, ECO-44): every
 ///         wallet's configuration from `WalletCreated`, the released totals per payee and asset,
@@ -43,7 +44,10 @@ contract LedgerIndexer is ReplayIndexer {
     address[] internal _probes;
     uint256 private constant PROBED_NONCES = 32;
 
-    constructor(address ledger_) ReplayIndexer(ledger_) { }
+    constructor(address ledger_) ReplayIndexer(ledger_) {
+        // ETH is compared for every wallet, so a release no log reports is caught.
+        _asset(address(0));
+    }
 
     /// @notice Also compare `account`'s first nonces, logged or not.
     function probe(address account) external {
@@ -144,38 +148,39 @@ contract LedgerIndexer is ReplayIndexer {
 
 /// @notice Rebuilds the revenue escrow from its own logs (ECO-27, ECO-28, ECO-40, ECO-45): every
 ///         credit per wallet and asset in its three parts and their window times (`credits`),
-///         `totalOwed` per asset and every recovery consent. The parts age by the escrow's rule
-///         at each logged change, from the log's block time, so they match the stored record.
+///         `totalOwed` per asset, every recovery consent and the AccessManager. The parts age by
+///         the escrow's rule at each logged change, from the log's block time, under the
+///         unclaimed period the `Directory`'s own logs set (`UnclaimedPeriodSet`, kept by the
+///         Directory indexer, never read from a contract), so they match the stored record.
 /// @dev A recovery consumes the consent of an ordinary account only; for a split wallet and for
 ///      the network's own credit it leaves the consent as it is. `Recovered` says which case
 ///      applied (`consentUsed`), so the indexer clears a consent exactly when the log says so.
 contract EscrowIndexer is ReplayIndexer {
-    LedgerIndexer public immutable ledgerIndexer;
+    CoreDirectoryIndexer public immutable directoryIndexer;
     address public authority;
     address[] internal _wallets;
     mapping(address wallet => bool) internal _knownWallet;
     address[] internal _assets;
     mapping(address asset => bool) internal _knownAsset;
 
-    /// @dev A credit as the escrow stores it: aged, maturing, recent, maturesAt, openedAt,
+    /// @dev A credit as the escrow stores it: aged, maturing, recent, maturingLastAt, openedAt,
     ///      lastAt.
     struct Credit {
         uint256 aged;
         uint256 maturing;
         uint256 recent;
-        uint256 maturesAt;
+        uint256 maturingLastAt;
         uint256 openedAt;
         uint256 lastAt;
     }
 
-    uint256 internal constant PERIOD = 180 days;
     mapping(address wallet => mapping(address asset => Credit)) internal _credits;
     mapping(address asset => uint256) internal _totalOwed;
     address[] internal _consenters;
     mapping(address account => address) internal _consent;
 
-    constructor(address escrow_, LedgerIndexer ledgerIndexer_) ReplayIndexer(escrow_) {
-        ledgerIndexer = ledgerIndexer_;
+    constructor(address escrow_, CoreDirectoryIndexer directoryIndexer_) ReplayIndexer(escrow_) {
+        directoryIndexer = directoryIndexer_;
     }
 
     /// @notice Also compare `account`'s ETH credit, clock and recovery consent, whether or not
@@ -231,7 +236,7 @@ contract EscrowIndexer is ReplayIndexer {
     }
 
     /// @dev Adds a credit at this block: it joins the open window, or opens one when there is
-    ///      none or it has closed (R12, ECO-45).
+    ///      none or it has closed (ECO-45).
     function _set(address wallet, address asset, uint256 owed, uint256 amount) private {
         Credit memory c = _rolled(_credits[wallet][asset]);
         if (c.recent == 0) c.openedAt = _now;
@@ -241,17 +246,19 @@ contract EscrowIndexer is ReplayIndexer {
         assertEq(owed, c.aged + c.maturing + c.recent, "indexer: owed");
     }
 
-    /// @dev The escrow's ageing rule, written from the spec: a closed window's credits mature
-    ///      180 days after its last credit; the open window closes 180 days after it opened.
+    /// @dev The escrow's ageing rule, written from the spec, under the period the Directory's
+    ///      logs set: a closed window's credits age one period after that window's last credit
+    ///      (`maturingLastAt`); the open window closes one period after it opened, and its
+    ///      credits join `maturing` under its own last credit.
     function _rolled(Credit memory c) private view returns (Credit memory) {
-        if (c.maturing != 0 && _now >= c.maturesAt) {
+        uint256 period = directoryIndexer.unclaimedPeriod();
+        if (c.maturing != 0 && _now >= c.maturingLastAt + period) {
             c.aged += c.maturing;
             c.maturing = 0;
         }
-        if (c.recent != 0 && _now >= c.openedAt + PERIOD) {
-            assertEq(c.maturing, 0, "indexer: two maturing windows");
-            (c.maturing, c.recent, c.maturesAt) = (c.recent, 0, c.lastAt + PERIOD);
-            if (_now >= c.maturesAt) {
+        if (c.recent != 0 && _now >= c.openedAt + period) {
+            (c.maturing, c.recent, c.maturingLastAt) = (c.maturing + c.recent, 0, c.lastAt);
+            if (_now >= c.maturingLastAt + period) {
                 c.aged += c.maturing;
                 c.maturing = 0;
             }
@@ -300,14 +307,14 @@ contract EscrowIndexer is ReplayIndexer {
             uint256 aged,
             uint256 maturing,
             uint256 recent,
-            uint48 maturesAt,
+            uint48 maturingLastAt,
             uint48 openedAt,
             uint48 lastAt
         ) = e.credits(wallet, asset);
         assertEq(aged, c.aged, "credits.aged");
         assertEq(maturing, c.maturing, "credits.maturing");
         assertEq(recent, c.recent, "credits.recent");
-        assertEq(maturesAt, c.maturesAt, "credits.maturesAt");
+        assertEq(maturingLastAt, c.maturingLastAt, "credits.maturingLastAt");
         assertEq(openedAt, c.openedAt, "credits.openedAt");
         assertEq(lastAt, c.lastAt, "credits.lastAt");
     }
