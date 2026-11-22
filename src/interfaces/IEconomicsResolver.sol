@@ -10,7 +10,7 @@ import { ProductEconomics, WorkTerms } from "./types/EconomicsTypes.sol";
 /// @notice The governed economics every product reads (ADR 0001 sections 5, 7 and 8): the
 ///         network fee and royalty rate for new works, the terms a work locks at mint, and
 ///         each product's default license.
-/// @dev Products are `PRODUCT_STREAM`, `PRODUCT_EDITIONS` and `PRODUCT_FEDERATED`. Sales are
+/// @dev Products are `PRODUCT_STREAM`, `PRODUCT_EDITIONS` and `PRODUCT_INDEPENDENT`. Sales are
 ///      in ETH; the opening bid and increment floor live in the `IAssetAllowlist`, which this
 ///      resolver names; split wallet addresses come from
 ///      its `ISplitFactory`. Changes apply to works and sales that start afterwards only: works

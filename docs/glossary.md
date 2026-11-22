@@ -11,24 +11,27 @@ rates are out of 100,000.
 
 ### 6529 Stream
 
-The one shared, network-curated ERC-721 of 1/1 works (`Stream`). Permanent. See
+The one shared, network-curated ERC-721 of 1/1 works (`Stream6529`). Permanent. See
 [stream and auctions](spec/stream-and-auctions.md).
 
 ### 6529 Stream Editions
 
-The one shared ERC-1155 (`Editions`). Each edition is anchored by a Stream master and sold by an
-edition auction. Permanent. See [editions and sales](spec/editions-and-sales.md).
+The one shared ERC-1155 (`StreamEditions6529`). Each edition is anchored by a Stream master and sold
+by an edition auction. Permanent. See [editions and sales](spec/editions-and-sales.md).
 
-### 6529 Stream Federated
+### 6529 Independent Stream
 
-A federated artist's own token pair, built from the same plain token code as Stream and
-Editions, listed by the network without the curation vote. See [federation](spec/federation.md).
+An artist's own token pair (6529 Independent Stream for 1/1s, 6529 Independent Stream Editions
+for editions), built from the same plain token code as Stream and Editions, listed by the network
+without the curation vote. Each collection keeps the artist's own name and symbol. See
+[Independent Stream](spec/independent-stream.md).
 
 ### permanent contract
 
-A contract deployed once and never replaced: `Stream`, `Editions`, `WorkFacts`, `Directory`,
-`SplitLedger` and its vaults, `RevenueEscrow`, `ContentStore`, and each federated token. It holds
-only ownership, the facts of a finished work and money already owed.
+A contract deployed once and never replaced: `Stream6529`, `StreamEditions6529`,
+`StreamWorkFacts6529`, `StreamDirectory6529`, `SplitLedger` and its vaults, `RevenueEscrow`,
+`ContentStore`, and each Independent Stream token. It holds only ownership, the facts of a finished
+work and money already owed.
 
 ### module
 
@@ -39,25 +42,26 @@ adds and removes modules.
 
 The four things a permanent token accepts from modules: a minter mints and records an outcome;
 the TERMS module sets royalties; the RENDERER module draws an unfinalized work; the RECORDS
-module edits a record within what `WorkFacts` allows. Nothing else. See the
+module edits a record within what `StreamWorkFacts6529` allows. Nothing else. See the
 [overview](overview.md#2-the-permanent-core-and-its-promise).
 
 ### module slot
 
 A named place in a permanent contract that holds one module (`TERMS`, `RENDERER`, `RECORDS` in a
-token; `ACCOUNTS`, `FEDERATION`, `FEDERATED_TERMS`, `FEDERATED_RECORDS` in `Directory`).
+token; `ACCOUNTS`, `INDEPENDENT_STREAM`, `INDEPENDENT_TERMS`, `INDEPENDENT_RECORDS` in
+`StreamDirectory6529`).
 
 ### minter
 
 A sale contract a token contract lists as allowed to mint. It may record the outcome of a token
-it still holds unsold, once, or burn it. A federated token's minters are the federation module's
-answer.
+it still holds unsold, once, or burn it. An Independent Stream token's minters are the Independent
+Stream module's answer.
 
 ### WorkFacts
 
-The permanent record of every work, keyed by token and token ID: media files (fixed when the
-record opens), descriptive record (fixed at finalize), license, pinned renderer and one-way
-locks. Unowned. See [works and storage](spec/works-and-storage.md).
+`StreamWorkFacts6529`: the permanent record of every work, keyed by token and token ID: media files
+(fixed when the record opens), descriptive record (fixed at finalize), license, pinned renderer and
+one-way locks. Unowned. See [works and storage](spec/works-and-storage.md).
 
 ### WorkRules
 
@@ -72,25 +76,27 @@ share (only down). Replaceable. See [economics and payouts](spec/economics-and-p
 
 ### Directory
 
-The permanent address of the network's shared modules (accounts, federation, the federated
-tokens' terms and records). The split ledger asks it for payout addresses; it holds the
-[unclaimed period](#unclaimed-period).
+`StreamDirectory6529`: the permanent address of the network's shared modules (accounts, Independent
+Stream, the Independent Stream tokens' terms and records). The split ledger asks it for payout
+addresses; it holds the [unclaimed period](#unclaimed-period).
 
 ### Accounts
 
-The replaceable accounts module behind `Directory`: artist accounts, wallets, payout addresses,
-replacement, freeze and contest. See [identity and recovery](spec/identity-and-recovery.md).
+The replaceable accounts module behind `StreamDirectory6529`: artist accounts, wallets, payout
+addresses, replacement, freeze and contest. See
+[identity and recovery](spec/identity-and-recovery.md).
 
-### federation gate
+### Independent Stream gate
 
-The federation module's answer to a federated token: which sale contracts may mint for it, and
-which were removed. Found through `Directory`. See [federation](spec/federation.md).
+The Independent Stream module's answer to an Independent Stream token: which sale contracts may mint
+for it, and which were removed. Found through `StreamDirectory6529`. See
+[Independent Stream](spec/independent-stream.md).
 
 ### mint policy
 
 The module a sale contract asks before minting (`IMintPolicy.authorize`): for Stream the
-`PackageRegistry`, for federated tokens the `FederationRegistry`. It checks the item and answers
-the mint facts and sale terms. See [curation](spec/curation.md).
+`PackageRegistry`, for Independent Stream tokens the `IndependentStreamRegistry`. It checks the item
+and answers the mint facts and sale terms. See [curation](spec/curation.md).
 
 ### entropy module
 
@@ -118,8 +124,8 @@ until a 7-day remap by the network changes it. See [governance](spec/governance.
 ### moduleDelay
 
 The wait between announcing a module (or adding a minter) and its first use. A network setting
-in each token contract and `Directory`: 7 days at launch, changed at once, zero allowed. An
-addition already announced keeps the time it was given.
+in each token contract and `StreamDirectory6529`: 7 days at launch, changed at once, zero allowed.
+An addition already announced keeps the time it was given.
 
 ### rescue
 
@@ -139,14 +145,14 @@ once the [rebind delay](#rebinddelay) has passed since its own sale contract was
 
 ### rebindDelay
 
-The wait before a `rebind`. A network setting of `Editions`: 14 days at launch, read when the
-rebind is attempted.
+The wait before a `rebind`. A network setting of `StreamEditions6529`: 14 days at launch, read when
+the rebind is attempted.
 
 ### unclaimed period
 
 How long money must wait unclaimed before it can go to the network: a marked split-vault share
-or an aged escrow or auction credit. A network setting in `Directory`: 180 days at launch, read
-when the forfeit or expiry is attempted. Only money that has itself waited counts.
+or an aged escrow or auction credit. A network setting in `StreamDirectory6529`: 180 days at launch,
+read when the forfeit or expiry is attempted. Only money that has itself waited counts.
 
 ### binding
 
@@ -213,8 +219,8 @@ How a token's first sale ended: none, sold, unsold or rescued. Set once by the h
 
 ### finalize
 
-Freezing a work's descriptive record and pinning the renderer that draws it, in `WorkFacts`.
-Never undone.
+Freezing a work's descriptive record and pinning the renderer that draws it, in
+`StreamWorkFacts6529`. Never undone.
 
 ### windowworks
 

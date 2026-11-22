@@ -1,10 +1,10 @@
 # Editions and sales
 
-6529 Stream Editions (`Editions`) is the one shared ERC-1155. Each edition belongs to a 6529
-Stream work of kind 1 (the master) and has the master's token ID. `Editions` is permanent and
-plain ([ADR 0010](../adr/0010-plain-permanent-core.md)): it keeps who owns each copy and each
-edition's supply. The rules for creating and selling an edition live in its sale contract, the
-replaceable `UniformEditionAuction`, which sells copies beside the master's 1/1 auction.
+6529 Stream Editions (`StreamEditions6529`) is the one shared ERC-1155. Each edition belongs to a
+6529 Stream work of kind 1 (the master) and has the master's token ID. `StreamEditions6529` is
+permanent and plain ([ADR 0010](../adr/0010-plain-permanent-core.md)): it keeps who owns each copy
+and each edition's supply. The rules for creating and selling an edition live in its sale contract,
+the replaceable `UniformEditionAuction`, which sells copies beside the master's 1/1 auction.
 
 > Pre-audit. See the [project status](../../README.md#status).
 
@@ -12,10 +12,10 @@ replaceable `UniformEditionAuction`, which sells copies beside the master's 1/1 
 
 | Contract | Kind | What it does |
 | --- | --- | --- |
-| [`Editions`](../../src/core/Editions.sol) on [`EditionsBase`](../../src/core/EditionsBase.sol) ([`IEditions`](../../src/interfaces/core/IEditions.sol)) | permanent | ERC-1155, ERC-2981, ERC-4906. `create`, `mint`, `seal` from the edition's own minter; `rebind` by the network; holders `burn` their own copies; the TERMS module sets royalties; `uri` through the master's renderer. |
+| [`StreamEditions6529`](../../src/core/StreamEditions6529.sol) on [`EditionsBase`](../../src/core/EditionsBase.sol) ([`IEditions`](../../src/interfaces/core/IEditions.sol)) | permanent | ERC-1155, ERC-2981, ERC-4906. `create`, `mint`, `seal` from the edition's own minter; `rebind` by the network; holders `burn` their own copies; the TERMS module sets royalties; `uri` through the master's renderer. |
 | [`UniformEditionAuction`](../../src/sales/UniformEditionAuction.sol) and its lens | module (minter) | Opens an edition's sale, checks the master, works out seller, fee share and royalty receiver, deploys the split wallets, creates the edition, takes bids on a price ladder, clears at one price, mints copies as winners claim. |
 | [`EditionRules`](../../src/editions/EditionRules.sol) | library | The edition terms rule. |
-| [`FederatedEditionAuction`](../../src/federated/FederatedEditionAuction.sol) | module (minter) | The same auction for a federated artist's editions ([Federation](federation.md)). |
+| [`IndependentEditionAuction`](../../src/independent/IndependentEditionAuction.sol) | module (minter) | The same auction for an Independent Stream artist's editions ([Independent Stream](independent-stream.md)). |
 
 ## The edition token
 
@@ -47,7 +47,7 @@ The auction is replaceable; its numbers below are compiled or governed values of
 - **Open.** Anyone opens a sale from the 1/1's start until the edition close. The auction checks
   the item against `IStream.itemHashOf` and that the master's kind is 1, takes seller, fee share
   and royalty receiver from the economics resolver, deploys the split wallets, then calls
-  `Editions.create`. It stores the seller and fee share itself.
+  `StreamEditions6529.create`. It stores the seller and fee share itself.
 ### The step ladder
 
 - **Ladder.** Bids sit on fixed price steps: step `i` costs
@@ -104,7 +104,7 @@ The auction is replaceable; its numbers below are compiled or governed values of
 | ED-25 | The minter seals once, between the copies minted and the maximum; a sealed maximum never grows; a removed minter still seals and mints only what it sealed. | `test_Edition_CreateMintSealAndTheSealNeverGrows` |
 | ED-26 | Every mint logs `EditionMinted(editionId, to, amount, unitPrice)`. | |
 | ED-27 | Editions' state is rebuilt from its logs alone. | |
-| ED-28 | Retired: `Editions` holds no gas figure and asks no module for a mint. | |
+| ED-28 | Retired: `StreamEditions6529` holds no gas figure and asks no module for a mint. | |
 | ED-29 | The TERMS module may lower an edition's fee share with its master's, never raise it. | |
 | ED-30 | The network may `rebind` only an edition with no copies and no seal, whose minter was removed at least `rebindDelay` ago, to an active minter. | `test_Rebind_AfterFourteenDaysOnlyUnmintedUnsealed`, `testFuzz_Rebind_RefusedBeforeTheLaunchPeriod` |
 | ED-31 | `rebindDelay` is the network's setting (14 days at launch), changed at once, zero allowed, with old and new in `RebindDelaySet`. | `test_RebindDelay_FourteenDaysAtDeploymentOnlyTheNetworkSetsIt` |
@@ -132,7 +132,7 @@ The auction is replaceable; its numbers below are compiled or governed values of
 
 ## Events
 
-`Editions`: `EditionCreated`, `EditionMinted`, `EditionSupplySealed`, `EditionRebound`,
+`StreamEditions6529`: `EditionCreated`, `EditionMinted`, `EditionSupplySealed`, `EditionRebound`,
 `RoyaltySet`, `RebindDelaySet`, `MinterAdded`, `MinterRemoved`, `ModuleProposed`, `ModuleSet`,
 `ModuleDelaySet`, ERC-1155 and ERC-4906. Signatures on the
 [events page](../integrators/events-and-indexing.md).

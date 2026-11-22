@@ -77,7 +77,7 @@ It starts its own `anvil` node on port 8545 (stop any other node there first, or
    it with two bids, a competing 1/1 bid, settlement, the work's record opened and finalized,
    `tokenURI`, the edition settled, copies claimed with refunds, and the proceeds released to the
    artist and the network;
-4. sells one federated work, and swaps one module: the network proposes a new renderer, the
+4. sells one Independent Stream work, and swaps one module: the network proposes a new renderer, the
    clock moves past `moduleDelay`, and anyone activates it.
 
 Every account is one of anvil's default test accounts; no real key is used. What each phase does

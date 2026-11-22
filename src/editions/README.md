@@ -3,8 +3,8 @@
 6529 Stream Editions (`STREAMEDITIONS`): the one shared ERC-1155 of editions. Each edition is
 anchored by a 6529 Stream work of kind 1 (edition master) and shares its ID. Since
 [ADR 0010](../../docs/adr/0010-plain-permanent-core.md) the token is the plain permanent core in
-[`src/core/`](../core/): `EditionsBase.sol` (the rules) and `Editions.sol` (its minter list and
-TERMS slot). The rules that decide when an edition exists and on what economics live in the
+[`src/core/`](../core/): `EditionsBase.sol` (the rules) and `StreamEditions6529.sol` (its minter
+list and TERMS slot). The rules that decide when an edition exists and on what economics live in the
 replaceable edition sale contract, the uniform-price edition auction in
 [`sales/`](../sales/README.md) ([ADR 0005](../../docs/adr/0005-stream-editions-auction.md)).
 
@@ -12,10 +12,10 @@ replaceable edition sale contract, the uniform-price edition auction in
 
 | File | What it is |
 | --- | --- |
-| [`../core/EditionsBase.sol`](../core/EditionsBase.sol) | The permanent ERC-1155, shared with each federated artist's editions: `create`, `mint`, `seal`, `rebind`, `burn`, `setRoyalty`, `royaltyInfo`, `uri`. Implements [`IEditions`](../interfaces/core/IEditions.sol). |
-| [`../core/Editions.sol`](../core/Editions.sol) | 6529 Stream Editions: `EditionsBase` with `Modules` (minters and the TERMS slot), the network as admin. |
+| [`../core/EditionsBase.sol`](../core/EditionsBase.sol) | The permanent ERC-1155, shared with each Independent Stream artist's editions: `create`, `mint`, `seal`, `rebind`, `burn`, `setRoyalty`, `royaltyInfo`, `uri`. Implements [`IEditions`](../interfaces/core/IEditions.sol). |
+| [`../core/StreamEditions6529.sol`](../core/StreamEditions6529.sol) | 6529 Stream Editions: `EditionsBase` with `Modules` (minters and the TERMS slot), the network as admin. |
 | `EditionRules.sol` | Internal library: the one validity rule for edition terms, applied by the package registry when it admits an edition master. |
-| `Editions.sol` | The previous token, kept until integration deletes it. |
+| `StreamEditions6529.sol` | The previous token, kept until integration deletes it. |
 
 ## Entry points
 
@@ -39,5 +39,6 @@ replaceable edition sale contract, the uniform-price edition auction in
 - **Logs rebuild the state**: every change emits an event; `ContractURISet` carries the URI
   that ERC-7572's `ContractURIUpdated` does not. The replay test is
   [`LogReplayEditions.t.sol`](../../test/replay/LogReplayEditions.t.sol).
-- **Tests**: `test/core/Editions*.t.sol` (unit, fuzz, hostile modules and minters, invariants),
-  `test/symbolic/EditionsCoreSymbolic.t.sol` (Halmos), `test/replay/LogReplayEditions.t.sol`.
+- **Tests**: `test/core/StreamEditions6529*.t.sol` (unit, fuzz, hostile modules and minters,
+  invariants), `test/symbolic/EditionsCoreSymbolic.t.sol` (Halmos),
+  `test/replay/LogReplayEditions.t.sol`.

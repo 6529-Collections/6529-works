@@ -80,7 +80,7 @@ MODULE_TESTS: dict[str, str] = {
     "economics": "test/economics/**",
     "editions": "test/curation/**",
     "entropy": "test/entropy/**",
-    "federated": "test/federated/**",
+    "independent": "test/independent/**",
     "governance": "test/{governance,deploy}/**",
     "identity": "test/identity/**",
     "interfaces": "test/{interfaces,libraries,helpers}/**",
@@ -129,21 +129,21 @@ SKIPPED_ON_SPLIT_FILES = "ASOR,BOR,FHR,LIR,MVIE,MVIV,MWA,SBR"
 FULL_SPLIT_FILES = {
     "src/economics/RevenueEscrow.sol",
     "src/economics/SplitLedger.sol",
-    "src/federated/FederatedEditions.sol",
-    "src/federated/FederatedMembership.sol",
-    "src/federated/FederatedStream.sol",
-    "src/federated/FederationRegistry.sol",
+    "src/independent/IndependentStreamEditions6529.sol",
+    "src/independent/IndependentStreamMembership.sol",
+    "src/independent/IndependentStream6529.sol",
+    "src/independent/IndependentStreamRegistry.sol",
     "src/stream/WorkDelivery.sol",
 }
 FULL_SPLIT_GROUPS = {**SPLIT_GROUPS, "others": SKIPPED_ON_SPLIT_FILES}
 # Split files whose relational shard alone does not finish in a CI job: it runs as this many
 # shards, part k of n taking every n-th comparison of the contract from the k-th, in the order
 # ROR visits them (with every replacement of each). The parts' mutants together are exactly
-# the whole shard's. On the 21 November 2026 campaign FederatedStream's relations took about
-# 10 hours and FederationRegistry's about 5.
+# the whole shard's. On the 21 November 2026 campaign IndependentStream6529's relations took about
+# 10 hours and IndependentStreamRegistry's about 5.
 RELATION_PARTS = {
-    "src/federated/FederatedStream.sol": 4,
-    "src/federated/FederationRegistry.sol": 3,
+    "src/independent/IndependentStream6529.sol": 4,
+    "src/independent/IndependentStreamRegistry.sol": 3,
 }
 # The split files' relational shard uses two replacements per comparison instead of five.
 SUFFICIENT_ROR_ENV = "MUTATION_SUFFICIENT_ROR"

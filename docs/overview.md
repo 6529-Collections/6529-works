@@ -12,8 +12,8 @@
 - **6529 Stream Editions**, one shared ERC-1155. Each edition is anchored by a Stream work
   (its master) and sells in a uniform-price auction that closes just after the master's sale.
 
-Beside them, **federated** artists can have their own token pair, built from the same code and
-listed by the network without the curation vote.
+Beside them, **6529 Independent Stream** and **6529 Independent Stream Editions** are an artist's
+own token pair, built from the same code and listed by the network without the curation vote.
 
 Sales are in ETH. Anyone may start an approved work's English auction, and anyone may settle it.
 Money moves by pull: proceeds and royalties collect in immutable split vaults that each payee
@@ -32,10 +32,10 @@ owed.
 
 | Permanent contract | What it keeps |
 | --- | --- |
-| `Stream` | Ownership of each 1/1; the facts fixed at mint (item, artist, collection, serial, seed); how the first sale ended; the royalty receiver and rate |
-| `Editions` | Ownership of each copy; each edition's maximum, count minted and seal |
-| `WorkFacts` | Each work's media files, descriptive record, license and pinned renderer, for Stream and every federated token |
-| `Directory` | Where the network's shared modules are (accounts, federation, the federated tokens' terms and records), and the unclaimed period |
+| `Stream6529` | Ownership of each 1/1; the facts fixed at mint (item, artist, collection, serial, seed); how the first sale ended; the royalty receiver and rate |
+| `StreamEditions6529` | Ownership of each copy; each edition's maximum, count minted and seal |
+| `StreamWorkFacts6529` | Each work's media files, descriptive record, license and pinned renderer, for Stream and every Independent Stream token |
+| `StreamDirectory6529` | Where the network's shared modules are (accounts, Independent Stream, the Independent Stream tokens' terms and records), and the unclaimed period |
 | `SplitLedger` and its vaults | Money owed to payees; unowned |
 | `RevenueEscrow` | Payments that failed, held for their owner |
 | `ContentStore` | Bytes put on-chain; never removed |
@@ -56,10 +56,10 @@ decoders, no gas numbers. What "permanent" promises, in the words of
 **The seam.** A permanent token accepts four things from modules and nothing else: an active
 minter mints and records how a sale ended (or burns a token it still holds unsold); the TERMS
 module sets royalty receiver and rate and may lock the rate; the RENDERER module draws a work
-that is not finalized; the RECORDS module edits a work's record within what `WorkFacts` allows
-(never the media, never after finalize, never away from CC0, never past a lock). The one move
-by anyone but the owner is `rescue`: the network may move a token that a removed sale contract
-still holds unsold.
+that is not finalized; the RECORDS module edits a work's record within what `StreamWorkFacts6529`
+allows (never the media, never after finalize, never away from CC0, never past a lock). The one move
+by anyone but the owner is `rescue`: the network may move a token that a removed sale contract still
+holds unsold.
 
 ## 3. The modules and who can change them
 
@@ -71,8 +71,8 @@ still holds unsold.
 | `StreamTerms` (TERMS) | Royalty receiver and rate; lowering the network's fee share (only down) |
 | `WorkRules` (RECORDS) and `WorkDelivery` | Who may edit a record and when; finalize; consent to relicense; where files are served from |
 | `Renderer` (RENDERER) | Builds `tokenURI` for a work that is not finalized |
-| `Accounts` (in `Directory`) | Artist accounts, wallets, payout addresses, replacement and recovery |
-| `FederationRegistry` (in `Directory`) | Federated listings, delisting, which sale contracts may mint for a federated token |
+| `Accounts` (in `StreamDirectory6529`) | Artist accounts, wallets, payout addresses, replacement and recovery |
+| `IndependentStreamRegistry` (in `StreamDirectory6529`) | Independent Stream listings, delisting, which sale contracts may mint for an Independent Stream token |
 | `EconomicsResolver`, `StatementLog`, `DependencyRegistry`, entropy | Fee recipients and defaults; disputes and statements; libraries for generative works; VRF seeds |
 
 **Who changes them.** Only the network. It announces a module or adds a sale contract; anyone
@@ -85,16 +85,16 @@ event carrying the old and the new value:
 
 | Setting | Where | Launch value | What a change does to what is already running |
 | --- | --- | --- | --- |
-| `moduleDelay` | each token contract and `Directory` | 7 days | An addition already announced keeps the time it was given |
-| `rescueDelay` | `Stream` (each federated token has its own) | 14 days | Read when a rescue is attempted |
-| `rebindDelay` | `Editions` | 14 days | Read when a rebind is attempted |
-| `unclaimedPeriod` | `Directory`, read by `SplitLedger`, `RevenueEscrow` and both auctions | 180 days | The split ledger and the auctions read it when a forfeit or expiry is attempted. The escrow also reads it at every deposit and recovery; an amount it has already counted as aged stays aged |
+| `moduleDelay` | each token contract and `StreamDirectory6529` | 7 days | An addition already announced keeps the time it was given |
+| `rescueDelay` | `Stream6529` (each Independent Stream token has its own) | 14 days | Read when a rescue is attempted |
+| `rebindDelay` | `StreamEditions6529` | 14 days | Read when a rebind is attempted |
+| `unclaimedPeriod` | `StreamDirectory6529`, read by `SplitLedger`, `RevenueEscrow` and both auctions | 180 days | The split ledger and the auctions read it when a forfeit or expiry is attempted. The escrow also reads it at every deposit and recovery; an amount it has already counted as aged stays aged |
 
 **Numbers compiled into replaceable contracts.** These are fixed in today's modules and change
 only when the network installs a different module: the accounts module's 2-day own change,
 14-day replacement notice, 90-day contest lapse and 14-day freeze; the 14-day finalize notice in
-`WorkRules`; the auction's dispute pause (at most 3 days) and 2-day federated refusal exit; the
-edition auction's 15-minute close after the 1/1 and 21-day abandon. Limits on the work of one
+`WorkRules`; the auction's dispute pause (at most 3 days) and 2-day Independent Stream refusal exit;
+the edition auction's 15-minute close after the 1/1 and 21-day abandon. Limits on the work of one
 transaction (payees per vault, chunks per file, name lengths) are compiled everywhere.
 
 **Role delays.** The network acts through one OpenZeppelin `AccessManager`, with delay classes
@@ -112,22 +112,23 @@ map is the [role matrix](audit/roles.md); what the network can do, to whom and h
    the item and answers the mint facts and the sale terms. The auction mints the token into its
    own custody and opens a 24-hour clock (a governed value).
 3. Bidders bid in ETH. An outbid bid becomes a credit its owner claims.
-4. Anyone calls `settle` after the end. The auction records the sale on `Stream` (the price is
+4. Anyone calls `settle` after the end. The auction records the sale on `Stream6529` (the price is
    logged), delivers the token, and pays the seller's split vault and the network. Unsold, the
    token goes to the museum the network names.
 5. Payees release their shares from the split vault whenever they like. Royalties on later
-   sales arrive at the receiver `Stream` stores.
+   sales arrive at the receiver `Stream6529` stores.
 
-**An edition.** When the master's sale is open, the edition auction calls `Editions.create`
-once with the maximum and royalty, takes bids at one clearing price, closes 15 minutes after
-the master, seals the supply and mints each winner's copies when they claim.
+**An edition.** When the master's sale is open, the edition auction calls
+`StreamEditions6529.create` once with the maximum and royalty, takes bids at one clearing price,
+closes 15 minutes after the master, seals the supply and mints each winner's copies when they claim.
 
-**A federated work.** The artist's own token (the same plain code) mints only through sale
-contracts the federation module allows. Collaborators consent to the item and its royalty rate.
-An unsold federated work waits in the network's sale contract and can be offered again there.
+**An Independent Stream work.** The artist's own token (the same plain code) mints only through sale
+contracts the Independent Stream module allows. Collaborators consent to the item and its royalty
+rate. An unsold Independent Stream work waits in the network's sale contract and can be offered
+again there.
 
-**A finished work.** The artist finalizes the record. `WorkFacts` then freezes the description
-and pins the renderer that draws it; a CC0 license never changes.
+**A finished work.** The artist finalizes the record. `StreamWorkFacts6529` then freezes the
+description and pins the renderer that draws it; a CC0 license never changes.
 
 ## Where next
 

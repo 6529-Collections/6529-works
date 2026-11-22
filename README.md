@@ -4,9 +4,9 @@
 
 6529 Works is the 6529 network's art protocol. It holds **6529 Stream**, one shared ERC-721 for
 curated 1/1 artworks, and **6529 Stream Editions**, one shared ERC-1155 whose editions are each
-anchored by a Stream work. Federated artists can have their own pair, built from the same code.
-Sales are English auctions in ETH that anyone may start and settle; money moves by pull through
-immutable split vaults.
+anchored by a Stream work. **6529 Independent Stream** and **6529 Independent Stream Editions**
+are an artist's own pair of contracts, built from the same code. Sales are English auctions in
+ETH that anyone may start and settle; money moves by pull through immutable split vaults.
 
 A small set of **permanent** contracts holds only who owns which token, the facts of each
 finished work and money already owed. Everything that is a rule lives in **replaceable
@@ -56,7 +56,7 @@ The [quickstart](docs/quickstart.md) explains each step and the checks CI runs.
 ## Repository layout
 
 ```
-src/core/    the permanent contracts: Stream, Editions, WorkFacts, Directory, Modules
+src/core/    the permanent contracts: Stream6529, StreamEditions6529, StreamWorkFacts6529, StreamDirectory6529, Modules
 src/         the modules, the money contracts and shared libraries, one folder per area
 test/        unit, fuzz, invariant, integration, fork, symbolic and log-replay tests
 script/      the deploy library, deploy and verify scripts, Sepolia tools

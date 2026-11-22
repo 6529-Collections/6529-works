@@ -8,7 +8,7 @@ with the uniform edition auction, on r4 on 1 November, and the current `main`'s 
 
 | Instance | Source | Record | Role here |
 | --- | --- | --- | --- |
-| **r5** | `main` at `ca02473`: the single network address, the second permanence pass, federation and `SaleStarter` | [`1795338612.json`](1795338612.json) | **Current.** The flows on 22 November 2026 with new throwaway keys: [r5](#r5-the-current-main-22-november-2026) |
+| **r5** | `main` at `ca02473`: the single network address, the second permanence pass, Independent Stream and `SaleStarter` | [`1795338612.json`](1795338612.json) | **Current.** The flows on 22 November 2026 with new throwaway keys: [r5](#r5-the-current-main-22-november-2026) |
 | r4 | `main` at `1e7022b`: the rc.2 candidate, with the uniform edition auction, the museum rule and the 0.05 ETH opening bid | [`1793536584.json`](1793536584.json) | The rc.2 flows on 1 November 2026, every edition-auction step on chain: [r4](#r4-the-rc2-candidate-1-november-2026) |
 | r3 | `main` at `e5fe78c`: every review fix, the state-growth gas diet and the source-quality pass | [`1792095396.json`](1792095396.json) | A lifecycle check on 15 October 2026, measured against r2: [r3](#r3-the-release-candidate-15-october-2026) |
 | r2 | `main` at `400f96d`: the full v1 scope, including the Editions gas cuts ([#41](https://github.com/6529-Collections/6529-works/pull/41)) and the contested overrides ([#44](https://github.com/6529-Collections/6529-works/pull/44)) | [`1791750816.json`](1791750816.json) | Reference for every section below the r3 one |
@@ -38,8 +38,8 @@ These are testnet rehearsals with throwaway keys, and the code is pre-audit.
 
 On 22 November 2026 the flows ran on **r5**, `main` at `ca02473`
 ([README](README.md#sepolia-r5-22-november-2026-current)): the first instance with the single
-network address (a 2-of-3 Safe), the second permanence pass and federation. As on r4, the 1/1
-auctions run **1 hour**; every other parameter is the mainnet default.
+network address (a 2-of-3 Safe), the second permanence pass and Independent Stream. As on r4, the
+1/1 auctions run **1 hour**; every other parameter is the mainnet default.
 
 - **Driver.** [`script/sepolia/Flows.s.sol`](../../script/sepolia/Flows.s.sol) (the rc.2 package of
   ten items; r5 adds `starterTx` for `SaleStarter` and `FLOWS_MOVE_SIGNER` for a consolidated wallet's move) and [`flows.ps1`](../../script/sepolia/flows.ps1), with the r5
@@ -832,7 +832,7 @@ own cost 145,701 gas on Sepolia and 56,581 on Prague. The callback therefore use
 | `registerManifest` for 1 MB about 1.05M | content README | 5.27M (r1) | **changes** |
 | VRF callback gas limit 200,000 | genesis (ADR 0003 entropy) | about 123,000 used (r1) | holds, 62% used |
 | Delegation-contract getters within a 50,000-gas stipend | identity README | `refreshStanding` succeeds; reads not repriced | holds |
-| A federated factory deploy at about 4–5M gas per contract | ADR 0001 §16 (v1.1) | not measured; both deployments' creations cost 6.0 to 6.6 times their Prague gas | likely about 25–30M |
+| An Independent Stream factory deploy at about 4–5M gas per contract | ADR 0001 §16 (v1.1) | not measured; both deployments' creations cost 6.0 to 6.6 times their Prague gas | likely about 25–30M |
 
 ## Where the gas goes (r2)
 

@@ -147,9 +147,9 @@ interface IUniformEditionAuctionStorage {
 
     /// @notice The read-only lens this adapter pinned in its constructor: deployed beforehand in
     ///         its own transaction, with the code hash and the wiring (English auction, escrow,
-    ///         directory and, for 6529 Stream Editions, Editions) the constructor checked. It computes every view of
-    ///         `IUniformEditionAuction` from its caller's words, which the adapter forwards to
-    ///         it, and the master check `open` consults.
+    ///         directory and, for 6529 Stream Editions, Editions) the constructor checked. It
+    ///         computes every view of `IUniformEditionAuction` from its caller's words, which the
+    ///         adapter forwards to it, and the master check `open` consults.
     /// @return The lens's address (immutable).
     function lens() external view returns (address);
     /// @notice One raw storage slot of the adapter: the lens computes where each word of

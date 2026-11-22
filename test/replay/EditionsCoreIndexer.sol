@@ -14,9 +14,9 @@ import { ReplayIndexer } from "./ReplayIndexer.sol";
 ///         block's time, as any indexer reads it): every edition (minter, maximum, count, seal,
 ///         royalties), every balance, every operator approval, the owner, the contract URI and
 ///         `rebindDelay`; for 6529 Stream Editions (`modules`) also `moduleDelay`, the TERMS slot
-///         and its announcement, every minter's standing and the AccessManager. A federated
-///         editions contract (`modules` false) has no minters or slots of its own: those are the
-///         federation module's and the directory's, and are not compared here.
+///         and its announcement, every minter's standing and the AccessManager. An Independent
+///         Stream editions contract (`modules` false) has no minters or slots of its own: those are
+///         the Independent Stream module's and the directory's, and are not compared here.
 /// @dev The settings' launch values are logged at construction (`RebindDelaySet`,
 ///      `ModuleDelaySet`), so the replay starts from zero. A `MinterRemoved` log carries no time:
 ///      the removal time is the block's timestamp. `URI` is declared by ERC-1155 and never

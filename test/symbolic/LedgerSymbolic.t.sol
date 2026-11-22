@@ -489,8 +489,9 @@ contract LedgerSymbolicTest is SymHelpers {
     }
 
     /// @notice ECO-44: the unclaimed period is the resolver's answer when the forfeit is
-    ///         attempted (the `Directory`'s setting), whatever it is and whenever it changed: a
-    ///         forfeit succeeds exactly when the period in force has passed since the mark.
+    ///         attempted (the `StreamDirectory6529`'s setting), whatever it is and whenever it
+    ///         changed: a forfeit succeeds exactly when the period in force has passed since the
+    ///         mark.
     /// @dev Bounds: any period and delay below 2**32 seconds, set after the mark.
     function check_forfeitWaitsThePeriodInForce(uint32 period, uint32 forfeitDelay) public {
         (ISplitWallet.Payee[] memory p, address wallet) = _pair();

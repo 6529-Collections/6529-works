@@ -346,7 +346,7 @@ contract EditionAuctionIntegrationTest is EditionAuctionStack {
     }
 
     /// @dev A second adapter, a minter of Editions, cannot open an edition another adapter
-    ///      created: `Editions.create` refuses it, so one edition has one sale.
+    ///      created: `StreamEditions6529.create` refuses it, so one edition has one sale.
     function test_EditionAuction_ASecondAdapterCannotOpenAnExistingEdition() public {
         UniformEditionAuction second = _wiredEditionAuction();
         (, Work memory w,,, uint256 saleId) = _startMaster(artist, 0);

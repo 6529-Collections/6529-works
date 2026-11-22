@@ -15,10 +15,10 @@ import { Test } from "forge-std/Test.sol";
 import { DeployCore } from "script/DeployCore.sol";
 import { VerifyCore } from "script/VerifyCore.sol";
 import { ContentStore } from "src/content/ContentStore.sol";
-import { Directory } from "src/core/Directory.sol";
-import { Editions } from "src/core/Editions.sol";
-import { Stream } from "src/core/Stream.sol";
-import { WorkFacts } from "src/core/WorkFacts.sol";
+import { StreamDirectory6529 } from "src/core/StreamDirectory6529.sol";
+import { StreamEditions6529 } from "src/core/StreamEditions6529.sol";
+import { Stream6529 } from "src/core/Stream6529.sol";
+import { StreamWorkFacts6529 } from "src/core/StreamWorkFacts6529.sol";
 import { PackageRegistry } from "src/curation/PackageRegistry.sol";
 import { Eip712CurationVerifier } from "src/curation/Eip712CurationVerifier.sol";
 import { SplitLedger } from "src/economics/SplitLedger.sol";
@@ -28,7 +28,7 @@ import { Roles } from "src/governance/Roles.sol";
 import { Accounts } from "src/identity/Accounts.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
-import { FederationRegistry } from "src/federated/FederationRegistry.sol";
+import { IndependentStreamRegistry } from "src/independent/IndependentStreamRegistry.sol";
 import { MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import {
@@ -56,10 +56,10 @@ abstract contract ExampleBase is Test {
 
     DeployCore.Deployment internal d;
     // The contracts an integrator talks to, typed.
-    Stream internal stream;
-    Editions internal editions;
-    Directory internal directory;
-    WorkFacts internal facts;
+    Stream6529 internal stream;
+    StreamEditions6529 internal editions;
+    StreamDirectory6529 internal directory;
+    StreamWorkFacts6529 internal facts;
     ContentStore internal store;
     SplitLedger internal ledger;
     Accounts internal accounts;
@@ -68,7 +68,7 @@ abstract contract ExampleBase is Test {
     IEnglishAuction internal auction;
     IUniformEditionAuction internal editionAuction;
     SaleStarter internal starter;
-    FederationRegistry internal federation;
+    IndependentStreamRegistry internal independentStream;
 
     address internal network = makeAddr("network");
     address internal deployer = makeAddr("deployer");
@@ -138,7 +138,7 @@ abstract contract ExampleBase is Test {
         auction = IEnglishAuction(d.englishAuction);
         editionAuction = IUniformEditionAuction(d.editionAuction);
         starter = SaleStarter(d.saleStarter);
-        federation = FederationRegistry(d.federationRegistry);
+        independentStream = IndependentStreamRegistry(d.independentStreamRegistry);
 
         // The platform key creates collection 1, which the examples' works belong to.
         vm.prank(platform);

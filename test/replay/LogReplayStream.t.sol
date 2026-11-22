@@ -10,14 +10,14 @@ import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
 import { ReplayBase } from "./ReplayBase.sol";
 import { ReplayEvents } from "./ReplayEvents.sol";
 
-/// @notice Log replay of 6529 Stream and the `Directory` on the deployed stack, from their
-///         deployment on: a history that emits every event of both (curated sales, an unsold
+/// @notice Log replay of 6529 Stream and the `StreamDirectory6529` on the deployed stack, from
+///         their deployment on: a history that emits every event of both (curated sales, an unsold
 ///         work going to the museum, a dispute burning a work in its sale, approvals and an
-///         operator's transfer, a royalty change and its lock through the rules module, a
-///         batch metadata refresh, the network's settings, modules and minters, a rescue)
-///         rebuilds, from their logs alone, every getter, and the rebuilt values match the live
-///         contracts after each step. The negative controls show a value no log explains and a
-///         dropped log each make the comparison fail.
+///         operator's transfer, a royalty change and its lock through the rules module, a batch
+///         metadata refresh, the network's settings, modules and minters, a rescue) rebuilds, from
+///         their logs alone, every getter, and the rebuilt values match the live contracts after
+///         each step. The negative controls show a value no log explains and a dropped log each
+///         make the comparison fail.
 contract LogReplayStreamTest is ReplayBase {
     address internal artist;
     address internal buyer = makeAddr("replayBuyer");
@@ -120,7 +120,7 @@ contract LogReplayStreamTest is ReplayBase {
         assertEq(stream.ownerOf(t4), museum);
         assertEq(uint8(stream.workOf(t4).outcome), uint8(Outcome.RESCUED));
 
-        _assertEveryEventReplayed("Stream", streamIdx, ReplayEvents.stream(), _none());
+        _assertEveryEventReplayed("Stream6529", streamIdx, ReplayEvents.stream(), _none());
     }
 
     function test_Directory_EveryEventReplaysToTheSameState() public {
@@ -137,11 +137,13 @@ contract LogReplayStreamTest is ReplayBase {
         _sync();
         _asNetwork(
             address(directory),
-            abi.encodeCall(directory.proposeModule, (Slots.FEDERATED_RECORDS, address(rules)))
+            abi.encodeCall(directory.proposeModule, (Slots.INDEPENDENT_RECORDS, address(rules)))
         );
         _sync();
         assertEq(directoryIdx.unclaimedPeriod(), 90 days);
-        _assertEveryEventReplayed("Directory", directoryIdx, ReplayEvents.directory(), _none());
+        _assertEveryEventReplayed(
+            "StreamDirectory6529", directoryIdx, ReplayEvents.directory(), _none()
+        );
     }
 
     // ------------------------------------------------------------------ negative controls

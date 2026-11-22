@@ -15,8 +15,8 @@ import { BoundedCall } from "./BoundedCall.sol";
 /// @notice Recognises the protocol contracts that can neither pull a split-wallet payout nor
 ///         accept an ETH payment: the revenue escrow, the claim router, every sale adapter
 ///         and the English auction, every token contract of the core (`IStream`, `IEditions`:
-///         6529 Stream, 6529 Stream Editions and the federated tokens), the accounts module and
-///         the package registry. Each declares its interface through ERC-165, so an
+///         6529 Stream, 6529 Stream Editions and the Independent Stream tokens), the accounts
+///         module and the package registry. Each declares its interface through ERC-165, so an
 ///         artist payout or a network fee recipient set to one by mistake is refused before any
 ///         money is routed there.
 /// @dev Internal functions only, so nothing here is a linked library. An address without code is

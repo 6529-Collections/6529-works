@@ -7,7 +7,7 @@ import { Accounts } from "src/identity/Accounts.sol";
 import { IArtistRegistry, IConsolidationSource } from "src/interfaces/IArtistRegistry.sol";
 import { IDirectory } from "src/interfaces/core/IDirectory.sol";
 import { IEditions } from "src/interfaces/core/IEditions.sol";
-import { IFederationGate } from "src/interfaces/core/IFederationGate.sol";
+import { IIndependentStreamGate } from "src/interfaces/core/IIndependentStreamGate.sol";
 import { IMintPolicy } from "src/interfaces/core/IMintPolicy.sol";
 import { IModuleSlots } from "src/interfaces/core/IModules.sol";
 import { IStream } from "src/interfaces/core/IStream.sol";
@@ -57,7 +57,7 @@ contract AccountsWiringTest is AccountsFixture {
             type(IDirectory).interfaceId,
             type(IWorkFacts).interfaceId,
             type(IMintPolicy).interfaceId,
-            type(IFederationGate).interfaceId,
+            type(IIndependentStreamGate).interfaceId,
             type(IArtistRegistry).interfaceId,
             type(IRevenueEscrow).interfaceId
         ];

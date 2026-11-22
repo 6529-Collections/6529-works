@@ -72,7 +72,7 @@ Each records what changed and why, so the code, the tests and the ADRs agree.
 ### Token model and storage (amends ADR 0001 §4 and §8)
 
 - **Stream is split in two.**
-  - **Core token (`Stream`):** the ERC-721, mint and burn, royalties,
+  - **Core token (`Stream6529`):** the ERC-721, mint and burn, royalties,
     collections, the edition link and `tokenURI` forwarding.
   - **Records satellite (`WorkRecords`):** the work record, finalize, licence,
     renderer pin, locators and preferred location.
@@ -103,8 +103,9 @@ Each records what changed and why, so the code, the tests and the ADRs agree.
     (Amendment note, 15 October 2026: the fixed IPFS profile is pinned as CIDv1,
     sha2-256, raw leaves, a 262,144-byte fixed chunker and the balanced layout of at
     most 174 links per node, kubo's default import. IPIP-0499's 1 MiB profile gives
-    different CIDs. See the [storage guide](https://github.com/6529-Collections/6529-works/blob/581cfb6f/docs/integrators/storage.md) and the
-    [works and storage specification](../spec/works-and-storage.md).)
+    different CIDs. See the
+    [storage guide](https://github.com/6529-Collections/6529-works/blob/581cfb6f/docs/integrators/storage.md)
+    and the [works and storage specification](../spec/works-and-storage.md).)
   - After finalize only the PLATFORM role adds locators. Copies of a finalized
     work are the platform's to register and the storage operator's to choose.
   - On-chain copies are served once the file is complete.
@@ -299,7 +300,7 @@ new opens, and it takes ETH only.)
     to the bidder and the work goes to the artist, as with no bid. A
     re-admission waits 14 days from the deprecation, so it is possible between
     day 14 and day 30. (Amended by [ADR 0005](0005-stream-editions-auction.md): a 6529 Stream
-    work goes to the museum, as with no bid; a federated work still goes to its artist.)
+    work goes to the museum, as with no bid; an Independent Stream work still goes to its artist.)
 - **Reserved statement kinds.**
   - `DISPUTE_OUTCOME` is reserved to PLATFORM, and `CURATION_EVIDENCE` to
     CURATOR.
@@ -334,7 +335,7 @@ new opens, and it takes ETH only.)
 | `StatementLog.appendCurator`, `appendPlatform` | Zero-delay CURATOR, PLATFORM |
 | `AssetAllowlist.deprecateAsset` | Immediate, GUARDIAN |
 | Sale adapters `openSale`, `closeSale` | Zero-delay PLATFORM |
-| Sale adapters `setTarget`, `setFederationRegistry` | Verifier and successor (30 days) |
+| Sale adapters `setTarget`, `setIndependentStreamRegistry` | Verifier and successor (30 days) |
 | Sale adapters `pause` / `unpause` | PAUSER (immediate) / UNPAUSER |
 | Auction opening bid | Standard (48 hours), compare-and-set, ceiling |
 | Entropy `setCoordinator` | Verifier and successor (30 days) |
@@ -342,7 +343,7 @@ new opens, and it takes ETH only.)
 | Stream and Editions `setAdmittedMinter` | Verifier and successor (30 days) |
 
 (Amended by [ADR 0005](0005-stream-editions-auction.md): the `openSale` and `closeSale` row is removed, so
-PLATFORM holds no sale selector; the `setTarget`, `setFederationRegistry` and
+PLATFORM holds no sale selector; the `setTarget`, `setIndependentStreamRegistry` and
 `pause`/`unpause` rows cover the edition auction; `UniformEditionAuction.setConfig` is standard
 (48 hours), compare-and-set with bounds, and `EconomicsResolver.setMuseum` is funds and
 recipients (14 days), compare-and-set.)
@@ -495,7 +496,7 @@ settlement waits for the outcome; sales and auctions already running continue
 with their artist share frozen. PLATFORM still opens and closes edition sales
 at the package terms during the restraint, and the artist cannot close them.
 (Amended by [ADR 0005](0005-stream-editions-auction.md): no edition sale is managed any more, and an
-unbid 6529 Stream work goes to the museum without waiting; a federated work's no-bid
+unbid 6529 Stream work goes to the museum without waiting; an Independent Stream work's no-bid
 settlement still waits.)
 `authorityOf` still identifies the artist, and a STANDARD change or a
 payout-only override restrains nothing. The trade-off accepted: a network that

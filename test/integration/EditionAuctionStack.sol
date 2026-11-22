@@ -15,8 +15,8 @@ import { IntegrationBase } from "./IntegrationBase.sol";
 ///         that `DeployCore` deploys against 6529 Stream Editions, the English auction and the
 ///         revenue escrow, a genesis minter of Editions and listed by the genesis wiring. Shared
 ///         by the edition suites of this directory.
-/// @dev `open` creates the edition (`Editions.create`), so a master's edition exists from the
-///      open of its sale; the clearing seals it at the count sold.
+/// @dev `open` creates the edition (`StreamEditions6529.create`), so a master's edition exists from
+///      the open of its sale; the clearing seals it at the count sold.
 abstract contract EditionAuctionStack is IntegrationBase {
     /// @dev The adapter's views, answered by its lens through its fallback.
     IUniformEditionAuction internal ea;

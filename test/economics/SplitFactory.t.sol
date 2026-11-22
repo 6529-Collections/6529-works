@@ -99,13 +99,14 @@ contract SplitFactoryTest is EconomicsBase {
     }
 
     /// @dev Permissionless: any caller may create a wallet for any canonical list, the 90/10
-    ///      configurations of federated contracts included.
+    ///      configurations of Independent Stream contracts included.
     function test_AnyoneCreatesAWalletForAnyCanonicalList() public {
         address stranger = makeAddr("stranger");
-        ISplitWallet.Payee[] memory federated = _list(_fixed(bob, 10_000), _artist(ARTIST, 90_000));
+        ISplitWallet.Payee[] memory independent =
+            _list(_fixed(bob, 10_000), _artist(ARTIST, 90_000));
         vm.prank(stranger);
-        address wallet = factory.createWallet(federated, ZERO_SALT);
-        assertEq(wallet, factory.walletFor(federated, ZERO_SALT));
+        address wallet = factory.createWallet(independent, ZERO_SALT);
+        assertEq(wallet, factory.walletFor(independent, ZERO_SALT));
         assertTrue(factory.isWallet(wallet));
     }
 

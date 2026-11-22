@@ -25,9 +25,9 @@ is the [uploader](../../tools/content/README.md).
 | Caller | Calls | Rules |
 | --- | --- | --- |
 | Anyone (artist, platform, collector, uploader) | `writeChunk`, `linkChunk`, `registerManifest`, `registerManifestList`, `attestBase64`, `attestComplete`, in any order | WS-24 to WS-27, WS-29, WS-31, WS-50, WS-51, WS-55 |
-| Anyone; `WorkFacts`; the renderer | `fileInfo`, `sha256Of`, `isComplete`, `completeThrough`, `firstMissing`, `missingChunks`, `readChunk`, `chunkData`, `read`, `isBase64Attested` | WS-28, WS-30, WS-52, WS-53, WS-55 |
+| Anyone; `StreamWorkFacts6529`; the renderer | `fileInfo`, `sha256Of`, `isComplete`, `completeThrough`, `firstMissing`, `missingChunks`, `readChunk`, `chunkData`, `read`, `isBase64Attested` | WS-28, WS-30, WS-52, WS-53, WS-55 |
 | Governance | `DependencyRegistry.register`, `deprecate` | WS-34, WS-35; [role matrix](../../docs/audit/roles.md#dependencyregistry) |
-| `Stream.tokenURI`, `Editions.uri` (through `rendererOf`); anyone by `eth_call` | `Renderer.tokenURI(token, id)`, `fullTokenURI(token, id)` | RND-1 to RND-27 |
+| `Stream6529.tokenURI`, `StreamEditions6529.uri` (through `rendererOf`); anyone by `eth_call` | `Renderer.tokenURI(token, id)`, `fullTokenURI(token, id)` | RND-1 to RND-27 |
 
 The upload flow is under [Upload and register a file](../../docs/spec/works-and-storage.md#upload-and-register-a-file),
 and what the renderer reads, in order, under

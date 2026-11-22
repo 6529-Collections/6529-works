@@ -66,15 +66,16 @@ interface IUniformEditionAuctionLens {
     function ADOPTED_RUN() external view returns (uint32);
 
     /// @notice The 6529 Stream Editions this lens was deployed for (immutable; zero for the
-    ///         federated deployment, which sells many).
+    ///         Independent Stream deployment, which sells many).
     /// @return The address its adapter must also have.
     function editions() external view returns (address);
-    /// @notice The 6529 Stream this lens was deployed for (immutable; zero for the federated
-    ///         deployment).
+    /// @notice The 6529 Stream this lens was deployed for (immutable; zero for the Independent
+    ///         Stream deployment).
     /// @return The address its adapter must also have.
     function stream() external view returns (address);
     /// @notice The directory whose `unclaimedPeriod` decides when a credit may expire, and
-    ///         whose FEDERATION module serves the federated deployment (immutable).
+    ///         whose INDEPENDENT_STREAM module serves the Independent Stream deployment
+    ///         (immutable).
     /// @return The address its adapter must also have.
     function directory() external view returns (address);
     /// @notice The economics resolver: seller wallets, fee terms and the network fee recipient
@@ -92,20 +93,20 @@ interface IUniformEditionAuctionLens {
     ///         `WorksHashing.itemHash` of the item in `data`. For 6529 Stream Editions, `data`
     ///         must be `abi.encode(PackageItem item, bytes32 packageRoot, bytes32[] proof)`, an
     ///         item the package registry still approves in `packageRoot`
-    ///         (`IItemApprovals.isApprovedItem`); for a federated pair `abi.encode(item)`,
-    ///         whose contract the federation module lets this adapter mint (`canMint`). The
-    ///         edition terms must name `SaleKind.UNIFORM_AUCTION` and `CURRENCY_ETH`, with empty
-    ///         params; the payout terms (6529 Stream Editions: the resolver's
-    ///         `newWorkTerms(PRODUCT_EDITIONS, payees)`; federated: the seller's wallet and the
-    ///         federation module's fee share for the token) must be payable. For `open`, the 1/1
-    ///         auction must exist and not be cancelled; for `adopt`, the edition must be the
-    ///         caller's with no copies and no seal, and the 1/1 is read only while the master's
-    ///         sale has no outcome. Reverts with the adapter's `InvalidSaleTerms` or
-    ///         `NoOneOfOneAuction` otherwise (a 1/1 auction that runs out of gas answering
-    ///         reverts with `BoundedCallShortfall`). Then deploys the seller's split wallet and,
-    ///         for `open` when it differs, the royalty receiver's, each only if the ledger has not
-    ///         deployed it, through the resolver's split factory, and requires each deployed
-    ///         address to be the one the terms name (`InvalidSaleTerms`).
+    ///         (`IItemApprovals.isApprovedItem`); for an Independent Stream pair
+    ///         `abi.encode(item)`, whose contract the Independent Stream module lets this adapter
+    ///         mint (`canMint`). The edition terms must name `SaleKind.UNIFORM_AUCTION` and
+    ///         `CURRENCY_ETH`, with empty params; the payout terms (6529 Stream Editions: the
+    ///         resolver's `newWorkTerms(PRODUCT_EDITIONS, payees)`; Independent Stream: the
+    ///         seller's wallet and the Independent Stream module's fee share for the token) must be
+    ///         payable. For `open`, the 1/1 auction must exist and not be cancelled; for `adopt`,
+    ///         the edition must be the caller's with no copies and no seal, and the 1/1 is read
+    ///         only while the master's sale has no outcome. Reverts with the adapter's
+    ///         `InvalidSaleTerms` or `NoOneOfOneAuction` otherwise (a 1/1 auction that runs out of
+    ///         gas answering reverts with `BoundedCallShortfall`). Then deploys the seller's split
+    ///         wallet and, for `open` when it differs, the royalty receiver's, each only if the
+    ///         ledger has not deployed it, through the resolver's split factory, and requires each
+    ///         deployed address to be the one the terms name (`InvalidSaleTerms`).
     /// @param token The edition contract.
     /// @param id The edition ID.
     /// @param data The token-specific terms `open` or `adopt` was given.
@@ -134,9 +135,10 @@ interface IUniformEditionAuctionLens {
     function checkAbandon(uint256 saleId) external view;
 
     /// @notice The network fee recipient a payout of the caller pays now: the economics
-    ///         resolver's for the deployment's product (6529 Stream Editions or Federated), or,
-    ///         when it names none or the escrow and `token` is nonzero, the recipient the
-    ///         caller's sale of edition `id` of `token` recorded at open (zero when it has none).
+    ///         resolver's for the deployment's product (6529 Stream Editions or Independent
+    ///         Stream), or, when it names none or the escrow and `token` is nonzero, the recipient
+    ///         the caller's sale of edition `id` of `token` recorded at open (zero when it has
+    ///         none).
     /// @param token The edition contract, or zero for the resolver's answer alone.
     /// @param id The edition ID.
     /// @return The recipient.
@@ -207,17 +209,17 @@ interface IUniformEditionAuctionLens {
     /// @param id The edition ID.
     /// @return `uint256(keccak256(abi.encode(token, id)))`.
     function saleIdOf(address token, uint256 id) external pure returns (uint256);
-    /// @notice The federation registry (`ISaleAdapter.federationRegistry`): zero for 6529 Stream
-    ///         Editions' deployment, which serves no federated token; the pinned registry for the
-    ///         federated deployment (ADR 0008).
+    /// @notice The Independent Stream registry (`ISaleAdapter.independentStreamRegistry`): zero for
+    ///         6529 Stream Editions' deployment, which serves no Independent Stream token; the
+    ///         pinned registry for the Independent Stream deployment (ADR 0008).
     /// @return The registry, or zero.
-    function federationRegistry() external view returns (address);
+    function independentStreamRegistry() external view returns (address);
     /// @notice Refused by the lens (`ISaleAdapter.TargetNotAllowed(next)`): 6529 Stream Editions'
-    ///         deployment serves no federated token, and the federated deployment declares its own
-    ///         `setFederationRegistry`, which never reaches its lens.
+    ///         deployment serves no Independent Stream token, and the Independent Stream deployment
+    ///         declares its own `setIndependentStreamRegistry`, which never reaches its lens.
     /// @param expected Ignored.
     /// @param next The registry asked for.
-    function setFederationRegistry(address expected, address next) external pure;
+    function setIndependentStreamRegistry(address expected, address next) external pure;
 
     /// @notice A sale. Reverts with `UnknownAuction`.
     /// @param saleId The sale ID.

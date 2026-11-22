@@ -20,13 +20,13 @@ import { IWorkRules } from "src/interfaces/core/IWorkRules.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
-import { IFederatedStream } from "src/interfaces/IFederatedStream.sol";
-import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
+import { IIndependentStream } from "src/interfaces/IIndependentStream.sol";
+import { IIndependentStreamRegistry } from "src/interfaces/IIndependentStreamRegistry.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { IStatementLog, Statement } from "src/interfaces/IStatementLog.sol";
 import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
 import { FileRole, MediaFile } from "src/interfaces/types/ContentTypes.sol";
-import { CURRENCY_ETH, PRODUCT_FEDERATED } from "src/interfaces/types/EconomicsTypes.sol";
+import { CURRENCY_ETH, PRODUCT_INDEPENDENT } from "src/interfaces/types/EconomicsTypes.sol";
 import { HASH_SHA256, HashRef } from "src/interfaces/types/HashRef.sol";
 import {
     EditionTerms,
@@ -78,14 +78,14 @@ interface IConsent {
 
 /// @title Walkthrough
 /// @notice One curated work's whole life on a local anvil deployment of the plain core, plus one
-///         federated work and one module swap, in four phases that `script/local/walkthrough.sh`
-///         runs with the clock moved forward between them:
+///         Independent Stream work and one module swap, in four phases that
+///         `script/local/walkthrough.sh` runs with the clock moved forward between them:
 ///         - `curate()`: a collection; the work's files stored in the content store; its one-item
 ///           package approved by a curation signer and accepted by the artist; the 1/1 auction
 ///           started with a bid; the edition auction opened beside it with two bids; a competing
 ///           1/1 bid; the seller vault deployed and the work's record opened. The same artist
-///           deploys a federated 1/1 contract, lists it, approves one work, and a collector
-///           starts its auction with a bid.
+///           deploys an Independent Stream 1/1 contract, lists it, approves one work, and a
+///           collector starts its auction with a bid.
 ///         - `settle()` (after the 1/1's end): both 1/1 auctions settle, the outbid bidder claims
 ///           the refund, the artist finalizes the record, `tokenURI`, and the network proposes a
 ///           new renderer for 6529 Stream.
@@ -98,7 +98,8 @@ interface IConsent {
 ///      mnemonic below), broadcast with `--unlocked`; EIP-712 signatures use the same test keys.
 ///      Account indices match script/local/make_genesis.py. `WALKTHROUGH_RECORD` is the
 ///      deployment record `script/DeployCore.s.sol` wrote; `WALKTHROUGH_STATE` is a file this
-///      script writes in phase 1 (the federated token and the sale IDs) and reads afterwards.
+///      script writes in phase 1 (the Independent Stream token and the sale IDs) and reads
+///      afterwards.
 contract Walkthrough is Script {
     /// @dev Anvil's default mnemonic: public test keys, never used outside a local node.
     string internal constant MNEMONIC =
@@ -114,9 +115,9 @@ contract Walkthrough is Script {
 
     uint256 internal constant FIRST_BID = 0.1 ether;
     uint256 internal constant SECOND_BID = 0.2 ether;
-    uint256 internal constant FEDERATED_BID = 0.06 ether;
-    /// @dev The federated work's royalty rate, out of 100,000.
-    uint24 internal constant FEDERATED_RATE = 5_000;
+    uint256 internal constant INDEPENDENT_BID = 0.06 ether;
+    /// @dev The Independent Stream work's royalty rate, out of 100,000.
+    uint24 internal constant INDEPENDENT_RATE = 5_000;
     /// @dev Edition bids: (ladder step, copies). Every 48 steps multiply the price by 10, from
     ///      the base price of 0.0001 ETH at step 0.
     uint256 internal constant EDITION_STEP_A = 90;
@@ -141,7 +142,7 @@ contract Walkthrough is Script {
         address feeVault;
         address economics;
         address accounts;
-        address federation;
+        address independentStream;
         address streamDeployer;
         address directory;
         address renderer;
@@ -179,12 +180,12 @@ contract Walkthrough is Script {
     function _addrs() internal view returns (Addrs memory a) {
         string memory json = vm.readFile(vm.envString("WALKTHROUGH_RECORD"));
         a.store = vm.parseJsonAddress(json, ".ContentStore");
-        a.facts = vm.parseJsonAddress(json, ".WorkFacts");
+        a.facts = vm.parseJsonAddress(json, ".StreamWorkFacts6529");
         a.registry = vm.parseJsonAddress(json, ".PackageRegistry");
         a.verifier = vm.parseJsonAddress(json, ".CurationVerifier");
         a.statements = vm.parseJsonAddress(json, ".StatementLog");
-        a.stream = vm.parseJsonAddress(json, ".Stream");
-        a.editions = vm.parseJsonAddress(json, ".Editions");
+        a.stream = vm.parseJsonAddress(json, ".Stream6529");
+        a.editions = vm.parseJsonAddress(json, ".StreamEditions6529");
         a.rules = vm.parseJsonAddress(json, ".WorkRules");
         a.english = vm.parseJsonAddress(json, ".EnglishAuction");
         a.editionAuction = vm.parseJsonAddress(json, ".UniformEditionAuction");
@@ -192,17 +193,17 @@ contract Walkthrough is Script {
         a.feeVault = vm.parseJsonAddress(json, ".FeeRecipientVault");
         a.economics = vm.parseJsonAddress(json, ".EconomicsResolver");
         a.accounts = vm.parseJsonAddress(json, ".Accounts");
-        a.federation = vm.parseJsonAddress(json, ".FederationRegistry");
-        a.streamDeployer = vm.parseJsonAddress(json, ".FederatedStreamDeployer");
-        a.directory = vm.parseJsonAddress(json, ".Directory");
+        a.independentStream = vm.parseJsonAddress(json, ".IndependentStreamRegistry");
+        a.streamDeployer = vm.parseJsonAddress(json, ".IndependentStream721Deployer");
+        a.directory = vm.parseJsonAddress(json, ".StreamDirectory6529");
         a.renderer = vm.parseJsonAddress(json, ".Renderer");
         a.cc0FileId = IWorkFacts(a.facts).cc0TextFileId();
     }
 
-    function _state() internal view returns (address fedToken, uint256 fedSale) {
+    function _state() internal view returns (address indToken, uint256 indSale) {
         string memory json = vm.readFile(vm.envString("WALKTHROUGH_STATE"));
-        fedToken = vm.parseJsonAddress(json, ".federatedToken");
-        fedSale = vm.parseJsonUint(json, ".federatedSale");
+        indToken = vm.parseJsonAddress(json, ".independentToken");
+        indSale = vm.parseJsonUint(json, ".independentSale");
     }
 
     function _check(bool ok, string memory what) internal pure {
@@ -234,15 +235,15 @@ contract Walkthrough is Script {
         w.root = WorksHashing.leaf(WorksHashing.itemHash(w.item));
     }
 
-    /// @dev The federated work: another SVG, an original with no edition, in the artist's own
-    ///      federated 1/1 contract (collection 1, created by its constructor).
-    function _federatedWork(Addrs memory a) internal pure returns (Art memory w) {
+    /// @dev The Independent Stream work: another SVG, an original with no edition, in the artist's
+    ///      own Independent Stream 1/1 contract (collection 1, created by its constructor).
+    function _independentWork(Addrs memory a) internal pure returns (Art memory w) {
         w.media0 = bytes(
             "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'>"
             "<circle cx='5' cy='5' r='4' fill='#c05621'/></svg>"
         );
         w.recordJson = bytes(
-            '{"name":"Local Federated Work","description":"A federated work of the local '
+            '{"name":"Local Independent Stream Work","description":"An Independent Stream work of the local '
             'walkthrough.","artists":["Anvil Artist"],"year":2026}'
         );
         w.media = new MediaFile[](1);
@@ -306,7 +307,9 @@ contract Walkthrough is Script {
 
     function curate() external {
         Addrs memory a = _addrs();
-        console2.log("== phase 1: curate, start with a bid, edition bids, a federated work ==");
+        console2.log(
+            "== phase 1: curate, start with a bid, edition bids, an Independent Stream work =="
+        );
 
         vm.startBroadcast(_addr(PLATFORM));
         uint256 collectionId = IStream(a.stream).createCollection("Local Walkthrough", bytes32(0));
@@ -353,10 +356,10 @@ contract Walkthrough is Script {
         _check(IWorkFacts(a.facts).factsOf(a.stream, tokenId).opened, "record opened");
         console2.log("record opened in WorkFacts for token", tokenId);
 
-        (address fedToken, uint256 fedSale) = _federated(a);
+        (address indToken, uint256 indSale) = _independent(a);
         string memory o = "walk";
-        vm.serializeAddress(o, "federatedToken", fedToken);
-        string memory out = vm.serializeUint(o, "federatedSale", fedSale);
+        vm.serializeAddress(o, "independentToken", indToken);
+        string memory out = vm.serializeUint(o, "independentSale", indSale);
         vm.writeJson(out, vm.envString("WALKTHROUGH_STATE"));
     }
 
@@ -453,11 +456,11 @@ contract Walkthrough is Script {
         console2.log("  escrowed (wei):", value);
     }
 
-    /// @dev The artist deploys a federated 1/1 contract from the approved template, lists it in
-    ///      the federation module (one consent signature; the account already exists), approves
-    ///      one work; bidder B stores nothing and starts its auction with a bid.
-    function _federated(Addrs memory a) internal returns (address token, uint256 saleId) {
-        Art memory w = _federatedWork(a);
+    /// @dev The artist deploys an Independent Stream 1/1 contract from the approved template, lists
+    ///      it in the Independent Stream module (one consent signature; the account already
+    ///      exists), approves one work; bidder B stores nothing and starts its auction with a bid.
+    function _independent(Addrs memory a) internal returns (address token, uint256 saleId) {
+        Art memory w = _independentWork(a);
         address artist = _addr(ARTIST);
         bytes memory config = abi.encode(
             "Anvil Artist Works",
@@ -475,39 +478,41 @@ contract Walkthrough is Script {
         vm.stopBroadcast();
         _list(a, token);
         vm.startBroadcast(artist);
-        IItemApproval(a.federation)
-            .approveItem(token, WorksHashing.itemHash(w.item), FEDERATED_RATE);
+        IItemApproval(a.independentStream)
+            .approveItem(token, WorksHashing.itemHash(w.item), INDEPENDENT_RATE);
         vm.stopBroadcast();
 
         bytes memory request =
-            abi.encode(IFederatedStream.FederatedMint(w.item, w.media, new bytes[](0)));
+            abi.encode(IIndependentStream.IndependentMint(w.item, w.media, new bytes[](0)));
         vm.startBroadcast(_addr(BIDDER_B));
-        saleId = IEnglishAuction(a.english).startWithBid{ value: FEDERATED_BID }(
+        saleId = IEnglishAuction(a.english).startWithBid{ value: INDEPENDENT_BID }(
             token, request, address(0)
         );
         vm.stopBroadcast();
-        console2.log("federated auction started with a 0.06 ETH bid by bidder B; sale ID:");
+        console2.log("Independent Stream auction started with a 0.06 ETH bid by bidder B; sale ID:");
         console2.log(saleId);
     }
 
-    /// @dev Lists `token` in the federation module with the artist's consent to the network's
-    ///      current fee share.
+    /// @dev Lists `token` in the Independent Stream module with the artist's consent to the
+    ///      network's current fee share.
     function _list(Addrs memory a, address token) internal {
         uint64 deadline = uint64(block.timestamp + 1 days);
-        uint32 share = IEconomicsResolver(a.economics).economics(PRODUCT_FEDERATED).feeShare;
-        bytes32 subject = IFederationRegistry(a.federation)
-            .listingSubject(token, IFederationRegistry.Form.ERC721, address(0), share, deadline);
+        uint32 share = IEconomicsResolver(a.economics).economics(PRODUCT_INDEPENDENT).feeShare;
+        bytes32 subject = IIndependentStreamRegistry(a.independentStream)
+            .listingSubject(
+                token, IIndependentStreamRegistry.Form.ERC721, address(0), share, deadline
+            );
         PartyAcceptance memory profile = _acceptance(_addr(ARTIST));
-        IFederationRegistry.Join memory j;
+        IIndependentStreamRegistry.Join memory j;
         j.deployer = a.streamDeployer;
         j.profileId = profile.profileId;
         j.profileDocHash = profile.profileDocHash;
         j.deadline = deadline;
-        j.consent = _proof(ARTIST, IConsent(a.accounts).consentDigest(a.federation, subject));
+        j.consent = _proof(ARTIST, IConsent(a.accounts).consentDigest(a.independentStream, subject));
         vm.startBroadcast(_addr(ARTIST));
-        IFederationRegistry(a.federation).register(token, j);
+        IIndependentStreamRegistry(a.independentStream).register(token, j);
         vm.stopBroadcast();
-        console2.log("federated 1/1 contract deployed and listed:", token);
+        console2.log("Independent Stream 1/1 contract deployed and listed:", token);
         console2.log("  network fee share (of 100,000):", uint256(share));
     }
 
@@ -518,18 +523,18 @@ contract Walkthrough is Script {
         console2.log("== phase 2: settle, refund, finalize, tokenURI, propose a renderer ==");
         uint256 tokenId = IStream(a.stream).totalMinted();
         uint256 saleId = IEnglishAuction(a.english).saleIdOf(a.stream, tokenId);
-        (address fedToken, uint256 fedSale) = _state();
+        (address indToken, uint256 indSale) = _state();
         IEnglishAuction english = IEnglishAuction(a.english);
 
         vm.startBroadcast(_addr(KEEPER));
         english.settle(saleId);
-        english.settle(fedSale);
+        english.settle(indSale);
         vm.stopBroadcast();
         _check(IERC721(a.stream).ownerOf(tokenId) == _addr(BIDDER_B), "1/1 delivered");
         console2.log("1/1 settled; owner:", IERC721(a.stream).ownerOf(tokenId));
-        uint256 fedId = english.auction(fedSale).tokenId;
-        _check(IERC721(fedToken).ownerOf(fedId) == _addr(BIDDER_B), "federated delivered");
-        console2.log("federated work settled; owner:", IERC721(fedToken).ownerOf(fedId));
+        uint256 indId = english.auction(indSale).tokenId;
+        _check(IERC721(indToken).ownerOf(indId) == _addr(BIDDER_B), "Independent Stream delivered");
+        console2.log("Independent Stream work settled; owner:", IERC721(indToken).ownerOf(indId));
 
         address bidderA = _addr(BIDDER_A);
         vm.startBroadcast(bidderA);
@@ -540,15 +545,15 @@ contract Walkthrough is Script {
 
         // The artist (any wallet of the account) finalizes at the state it saw; the record is
         // frozen and the current renderer pinned.
-        Art memory fw = _federatedWork(a);
+        Art memory fw = _independentWork(a);
         vm.startBroadcast(_addr(KEEPER));
-        IWorkFacts(a.facts).open(fedToken, fedId, fw.item, fw.media);
+        IWorkFacts(a.facts).open(indToken, indId, fw.item, fw.media);
         vm.stopBroadcast();
         vm.startBroadcast(_addr(ARTIST));
         IWorkRules(a.rules)
             .finalize(a.stream, tokenId, IWorkRules(a.rules).workStateHash(a.stream, tokenId));
         IWorkRules(a.rules)
-            .finalize(fedToken, fedId, IWorkRules(a.rules).workStateHash(fedToken, fedId));
+            .finalize(indToken, indId, IWorkRules(a.rules).workStateHash(indToken, indId));
         vm.stopBroadcast();
         _check(IWorkFacts(a.facts).factsOf(a.stream, tokenId).finalized, "finalized");
         console2.log(
@@ -561,8 +566,8 @@ contract Walkthrough is Script {
         console2.log("tokenURI length (bytes):", bytes(uri).length);
         console2.log("tokenURI starts:", _prefix(uri, 60));
         console2.log(
-            "federated tokenURI length (bytes):",
-            bytes(IERC721Metadata(fedToken).tokenURI(fedId)).length
+            "Independent Stream tokenURI length (bytes):",
+            bytes(IERC721Metadata(indToken).tokenURI(indId)).length
         );
 
         // The module mechanism: the network proposes a new renderer for 6529 Stream (a second

@@ -1,9 +1,9 @@
 # script/local
 
 A local walkthrough: the whole system deployed on a fresh `anvil` node, one curated work taken
-from upload to payout, one federated work sold, and one module swapped, with one command. It is
-for developers learning the protocol and checking a change against the real deploy; it is not a
-deployment procedure (the [runbook](../README.md) is).
+from upload to payout, one Independent Stream work sold, and one module swapped, with one command.
+It is for developers learning the protocol and checking a change against the real deploy; it is not
+a deployment procedure (the [runbook](../README.md) is).
 
 ```bash
 bash script/local/walkthrough.sh
@@ -36,9 +36,9 @@ exits non-zero at the first failed step, so CI runs it after the build.
    auction with a 0.1 ETH bid (the work is minted into the auction's custody); the keeper opens
    the edition auction beside it (which creates the edition and deploys the seller and royalty
    vaults) and two accounts bid for copies; bidder B bids 0.2 ETH; the keeper opens the work's
-   record in `WorkFacts`. The artist then deploys a federated 1/1 contract from the approved
-   template, lists it in the federation module, approves one work, and bidder B starts its
-   auction with a 0.06 ETH bid.
+   record in `StreamWorkFacts6529`. The artist then deploys an Independent Stream 1/1 contract from
+   the approved template, lists it in the Independent Stream module, approves one work, and bidder B
+   starts its auction with a 0.06 ETH bid.
 4. **24 hours later, `settle()`.** The keeper settles both 1/1 auctions (bidder B owns both
    works); bidder A claims the outbid refund; the artist finalizes both records, which pins the
    current renderer; `tokenURI` returns the JSON. The network proposes a second renderer for
@@ -75,7 +75,7 @@ The node starts with 20 accounts:
   `settle` needs a limit from `eth_estimateGas` or a generous fixed one.
 - **Exploring.** `KEEP_ANVIL=1 bash script/local/walkthrough.sh` leaves the node running; the
   addresses are in the deployment record. For example:
-  `cast call <Stream> "tokenURI(uint256)(string)" 1 --rpc-url http://127.0.0.1:8545`.
+  `cast call <Stream6529> "tokenURI(uint256)(string)" 1 --rpc-url http://127.0.0.1:8545`.
 - **What it does not cover.** VRF seeds (the local deploy has no entropy module), disputes,
   identity changes, rescue and rebind, and credit expiry. The [tests](../../test/README.md) cover
   those on the same contracts.

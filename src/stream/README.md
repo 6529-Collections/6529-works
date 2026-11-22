@@ -26,11 +26,11 @@ Who may call what, with delays: [role matrix](../../docs/audit/roles.md).
 ## Developer notes
 
 - **Reads, never copies.** Every call reads what it needs (open, finalized, on-chain complete,
-  the media) from `WorkFacts.factsOf` and the artist and collection from the token, so it never
-  holds a stale fact.
+  the media) from `StreamWorkFacts6529.factsOf` and the artist and collection from the token, so it
+  never holds a stale fact.
 - **Metadata refresh.** Every change asks `WorkRules` to emit ERC-4906 through the token.
 - **Locators are checked twice.** Here, against the URI grammar (Arweave transaction IDs and
   base32 CIDs); and by the renderer, which checks every answer it prints.
 - **Replacing it.** A successor starts empty; carrying the predecessor's locators is the
-  successor's own choice (WS-39). The content hashes stay in the permanent `WorkFacts`.
+  successor's own choice (WS-39). The content hashes stay in the permanent `StreamWorkFacts6529`.
 - **Tests:** `forge test --match-path 'test/stream/**'`.

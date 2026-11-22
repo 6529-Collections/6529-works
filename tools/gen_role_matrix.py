@@ -58,30 +58,30 @@ NOTES: dict[tuple[str, str], str] = {
     ("*", "addMinter(address)"): "Active once `moduleDelay()` has passed.",
     ("*", "removeMinter(address)"):
         "At once: it mints nothing new and still finishes what it started.",
-    ("Stream", "setRescueDelay(uint48)"):
+    ("Stream6529", "setRescueDelay(uint48)"):
         "A setting of the network, at once, zero allowed; read when a rescue is attempted.",
-    ("Stream", "rescue(uint256,address)"):
+    ("Stream6529", "rescue(uint256,address)"):
         "Only a token a removed minter still holds with no outcome, once `rescueDelay()` has "
         "passed since the removal. It can never reach a token a collector holds.",
-    ("Editions", "setRebindDelay(uint48)"):
+    ("StreamEditions6529", "setRebindDelay(uint48)"):
         "A setting of the network, at once, zero allowed; read when a rebind is attempted.",
-    ("Editions", "rebind(uint256,address)"):
+    ("StreamEditions6529", "rebind(uint256,address)"):
         "Only an edition with no copies and no seal, once `rebindDelay()` has passed since its "
         "minter was removed; the new minter adopts it.",
-    ("Directory", "setUnclaimedPeriod(uint48)"):
+    ("StreamDirectory6529", "setUnclaimedPeriod(uint48)"):
         "A setting of the network, at once, zero allowed. The split ledger and the escrow read "
         "it when a forfeit or an expiry is attempted, so a change applies to marks and credits "
         "already running.",
-    ("Stream", "createCollection(string,bytes32)"): "A collection's name never changes.",
+    ("Stream6529", "createCollection(string,bytes32)"): "A collection's name never changes.",
     ("*", "setOwner(address)"): "The marketplace `owner()`.",
     ("*", "setContractURI(string)"): "Contract-level metadata (ERC-7572).",
     # The modules: replaceable; their compiled numbers are theirs.
     ("WorkRules", "relicense(address,uint256,(string,bytes32),(uint8,uint256,bytes32,bytes32,bytes32,(address,uint8)[],(uint256,address,uint32)[],(string,bytes32),uint8,bytes32,(bytes32,address,bytes),(uint32,address,bytes32,bytes)),bytes32,uint64,bytes[])"):
-        "Also needs every party's signed consent. `WorkFacts` refuses to leave CC0 or pass a lock.",
+        "Also needs every party's signed consent. `StreamWorkFacts6529` refuses to leave CC0 or pass a lock.",
     ("WorkRules", "setRoyaltyRate(address,uint256,uint24,(uint8,uint256,bytes32,bytes32,bytes32,(address,uint8)[],(uint256,address,uint32)[],(string,bytes32),uint8,bytes32,(bytes32,address,bytes),(uint32,address,bytes32,bytes)),bytes32,uint64,bytes[])"):
         "Also needs every party's signed consent; refused once the rate is locked in the token.",
     ("WorkRules", "repinRenderer(address,uint256,address,bytes32)"):
-        "Refused for good once the lead artist renounced the repin power (a lock in `WorkFacts`).",
+        "Refused for good once the lead artist renounced the repin power (a lock in `StreamWorkFacts6529`).",
     ("WorkRules", "renounce(address,uint256,uint16,bytes32,uint64,bytes)"):
         "Relays the artist's signature; the royalty and license powers also need this role.",
     ("WorkRules", "setDelivery(address,address)"):
@@ -121,10 +121,10 @@ NOTES: dict[tuple[str, str], str] = {
         "Code hash re-checked at every use.",
     ("Accounts", "resolveContested(uint256,bool,bytes32)"):
         "Must cite the DISPUTE_OUTCOME statement recorded after the contest.",
-    ("FederationRegistry", "setAccountDelisted(uint256,bool,bytes32)"):
-        "Delisting stops new mints for the account's federated contracts at once.",
-    ("FederationRegistry", "lowerFeeShare(address,uint32)"): "Lower only.",
-    ("FederationRegistry", "reinstateTemplate(address)"):
+    ("IndependentStreamRegistry", "setAccountDelisted(uint256,bool,bytes32)"):
+        "Delisting stops new mints for the account's Independent Stream contracts at once.",
+    ("IndependentStreamRegistry", "lowerFeeShare(address,uint32)"): "Lower only.",
+    ("IndependentStreamRegistry", "reinstateTemplate(address)"):
         "Moves a revoked template version back to approved.",
     ("StatementLog", "appendCurator((address,uint256,bytes32,bytes32,(uint16,bytes32),string,"
      "bytes32,bytes32))"): "Keep the grant zero-delay: a relayed `appendSigned` refuses a "

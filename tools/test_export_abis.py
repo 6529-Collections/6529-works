@@ -42,12 +42,12 @@ def _fn(name: str, *types: str, mutability: str = "nonpayable") -> dict:
 # from the exporter, so dropping one from export_abis.FORWARDED fails the tests.
 EXPECTED_FORWARDED = {
     "UniformEditionAuction": "UniformEditionAuctionLens",
-    "FederatedEditionAuction": "FederatedEditionAuctionLens",
+    "IndependentEditionAuction": "IndependentEditionAuctionLens",
 }
 # Where each forwarding contract is declared (the exporter matches by source path).
 FORWARDED_SOURCES = {
     "UniformEditionAuction": "src/sales/UniformEditionAuction.sol",
-    "FederatedEditionAuction": "src/federated/FederatedEditionAuction.sol",
+    "IndependentEditionAuction": "src/independent/IndependentEditionAuction.sol",
 }
 
 
@@ -370,7 +370,7 @@ class InterfaceIdTest(unittest.TestCase):
         self.assertEqual(ea.declarations(code)[0][3], ["IA", "Lib.IB"])
 
 
-@unittest.skipUnless((ROOT / "out" / "Stream.sol" / "Stream.json").is_file(), "out/ not built")
+@unittest.skipUnless((ROOT / "out" / "Stream6529.sol" / "Stream6529.json").is_file(), "out/ not built")
 class RealBuildTest(unittest.TestCase):
     """The exporter's interface IDs equal the IDs the Solidity suite pins with
     `type(I).interfaceId`."""

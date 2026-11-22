@@ -14,13 +14,13 @@ is the current design: a small plain permanent core and replaceable modules.
 | Page | Prefix | Covers |
 | --- | --- | --- |
 | [Stream and auctions](stream-and-auctions.md) | `AUC` | The permanent ERC-721, the seam with its modules, rescue, and the English auction from start to settlement |
-| [Works and storage](works-and-storage.md) | `WS` | A work's facts (`WorkFacts`, permanent) and rules (`WorkRules`, module); locators; the content store |
+| [Works and storage](works-and-storage.md) | `WS` | A work's facts (`StreamWorkFacts6529`, permanent) and rules (`WorkRules`, module); locators; the content store |
 | [Editions and sales](editions-and-sales.md) | `ED`, `EA` | The permanent ERC-1155, rebind, and the uniform-price edition auction |
 | [Curation](curation.md) | `CUR` | Package items and roots, approval, consent, the move signature, consume-once, content release |
 | [Rendering and tokenURI](rendering-and-tokenuri.md) | `RND` | Which renderer draws a token, the metadata format, inline media |
 | [Economics and payouts](economics-and-payouts.md) | `ECO` | Terms, split vaults, the escrow, releases, the unclaimed period |
 | [Identity and recovery](identity-and-recovery.md) | `ID` | The accounts module: wallets, changes, contests, freezes, payouts |
-| [Federation](federation.md) | `FED` | The federated token pair and the federation module |
+| [Independent Stream](independent-stream.md) | `IND` | The Independent Stream token pair and the Independent Stream module |
 | [Disputes and statements](disputes-and-statements.md) | `DSP` | The dispute pause, outcomes, content release, the statement log |
 | [Entropy](entropy.md) | `ENT` | Optional VRF seeds |
 | [Declarations and conventions](declarations-and-conventions.md) | `DCL` | Off-chain conventions for readers and tools |
@@ -61,10 +61,10 @@ generated [role matrix](../audit/roles.md).
 ## Differences from the ADRs
 
 [ADR 0010](../adr/0010-plain-permanent-core.md) amends ADRs 0001, 0004, 0007, 0008 and 0009:
-what is permanent, the start budget (370,000 Prague gas and 8 new slots; 395,000 and 9 for a start with a bid of a VRF work), the federated
-templates and the waits in permanent contracts, which are now the network's settings. The pages
-follow ADR 0010 and the code. The earlier register of smaller differences is in the history of
-this file.
+what is permanent, the start budget (370,000 Prague gas and 8 new slots; 395,000 and 9 for a start
+with a bid of a VRF work), the Independent Stream templates and the waits in permanent contracts,
+which are now the network's settings. The pages follow ADR 0010 and the code. The earlier register
+of smaller differences is in the history of this file.
 
 ## Reporting a mismatch
 

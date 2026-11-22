@@ -12,7 +12,7 @@ import {
 import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
-import { Editions } from "src/core/Editions.sol";
+import { StreamEditions6529 } from "src/core/StreamEditions6529.sol";
 import { EditionsBase } from "src/core/EditionsBase.sol";
 import { Edition, Minter, Slots } from "src/interfaces/core/CoreTypes.sol";
 import { IEditions } from "src/interfaces/core/IEditions.sol";
@@ -20,7 +20,7 @@ import { IModuleSlots, IModules } from "src/interfaces/core/IModules.sol";
 import { HostileModule, MockSale } from "../mocks/core/CoreMocks.sol";
 import { EditionsFixture, EditionsReceiver } from "./EditionsFixture.sol";
 
-/// @notice Unit and fuzz tests of 6529 Stream Editions (`src/core/Editions.sol` on
+/// @notice Unit and fuzz tests of 6529 Stream Editions (`src/core/StreamEditions6529.sol` on
 ///         `EditionsBase`): every function, every revert by selector and every event.
 contract EditionsTest is EditionsFixture {
     // ------------------------------------------------------------------ construction
@@ -34,8 +34,9 @@ contract EditionsTest is EditionsFixture {
         emit IModuleSlots.ModuleSet(Slots.TERMS, address(0), address(terms));
         vm.expectEmit();
         emit IModules.MinterAdded(address(sale), uint48(block.timestamp));
-        Editions e =
-            new Editions(address(manager), address(stream), marketOwner, address(terms), minters);
+        StreamEditions6529 e = new StreamEditions6529(
+            address(manager), address(stream), marketOwner, address(terms), minters
+        );
         assertEq(e.stream(), address(stream));
         assertEq(e.owner(), marketOwner);
         assertEq(e.moduleOf(Slots.TERMS), address(terms));

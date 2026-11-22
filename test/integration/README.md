@@ -24,8 +24,8 @@ tests hold.
 EIP-712 digests read from the contracts, builds sorted-pair Merkle trees over
 `WorksHashing.leaf`, and drives sales and governed actions (a zero-delay role acts directly; any
 other role is scheduled, waited out and executed).
-[`FederatedIntegrationBase.sol`](FederatedIntegrationBase.sol) adds a listed federated pair;
-[`GasBase.sol`](GasBase.sol) the whole-transaction gas measurement.
+[`IndependentIntegrationBase.sol`](IndependentIntegrationBase.sol) adds a listed Independent Stream
+pair; [`GasBase.sol`](GasBase.sol) the whole-transaction gas measurement.
 
 ## Flows
 
@@ -39,7 +39,7 @@ other role is scheduled, waited out and executed).
 | [`RecordLifecycle.t.sol`](RecordLifecycle.t.sol), [`ContentToTokenURI.t.sol`](ContentToTokenURI.t.sol), [`WorkRecordsStackPorted.t.sol`](WorkRecordsStackPorted.t.sol), [`SyncOnChainResumePorted.t.sol`](SyncOnChainResumePorted.t.sol) | A work's record from open to finalized, and content from upload to `tokenURI` |
 | [`IdentityRecovery.t.sol`](IdentityRecovery.t.sol) | Consolidated wallets, an account's own change, a network replacement, a freeze and a contest |
 | [`PieceLifecycle.t.sol`](PieceLifecycle.t.sol), [`EditionAuction.t.sol`](EditionAuction.t.sol), [`EditionAuctionDifferential.t.sol`](EditionAuctionDifferential.t.sol), [`MasterEditionPorted.t.sol`](MasterEditionPorted.t.sol) | A 1/1 and its edition auction: close, clearing, claims, refunds, adopt and rebind; differential fuzzing against [`UniformClearingReference`](../helpers/UniformClearingReference.sol) |
-| [`FederatedPair.t.sol`](FederatedPair.t.sol) | A federated artist's pair on the real stack |
+| [`IndependentPair.t.sol`](IndependentPair.t.sol) | An Independent Stream artist's pair on the real stack |
 | [`ModuleLifecycle.t.sol`](ModuleLifecycle.t.sol), [`ModuleSwap.t.sol`](ModuleSwap.t.sol) | Announcing, activating, cancelling and removing modules and minters; every module replaced, with tokens, facts and owed money unchanged |
 | [`GenesisPorted.t.sol`](GenesisPorted.t.sol), [`StreamCorePolicyPorted.t.sol`](StreamCorePolicyPorted.t.sol), [`StreamDependenciesPorted.t.sol`](StreamDependenciesPorted.t.sol), [`StreamSalePorted.t.sol`](StreamSalePorted.t.sol), [`RecipientValidationPorted.t.sol`](RecipientValidationPorted.t.sol), [`CurationSignerPorted.t.sol`](CurationSignerPorted.t.sol), [`HelpersPorted.t.sol`](HelpersPorted.t.sol) | Behaviours carried over from the suites of the earlier contracts, on the current stack |
 | [`GasReport.t.sol`](GasReport.t.sol), [`GasHarness.t.sol`](GasHarness.t.sol), [`RoyaltyInfoGas.t.sol`](RoyaltyInfoGas.t.sol), [`TokenUriBudget.t.sol`](TokenUriBudget.t.sol) | The gas table (Prague gas, exact new slots and accounts per row), its harness checked against a cold transaction, `royaltyInfo` under a caller's gas limit, and `tokenURI` inside 8M gas at every cap |

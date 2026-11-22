@@ -57,7 +57,8 @@ directions from the owner's intent.
 ### 1. Product
 
 6529 Stream is the network-curated ERC-721 contract for 1/1 artworks, grouped
-into collections. In this ADR, "Stream" abbreviates 6529 Stream. Every work in Stream has passed network curation.
+into collections. In this ADR, "Stream" abbreviates 6529 Stream. Every work in Stream has passed
+network curation.
 
 - **Not long-form generative (1/1/x).** That is NextGen.
 - **Not editions.** Editions live in 6529 Editions (§6).
@@ -69,7 +70,7 @@ into collections. In this ADR, "Stream" abbreviates 6529 Stream. Every work in S
 | The Memes | Main Stage winners, ranked by TDH-weighted votes (about 150 a year) | Existing Memes ERC-1155 | 50/50 (unchanged; outside this ADR) |
 | 6529 Stream | Approved by the published TDH rule, either from Main Stage or from dedicated Stream waves (amended 1 November 2026: from Main Stage only; see [Amendments](#amendments)) | One shared Stream ERC-721 | 75% artist / 25% network |
 | 6529 Editions | An approved edition package anchored by a Stream edition master | One shared 6529 Editions ERC-1155 | 75 / 25 |
-| 6529 Stream Federated | Artist-deployed contracts from the network's templates, registered permissionlessly (no curation) | Artist's own ERC-721, ERC-1155 or linked pair | 90% artist / 10% network (v1.1, only if needed) |
+| 6529 Independent Stream | Artist-deployed contracts from the network's templates, registered permissionlessly (no curation) | Artist's own ERC-721, ERC-1155 or linked pair | 90% artist / 10% network (v1.1, only if needed) |
 
 ### 3. Curation and approved packages
 
@@ -189,8 +190,8 @@ is not obliged to pay. The transaction:
 Starting together with a first bid is allowed.
 
 **If there are no bids, the NFT goes to the artist.**
-(Amended by [ADR 0005](0005-stream-editions-auction.md): to the 6529 Network Museum for 6529 Stream, and to
-the artist for a federated work.)
+(Amended by [ADR 0005](0005-stream-editions-auction.md): to the 6529 Network Museum for 6529 Stream,
+and to the artist for an Independent Stream work.)
 
 **Sale extensibility.** Package sale terms carry a sale-kind identifier and
 its parameters.
@@ -202,7 +203,7 @@ its parameters.
 - **Who may use which adapter.**
   - 6529 Stream itself is auction-only.
   - 6529 Editions may use fixed price or Dutch.
-  - 6529 Stream Federated contracts may use any shared adapter once they
+  - 6529 Independent Stream contracts may use any shared adapter once they
     launch, under the network fee.
   (Amended by [ADR 0005](0005-stream-editions-auction.md): v1 ships the English auction and the uniform-price
   edition auction; fixed price and Dutch are removed, 6529 Stream Editions sell only by the
@@ -217,10 +218,10 @@ fails, the winner gets a pending claim instead (fixes the RC1 Medium finding).
 
 ### 6. 6529 Editions
 
-(Amended by [ADR 0005](0005-stream-editions-auction.md): renamed 6529 Stream Editions; an optional maximum count
-replaces the artist's size, format and price, and the uniform-price edition auction, which
-runs alongside the master's 1/1, replaces the fixed-price and Dutch sales, allowlist phases and
-ERC-20 payments.)
+(Amended by [ADR 0005](0005-stream-editions-auction.md): renamed 6529 Stream Editions; an optional
+maximum count replaces the artist's size, format and price, and the uniform-price edition auction,
+which runs alongside the master's 1/1, replaces the fixed-price and Dutch sales, allowlist phases
+and ERC-20 payments.)
 
 - **One shared ERC-1155, "6529 Editions", in v1 scope.**
 - **Every edition is anchored by an edition master.** The master is a Stream
@@ -308,7 +309,7 @@ The network pays Arweave and IPFS storage costs from its share.
   plus a governed action, and only toward more permissive terms. A CC0
   dedication is irrevocable, so a work released under CC0 stays CC0.
 - **Editions** carry their master's license.
-- **6529 Stream Federated contracts** may use any license, including all
+- **6529 Independent Stream contracts** may use any license, including all
   rights reserved or custom terms, set by the artist per work (§16).
 - **Not legal advice:** the license wording, and artists' informed consent to
   CC0, are reviewed by counsel before launch.
@@ -570,36 +571,37 @@ before that chain.
     `docs/END_STATE.md`.
 - **No museum semantics in Core.**
 
-### 16. 6529 Stream Federated
+### 16. 6529 Independent Stream
 
-(Amendment note, 15 November 2026: federation is in v1, no longer deferred to v1.1, and is
-specified by a later ADR; the artist registry's permanent federation directory and replaceable
-federation-registry pointer are built. See [ADR 0007](0007-permanence.md) and [Amendments](#amendments).)
+(Amendment note, 15 November 2026: Independent Stream is in v1, no longer deferred to v1.1, and is
+specified by a later ADR; the artist registry's permanent Independent Stream directory and
+replaceable Independent Stream registry pointer are built. See [ADR 0007](0007-permanence.md) and
+[Amendments](#amendments).)
 
-(Amendment note, 15 November 2026: specified by [ADR 0008](0008-federation.md): no factory (a
-contract joins itself when its code hash is an approved template version and that version's
+(Amendment note, 15 November 2026: specified by [ADR 0008](0008-independent-stream.md): no factory
+(a contract joins itself when its code hash is an approved template version and that version's
 deployer recorded it: the hash alone would admit initcode that installs the same runtime after
-writing other storage); entries composed on read; unbid federated works stay with the
+writing other storage); entries composed on read; unbid Independent Stream works stay with the
 template.)
 
-Federation lets an artist run their own contract, built from the network's
+Independent Stream lets an artist run their own contract, built from the network's
 audited templates, as a registered member of the 6529 network. (Wording amended 16 November
 2026: see [Amendments](#amendments).)
 
 **Purpose: open, automated discovery (owner direction, 11 October 2026).** The
-registry is a public, on-chain directory of every federated contract and work.
+registry is a public, on-chain directory of every Independent Stream contract and work.
 - Anyone can join by deploying and registering.
 - Anyone can read the directory.
 - Anyone can curate on top of it as they like: 6529.io, community waves,
   galleries, lists, third-party apps.
-- The protocol does not curate federated work. It only provides the trustworthy
+- The protocol does not curate Independent Stream work. It only provides the trustworthy
   directory, the shared infrastructure and the fee-settling sale adapters. It ships in v1.1
 only if needed. v1 only has to keep the interfaces that make it possible: the
 shared sale adapters, the template-ready token code, and a registry interface.
 
 **Forms.** One of these, chosen at deployment:
-- a federated **ERC-721** for the artist's own 1/1s;
-- a federated **ERC-1155** for the artist's own editions;
+- an Independent Stream **ERC-721** for the artist's own 1/1s;
+- an Independent Stream **ERC-1155** for the artist's own editions;
 - a **linked pair**: a 721 and a 1155 linked in both directions, with the same
   master/edition link model as 6529 Stream and 6529 Editions (§6).
 
@@ -612,7 +614,7 @@ shared sale adapters, the template-ready token code, and a registry interface.
 - **Factory.** Deploys a template as a full, non-proxy contract. It deploys
   both halves of a linked pair and links them in the same transaction. The
   artist pays the gas: about 4–5M gas per contract.
-- **Federation registry.** The on-chain list of contracts that belong to the
+- **Independent Stream registry.** The on-chain list of contracts that belong to the
   network. For each contract it records:
   - the address;
   - the form (721, 1155 or pair, with the pair partner);
@@ -637,9 +639,9 @@ shared sale adapters, the template-ready token code, and a registry interface.
   - The template's mint function accepts calls only from the adapters that
     governance has admitted.
   - Gifting is a zero-price adapter sale.
-  (Amended by [ADR 0005](0005-stream-editions-auction.md): federated contracts start with the English auction and
-  the uniform-price edition auction, further methods are adapters governance admits, and v1
-  has no gifting adapter. An unbid federated 1/1 stays with its artist.)
+  (Amended by [ADR 0005](0005-stream-editions-auction.md): Independent Stream contracts start with
+  the English auction and the uniform-price edition auction, further methods are adapters governance
+  admits, and v1 has no gifting adapter. An unbid Independent Stream 1/1 stays with its artist.)
 - **Fees.** Primary sales split 90% artist, 10% network. The adapter settles the
   fee on each sale. The fee terms are fixed in the registry entry at
   deployment. They change for new deployments only, and existing contracts
@@ -652,7 +654,7 @@ shared sale adapters, the template-ready token code, and a registry interface.
   - Tokens, content and ownership are never touched.
   - Relisting also requires a vote.
 
-**Who controls a federated contract**
+**Who controls an Independent Stream contract**
 - **The artist,** through their artist identity, which includes consolidation
   recovery (§11), controls:
   - contract metadata and the marketplace `owner()`;
@@ -665,22 +667,22 @@ shared sale adapters, the template-ready token code, and a registry interface.
   - change which adapters are admitted, for new sales.
 - **Shared infrastructure** is the network's: content store, renderer,
   statement log and artist registry. Finalized works pin their renderer
-  (§10), so network changes never alter a finalized federated work.
+  (§10), so network changes never alter a finalized Independent Stream work.
 
 **Linking rules (decided 11 October 2026)**
 - **Two separate worlds.**
   - The **curated** world: 6529 Stream masters link only to official 6529
     Editions.
-  - The **federated** world: an artist's 721 links only to the artist's own
+  - The **Independent Stream** world: an artist's 721 links only to the artist's own
     1155, inside a linked pair.
 - **No work-level links between the two worlds.** A curated Stream 1/1 never
-  has its edition on a federated contract, and a federated edition never
+  has its edition on an Independent Stream contract, and an Independent Stream edition never
   claims a Stream master. This keeps curated editions official, keeps network
   economics at 75/25, and avoids "curated by association".
 - **Discovery across the worlds goes through the artist,** not the work. The
-  artist registry lists an artist's federated contracts, so 6529.io can show
+  artist registry lists an artist's Independent Stream contracts, so 6529.io can show
   "this Stream artist also has these contracts".
-- **Federated works are not re-minted on 6529 Stream.** Federation is not a
+- **Independent Stream works are not re-minted on 6529 Stream.** Independent Stream is not a
   path into curation.
 
 **Royalties (decided 11 October 2026).** The artist sets the royalty rate for
@@ -697,9 +699,9 @@ Royalties remain advisory (ERC-2981) and cannot be enforced on-chain.
   The registry binds each contract to an artist ID, 6529.io shows verified
   6529 profiles, and impersonators are delisted by vote. Until a vote, a
   fraudulent contract can trade on outside marketplaces.
-- **Fragmented liquidity.** Each federated contract is its own marketplace
+- **Fragmented liquidity.** Each Independent Stream contract is its own marketplace
   collection, by design. This is the trade the artist chooses.
-- **Network dependency.** Federated works depend on network-run shared
+- **Network dependency.** Independent Stream works depend on network-run shared
   infrastructure. Finalize pins, content addressing and Arweave/IPFS
   redundancy limit that dependency to display and sales, never content.
 - **Template obsolescence.** Old template versions stay valid forever. Only new
@@ -709,7 +711,7 @@ Royalties remain advisory (ERC-2981) and cannot be enforced on-chain.
   list.
 
 **Further decisions (11 October 2026)**
-- **Federated contracts do not count toward TDH.**
+- **Independent Stream contracts do not count toward TDH.**
 - **A TDH vote may delist an artist identity,** which delists every contract
   registered to that identity at once. Tokens are never touched, and
   relisting also requires a vote.
@@ -722,7 +724,7 @@ This plan is the result of a five-domain "keep the excellent work" review,
 | Domain | Keep as-is | Port (rewrite smaller) | Reference / parked |
 | --- | --- | --- | --- |
 | Signatures and identity | #744 artist signature verifier (one shared library); EIP-7702 delegated-account detector | Pending-change state machine; linear payout chain with deadline; two-sided authority change; package and collaborator acceptance keyed by package hash; preventive revocation | Window discipline; per-entity hash chain and write-once archive |
-| Auctions and money | `StreamClaimRouter`; `StreamReleaseAuthorization` (on OZ `SignatureChecker`) | RC1 `StreamEnglishAuctionHouse` as the auction base, plus #744's auction clock, capped NFT delivery with pending claim, ETH escrow fallback and pause clock | Package-item Merkle proof; "accounts losing share must consent"; ticket-gate shape for the curation verifier. Ported for 6529 Editions: Merkle allowlist phases (with the recipient fix) and ERC-20 payments with Permit/Permit2 and payment intents. Ported as a shared v1 adapter: Dutch pricing (for Editions and future federated contracts). Parked: delegate.xyz gate |
+| Auctions and money | `StreamClaimRouter`; `StreamReleaseAuthorization` (on OZ `SignatureChecker`) | RC1 `StreamEnglishAuctionHouse` as the auction base, plus #744's auction clock, capped NFT delivery with pending claim, ETH escrow fallback and pause clock | Package-item Merkle proof; "accounts losing share must consent"; ticket-gate shape for the curation verifier. Ported for 6529 Editions: Merkle allowlist phases (with the recipient fix) and ERC-20 payments with Permit/Permit2 and payment intents. Ported as a shared v1 adapter: Dutch pricing (for Editions and future Independent Stream contracts). Parked: delegate.xyz gate |
 | Core | Gas-reserve check (63/64 rule); overflow-free royalty math | Code-hash and ERC-165 pinned links at install; one-way freeze; per-token pins; burn-surviving token identity and supply counters; restricted ERC-4906/7572 emitters | Old/new-state binding (as compare-and-set); genesis-plan verification as a deploy script; guardian rules; publish/challenge/supersede; golden typehash tests |
 | Metadata, content, entropy | Escaping and UTF-8 kit with parity fuzz tests; VRF v2.5 adapter (moved to the V2Plus base); SSTORE2; bounded staticcall | Content store (24,575-byte chunks, range reads); RC1 entropy coordinator slimmed into the optional VRF module; owner record book and `HashRef` as the statement-log base; freeze compare-and-set for finalize | Compact `tokenURI` with `web3://` full views; plan-based multi-transaction upload; dependency-registry API. Dropped: Arweave inclusion verifier (it still trusts an observer quorum; signed fixity statements cover v1) |
 | Tooling, tests, SDK | Deployed-bytecode verifier; official Safe fixture (1.3/1.4.1/1.5) | Compiler export with `--check`; invariant handler and campaign runner; adversarial mocks; RC1 TypeScript client and #744 Safe-plan helpers (SDK base); deploy assembly with non-broadcastable rehearsal; CI hygiene | Deployment-evidence layout; pre-send gas-cap simulation and transaction journal; threat model; [LTA-HASH]/[LTA-DEPLOY] rules; English-auction and money-invariant spec text |
@@ -767,7 +769,7 @@ AccessManager governs all of them. The VRF module is optional.
 **Engineering budgets, enforced as CI gates:**
 - **Size:** 8–12K non-comment lines of production Solidity. (Amended 1 November 2026: the
   gate is 13,000 lines; amended 15 November 2026: 15,000 lines; 16 November 2026: 16,000 lines,
-  then 16,500 for the federation review's fixes, [ADR 0008](0008-federation.md); see
+  then 16,500 for the Independent Stream review's fixes, [ADR 0008](0008-independent-stream.md); see
   [Amendments](#amendments).)
 - **Structure:** at most 5 linked libraries; no delegatecall; no proxies.
 - **Contract size:** EIP-170 enforced in every Foundry profile.
@@ -939,10 +941,10 @@ AccessManager governs all of them. The VRF module is optional.
 - **15 November 2026: permanence ([ADR 0007](0007-permanence.md), owner instruction of 14 and 15 November
   2026).**
   - **Source-size budget.** The gate rises from 13,000 to 15,000 lines (`MAX_LINES` in
-    `tools/check_budgets.py`), for federation in v1 and the permanence hardening. The other
+    `tools/check_budgets.py`), for Independent Stream in v1 and the permanence hardening. The other
     budgets are unchanged.
-  - **§16 moves into v1.** Federated Stream and Federated Stream Editions ship in v1 and are
-    specified by a later ADR. Federated contracts earn no TDH; 6529 Stream and 6529 Stream
+  - **§16 moves into v1.** Independent Stream and Independent Stream Editions ship in v1 and are
+    specified by a later ADR. Independent Stream contracts earn no TDH; 6529 Stream and 6529 Stream
     Editions do.
   - **§11.** The artist registry is permanent: 6529 Stream's pointer is set once at genesis.
   - **§7.** Split wallets are 66-byte vaults of one permanent split ledger, which also verifies
@@ -951,12 +953,12 @@ AccessManager governs all of them. The VRF module is optional.
     successor with `migrate`, seat caps and a third admin seat (ADR 0002's amendment note).
 
 - **16 November 2026: the templates are governance-approved, and the project is pre-audit.**
-  Where this ADR says federation's templates, or a template version, are "audited" (§16's
+  Where this ADR says Independent Stream's templates, or a template version, are "audited" (§16's
   opening sentence and its Components list), or that the AccessManager is "audited" (the
   rejected alternatives), read "governance-approved" for the templates, and "the standard
   OpenZeppelin AccessManager" for the manager. A template version is approved by governance
-  by its code hash ([ADR 0008](0008-federation.md)); no audit of any contract has been done
-  ([docs/spec/federation.md](../spec/federation.md)).
+  by its code hash ([ADR 0008](0008-independent-stream.md)); no audit of any contract has been done
+  ([docs/spec/independent-stream.md](../spec/independent-stream.md)).
 
 - **16 November 2026: the second permanence pass ([ADR 0009](0009-second-permanence-pass.md)).** This record is history; where it
   differs, read ADR 0009.
@@ -971,7 +973,7 @@ AccessManager governs all of them. The VRF module is optional.
     the 180-day override notice and the year of dormancy no longer apply.
   - **§13.** One network address with delays of 24 hours, 3 days and 7 days, an optional
     brake, and a two-step handover; no guardians, seats, recovery or succession.
-  - **§16.** No exit from the federation. Delisting is per artist account, by a network
+  - **§16.** No exit from Independent Stream. Delisting is per artist account, by a network
     decision at the 24-hour class, for any reason the network decides; the code does not limit
     the grounds. Templates take collaborators and requester-paid VRF.
 
@@ -994,7 +996,7 @@ facts of a finished work and money already owed. Every rule (fee terms, sale sta
 routing, record editing, consent, timers, identity, delisting, royalty policy) lives in a
 replaceable module that the network adds and removes. Payments are ETH only at launch: no
 ERC-20, no Permit2, no currency freeze and reopening. The artist registry becomes the
-replaceable accounts module behind the permanent `Directory`. Waiting periods in permanent
+replaceable accounts module behind the permanent `StreamDirectory6529`. Waiting periods in permanent
 contracts are the network's settings with launch values, not fixed numbers. Sections of this
 ADR that describe those mechanisms inside the token contracts are history; the current rules are
 in the [specification](../spec/README.md).

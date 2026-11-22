@@ -76,7 +76,7 @@
   },
   {
     "inputs": [],
-    "name": "FEDERATED_FEE_SHARE",
+    "name": "INDEPENDENT_FEE_SHARE",
     "outputs": [
       {
         "internalType": "uint32",

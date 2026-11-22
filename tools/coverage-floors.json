@@ -36,11 +36,11 @@
       "lines": 99.0,
       "branches": 98.0
     },
-    "src/core/Directory.sol": {
+    "src/core/StreamDirectory6529.sol": {
       "lines": 99.0,
       "branches": 98.0
     },
-    "src/core/Editions.sol": {
+    "src/core/StreamEditions6529.sol": {
       "lines": 99.0,
       "branches": 98.0
     },
@@ -52,7 +52,7 @@
       "lines": 99.0,
       "branches": 98.0
     },
-    "src/core/Stream.sol": {
+    "src/core/Stream6529.sol": {
       "lines": 99.0,
       "branches": 98.0
     },
@@ -60,7 +60,7 @@
       "lines": 99.0,
       "branches": 98.0
     },
-    "src/core/WorkFacts.sol": {
+    "src/core/StreamWorkFacts6529.sol": {
       "lines": 99.0,
       "branches": 98.0
     },
@@ -116,31 +116,31 @@
       "lines": 77.7,
       "branches": 67.7
     },
-    "src/federated/FederatedDeployer.sol": {
+    "src/independent/IndependentStreamDeployer.sol": {
       "lines": 82.3,
       "branches": 0.0
     },
-    "src/federated/FederatedEditionAuction.sol": {
+    "src/independent/IndependentEditionAuction.sol": {
       "lines": 99.0,
       "branches": 64.6
     },
-    "src/federated/FederatedEditionAuctionLens.sol": {
+    "src/independent/IndependentEditionAuctionLens.sol": {
       "lines": 88.1,
       "branches": 98.0
     },
-    "src/federated/FederatedEditions.sol": {
+    "src/independent/IndependentStreamEditions6529.sol": {
       "lines": 99.0,
       "branches": 98.0
     },
-    "src/federated/FederatedMembership.sol": {
+    "src/independent/IndependentStreamMembership.sol": {
       "lines": 99.0,
       "branches": 98.0
     },
-    "src/federated/FederatedStream.sol": {
+    "src/independent/IndependentStream6529.sol": {
       "lines": 99.0,
       "branches": 86.8
     },
-    "src/federated/FederationRegistry.sol": {
+    "src/independent/IndependentStreamRegistry.sol": {
       "lines": 99.0,
       "branches": 96.1
     },

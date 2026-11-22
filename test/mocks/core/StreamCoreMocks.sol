@@ -4,7 +4,8 @@ pragma solidity ^0.8.24;
 import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 
 /// @notice A stand-in for `IWorkFacts.rendererOf` whose answer the test sets: a pinned renderer,
-///         none, or a revert (as `WorkFacts` reverts when a pinned renderer's code changed).
+///         none, or a revert (as `StreamWorkFacts6529` reverts when a pinned renderer's code
+///         changed).
 contract MockPinnedFacts {
     mapping(address token => mapping(uint256 id => address)) public pinned;
     bool public fails;

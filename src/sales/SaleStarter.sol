@@ -15,7 +15,7 @@ import { PackageItem, StreamMintRequest } from "../interfaces/types/PackageTypes
 /// @notice Starts a 6529 Stream sale whole: in one transaction it starts the English auction (the
 ///         work is minted into the auction's custody), deploys the work's seller vault and, when
 ///         the network takes a share, its royalty vault, and opens the work's record in
-///         `WorkFacts`. If any step fails, nothing happens.
+///         `StreamWorkFacts6529`. If any step fails, nothing happens.
 /// @dev Stateless, with no roles and no owner. Every call out is a high-level call, which
 ///      forwards all the gas EIP-150 allows and reverts the whole transaction on any failure. It
 ///      binds no one: `IEnglishAuction.start` and `startWithBid` stay permissionless, and a start

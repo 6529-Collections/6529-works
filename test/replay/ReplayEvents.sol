@@ -80,7 +80,7 @@ library ReplayEvents {
         e[4] = "UnclaimedPeriodSet(uint48,uint48)";
     }
 
-    function federatedStream() internal pure returns (string[] memory e) {
+    function independentStream() internal pure returns (string[] memory e) {
         e = new string[](18);
         e[0] = "Approval(address,address,uint256)";
         e[1] = "ApprovalForAll(address,address,bool)";
@@ -103,7 +103,7 @@ library ReplayEvents {
         e[17] = "WorkRescued(uint256,address,address)";
     }
 
-    function federatedEditions() internal pure returns (string[] memory e) {
+    function independentEditions() internal pure returns (string[] memory e) {
         e = new string[](15);
         e[0] = "ApprovalForAll(address,address,bool)";
         e[1] = "BatchMetadataUpdate(uint256,uint256)";

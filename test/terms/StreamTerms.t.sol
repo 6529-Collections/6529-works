@@ -7,8 +7,8 @@ import { MintFacts, Slots } from "src/interfaces/core/CoreTypes.sol";
 import { IDirectory } from "src/interfaces/core/IDirectory.sol";
 import { ITerms } from "src/interfaces/core/ITerms.sol";
 import { StreamTerms } from "src/terms/StreamTerms.sol";
-import { Stream } from "src/core/Stream.sol";
-import { Editions } from "src/core/Editions.sol";
+import { Stream6529 } from "src/core/Stream6529.sol";
+import { StreamEditions6529 } from "src/core/StreamEditions6529.sol";
 import { HostileModule } from "../mocks/core/CoreMocks.sol";
 import { FeeGate } from "../mocks/records/RulesMocks.sol";
 import { RulesFixture } from "../records/RulesFixture.sol";
@@ -31,7 +31,7 @@ contract StreamTermsTest is RulesFixture {
         return ledger.createWallet(Splits.royaltyPayees(SELLER, FEE, share), 0);
     }
 
-    function _mintAt(Stream token, uint256 n, uint32 share) internal returns (uint256) {
+    function _mintAt(Stream6529 token, uint256 n, uint32 share) internal returns (uint256) {
         MintFacts memory f;
         f.itemHash = keccak256(abi.encode("item", n));
         f.contentHash = keccak256(abi.encode("content", n));
@@ -181,12 +181,12 @@ contract StreamTermsTest is RulesFixture {
         streamTerms.lowerFeeShare(address(editions), 3, SELLER, FEE, 8_000, 2_000);
     }
 
-    function test_LowerFeeShare_AFederatedTokenNeverGoesAboveTheRegistrysShare() public {
+    function test_LowerFeeShare_AIndependentTokenNeverGoesAboveTheRegistrysShare() public {
         _install(address(bare), Slots.TERMS, address(streamTerms));
         FeeGate fees = new FeeGate();
         directory.setModuleDelay(0);
-        directory.proposeModule(Slots.FEDERATION, address(fees));
-        directory.activateModule(Slots.FEDERATION);
+        directory.proposeModule(Slots.INDEPENDENT_STREAM, address(fees));
+        directory.activateModule(Slots.INDEPENDENT_STREAM);
         uint256 id = _mintAt(bare, 1, 10_000);
         fees.setFeeShare(address(bare), 5_000);
         vm.expectRevert(ITerms.InvalidFeeShare.selector);
@@ -196,7 +196,7 @@ contract StreamTermsTest is RulesFixture {
             bare.workOf(id).royaltyReceiver,
             ledger.walletFor(Splits.royaltyPayees(SELLER, FEE, 5_000), 0)
         );
-        // 6529 Stream itself is not bound by the federation module.
+        // 6529 Stream itself is not bound by the Independent Stream module.
         uint256 own = _mintAt(stream, 2, 10_000);
         streamTerms.lowerFeeShare(s, own, SELLER, FEE, 10_000, 9_000);
     }
@@ -206,8 +206,9 @@ contract StreamTermsTest is RulesFixture {
     function test_SetEditions_TheNetworkPairsAMatchingEditionsContract() public {
         assertEq(streamTerms.editionsOf(s), address(editions));
         assertEq(streamTerms.tokenOfEditions(address(editions)), s);
-        Editions next =
-            new Editions(address(manager), s, marketOwner, address(terms), new address[](0));
+        StreamEditions6529 next = new StreamEditions6529(
+            address(manager), s, marketOwner, address(terms), new address[](0)
+        );
         vm.prank(stranger);
         vm.expectRevert(
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, stranger)

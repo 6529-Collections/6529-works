@@ -370,16 +370,16 @@ The start rows keep their 5,000 of margin:
 | VRF seed, edition master with 64 bytes of params (the tightest) | 344,937 | 5,063 |
 
 Re-measured for the English auction's refusal exit (on its lane, before the permanence integration's other lanes; the integrated figures follow) (`settleOrRefund`, AUC-45 to AUC-48, which
-solves LIM-SAL-16 for federated sales), on the tree with the gas-rule helpers merged and the
-review's fixes applied:
+solves LIM-SAL-16 for Independent Stream sales), on the tree with the gas-rule helpers merged and
+the review's fixes applied:
 - **The start rows** fell by about 820 to 900: a start now writes its `Sale` word in one `sstore`
-  instead of five field writes to the same slot, which pays for the new code on the path (a
-  federated terms record's locked fee recipient and refusal delay, hashed into its key only for a
-  federated record, and the refusal of terms naming the auction itself as a payee). The refusal
-  parameters sit in their own slot, which no start reads.
+  instead of five field writes to the same slot, which pays for the new code on the path (an
+  Independent Stream terms record's locked fee recipient and refusal delay, hashed into its key only
+  for an Independent Stream record, and the refusal of terms naming the auction itself as a payee).
+  The refusal parameters sit in their own slot, which no start reads.
 - **The settle rows** rose by 42 to 342, within their 400,000 ceilings: each payout now refuses a
   wallet that is zero, the escrow or the auction in any currency. `settleOrRefund` is not a row:
-  for a cooperating federated token it is `settle` plus the escrow check and one self-call.
+  for a cooperating Independent Stream token it is `settle` plus the escrow check and one self-call.
 - **Every other row** moved by at most 32 with the new code and deployment addresses. No row
   writes a new slot or account, and no maximum is raised.
 
@@ -526,8 +526,8 @@ start-row margin gate is 3,000 under 350K (rows at or under 347,000), and the ti
 about 5,300 (the tightest to 341,582, 8,418 under 350K), a `bid` by 219, and a `start` without a
 bid rises by 21; the start, bid and settle rows below are measured after it. A start whose move a consolidated (non-root) wallet signed has its own regression
 ceiling (LIM-ID-21). The `refreshStanding` rows and the edition `withdrawBid` row left with
-their functions. The federated rows keep their earlier figures with the current ceilings; CI
-enforces those ceilings (`FederationGas.t.sol`).
+their functions. The Independent Stream rows keep their earlier figures with the current ceilings;
+CI enforces those ceilings (`IndependentStreamGas.t.sol`).
 
 | Operation | Prague gas | Prague ceiling | New slots | New accounts | Sepolia gas |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -584,19 +584,19 @@ enforces those ceilings (`FederationGas.t.sol`).
 | Edition `claimBid`, a winner and new holder | 98,561 | 100,000 | 1 | 0 | — |
 | Edition `claimBid`, refund only | 47,518 | 49,000 (regression) | 0 | 0 | — |
 | Edition `claimBidFor`, refund credited | 64,557 | 67,000 (regression) | 1 | 0 | — |
-| Federated `joinFederation`, creating the identity (provenance and consent checked) | 303,115 | 345,000 (regression) | 6 | 0 | ~0.96M [E] |
-| Federated `approveItem` | 59,357 | 61,000 (regression) | 1 | 0 | ~0.15M [E] |
-| Federated `start`, first work (deploys both vaults; license text checked) | 679,109 | 700,000 (regression) | 18 | 2 | ~2.77M [E] |
-| Federated `start`, steady | 416,019 | 425,000 (regression) | 10 | 0 | ~1.31M [E] |
-| Federated first `bid` | 192,512 | 196,000 (regression) | 5 | 0 | ~0.64M [E] |
-| Federated `settle`, sold | 179,197 | 187,000 (regression) | 2 | 0 | ~0.35M [E] |
-| Federated `settle`, unbid (to the template) | 153,849 | 162,000 (regression) | 2 | 0 | ~0.33M [E] |
-| Federated restart | 248,303 | 249,000 (regression) | 4 | 0 | ~0.60M [E] |
-| Federated edition `open` | 373,965 | 345,000 (regression) | 7 | 0 | ~1.00M [E] |
-| Federated `createEdition` | 86,736 | 90,000 (regression) | 1 | 0 | ~0.18M [E] |
-| Federated edition `settle` | 151,447 | 162,000 (regression) | 1 | 0 | ~0.24M [E] |
-| Deploy `FederatedStream` (whole transaction; 5,100,251 through its deployer, which records it; each deployment row measured in its own test) | 5,418,645 | 5,600,000 (regression) | 11 | 1 | ~37.9M [E] through its deployer ([ADR 0008](0008-federation.md) §1) |
-| Deploy `FederatedEditions` (whole transaction; 3,592,141 through its deployer) | 3,805,265 | 3,870,000 (regression) | 8 | 1 | ~26.6M [E] through its deployer |
+| Independent Stream `joinIndependentStream`, creating the identity (provenance and consent checked) | 303,115 | 345,000 (regression) | 6 | 0 | ~0.96M [E] |
+| Independent Stream `approveItem` | 59,357 | 61,000 (regression) | 1 | 0 | ~0.15M [E] |
+| Independent Stream `start`, first work (deploys both vaults; license text checked) | 679,109 | 700,000 (regression) | 18 | 2 | ~2.77M [E] |
+| Independent Stream `start`, steady | 416,019 | 425,000 (regression) | 10 | 0 | ~1.31M [E] |
+| Independent Stream first `bid` | 192,512 | 196,000 (regression) | 5 | 0 | ~0.64M [E] |
+| Independent Stream `settle`, sold | 179,197 | 187,000 (regression) | 2 | 0 | ~0.35M [E] |
+| Independent Stream `settle`, unbid (to the template) | 153,849 | 162,000 (regression) | 2 | 0 | ~0.33M [E] |
+| Independent Stream restart | 248,303 | 249,000 (regression) | 4 | 0 | ~0.60M [E] |
+| Independent Stream edition `open` | 373,965 | 345,000 (regression) | 7 | 0 | ~1.00M [E] |
+| Independent Stream `createEdition` | 86,736 | 90,000 (regression) | 1 | 0 | ~0.18M [E] |
+| Independent Stream edition `settle` | 151,447 | 162,000 (regression) | 1 | 0 | ~0.24M [E] |
+| Deploy `IndependentStream6529` (whole transaction; 5,100,251 through its deployer, which records it; each deployment row measured in its own test) | 5,418,645 | 5,600,000 (regression) | 11 | 1 | ~37.9M [E] through its deployer ([ADR 0008](0008-independent-stream.md) §1) |
+| Deploy `IndependentStreamEditions6529` (whole transaction; 3,592,141 through its deployer) | 3,805,265 | 3,870,000 (regression) | 8 | 1 | ~26.6M [E] through its deployer |
 
 r2's Sepolia column, as accepted (receipts on `400f96d`, before the review fixes
 and the state-growth diet; the flows file compares the two rehearsals row by
@@ -653,7 +653,7 @@ replays further down is r2's.
     purchase count, so a new buyer in one writes one slot fewer: `purchase` 3 → 2
     new slots for the first copy and 2 → 1 for a later copy, about 23K less Prague
     gas each.
-  - QUALITY-2: `Editions.mint` returns only the sale kind of its terms, which the
+  - QUALITY-2: `StreamEditions6529.mint` returns only the sale kind of its terms, which the
     adapters never read (they apply the terms locked at `openSale`). A purchase
     no longer reads the rest of the edition record or calls the artist registry:
     about 21.9K less Prague gas per `purchase`, with no change in slots.

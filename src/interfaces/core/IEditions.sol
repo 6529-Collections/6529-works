@@ -6,9 +6,9 @@ import { IERC1155 } from "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
 import { Edition } from "./CoreTypes.sol";
 
 /// @title IEditions
-/// @notice A permanent ERC-1155 of editions: 6529 Stream Editions, and each federated artist's
-///         own. It holds who owns each copy and each edition's supply. An edition's ID is its
-///         master's token ID in `stream()`.
+/// @notice A permanent ERC-1155 of editions: 6529 Stream Editions, and each Independent Stream
+///         artist's own. It holds who owns each copy and each edition's supply. An edition's ID is
+///         its master's token ID in `stream()`.
 /// @dev The seam (ADR 0010). A minter creates the edition of an existing master and becomes
 ///      its only minter; it mints within the maximum and seals the supply once. A sealed maximum
 ///      never grows. The TERMS module sets royalties. No module can move a copy.

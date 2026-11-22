@@ -20,7 +20,7 @@ import { WorkFactsIndexer } from "./WorkFactsIndexer.sol";
 ///         RevenueEscrow, ContentStore and StatementLog. `_sync` applies the logs recorded since
 ///         the last call, in log order across contracts (the escrow ages credits under the
 ///         period the Directory's logs set), then compares every indexer with its live contract.
-/// @dev A suite adds indexers for contracts it deploys itself (a federated pair) in
+/// @dev A suite adds indexers for contracts it deploys itself (an Independent Stream pair) in
 ///      `_extraIndexers`, which runs before the first `_sync`, so those contracts are replayed
 ///      from their deployment too. The logs are given the current block timestamp: call `_sync`
 ///      after each step whose time a rebuilt value records (a minter's removal, an escrow

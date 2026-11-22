@@ -154,7 +154,7 @@
       "note": "the split ledger; unowned; its payout resolver is Directory"
     },
     {
-      "name": "WorkFacts",
+      "name": "StreamWorkFacts6529",
       "address": "0x000000000000000000000000000000000000a019",
       "note": "the permanent record of every work; unowned"
     },
@@ -229,9 +229,9 @@
   },
   "contracts": [
     {
-      "name": "Stream",
-      "artifact": "src/core/Stream.sol:Stream",
-      "implementation": "src/core/Stream.sol:Stream",
+      "name": "Stream6529",
+      "artifact": "src/core/Stream6529.sol:Stream6529",
+      "implementation": "src/core/Stream6529.sol:Stream6529",
       "address": "0x000000000000000000000000000000000000a001",
       "status": "implemented",
       "functions": [
@@ -326,9 +326,9 @@
       "deferred": []
     },
     {
-      "name": "Editions",
-      "artifact": "src/core/Editions.sol:Editions",
-      "implementation": "src/core/Editions.sol:Editions",
+      "name": "StreamEditions6529",
+      "artifact": "src/core/StreamEditions6529.sol:StreamEditions6529",
+      "implementation": "src/core/StreamEditions6529.sol:StreamEditions6529",
       "address": "0x000000000000000000000000000000000000a003",
       "status": "implemented",
       "functions": [
@@ -416,9 +416,9 @@
       "deferred": []
     },
     {
-      "name": "Directory",
-      "artifact": "src/core/Directory.sol:Directory",
-      "implementation": "src/core/Directory.sol:Directory",
+      "name": "StreamDirectory6529",
+      "artifact": "src/core/StreamDirectory6529.sol:StreamDirectory6529",
+      "implementation": "src/core/StreamDirectory6529.sol:StreamDirectory6529",
       "address": "0x000000000000000000000000000000000000a017",
       "status": "implemented",
       "functions": [
@@ -468,8 +468,8 @@
           "role": "NETWORK",
           "class": "immediate",
           "delay": 0,
-          "note": "asked by every federated token for its own setting",
-          "via": "src/federated/FederatedStream.sol:FederatedStream"
+          "note": "asked by every Independent Stream token for its own setting",
+          "via": "src/independent/IndependentStream6529.sol:IndependentStream6529"
         },
         {
           "signature": "rescue(uint256,address)",
@@ -477,8 +477,8 @@
           "role": "NETWORK",
           "class": "immediate",
           "delay": 0,
-          "note": "asked by every federated token",
-          "via": "src/federated/FederatedStream.sol:FederatedStream"
+          "note": "asked by every Independent Stream token",
+          "via": "src/independent/IndependentStream6529.sol:IndependentStream6529"
         },
         {
           "signature": "setRebindDelay(uint48)",
@@ -486,8 +486,8 @@
           "role": "NETWORK",
           "class": "immediate",
           "delay": 0,
-          "note": "asked by every federated editions token for its own setting",
-          "via": "src/federated/FederatedEditions.sol:FederatedEditions"
+          "note": "asked by every Independent Stream Editions token for its own setting",
+          "via": "src/independent/IndependentStreamEditions6529.sol:IndependentStreamEditions6529"
         },
         {
           "signature": "rebind(uint256,address)",
@@ -495,8 +495,8 @@
           "role": "NETWORK",
           "class": "immediate",
           "delay": 0,
-          "note": "asked by every federated editions token",
-          "via": "src/federated/FederatedEditions.sol:FederatedEditions"
+          "note": "asked by every Independent Stream Editions token",
+          "via": "src/independent/IndependentStreamEditions6529.sol:IndependentStreamEditions6529"
         }
       ],
       "genesisOnly": [],
@@ -1139,9 +1139,9 @@
       "deferred": []
     },
     {
-      "name": "FederationRegistry",
-      "artifact": "src/federated/FederationRegistry.sol:FederationRegistry",
-      "implementation": "src/federated/FederationRegistry.sol:FederationRegistry",
+      "name": "IndependentStreamRegistry",
+      "artifact": "src/independent/IndependentStreamRegistry.sol:IndependentStreamRegistry",
+      "implementation": "src/independent/IndependentStreamRegistry.sol:IndependentStreamRegistry",
       "address": "0x000000000000000000000000000000000000a015",
       "status": "implemented",
       "functions": [
@@ -1229,9 +1229,9 @@
       "deferred": []
     },
     {
-      "name": "FederatedEditionAuction",
-      "artifact": "src/federated/FederatedEditionAuction.sol:FederatedEditionAuction",
-      "implementation": "src/federated/FederatedEditionAuction.sol:FederatedEditionAuction",
+      "name": "IndependentEditionAuction",
+      "artifact": "src/independent/IndependentEditionAuction.sol:IndependentEditionAuction",
+      "implementation": "src/independent/IndependentEditionAuction.sol:IndependentEditionAuction",
       "address": "0x000000000000000000000000000000000000a016",
       "status": "implemented",
       "functions": [
@@ -1289,7 +1289,7 @@
       "contract": "PackageRegistry",
       "signature": "bindStream(address)",
       "args": [
-        "Stream"
+        "Stream6529"
       ],
       "note": "the one Stream the package registry admits for"
     },
@@ -1306,7 +1306,7 @@
       "contract": "UniformEditionAuction",
       "signature": "setTarget(address,bool)",
       "args": [
-        "Editions",
+        "StreamEditions6529",
         true
       ]
     },
@@ -1321,7 +1321,7 @@
       "note": "ETH opening bid 0.05 ETH: a 1-wei self-bid cannot keep an unsold work from the museum"
     },
     {
-      "contract": "FederationRegistry",
+      "contract": "IndependentStreamRegistry",
       "signature": "setAdapter(address,uint8,bool)",
       "args": [
         "EnglishAuction",
@@ -1330,34 +1330,34 @@
       ]
     },
     {
-      "contract": "FederationRegistry",
+      "contract": "IndependentStreamRegistry",
       "signature": "setAdapter(address,uint8,bool)",
       "args": [
-        "FederatedEditionAuction",
+        "IndependentEditionAuction",
         1,
         true
       ]
     },
     {
-      "contract": "FederationRegistry",
+      "contract": "IndependentStreamRegistry",
       "signature": "approveTemplate(address,uint32,uint8)",
       "args": [
-        "FederatedStreamDeployer",
+        "IndependentStream721Deployer",
         1,
         0
       ]
     },
     {
-      "contract": "FederationRegistry",
+      "contract": "IndependentStreamRegistry",
       "signature": "approveTemplate(address,uint32,uint8)",
       "args": [
-        "FederatedEditionsDeployer",
+        "IndependentStreamEditionsDeployer",
         1,
         1
       ]
     },
     {
-      "contract": "FederationRegistry",
+      "contract": "IndependentStreamRegistry",
       "signature": "setEntropyModule(address)",
       "args": [
         "EntropyModule"
@@ -1372,39 +1372,39 @@
   ],
   "settings": [
     {
-      "contract": "Stream",
+      "contract": "Stream6529",
       "getter": "moduleDelay()",
       "launch": 604800
     },
     {
-      "contract": "Stream",
+      "contract": "Stream6529",
       "getter": "rescueDelay()",
       "launch": 1209600
     },
     {
-      "contract": "Editions",
+      "contract": "StreamEditions6529",
       "getter": "moduleDelay()",
       "launch": 604800
     },
     {
-      "contract": "Editions",
+      "contract": "StreamEditions6529",
       "getter": "rebindDelay()",
       "launch": 1209600
     },
     {
-      "contract": "Directory",
+      "contract": "StreamDirectory6529",
       "getter": "moduleDelay()",
       "launch": 604800
     },
     {
-      "contract": "Directory",
+      "contract": "StreamDirectory6529",
       "getter": "unclaimedPeriod()",
       "launch": 15552000
     }
   ],
   "initialInstalls": {
     "constructor": "Genesis modules and minters of Stream, Editions and Directory (their addresses are predicted before deployment); every immutable dependency and every dependency pinned by code hash.",
-    "wiring": "The package registry's Stream bind and entropy module, the edition auction's sale target, the ETH opening bid, the federation module's adapters, templates and entropy module, and the epoch-0 governance manifest.",
+    "wiring": "The package registry's Stream bind and entropy module, the edition auction's sale target, the ETH opening bid, the Independent Stream module's adapters, templates and entropy module, and the epoch-0 governance manifest.",
     "grants": "Curation signers are active once granted CURATION_SIGNER in holders."
   },
   "unusedRoles": [

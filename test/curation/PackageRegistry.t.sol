@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { Directory } from "src/core/Directory.sol";
+import { StreamDirectory6529 } from "src/core/StreamDirectory6529.sol";
 import { IMintPolicy } from "src/interfaces/core/IMintPolicy.sol";
 import { IModules } from "src/interfaces/core/IModules.sol";
 import { MintFacts, MintTerms } from "src/interfaces/core/CoreTypes.sol";
@@ -128,7 +128,9 @@ contract PackageRegistryTest is CurationBase {
         ICurationVerifier v = ICurationVerifier(address(verifier));
         bytes32 vh = address(verifier).codehash;
         address dir = address(
-            new Directory(address(manager), address(artists), address(0), address(0), address(0))
+            new StreamDirectory6529(
+                address(manager), address(artists), address(0), address(0), address(0)
+            )
         );
         // The directory: code that declares `IDirectory` (the accounts module is read from it
         // at every use, so nothing about the module is pinned here).
@@ -184,7 +186,9 @@ contract PackageRegistryTest is CurationBase {
         vm.etch(delegated, abi.encodePacked(hex"ef0100", address(verifier)));
         bytes32 h = delegated.codehash;
         address dir = address(
-            new Directory(address(manager), address(artists), address(0), address(0), address(0))
+            new StreamDirectory6529(
+                address(manager), address(artists), address(0), address(0), address(0)
+            )
         );
         vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, delegated));
         new PackageRegistry(
@@ -1464,7 +1468,9 @@ contract PackageRegistryTest is CurationBase {
             ICurationVerifier(address(verifier)),
             address(verifier).codehash,
             address(
-                new Directory(address(manager), address(odd), address(0), address(0), address(0))
+                new StreamDirectory6529(
+                    address(manager), address(odd), address(0), address(0), address(0)
+                )
             ),
             IEconomicsResolver(address(_policyStub)),
             address(0),
@@ -1486,7 +1492,9 @@ contract PackageRegistryTest is CurationBase {
             ICurationVerifier(address(verifier)),
             address(verifier).codehash,
             address(
-                new Directory(address(manager), address(odd), address(0), address(0), address(0))
+                new StreamDirectory6529(
+                    address(manager), address(odd), address(0), address(0), address(0)
+                )
             ),
             IEconomicsResolver(address(_policyStub)),
             address(0),

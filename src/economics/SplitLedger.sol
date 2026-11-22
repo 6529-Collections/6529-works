@@ -88,8 +88,8 @@ contract SplitLedger is ISplitLedger, EIP712 {
     mapping(address wallet => mapping(address asset => mapping(uint256 index => uint256))) private
         _marks;
 
-    /// @param resolver_ The artist payout resolver (the `Directory`), which also answers the
-    ///        unclaimed period (`IDirectory.unclaimedPeriod`). It must have code and not be an
+    /// @param resolver_ The artist payout resolver (the `StreamDirectory6529`), which also answers
+    ///        the unclaimed period (`IDirectory.unclaimedPeriod`). It must have code and not be an
     ///        EIP-7702 delegated account.
     /// @param network_ The network fee vault (a `GovernedVault`), deployed first. It must have
     ///        code and not be an EIP-7702 delegated account.

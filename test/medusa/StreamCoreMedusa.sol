@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
-import { Stream } from "src/core/Stream.sol";
+import { Stream6529 } from "src/core/Stream6529.sol";
 import {
     Collection,
     Core,
@@ -39,7 +39,7 @@ contract StreamCoreMedusa is MedusaBase {
     uint256 internal constant SALES = 3;
     address public constant MUSEUM = address(0x5EE);
 
-    Stream public immutable stream;
+    Stream6529 public immutable stream;
     MockTerms public immutable termsA;
     MockTerms public immutable termsB;
     Gate public immutable gate;
@@ -83,7 +83,7 @@ contract StreamCoreMedusa is MedusaBase {
             collectors[i] = new Actor();
             mActiveFrom[i] = block.timestamp;
         }
-        stream = new Stream(
+        stream = new Stream6529(
             address(gate),
             address(new CoreNoPins()),
             address(governor),

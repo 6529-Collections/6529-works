@@ -21,10 +21,10 @@ import { IWorkFacts } from "../interfaces/core/IWorkFacts.sol";
 
 /// @title StreamBase
 /// @notice The plain permanent ERC-721 of works (ADR 0010): who owns each token, the facts fixed
-///         at mint, and how the first sale ended. Shared by 6529 Stream (`Stream`) and each
-///         federated artist's token (`FederatedStream`), which differ only in the hooks at the
-///         end: who the minters are, which artists the token takes, where the modules are, and
-///         who the admin is.
+///         at mint, and how the first sale ended. Shared by 6529 Stream (`Stream6529`) and each
+///         Independent Stream artist's token (`IndependentStream6529`), which differ only in the
+///         hooks at the end: who the minters are, which artists the token takes, where the modules
+///         are, and who the admin is.
 /// @dev What a module or minter can do here, and nothing more:
 ///      - an active minter mints, stating the work's facts; the contract checks them;
 ///      - a minter (active or removed) that holds a token with no outcome recorded records the
@@ -300,8 +300,8 @@ abstract contract StreamBase is ERC721, IStream {
 
     // ------------------------------------------------------------------------------ internal
 
-    /// @dev Creates a collection (also used by a federated token's constructor). IDs run from 1
-    ///      and fit 32 bits, the width a work stores.
+    /// @dev Creates a collection (also used by an Independent Stream token's constructor). IDs run
+    ///      from 1 and fit 32 bits, the width a work stores.
     function _createCollection(string memory name_, bytes32 metadataHash)
         internal
         returns (uint256 collectionId)
@@ -343,7 +343,7 @@ abstract contract StreamBase is ERC721, IStream {
     function _wasMinter(address account) internal view virtual returns (bool);
 
     /// @dev Whether this token takes works of `artistId`: every artist unless the concrete
-    ///      token narrows it (a federated token takes its own artist only).
+    ///      token narrows it (an Independent Stream token takes its own artist only).
     function _takesArtist(uint256) internal view virtual returns (bool) {
         return true;
     }

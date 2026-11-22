@@ -11,10 +11,10 @@ vaults and the escrow. The policies that decide new terms are replaceable module
 
 | Contract | Kind | What it does |
 | --- | --- | --- |
-| [`SplitLedger`](../../src/economics/SplitLedger.sol) | permanent, unowned | Deploys split vaults, tracks each payee's entitlement, releases, signed releases, marks and forfeits. Its payout resolver is `Directory`. |
+| [`SplitLedger`](../../src/economics/SplitLedger.sol) | permanent, unowned | Deploys split vaults, tracks each payee's entitlement, releases, signed releases, marks and forfeits. Its payout resolver is `StreamDirectory6529`. |
 | [`SplitVault`](../../src/economics/SplitVault.sol) | permanent (one per payee list) | 66 bytes: accepts ETH from anyone and moves funds only on its ledger's instruction. |
 | [`RevenueEscrow`](../../src/economics/RevenueEscrow.sol) | permanent | Holds credits for refused payments; anyone flushes a credit to its wallet; `locked()` says whether it is mid-call. |
-| [`Directory`](../../src/core/Directory.sol) | permanent | Answers artists' payout addresses (from the accounts module) and holds `unclaimedPeriod`. |
+| [`StreamDirectory6529`](../../src/core/StreamDirectory6529.sol) | permanent | Answers artists' payout addresses (from the accounts module) and holds `unclaimedPeriod`. |
 | [`GovernedVault`](../../src/economics/GovernedVault.sol) | permanent | The network fee recipient and the museum as contracts: move what they hold only to a destination the network sets. |
 | `StreamTerms` ([`ITerms`](../../src/interfaces/core/ITerms.sol)) | module (TERMS) | Sets a token's royalty receiver and rate, locks the rate, lowers the network's fee share. |
 | [`EconomicsResolver`](../../src/economics/EconomicsResolver.sol) | module | Per-product fee recipient, fee share, royalty rate, default license, the museum. |
@@ -29,7 +29,7 @@ Rates and shares are out of 100,000, so the 6.529% royalty is exactly 6,529.
 | --- | --- | --- |
 | 6529 Stream | 25,000 (25%) | 6,529 |
 | 6529 Stream Editions | 25,000 (25%) | 6,529 |
-| Federated | 10,000 (10%), recorded per token at listing, only lowered | 6,529 |
+| Independent Stream | 10,000 (10%), recorded per token at listing, only lowered | 6,529 |
 
 These are values of the replaceable resolver; a change applies to new works only.
 
@@ -59,8 +59,8 @@ cannot starve a payment into the escrow.
 ### Releases
 
 - **Release.** Anyone releases a fixed payee to its own account. An artist-resolved payee is
-  released only by the artist's current payout address (asked from `Directory`, which asks the
-  accounts module), directly or by signature. If the accounts module is missing or fails, the
+  released only by the artist's current payout address (asked from `StreamDirectory6529`, which asks
+  the accounts module), directly or by signature. If the accounts module is missing or fails, the
   release reverts and the money stays in the vault.
 - **Lowering the network's share.** The TERMS module may lower a work's fee share, never raise
   it. It checks that the stated seller, fee recipient and current share give the stored
@@ -68,10 +68,10 @@ cannot starve a payment into the escrow.
 
 ## Unclaimed money
 
-`Directory.unclaimedPeriod` is the network's setting (180 days at launch), changed at once, zero
-allowed, with old and new in `UnclaimedPeriodSet`. The ledger and the escrow **read it when the
-action is attempted**, so a change applies to marks and credits already running. What changes is
-only when; the amounts are never more than the money that has itself waited.
+`StreamDirectory6529.unclaimedPeriod` is the network's setting (180 days at launch), changed at
+once, zero allowed, with old and new in `UnclaimedPeriodSet`. The ledger and the escrow **read it
+when the action is attempted**, so a change applies to marks and credits already running. What
+changes is only when; the amounts are never more than the money that has itself waited.
 
 - **Split vault share.** Anyone may mark a payee's releasable share. Once the unclaimed period
   in force has passed since the mark, anyone may send the network what of the marked level is
@@ -142,13 +142,13 @@ only when; the amounts are never more than the money that has itself waited.
 | ECO-43 | Every release from a vault that names the network fee vault also pays the fee vault its due share. | `test_ReleaseFromARoyaltyWalletAlsoPaysTheFeeVault`, `testFuzz_EveryReleasePathPaysTheNetwork` |
 | ECO-44 | Anyone may mark a payee's share; once the unclaimed period in force has passed since the mark, anyone may send the network what of the marked level is still unreleased, never money that arrived later. | `test_AShareClaimedInTimeIsNotForfeited`, `testFuzz_AMarkNeverTakesLaterMoney`, `test_ARunningMarkCannotBeRestarted` |
 | ECO-45 | Only the aged part of an escrow credit expires, once the unclaimed period in force has passed since it aged; a later deposit never shortens a clock, and moves a window's due time at most to two periods after the window's first deposit; never the network's own credit. | `test_ExpireRefusals`, `test_AStrangersDepositMovesAWindowsDueTimeByLessThanOnePeriod`, `testFuzz_ExpiryGuaranteesUnderAnyInterleaving`, `test_Credits_EscrowAStreamOfCreditsCannotHoldAWindowOpen` |
-| ECO-46 | `unclaimedPeriod` is the network's setting in `Directory` (180 days at launch), changed at once, zero allowed; the ledger and escrow read it when the action is attempted. | `test_UnclaimedPeriod_OneEightyDaysAtDeploymentOnlyTheNetworkSetsIt` |
+| ECO-46 | `unclaimedPeriod` is the network's setting in `StreamDirectory6529` (180 days at launch), changed at once, zero allowed; the ledger and escrow read it when the action is attempted. | `test_UnclaimedPeriod_OneEightyDaysAtDeploymentOnlyTheNetworkSetsIt` |
 | ECO-47 | The escrow's `locked()` is true exactly while it is inside a guarded call. | |
 
 ## Events
 
 Ledger: `WalletCreated`, releases, marks and forfeits. Escrow: credits, flushes, expiries.
-`Directory`: `UnclaimedPeriodSet`. TERMS: `RoyaltySet` on the token, `FeeShareLowered`.
+`StreamDirectory6529`: `UnclaimedPeriodSet`. TERMS: `RoyaltySet` on the token, `FeeShareLowered`.
 Signatures on the [events page](../integrators/events-and-indexing.md).
 
 ## Failure modes and recovery
@@ -157,5 +157,5 @@ Signatures on the [events page](../integrators/events-and-indexing.md).
 | --- | --- | --- |
 | A payout wallet refuses ETH | Credited in the escrow | Anyone flushes it to the wallet. |
 | An artist's account is frozen or changing | The artist's share waits in the vault | It releases once the account is settled. |
-| The accounts module is missing or fails | Artist releases revert; money stays | The network installs a module in `Directory`. |
+| The accounts module is missing or fails | Artist releases revert; money stays | The network installs a module in `StreamDirectory6529`. |
 | A payee never claims | The share waits | After the unclaimed period in force, from a mark, anyone may send it to the network. |

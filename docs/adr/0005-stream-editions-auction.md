@@ -73,12 +73,12 @@ checked against brute force and a gas prototype. The model is now
 | 6 | Edition auctions take ETH only. | Only ETH sales count for TDH (P29 §5), and hundreds of ERC-20 refunds multiply token risk. |
 | 7 | Anyone opens the edition auction, from the 1/1's start; the keeper batches it with the start. | No role is needed, and opening early gives the full bidding window. |
 | 8 | `FixedPriceSale`, `DutchSale`, `MintSaleBase` and `DutchPricing` are deleted; `FixedPriceSale` can be restored from v1.0.0-rc.1 if The Memes needs it (D84). | One sale method for editions, about 1,000 fewer audited lines. (Wording amended by [§15](#15-amendment-16-november-2026-wording-audited-in-decision-8).) |
-| 9 | An unbid federated 1/1 stays with its artist; the museum rule covers 6529 Stream only. (Amendment note, 15 November 2026: an unbid or frozen-out federated work goes to the template's own custody and can be re-auctioned, not to its artist; see [ADR 0008](0008-federation.md) §5.) | Federated works are the artist's own contract, outside network curation. |
+| 9 | An unbid Independent Stream 1/1 stays with its artist; the museum rule covers 6529 Stream only. (Amendment note, 15 November 2026: an unbid or frozen-out Independent Stream work goes to the template's own custody and can be re-auctioned, not to its artist; see [ADR 0008](0008-independent-stream.md) §5.) | Independent Stream works are the artist's own contract, outside network curation. |
 | 10 | The 30-day currency-freeze exit sends the work to the museum, the same branch as no bids, with the bid refunded. | One unsold outcome, whatever made the work unsold. |
 | 11 | The museum's address lives in `EconomicsResolver`, set by FUNDS_SETTER in the 14-day class, wired at genesis. | It is a network-level recipient, the class ADR 0001 §13 reserves for them. |
 | 12 | While the 1/1 is disputed, edition bidding continues and withdrawals open; a cancel of the 1/1 voids the edition auction, with full refunds. | A contested work keeps selling, and an upheld dispute leaves nothing minted or paid. |
 | 13 | The symbol is `STREAMEDITIONS` and the name "6529 Stream Editions". | D139. |
-| 14 | Sale methods stay extensible: a new method is a new adapter that governance admits, with no redeployment of 6529 Stream, 6529 Stream Editions or any federated contract. Federated contracts (v1.1) start with the same two auctions. | The network can add a fixed-price or other sale later without migrating tokens. |
+| 14 | Sale methods stay extensible: a new method is a new adapter that governance admits, with no redeployment of 6529 Stream, 6529 Stream Editions or any Independent Stream contract. Independent Stream contracts (v1.1) start with the same two auctions. | The network can add a fixed-price or other sale later without migrating tokens. |
 
 ### 2. Design summary
 
@@ -87,7 +87,7 @@ holds the bid book, the clearing, settlement and claims. Its frozen interface is
 [`IUniformEditionAuction`](../../src/interfaces/IUniformEditionAuction.sol).
 - Sales are keyed like the English auction's: `saleIdOf(token, id)`, the edition contract and
   the edition ID (the master's 6529 Stream token ID). One adapter can therefore serve every
-  listed token and, from v1.1, federated linked pairs (decision 14).
+  listed token and, from v1.1, Independent Stream linked pairs (decision 14).
 - `open(token, id, data)` is permissionless from the 1/1's start until the edition close. For
   6529 Stream Editions, `data` is the master's package item, checked against the item hash 6529
   Stream stored, so no proof is needed. It locks the creator's cap, the governed parameters
@@ -131,8 +131,8 @@ refund. Supply reaches exactly k once every winner has claimed.
 
 **6529 Stream Editions** ([`IEditions`](../../src/interfaces/core/IEditions.sol)).
 - `name()` is "6529 Stream Editions" and `symbol()` `STREAMEDITIONS` (D139, decision 13). The
-  identifiers `Editions`, `IEditions`, `PRODUCT_EDITIONS` and the `"EDITIONS"` binding label
-  stay: renaming them would change genesis keys, tools, selectors and events for nothing a
+  identifiers `StreamEditions6529`, `IEditions`, `PRODUCT_EDITIONS` and the `"EDITIONS"` binding
+  label stay: renaming them would change genesis keys, tools, selectors and events for nothing a
   collector sees.
 - `EditionTerms` becomes `{uint32 maxCount; address currency; bytes32 saleKind; bytes params;}`.
   `maxCount` is the creator's cap (0 for none), and 6529 Stream Editions enforces it for every
@@ -153,13 +153,15 @@ refund. Supply reaches exactly k once every winner has claimed.
 **The museum.** `IEconomicsResolver.museum()` names the 6529 Network Museum; `setMuseum`
 (compare-and-set on its own revision, as the resolver's other setters are) changes it. A
 canonical work, any token governance listed, whose 1/1 settles with no bid, or ends unsold
-after its currency stayed deprecated for 30 days, goes to the museum. A federated work goes to
-its artist. Governance lists 6529 Stream alone on the English auction (`setTarget` at genesis),
-so this is decision 9's rule; listing another token there would send its unbid works to the
-museum too. Only a federated work's artist may claim a pending delivery in the recipient's
-place (L-5), so no artist can take the museum's. The museum is a recipient chosen by the
-auction adapter and the resolver, not a hook in Core (ADR 0001 §15). (Amended by [§7](#7-amendment-31-october-2026-the-museum-branch-is-gated-on-6529-stream-in-code), then
-[§11](#11-amendment-31-october-2026-stream-records-each-11s-primary-sale-outcome-owner-decision-17): 6529 Stream itself moves an unsold work to the museum.)
+after its currency stayed deprecated for 30 days, goes to the museum. An Independent Stream work
+goes to its artist. Governance lists 6529 Stream alone on the English auction (`setTarget` at
+genesis), so this is decision 9's rule; listing another token there would send its unbid works to
+the museum too. Only an Independent Stream work's artist may claim a pending delivery in the
+recipient's place (L-5), so no artist can take the museum's. The museum is a recipient chosen by the
+auction adapter and the resolver, not a hook in Core (ADR 0001 §15). (Amended by
+[§7](#7-amendment-31-october-2026-the-museum-branch-is-gated-on-6529-stream-in-code), then
+[§11](#11-amendment-31-october-2026-stream-records-each-11s-primary-sale-outcome-owner-decision-17):
+6529 Stream itself moves an unsold work to the museum.)
 
 ### 3. Adding a sale method (decision 14)
 
@@ -174,25 +176,26 @@ name. No token contract hard-wires a minter.
   when it opens a sale, and refuses unusable terms (`InvalidSaleTerms`).
 - **Admission is governed.** `setAdmittedMinter(adapter, true)` on each token, SUCCESSOR_SETTER
   in the 30-day class, as today. The adapter's own settings (`setTarget`,
-  `setFederationRegistry`, pause) are mapped at the same time.
+  `setIndependentStreamRegistry`, pause) are mapped at the same time.
 
 **Worked example: restoring a fixed-price sale.**
 1. Port `FixedPriceSale` and the parts of `MintSaleBase` it needs from the `v1.0.0-rc.1` tag.
    It keeps its label, `SaleKind.FIXED_PRICE`, and reads its unit price, phases and caps from
    `EditionTerms.params` (for example `abi.encode(price, phases)`), since `price` is no longer
    a field. The OPEN window does not return.
-2. Review it, deploy it, and schedule `Editions.setAdmittedMinter(fixedPriceSale, true)` and its
-   `setTarget(editions, true)` (both 30 days), with its selectors in the governance manifest.
+2. Review it, deploy it, and schedule `StreamEditions6529.setAdmittedMinter(fixedPriceSale, true)`
+   and its `setTarget(editions, true)` (both 30 days), with its selectors in the governance
+   manifest.
 3. Packages approved afterwards may name `FIXED_PRICE` with those params. Editions sold by the
    auction are untouched: each edition stays with its first minter. (Amended by [§6](#6-amendment-31-october-2026-the-edition-is-bound-when-its-sale-opens): the
-   adapter calls `Editions.bindMinter(editionId, item)` when a sale opens, and each edition
-   stays with the adapter that opened its sale.)
+   adapter calls `StreamEditions6529.bindMinter(editionId, item)` when a sale opens, and each
+   edition stays with the adapter that opened its sale.)
 
-Nothing in 6529 Stream, 6529 Stream Editions or a federated contract is redeployed. The cost is
-a guarantee rc.1 had: the token no longer knows every valid kind, so a master whose edition
+Nothing in 6529 Stream, 6529 Stream Editions or an Independent Stream contract is redeployed. The
+cost is a guarantee rc.1 had: the token no longer knows every valid kind, so a master whose edition
 terms name a kind no admitted adapter serves still mints. The curation signer's tooling must
-therefore check that the named kind has an admitted adapter that would open the item, as it
-already simulates `openRecord` (LIM-EA-8).
+therefore check that the named kind has an admitted adapter that would open the item, as it already
+simulates `openRecord` (LIM-EA-8).
 
 ### 4. Governed parameters and delay classes
 
@@ -214,8 +217,8 @@ The edition auction's parameters are one `AuctionConfig`, set by `setConfig(expe
   the cut step, the mantissa table and the bounds.
 - **Other selectors.** The edition auction's `pause` is PAUSER (immediate) and blocks new opens
   only; `unpause` is UNPAUSER (48 hours, and no earlier than 48 hours after the pause);
-  `setTarget` and `setFederationRegistry` are SUCCESSOR_SETTER (30 days). Admitting it on 6529
-  Stream Editions is `setAdmittedMinter`, SUCCESSOR_SETTER (30 days). Every other function is
+  `setTarget` and `setIndependentStreamRegistry` are SUCCESSOR_SETTER (30 days). Admitting it on
+  6529 Stream Editions is `setAdmittedMinter`, SUCCESSOR_SETTER (30 days). Every other function is
   permissionless.
 - **PLATFORM loses its sale selectors**: no adapter has `openSale` or `closeSale`.
 - The top-step floor is the integrator's: it stops a configuration that would cap every
@@ -306,7 +309,8 @@ the museum branch on it, so decision 9 holds in code:
 
 - A 6529 Stream work whose 1/1 settles with no bid, or ends unsold after its currency stayed
   deprecated for 30 days, goes to the museum the resolver names at settlement.
-- Any other token's unbid work, federated or listed later by governance, goes to its artist.
+- Any other token's unbid work, Independent Stream or listed later by governance, goes to its
+  artist.
 - A delivery pending for the museum is claimed only by the museum recorded at settlement; for
   any other token the artist may also claim in the recipient's place (L-5), so no artist can
   take the museum's.
@@ -378,8 +382,9 @@ Made by PR #81, with the review fixes of #80 and #81.
 
 ### 11. Amendment (31 October 2026): Stream records each 1/1's primary-sale outcome (owner decision 17)
 
-Made by PR #82. It supersedes [§7](#7-amendment-31-october-2026-the-museum-branch-is-gated-on-6529-stream-in-code)
-and amends the decision 15 note under [Open items](#open-items).
+Made by PR #82. It supersedes
+[§7](#7-amendment-31-october-2026-the-museum-branch-is-gated-on-6529-stream-in-code) and amends the
+decision 15 note under [Open items](#open-items).
 
 - **The outcome.** The minting adapter's settlement call carries it:
   `IMintTarget.settlePrimary(id, outcome, buyer, currency, price)` replaces
@@ -406,13 +411,13 @@ and amends the decision 15 note under [Open items](#open-items).
   on every later transfer of every work, so it is left to the admission review.
   *Amended 1 November 2026 (owner decision 20):* a work an adapter minted and still holds,
   unsettled, 90 days after governance removed that adapter, can be moved to the museum by
-  `Stream.rescueToMuseum` (SUCCESSOR_SETTER, 30 days), which settles it as UNBID. A work the
+  `Stream6529.rescueToMuseum` (SUCCESSOR_SETTER, 30 days), which settles it as UNBID. A work the
   adapter handed to anyone else is not touched ([AUC-35](../spec/stream-and-auctions.md#rules-and-invariants)).
 - **The admission requirement** (decisions 9, 10, 15 and 17). Any 1/1 sale adapter admitted for
   6529 Stream must settle each sale with Stream (`settlePrimary`) and report its true outcome:
   SOLD with the buyer who paid, the currency and the price; UNBID when the sale ended with no
   bid; FROZEN_OUT when it ended unsold because its currency stayed frozen. Governance checks this
-  in the 30-day review before `Stream.setAdmittedMinter(adapter, true)` executes, with the three
+  in the 30-day review before `Stream6529.setAdmittedMinter(adapter, true)` executes, with the three
   cases on-chain enforcement leaves to it (a false SOLD, a work moved without settling, a burn
   outside a cancel); a guardian vetoes an admission that does not hold it.
   `StreamSaleMethods.t.sol` (`test_ASecondAdapterSendsAnUnbidWorkToTheMuseum`) shows a second
@@ -555,7 +560,7 @@ of margin under 350,000 (the tightest is 344,917).
   edition; every bid is refunded and the edition sealed at zero (EA-19).
 - **Wallets at open.** `open` deploys the seller's and royalty receiver's split wallets, so no
   payment from the sale and no royalty on its copies reaches an undeployed wallet (EA-20).
-- §4's close-offset row and decision 5's wording change accordingly; `setFederationRegistry`
+- §4's close-offset row and decision 5's wording change accordingly; `setIndependentStreamRegistry`
   leaves the adapter (it sells only 6529 Stream Editions); the 15-minute rule of D140/D141
   becomes the default, not a floor: an edition may close with its 1/1.
 
@@ -563,7 +568,7 @@ of margin under 350,000 (the tightest is 344,917).
 
 - Decision 8's phrase "about 1,000 fewer audited lines" is to be read as "about 1,000 fewer
   lines to review". The project is pre-audit; no contract has been audited, and the templates
-  federation uses are governance-approved ([ADR 0008](0008-federation.md)).
+  Independent Stream uses are governance-approved ([ADR 0008](0008-independent-stream.md)).
 
 ## What this amends
 
@@ -577,16 +582,17 @@ ADRs stay as written; each gets a pointer to this record.
   edition auction; fixed price and Dutch are removed (decision 8). Editions sell only by the
   edition auction, until governance admits another method (decision 14). Edition auctions take
   ETH only (decision 6). "If there are no bids, the NFT goes to the artist" becomes: to the 6529
-  Network Museum for 6529 Stream, and to the artist for a federated work (D140, decision 9).
+  Network Museum for 6529 Stream, and to the artist for an Independent Stream work (D140, decision
+  9).
 - **§6: editions.** The artist chooses only an optional cap; the auction decides the count and
   the price. No allowlist phases and no ERC-20 or permit payments for editions. The edition's
   sale opens from the 1/1's start; `createEdition` still follows the master's settlement.
 - **§12: disputes.** While the 1/1 is paused, its edition auction keeps taking bids and its
   bidders may withdraw; an upheld dispute's cancel voids it. The 30-day freeze exit that ADR
   0003 added sends a 6529 Stream work to the museum (decision 10).
-- **§16: federation.** Federated contracts start with the same two auctions, and further
-  methods are adapters governance admits (decision 14). "Gifting is a zero-price adapter sale"
-  has no adapter in v1. An unbid federated 1/1 stays with its artist.
+- **§16: Independent Stream.** Independent Stream contracts start with the same two auctions, and
+  further methods are adapters governance admits (decision 14). "Gifting is a zero-price adapter
+  sale" has no adapter in v1. An unbid Independent Stream 1/1 stays with its artist.
 - **§17: reuse.** The ported allowlist phases, ERC-20 permits for editions and Dutch pricing
   leave v1; they remain at `v1.0.0-rc.1`.
 - **Non-goals.** "Editions keep fixed-price and Dutch sales" no longer holds: editions sell by
@@ -601,11 +607,11 @@ ADRs stay as written; each gets a pointer to this record.
   opens permissionlessly at the package's terms, and the cap is the creator's only input, signed
   with the package. Artist approval of a sale has nothing left to approve.
 - **Owner decision 6 (the restraint).** PLATFORM no longer runs edition sales during a
-  restraint, and an unbid 6529 Stream work's settlement no longer waits for one; a federated
-  work's still does.
+  restraint, and an unbid 6529 Stream work's settlement no longer waits for one; an Independent
+  Stream work's still does.
 - **The selector table.** "Sale adapters `openSale`, `closeSale`: zero-delay PLATFORM" is
-  removed. The `setTarget`, `setFederationRegistry` and `pause`/`unpause` rows cover the edition
-  auction. New: `UniformEditionAuction.setConfig`, standard (48 hours), compare-and-set with
+  removed. The `setTarget`, `setIndependentStreamRegistry` and `pause`/`unpause` rows cover the
+  edition auction. New: `UniformEditionAuction.setConfig`, standard (48 hours), compare-and-set with
   bounds; `EconomicsResolver.setMuseum`, funds and recipients (14 days), compare-and-set.
 
 **[ADR 0004](0004-gas-budgets-under-glamsterdam.md)**
@@ -710,9 +716,9 @@ over as the edition auction lands.
 2. **In parallel:**
    - L1: the clearing library and its Halmos proofs, against the reference model;
    - L2: `UniformEditionAuction`, with a stateless lens if it outgrows EIP-170;
-   - L3: `Editions`, `EditionRules` and the `EditionTerms` change, deleting the fixed-price and
-     Dutch adapters, genesis, Deploy and Verify, the role matrix and the rename; it lands the
-     terms change that L2 reads (`maxCount`);
+   - L3: `StreamEditions6529`, `EditionRules` and the `EditionTerms` change, deleting the
+     fixed-price and Dutch adapters, genesis, Deploy and Verify, the role matrix and the rename; it
+     lands the terms change that L2 reads (`maxCount`);
    - L4: the museum in `EnglishAuction` and `EconomicsResolver`, within the bytecode;
    - L5: invariants, differential fuzzing against brute force, integration flows and the gas
      rows;
@@ -730,9 +736,9 @@ before each merge.
 
 ## Open items
 
-- **6529 Stream's own 1/1 sale method.** Decision 14 covers editions and federated contracts.
-  6529 Stream still accepts only `SaleKind.ENGLISH_AUCTION`, both for its items and for its
-  minter, so a new 1/1 sale method on 6529 Stream would need a new Stream. Whether decision 14
+- **6529 Stream's own 1/1 sale method.** Decision 14 covers editions and Independent Stream
+  contracts. 6529 Stream still accepts only `SaleKind.ENGLISH_AUCTION`, both for its items and for
+  its minter, so a new 1/1 sale method on 6529 Stream would need a new Stream. Whether decision 14
   should reach 6529 Stream's 1/1s too, before rc.2, is the owner's call.
 
   **Closed, 31 October 2026 (owner decision 15).** Decision 14 covers 6529 Stream's own 1/1s
@@ -740,7 +746,7 @@ before each merge.
   mints an item only for an admitted adapter whose `saleKind()` is the item's sale kind, and
   checks only that the item names one; the adapter checks the sale's currency and params. The
   English auction is admitted at genesis; a later 1/1 method is an adapter governance admits
-  (`Stream.setAdmittedMinter`, SUCCESSOR_SETTER, the 30-day class), with no new Stream.
+  (`Stream6529.setAdmittedMinter`, SUCCESSOR_SETTER, the 30-day class), with no new Stream.
   `primaryTerms` reports, for a minted work, the kind its adapter had at its first admission.
   Removing an adapter stops its new mints only: it keeps its index, so it still settles,
   delivers and cancels every sale it started (AUC-8, AUC-9). As for editions, an item naming a
@@ -754,8 +760,8 @@ before each merge.
   another adapter follow it. Any 1/1 sale adapter admitted for 6529 Stream must therefore:
   - send a work that ends its sale unbid, and a work that leaves the 30-day currency-freeze
     exit unsold, to `IEconomicsResolver.museum()`, read at settlement;
-  - never send either to the work's artist (decision 9's artist branch is for federated works
-    only);
+  - never send either to the work's artist (decision 9's artist branch is for Independent Stream
+    works only);
   - and governance checks both in the 30-day review before `Stream.setAdmittedMinter(adapter,
     true)` executes; a guardian vetoes an admission that does not hold them.
 

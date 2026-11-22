@@ -1,10 +1,10 @@
 # Works and storage
 
-A work has two halves. Its **facts** live in `WorkFacts`, a permanent, unowned contract that
-serves 6529 Stream and every federated token, keyed by token contract and token ID. The **rules**
-for changing a work (who may edit, when, with whose consent) live in the token's `RECORDS`
-module, `WorkRules`, which the network can replace. The bytes of a work live in the permanent
-`ContentStore`; where else copies are served from lives in the replaceable `WorkDelivery`.
+A work has two halves. Its **facts** live in `StreamWorkFacts6529`, a permanent, unowned contract
+that serves 6529 Stream and every Independent Stream token, keyed by token contract and token ID.
+The **rules** for changing a work (who may edit, when, with whose consent) live in the token's
+`RECORDS` module, `WorkRules`, which the network can replace. The bytes of a work live in the
+permanent `ContentStore`; where else copies are served from lives in the replaceable `WorkDelivery`.
 
 > Pre-audit. See the [project status](../../README.md#status).
 
@@ -12,8 +12,8 @@ module, `WorkRules`, which the network can replace. The bytes of a work live in 
 
 | Contract | Kind | What it does |
 | --- | --- | --- |
-| [`WorkFacts`](../../src/core/WorkFacts.sol) ([`IWorkFacts`](../../src/interfaces/core/IWorkFacts.sol)) | permanent, unowned | Media, descriptive record, license, finalize flag, pinned renderer, locks, on-chain-complete flag. Accepts changes only from the token's RECORDS module, within its own rules. |
-| `WorkRules` ([`IWorkRules`](../../src/interfaces/core/IWorkRules.sol)) | module (RECORDS) | Who edits a record and when; finalize timing and its 14-day notice; relicense and royalty-rate consent; repin; renouncing powers; the state hash and version; added stores; the delivery pointer. One instance serves Stream; federated tokens use the instance in `Directory.FEDERATED_RECORDS`. |
+| [`StreamWorkFacts6529`](../../src/core/StreamWorkFacts6529.sol) ([`IWorkFacts`](../../src/interfaces/core/IWorkFacts.sol)) | permanent, unowned | Media, descriptive record, license, finalize flag, pinned renderer, locks, on-chain-complete flag. Accepts changes only from the token's RECORDS module, within its own rules. |
+| `WorkRules` ([`IWorkRules`](../../src/interfaces/core/IWorkRules.sol)) | module (RECORDS) | Who edits a record and when; finalize timing and its 14-day notice; relicense and royalty-rate consent; repin; renouncing powers; the state hash and version; added stores; the delivery pointer. One instance serves Stream; Independent Stream tokens use the instance in `StreamDirectory6529.INDEPENDENT_RECORDS`. |
 | [`WorkDelivery`](../../src/stream/WorkDelivery.sol) ([`ILocators`](../../src/interfaces/core/ILocators.sol)) | module | Locators (Arweave and IPFS addresses) and the preferred copy of each file. |
 | [`ContentStore`](../../src/content/ContentStore.sol) | permanent, unowned | Chunks, manifests, file IDs, verified reads, base64 attestation, completeness attestation. |
 | [`DependencyRegistry`](../../src/content/DependencyRegistry.sol) | module | Names and versions of script libraries, each one complete file. |
@@ -22,7 +22,7 @@ module, `WorkRules`, which the network can replace. The bytes of a work live in 
 
 ### Facts: what never changes
 
-`WorkFacts` holds these whatever any module does:
+`StreamWorkFacts6529` holds these whatever any module does:
 
 - A record opens only with the exact item the token was minted from (checked against
   `IStream(token).itemHashOf`), and its media are the files that item committed to. Anyone may
@@ -49,7 +49,7 @@ module, `WorkRules`, which the network can replace. The bytes of a work live in 
 - **Repin.** The network alone may repin a finalized work's renderer until the artist locks it.
 - **Renounce.** The artist gives up the royalty-rate, relicense or repin power for good. Giving up
   the royalty or license power also needs the network's call. Renouncing maps to
-  `WorkFacts.lock` and `ITerms.lockRoyaltyRate`.
+  `StreamWorkFacts6529.lock` and `ITerms.lockRoyaltyRate`.
 - **Replay.** Every applied change bumps the version and the state hash, so no signature applies
   twice. A successor module starts every work at a new state hash.
 - **Stores and delivery.** The network adds stores (append-only, code hash pinned) and replaces
@@ -86,7 +86,7 @@ after that, completeness is one read.
 
 | ID | Rule | Tests |
 | --- | --- | --- |
-| WS-1 | Every per-token change of `WorkFacts` reverts with `RecordNotOpen` until the record is opened. | |
+| WS-1 | Every per-token change of `StreamWorkFacts6529` reverts with `RecordNotOpen` until the record is opened. | |
 | WS-2 | `open` is permissionless and accepts only the item the token was minted from and its committed media: 1 to 32 files, the primary first, each declared SHA-256 equal to the store's. | |
 | WS-3 | A record opens once, for a live token. | |
 | WS-4 | The approved record file and a non-CC0 license are stored as approved, so neither can keep a minted work from opening. | |
@@ -129,7 +129,7 @@ after that, completeness is one read.
 | WS-41 | Added stores are append-only with a pinned code hash; a retired store counts nothing new. | |
 | WS-42 | Retired: the ranged sync walks are replaced by `attestComplete` in the content store. | |
 | WS-43 | Retired: the ranged sync walks are replaced by `attestComplete` in the content store. | |
-| WS-44 | `WorkFacts` logs every change; its state is rebuilt from its logs alone. | |
+| WS-44 | `StreamWorkFacts6529` logs every change; its state is rebuilt from its logs alone. | |
 | WS-45 | Item kinds, seed policies and roles are open `uint8`s, so a future policy's item still opens. | |
 | WS-46 | Retired: the seed is stored in the token at mint; `open` does not interpret seed policies. | |
 | WS-50 | A linked chunk reads exactly as the same bytes written whole. | `test_Link_IsTheSameChunkAsAWholeWrite`, `testFuzz_Link_AnySplitGivesTheSameChunk` |
@@ -141,7 +141,7 @@ after that, completeness is one read.
 
 ## Events
 
-`WorkFacts`: `RecordOpened`, `RecordSet`, `LicenseSet`, `Finalized`, `RendererRepinned`,
+`StreamWorkFacts6529`: `RecordOpened`, `RecordSet`, `LicenseSet`, `Finalized`, `RendererRepinned`,
 `Locked`, `OnChainComplete`. `WorkRules`: `FinalizeNoticeRecorded`, `PowersRenounced`,
 `DeliverySet`. Signatures on the [events page](../integrators/events-and-indexing.md).
 

@@ -6,8 +6,9 @@ import { IERC4906 } from "@openzeppelin/contracts/interfaces/IERC4906.sol";
 import { Collection, MintFacts, Outcome, Work } from "./CoreTypes.sol";
 
 /// @title IStream
-/// @notice A permanent ERC-721 of works: 6529 Stream, and each federated artist's own token. It
-///         holds who owns each token, the facts fixed at mint and how the first sale ended.
+/// @notice A permanent ERC-721 of works: 6529 Stream, and each Independent Stream artist's own
+///         token. It holds who owns each token, the facts fixed at mint and how the first sale
+///         ended.
 /// @dev The seam (ADR 0010). A minter may mint, and while it still holds a token whose sale
 ///      has no outcome it may record the outcome, once, or burn the token. The TERMS module may
 ///      set a token's royalty receiver and rate. The RENDERER module draws works that are not
@@ -74,7 +75,7 @@ interface IStream is IERC4906, IERC2981 {
 
     /// @notice The mint facts are malformed (a zero item hash, content hash or artist ID, an
     ///         artist ID over 160 bits, a rate over 100,000, a nonzero rate with a zero
-    ///         royalty receiver), or name an artist this token does not take (a federated
+    ///         royalty receiver), or name an artist this token does not take (an Independent Stream
     ///         token takes only its own artist).
     error InvalidMint();
     /// @notice A live token already has this content hash.
@@ -114,10 +115,10 @@ interface IStream is IERC4906, IERC2981 {
     ///      the rate is zero (royalties paid to the zero address would be lost); an existing
     ///      collection; no live
     ///      token with this content hash (a burned token's content may be minted again); an
-    ///      artist the token takes (a federated token: its own artist only). A minter mints to
-    ///      itself and records the outcome before the token leaves it: a token minted to anyone
-    ///      else is left with no outcome, so any minter that later holds it may record or burn
-    ///      it, and the network may rescue it from a removed minter.
+    ///      artist the token takes (an Independent Stream token: its own artist only). A minter
+    ///      mints to itself and records the outcome before the token leaves it: a token minted to
+    ///      anyone else is left with no outcome, so any minter that later holds it may record or
+    ///      burn it, and the network may rescue it from a removed minter.
     /// @param to The first holder (the sale contract itself, while the sale runs).
     /// @param f The work's facts.
     /// @return tokenId The new token ID: the next in one sequence from 1, never reused.

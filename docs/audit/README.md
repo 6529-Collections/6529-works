@@ -22,9 +22,10 @@ How to build and run the tests: the [quickstart](../quickstart.md) and
 ## Where to start
 
 The permanent contracts are small and are the part that can never be fixed after launch:
-[`src/core/`](../../src/core/) (`Stream`, `Editions`, `WorkFacts`, `Directory`, `Modules`), the
-split ledger and vaults, the escrow and the content store. The most useful review tries to
-break one sentence of the promise in [ADR 0010](../adr/0010-plain-permanent-core.md):
+[`src/core/`](../../src/core/) (`Stream6529`, `StreamEditions6529`, `StreamWorkFacts6529`,
+`StreamDirectory6529`, `Modules`), the split ledger and vaults, the escrow and the content store.
+The most useful review tries to break one sentence of the promise in
+[ADR 0010](../adr/0010-plain-permanent-core.md):
 
 1. no module or authority moves, freezes or burns a held token, and a transfer depends on no
    other contract;

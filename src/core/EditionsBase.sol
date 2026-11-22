@@ -14,8 +14,9 @@ import { IStream } from "../interfaces/core/IStream.sol";
 
 /// @title EditionsBase
 /// @notice The plain permanent ERC-1155 of editions (ADR 0010): who owns each copy, and each
-///         edition's supply. Shared by 6529 Stream Editions (`Editions`) and each federated
-///         artist's editions (`FederatedEditions`), which differ only in the hooks at the end.
+///         edition's supply. Shared by 6529 Stream Editions (`StreamEditions6529`) and each
+///         Independent Stream artist's editions (`IndependentStreamEditions6529`), which differ
+///         only in the hooks at the end.
 /// @dev What this contract guarantees, whatever its modules and minters do:
 ///      - an edition is created once, by an active minter, for a master that exists and is not
 ///        burned, and that minter becomes its only minter;

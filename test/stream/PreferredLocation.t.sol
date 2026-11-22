@@ -8,8 +8,8 @@ import { RulesFixture } from "../records/RulesFixture.sol";
 
 /// @notice Fuzzes preferred-location resolution against a model: the file's preference, then
 ///         the collection's kind, then the token's kind, then the first live locator, then the
-///         on-chain copy of a work `WorkFacts` records as on-chain complete. Every tier chooses
-///         among the live locators, whoever added them; a dead locator is never served.
+///         on-chain copy of a work `StreamWorkFacts6529` records as on-chain complete. Every tier
+///         chooses among the live locators, whoever added them; a dead locator is never served.
 contract PreferredLocationTest is RulesFixture {
     uint256 internal constant NONE = type(uint256).max;
 

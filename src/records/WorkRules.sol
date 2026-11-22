@@ -20,8 +20,9 @@ import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 
 /// @title WorkRules
 /// @notice The RECORDS module (replaceable): who may change a work's record in `IWorkFacts`,
-///         and when, for every token whose RECORDS slot names it (6529 Stream, and federated
-///         tokens through the directory's `FEDERATED_RECORDS` slot). Keyed by token contract.
+///         and when, for every token whose RECORDS slot names it (6529 Stream, and Independent
+///         Stream tokens through the directory's `INDEPENDENT_RECORDS` slot). Keyed by token
+///         contract.
 ///         - The lead artist (any wallet of the account `IStream.workOf(id).artistId`) replaces
 ///           the descriptive record until finalize, and finalizes at any time.
 ///         - Once the first sale has an outcome, anyone records a finalize notice, and finalizes

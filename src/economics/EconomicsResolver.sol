@@ -8,7 +8,7 @@ import { ProtocolContracts } from "../libraries/ProtocolContracts.sol";
 import { IEconomicsResolver } from "../interfaces/IEconomicsResolver.sol";
 import {
     PRODUCT_EDITIONS,
-    PRODUCT_FEDERATED,
+    PRODUCT_INDEPENDENT,
     PRODUCT_STREAM,
     ProductEconomics,
     WorkTerms
@@ -24,7 +24,7 @@ import { Splits } from "./Splits.sol";
 /// @title EconomicsResolver
 /// @notice The network's governed economics for new works (ADR 0001 sections 2, 5, 7 and 8).
 ///         Launch defaults: 6529 Stream and 6529 Stream Editions pay 75% to the artist portion
-///         and 25% to the network; 6529 Stream Federated pays 90/10; the royalty rate is 6.529%
+///         and 25% to the network; 6529 Independent Stream pays 90/10; the royalty rate is 6.529%
 ///         (6,529 out of 100,000); the default license is CC0. Currencies come from the asset
 ///         allowlist.
 /// @dev Changes apply to new works only: a work locks its terms (seller wallet, fee terms,
@@ -53,8 +53,8 @@ import { Splits } from "./Splits.sol";
 contract EconomicsResolver is IEconomicsResolver, AccessManaged {
     /// @notice The launch network share of Stream and Editions primary sales and royalties.
     uint32 public constant DEFAULT_FEE_SHARE = 25_000;
-    /// @notice The launch network share for 6529 Stream Federated.
-    uint32 public constant FEDERATED_FEE_SHARE = 10_000;
+    /// @notice The launch network share for 6529 Independent Stream.
+    uint32 public constant INDEPENDENT_FEE_SHARE = 10_000;
     /// @notice The launch royalty rate: 6.529%.
     uint32 public constant DEFAULT_ROYALTY_RATE = 6_529;
     /// @notice The launch default license's SPDX ID; its key is `WorksHashing.CC0_LICENSE_KEY`.
@@ -102,8 +102,8 @@ contract EconomicsResolver is IEconomicsResolver, AccessManaged {
             ProductEconomics(feeRecipient, DEFAULT_FEE_SHARE, DEFAULT_ROYALTY_RATE);
         _configure(PRODUCT_STREAM, standard, cc0);
         _configure(PRODUCT_EDITIONS, standard, cc0);
-        standard.feeShare = FEDERATED_FEE_SHARE;
-        _configure(PRODUCT_FEDERATED, standard, cc0);
+        standard.feeShare = INDEPENDENT_FEE_SHARE;
+        _configure(PRODUCT_INDEPENDENT, standard, cc0);
         _setMuseum(museum_);
     }
 

@@ -36,8 +36,8 @@ abstract contract EditionsFixture is CoreFixture {
     }
 }
 
-/// @notice An ERC-1155 receiver that accepts, refuses, or re-enters `Editions.mint` through the
-///         sale contract that is minting to it.
+/// @notice An ERC-1155 receiver that accepts, refuses, or re-enters `StreamEditions6529.mint`
+///         through the sale contract that is minting to it.
 contract EditionsReceiver is IERC1155Receiver {
     enum Mode {
         ACCEPT,

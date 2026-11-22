@@ -163,9 +163,9 @@ class RepositoryTest(unittest.TestCase):
         self.assertEqual(sepolia["contracts"]["Stream"], record["contracts"]["Stream"]["address"])
         self.assertFalse(facts["networks"]["mainnet"]["deployed"])
         names = {c["contract"]: c for c in facts["collections"]}
-        self.assertEqual(names["Stream"]["name"], "6529 Stream")
+        self.assertEqual(names["Stream6529"]["name"], "6529 Stream")
         self.assertEqual(
-            (names["Editions"]["name"], names["Editions"]["symbol"]),
+            (names["StreamEditions6529"]["name"], names["StreamEditions6529"]["symbol"]),
             ("6529 Stream Editions", "STREAMEDITIONS"),
         )
         auction = facts["parameters"]["editionAuction"]

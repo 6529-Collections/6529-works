@@ -4,8 +4,8 @@ pragma solidity ^0.8.24;
 import { CommonBase } from "forge-std/Base.sol";
 import { StdCheats } from "forge-std/StdCheats.sol";
 import { StdUtils } from "forge-std/StdUtils.sol";
-import { Editions } from "src/core/Editions.sol";
-import { Stream } from "src/core/Stream.sol";
+import { StreamEditions6529 } from "src/core/StreamEditions6529.sol";
+import { Stream6529 } from "src/core/Stream6529.sol";
 import { Edition, MintFacts } from "src/interfaces/core/CoreTypes.sol";
 import { MockSale } from "../mocks/core/CoreMocks.sol";
 
@@ -14,8 +14,8 @@ import { MockSale } from "../mocks/core/CoreMocks.sol";
 ///         burns. The ghosts record what each guarantee says the state must be; the handler never
 ///         reverts (failed calls are expected and ignored).
 contract EditionsHandler is CommonBase, StdCheats, StdUtils {
-    Editions public immutable editions;
-    Stream public immutable stream;
+    StreamEditions6529 public immutable editions;
+    Stream6529 public immutable stream;
     MockSale[2] public sales;
     /// @dev The network (the AccessManager's admin), allowed every restricted call.
     address public immutable network;
@@ -28,7 +28,12 @@ contract EditionsHandler is CommonBase, StdCheats, StdUtils {
     mapping(uint256 id => uint256) public ghostBurned;
     uint256 public rebinds;
 
-    constructor(Editions editions_, Stream stream_, MockSale streamSale, address network_) {
+    constructor(
+        StreamEditions6529 editions_,
+        Stream6529 stream_,
+        MockSale streamSale,
+        address network_
+    ) {
         editions = editions_;
         stream = stream_;
         network = network_;

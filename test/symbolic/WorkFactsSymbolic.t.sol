@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { Test } from "forge-std/Test.sol";
-import { WorkFacts } from "src/core/WorkFacts.sol";
+import { StreamWorkFacts6529 } from "src/core/StreamWorkFacts6529.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { Facts, Slots } from "src/interfaces/core/CoreTypes.sol";
 import { IWorkFacts } from "src/interfaces/core/IWorkFacts.sol";
@@ -10,8 +10,8 @@ import { MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { License, PackageItem } from "src/interfaces/types/PackageTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 
-/// @notice A token contract as `WorkFacts` sees it: the item hash of each token, its modules,
-///         and a metadata hook that does nothing.
+/// @notice A token contract as `StreamWorkFacts6529` sees it: the item hash of each token, its
+///         modules, and a metadata hook that does nothing.
 contract SymFactsToken {
     mapping(uint256 tokenId => bytes32) public itemHashOf;
     mapping(bytes32 slot => address) public moduleOf;
@@ -63,8 +63,8 @@ contract SymFactsRenderer {
     }
 }
 
-/// @notice Halmos proofs on the permanent record (`src/core/WorkFacts.sol`): the guarantees it
-///         keeps whatever the token's RECORDS module does. Run with
+/// @notice Halmos proofs on the permanent record (`src/core/StreamWorkFacts6529.sol`): the
+///         guarantees it keeps whatever the token's RECORDS module does. Run with
 ///         `FOUNDRY_PROFILE=symbolic halmos --contract WorkFactsSymbolicTest`.
 /// @dev Each proof prepares a starting state and then runs one action, and checks the rule
 ///      across that action. Each proof takes the starting states its rule depends on (stated on
@@ -72,7 +72,7 @@ contract SymFactsRenderer {
 ///      record, in this order, each step taken or not: replace the license (by "cc0-1.0" on the
 ///      CC0 token, "Apache-2.0" on the other) and the record file, finalize, lock the license,
 ///      lock the pin, mark the work on-chain complete. The action is any of the seven
-///      `WorkFacts` writes (`open` again with the item the token was minted from,
+///      `StreamWorkFacts6529` writes (`open` again with the item the token was minted from,
 ///      `markOnChainComplete`, `setRecord`, `setLicense`, `finalize`, `repin`, `lock`), from any
 ///      caller (the RECORDS module or anyone else), with a symbolic record file, license text
 ///      file and lock flags.
@@ -91,7 +91,7 @@ contract WorkFactsSymbolicTest is Test {
     bytes32 internal constant CC0_TEXT = keccak256("cc0 text");
     bytes32 internal constant MIT_TEXT = keccak256("mit text");
 
-    WorkFacts internal facts;
+    StreamWorkFacts6529 internal facts;
     SymFactsToken internal token;
     SymFactsStore internal store;
     address internal r1;
@@ -113,7 +113,7 @@ contract WorkFactsSymbolicTest is Test {
     function setUp() public {
         token = new SymFactsToken();
         store = new SymFactsStore();
-        facts = new WorkFacts(address(store), CC0_TEXT);
+        facts = new StreamWorkFacts6529(address(store), CC0_TEXT);
         r1 = address(new SymFactsRenderer());
         r2 = address(new SymFactsRenderer());
         token.setModule(Slots.RECORDS, MODULE);

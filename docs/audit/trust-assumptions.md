@@ -69,8 +69,8 @@ Ordinary keys the network grants and revokes at once.
 The sale contracts are each token's minters. A minter can mint, record a sale's outcome once
 and burn a token it still holds unsold. It cannot reach a token after the outcome is recorded,
 or any token it does not hold. A removed minter mints nothing new; it still finishes what it
-started, and the network can `rescue` what it leaves unsold. A federated token's minters are
-the federation module's answer.
+started, and the network can `rescue` what it leaves unsold. An Independent Stream token's minters
+are the Independent Stream module's answer.
 
 ## Resolvers and renderer pins
 
@@ -78,22 +78,22 @@ the federation module's answer.
 | --- | --- |
 | TERMS | A hostile one can change the receiver and an unlocked rate of future royalties; never royalties already paid, never a locked rate |
 | RENDERER | `tokenURI` of an unfinalized work reverts; a finalized work is drawn only by its pinned renderer, which `tokenURI` checks by code hash |
-| RECORDS | Can change an unfinalized record and license within `WorkFacts`' rules; never media, never a finalized record, never away from CC0, never past a lock |
+| RECORDS | Can change an unfinalized record and license within `StreamWorkFacts6529`' rules; never media, never a finalized record, never away from CC0, never past a lock |
 | ACCOUNTS | Names artists' payout addresses; a missing or failing one makes releases revert, and the money stays in the vault |
-| FEDERATION | Decides which sale contracts mint for federated tokens; cannot move, burn or re-record a sold token |
+| INDEPENDENT_STREAM | Decides which sale contracts mint for Independent Stream tokens; cannot move, burn or re-record a sold token |
 | Mint policy, economics resolver | Decide what new works may be minted and on what terms; nothing about existing tokens |
 
 ### Points of care for the network
 
-- **Federated tokens need an immediate role.** A federated token accepts the network's
-  `rescue`, `setRescueDelay`, `rebind` and `setRebindDelay` only from a role member calling
-  directly with no delay; giving that role a delay would lock these functions (LIM-GV-31).
+- **Independent Stream tokens need an immediate role.** An Independent Stream token accepts the
+  network's `rescue`, `setRescueDelay`, `rebind` and `setRebindDelay` only from a role member
+  calling directly with no delay; giving that role a delay would lock these functions (LIM-GV-31).
 - **A replacement module carries state over.** A new accounts module must carry the artists
   over; a new mint policy starts with no content releases and no barred items, and the network
   releases again what is still to be minted (LIM-GV-32;
   [Replacing a module](../operations/replacing-modules.md)).
 - **Off-chain copies of a finalized work** are named by the replaceable delivery module; the
-  content hashes stay in `WorkFacts` (LIM-CNT-23).
+  content hashes stay in `StreamWorkFacts6529` (LIM-CNT-23).
 - **A sale contract can close an edition for good** by sealing it at zero (LIM-EA-21).
 - **Unclaimed shares** of a payee who cannot release (a frozen or unresolved artist account)
   can still be marked and forfeited after the unclaimed period (LIM-ECO-13).

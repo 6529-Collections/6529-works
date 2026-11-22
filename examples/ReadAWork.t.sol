@@ -4,10 +4,10 @@ pragma solidity 0.8.37;
 // Example: read everything a marketplace or wallet shows for one 6529 Stream work, and the
 // network's settings that a careful collector may want to watch.
 //
-// The reads are plain view calls on the permanent contracts (ADR 0010): `Stream` for ownership,
-// the facts fixed at mint and how the first sale ended; `WorkFacts` for the work's permanent
-// record (media, record file, license, the renderer pinned at finalization); the renderer for
-// the metadata. A front end makes the same calls with `cast call` or a library such as viem;
+// The reads are plain view calls on the permanent contracts (ADR 0010): `Stream6529` for ownership,
+// the facts fixed at mint and how the first sale ended; `StreamWorkFacts6529` for the work's
+// permanent record (media, record file, license, the renderer pinned at finalization); the renderer
+// for the metadata. A front end makes the same calls with `cast call` or a library such as viem;
 // the cast versions are in examples/README.md.
 
 import { Vm } from "forge-std/Vm.sol";

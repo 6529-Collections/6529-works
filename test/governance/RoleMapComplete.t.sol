@@ -4,18 +4,18 @@ pragma solidity ^0.8.24;
 import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { DeployCore } from "script/DeployCore.sol";
-import { FederatedEditions } from "src/federated/FederatedEditions.sol";
-import { FederatedStream } from "src/federated/FederatedStream.sol";
+import { IndependentStreamEditions6529 } from "src/independent/IndependentStreamEditions6529.sol";
+import { IndependentStream6529 } from "src/independent/IndependentStream6529.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { Roles } from "src/governance/Roles.sol";
-import { IFederatedMembership } from "src/interfaces/IFederatedMembership.sol";
+import { IIndependentStreamMembership } from "src/interfaces/IIndependentStreamMembership.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { IEditions } from "src/interfaces/core/IEditions.sol";
 import { IModuleSlots } from "src/interfaces/core/IModules.sol";
 import { IStream } from "src/interfaces/core/IStream.sol";
 import { WorkRules } from "src/records/WorkRules.sol";
 import { WorkDelivery } from "src/stream/WorkDelivery.sol";
-import { FederatedIntegrationBase } from "../integration/FederatedIntegrationBase.sol";
+import { IndependentIntegrationBase } from "../integration/IndependentIntegrationBase.sol";
 
 /// @notice Every restricted function of every deployed contract is in the genesis role map, and
 ///         the map names no function that does not exist. Replaces the deploy script's former
@@ -25,11 +25,11 @@ import { FederatedIntegrationBase } from "../integration/FederatedIntegrationBas
 ///      (the dispatcher pushes every external selector), and each candidate is called by an
 ///      account with no role, with zeroed arguments, in a state snapshot that is rolled back.
 ///      A call that answers `AccessManagedUnauthorized(caller)` reached a restricted function.
-///      The federated tokens' network functions are found the same way (`NotNetwork(caller)`);
-///      they are authorized through the same selector on `Directory`.
-///      Functions whose access check depends on their arguments (a check that zeroed arguments
-///      never reach) are named in `_conditional`.
-contract RoleMapCompleteTest is FederatedIntegrationBase {
+///      The Independent Stream tokens' network functions are found the same way
+///      (`NotNetwork(caller)`); they are authorized through the same selector on
+///      `StreamDirectory6529`. Functions whose access check depends on their arguments (a check
+///      that zeroed arguments never reach) are named in `_conditional`.
+contract RoleMapCompleteTest is IndependentIntegrationBase {
     /// @dev Gas for one probe call: enough to reach any access check.
     uint256 internal constant PROBE_GAS = 3_000_000;
     /// @dev Zeroed argument words sent with each probe (dynamic offsets of zero decode as empty).
@@ -63,7 +63,7 @@ contract RoleMapCompleteTest is FederatedIntegrationBase {
 
     function test_RoleMap_NothingIsMappedThatDoesNotExist() public {
         GovernanceConfig.Config memory cfg = _genesisConfig();
-        bytes4[] memory viaDirectory = _federatedNetworkSelectors();
+        bytes4[] memory viaDirectory = _independentNetworkSelectors();
         uint256 checked;
         uint256 missing;
         for (uint256 i; i < cfg.targets.length; ++i) {
@@ -85,8 +85,8 @@ contract RoleMapCompleteTest is FederatedIntegrationBase {
         assertGt(checked, 100, "the whole map was read");
     }
 
-    function test_RoleMap_EveryFederatedNetworkFunctionIsTheDirectorysAtOnce() public {
-        bytes4[] memory sels = _federatedNetworkSelectors();
+    function test_RoleMap_EveryIndependentNetworkFunctionIsTheDirectorysAtOnce() public {
+        bytes4[] memory sels = _independentNetworkSelectors();
         bytes4[5] memory expected = [
             IStream.rescue.selector,
             IStream.setRescueDelay.selector,
@@ -101,7 +101,7 @@ contract RoleMapCompleteTest is FederatedIntegrationBase {
         for (uint256 i; i < sels.length; ++i) {
             assertEq(manager.getTargetFunctionRole(address(directory), sels[i]), Roles.NETWORK);
             (bool immediate,) = manager.canCall(network, address(directory), sels[i]);
-            assertTrue(immediate, "a federated token admits only an immediate role");
+            assertTrue(immediate, "an Independent Stream token admits only an immediate role");
         }
     }
 
@@ -122,7 +122,8 @@ contract RoleMapCompleteTest is FederatedIntegrationBase {
         assertFalse(ok, "the guard catches the unmapped function");
         assertTrue(
             _contains(
-                string(ret), string.concat("Stream restricts an unmapped selector: ", _hex(one[0]))
+                string(ret),
+                string.concat("Stream6529 restricts an unmapped selector: ", _hex(one[0]))
             ),
             "for that reason"
         );
@@ -184,12 +185,13 @@ contract RoleMapCompleteTest is FederatedIntegrationBase {
         );
     }
 
-    /// @dev The network functions of a federated pair (`NotNetwork(prober)`), deployed and
-    ///      listed through the genesis templates.
-    function _federatedNetworkSelectors() internal returns (bytes4[] memory all) {
-        (FederatedStream fStream, FederatedEditions fEditions) = _listPair(_actor("roleMapArtist"));
+    /// @dev The network functions of an Independent Stream pair (`NotNetwork(prober)`), deployed
+    ///      and listed through the genesis templates.
+    function _independentNetworkSelectors() internal returns (bytes4[] memory all) {
+        (IndependentStream6529 fStream, IndependentStreamEditions6529 fEditions) =
+            _listPair(_actor("roleMapArtist"));
         bytes memory reason =
-            abi.encodeWithSelector(IFederatedMembership.NotNetwork.selector, prober);
+            abi.encodeWithSelector(IIndependentStreamMembership.NotNetwork.selector, prober);
         bytes4[] memory a = _probe(address(fStream), reason);
         bytes4[] memory b = _probe(address(fEditions), reason);
         all = new bytes4[](a.length + b.length);

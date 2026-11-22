@@ -9,13 +9,13 @@ import { IRevenueEscrow } from "../economics/interfaces/IRevenueEscrow.sol";
 import { ISplitFactory } from "../economics/interfaces/ISplitFactory.sol";
 import { IArtistRegistry, IConsolidationSource } from "../interfaces/IArtistRegistry.sol";
 import { IArtistRoleResolver } from "../interfaces/IArtistRoleResolver.sol";
-import { IFederationRegistry } from "../interfaces/IFederationRegistry.sol";
+import { IIndependentStreamRegistry } from "../interfaces/IIndependentStreamRegistry.sol";
 import { IStatementLog } from "../interfaces/IStatementLog.sol";
 import { Slots } from "../interfaces/core/CoreTypes.sol";
 import { IAccounts } from "../interfaces/core/IAccounts.sol";
 import { IDirectory } from "../interfaces/core/IDirectory.sol";
 import { IEditions } from "../interfaces/core/IEditions.sol";
-import { IFederationGate } from "../interfaces/core/IFederationGate.sol";
+import { IIndependentStreamGate } from "../interfaces/core/IIndependentStreamGate.sol";
 import { IMintPolicy } from "../interfaces/core/IMintPolicy.sol";
 import { IModuleSlots } from "../interfaces/core/IModules.sol";
 import { IStream } from "../interfaces/core/IStream.sol";
@@ -29,10 +29,10 @@ import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 /// @title Accounts
 /// @notice The accounts module (replaceable): artist accounts, their payout and profile. An
 ///         account is a 6529 consolidated account: its root wallet and every wallet consolidated
-///         with the root act for it with the same rights. The permanent `Directory` names the
-///         current accounts module (slot `ACCOUNTS`): split vaults ask it for an artist's payout
-///         address through `Directory.payoutAddress`, federated tokens ask it who may administer
-///         them, and the statement log asks it `isArtist`.
+///         with the root act for it with the same rights. The permanent `StreamDirectory6529` names
+///         the current accounts module (slot `ACCOUNTS`): split vaults ask it for an artist's
+///         payout address through `StreamDirectory6529.payoutAddress`, Independent Stream tokens
+///         ask it who may administer them, and the statement log asks it `isArtist`.
 /// @dev Who may act. The root always may, without any read of the consolidation source, so a
 ///      broken, reverting or repriced source never locks an account out. Any other wallet may
 ///      while the source says it is consolidated with the root, read live with `BoundedCall`'s
@@ -61,7 +61,8 @@ contract Accounts is IArtistRegistry, AccessManaged, EIP712 {
     uint48 public constant FREEZE_PERIOD = 14 days;
 
     /// @notice The contracts this module is deployed against.
-    /// @param directory The permanent directory (its FEDERATION slot names the federation module).
+    /// @param directory The permanent directory (its INDEPENDENT_STREAM slot names the Independent
+    ///        Stream module).
     /// @param stream 6529 Stream.
     /// @param editions 6529 Stream Editions.
     /// @param splitFactory The split ledger (whose vaults are refused as payouts).
@@ -181,16 +182,16 @@ contract Accounts is IArtistRegistry, AccessManaged, EIP712 {
 
     /// @inheritdoc IArtistRegistry
     /// @dev The package registry verifies the account's own acceptance before it calls
-    ///      `register`; the federation module is not trusted to, so the signature is checked
-    ///      here, in this module's domain.
-    function registerFederated(
+    ///      `register`; the Independent Stream module is not trusted to, so the signature is
+    ///      checked here, in this module's domain.
+    function registerIndependent(
         address account,
         bytes32 profileId,
         bytes32 profileDocHash,
         uint64 deadline,
         bytes calldata signature
     ) external returns (uint256) {
-        if (msg.sender != federationRegistry() || msg.sender == address(0)) {
+        if (msg.sender != independentStreamRegistry() || msg.sender == address(0)) {
             revert UnboundCaller(msg.sender);
         }
         SignatureVerifier.checkDeadline(deadline);
@@ -409,7 +410,7 @@ contract Accounts is IArtistRegistry, AccessManaged, EIP712 {
 
     /// @inheritdoc IArtistRoleResolver
     /// @dev Resolves the lead artist of any token that answers `IStream.workOf` (6529 Stream and
-    ///      every federated token), or of an edition through the master of an `IEditions`
+    ///      every Independent Stream token), or of an edition through the master of an `IEditions`
     ///      contract (`stream()`, same ID), and answers {isWallet}. A token that answers neither,
     ///      or answers malformed data, is "false"; so is a call that fails for lack of gas, which
     ///      only withholds an answer. Any token is accepted: the statement log keys every
@@ -440,8 +441,8 @@ contract Accounts is IArtistRegistry, AccessManaged, EIP712 {
     }
 
     /// @inheritdoc IArtistRegistry
-    function federationRegistry() public view returns (address) {
-        return IModuleSlots(directory).moduleOf(Slots.FEDERATION);
+    function independentStreamRegistry() public view returns (address) {
+        return IModuleSlots(directory).moduleOf(Slots.INDEPENDENT_STREAM);
     }
 
     /// @inheritdoc IArtistRegistry
@@ -476,7 +477,7 @@ contract Accounts is IArtistRegistry, AccessManaged, EIP712 {
     }
 
     /// @notice The EIP-712 digest a wallet signs to consent to an account created through the
-    ///         federation module (`registerFederated`).
+    ///         Independent Stream module (`registerIndependent`).
     /// @param account The consenting wallet.
     /// @param profileId The claimed 6529 profile ID.
     /// @param profileDocHash The profile document hash.
@@ -656,8 +657,8 @@ contract Accounts is IArtistRegistry, AccessManaged, EIP712 {
 
     /// @dev Whether `account` declares (ERC-165) the interface of a network contract that cannot
     ///      pull or move funds onward: a token or edition contract, a module host, the directory,
-    ///      the record contract, a mint policy, a federation gate, an accounts module or the
-    ///      escrow.
+    ///      the record contract, a mint policy, an Independent Stream gate, an accounts module or
+    ///      the escrow.
     function _isNetworkContract(address account) private view returns (bool) {
         if (account.code.length == 0 || !BoundedCall.supportsERC165(account)) return false;
         bytes4[9] memory ids = [
@@ -667,7 +668,7 @@ contract Accounts is IArtistRegistry, AccessManaged, EIP712 {
             type(IDirectory).interfaceId,
             type(IWorkFacts).interfaceId,
             type(IMintPolicy).interfaceId,
-            type(IFederationGate).interfaceId,
+            type(IIndependentStreamGate).interfaceId,
             type(IArtistRegistry).interfaceId,
             type(IRevenueEscrow).interfaceId
         ];

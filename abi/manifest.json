@@ -7,7 +7,7 @@
       "functions": 50,
       "kind": "contract",
       "name": "Accounts",
-      "sha256": "7ba94ad61089918fadb63adca09120bcf1b7bb2f77d4761a65059cfbb54d00f0",
+      "sha256": "6328c91cb62008a4f27fe754a830def1da521dcbff82e15ffd4c698d81d9565a",
       "solc": "0.8.37+commit.f401782d",
       "source": "src/identity/Accounts.sol"
     },
@@ -67,37 +67,15 @@
       "source": "src/content/DependencyRegistry.sol"
     },
     {
-      "abi": "Directory.json",
-      "errors": 6,
-      "events": 6,
-      "functions": 15,
-      "kind": "contract",
-      "name": "Directory",
-      "sha256": "44e99f2b44abc3a9a7d9c6aff89333119a977f5de726c31060a1c410fe45b13b",
-      "solc": "0.8.37+commit.f401782d",
-      "source": "src/core/Directory.sol"
-    },
-    {
       "abi": "EconomicsResolver.json",
       "errors": 10,
       "events": 4,
       "functions": 22,
       "kind": "contract",
       "name": "EconomicsResolver",
-      "sha256": "f6e685c890d5c1894c2ff360fadb0859514f49ac494056ff8f04b7e972d5b9ce",
+      "sha256": "822688d63d31bf77f2c0c52fdf298ef7162b2d75ca5b59309b1b25ca85722420",
       "solc": "0.8.37+commit.f401782d",
       "source": "src/economics/EconomicsResolver.sol"
-    },
-    {
-      "abi": "Editions.json",
-      "errors": 23,
-      "events": 22,
-      "functions": 42,
-      "kind": "contract",
-      "name": "Editions",
-      "sha256": "90817741867863e3666de64e422502287b0eab619ffc91e4a1dc844aac6e8596",
-      "solc": "0.8.37+commit.f401782d",
-      "source": "src/core/Editions.sol"
     },
     {
       "abi": "Eip712CurationVerifier.json",
@@ -120,75 +98,6 @@
       "sha256": "754a5980846d49378486cf773ba01add06251781ee0749e5d36031c93cd06143",
       "solc": "0.8.37+commit.f401782d",
       "source": "src/sales/EnglishAuction.sol"
-    },
-    {
-      "abi": "FederatedDeployer.json",
-      "errors": 5,
-      "events": 2,
-      "functions": 4,
-      "kind": "contract",
-      "name": "FederatedDeployer",
-      "sha256": "944c0cbfaf9c571abfdaeea2186a4962ed873b848f5667c0ac9592e0043de05e",
-      "solc": "0.8.37+commit.f401782d",
-      "source": "src/federated/FederatedDeployer.sol"
-    },
-    {
-      "abi": "FederatedEditionAuction.json",
-      "errors": 30,
-      "events": 20,
-      "forwardsTo": "FederatedEditionAuctionLens",
-      "fullAbi": "full/FederatedEditionAuction.json",
-      "fullSha256": "161d739b724b4c087d7b8b6566cc8da92fd965471339d14fc297eb93bfcad165",
-      "functions": 21,
-      "kind": "contract",
-      "name": "FederatedEditionAuction",
-      "sha256": "5b3ce110acd44b9f51a06986a401e70a4014a95412ce87de8f6bc6db156f12ea",
-      "solc": "0.8.37+commit.f401782d",
-      "source": "src/federated/FederatedEditionAuction.sol"
-    },
-    {
-      "abi": "FederatedEditionAuctionLens.json",
-      "errors": 15,
-      "events": 0,
-      "functions": 43,
-      "kind": "contract",
-      "name": "FederatedEditionAuctionLens",
-      "sha256": "2776f2e5f199fb37a8a5231070adcdad21b9b88eeb3a18958e20ce29470a0c53",
-      "solc": "0.8.37+commit.f401782d",
-      "source": "src/federated/FederatedEditionAuctionLens.sol"
-    },
-    {
-      "abi": "FederatedEditions.json",
-      "errors": 20,
-      "events": 15,
-      "functions": 31,
-      "kind": "contract",
-      "name": "FederatedEditions",
-      "sha256": "6b8a731865852807c7bae37805ac4523400516b0f40e5182668096311c0b7620",
-      "solc": "0.8.37+commit.f401782d",
-      "source": "src/federated/FederatedEditions.sol"
-    },
-    {
-      "abi": "FederatedStream.json",
-      "errors": 25,
-      "events": 19,
-      "functions": 50,
-      "kind": "contract",
-      "name": "FederatedStream",
-      "sha256": "fa4e5c0ae908805fa4c4c4a393601e836edaf3d2cab6dac0ab217807a2dd5edb",
-      "solc": "0.8.37+commit.f401782d",
-      "source": "src/federated/FederatedStream.sol"
-    },
-    {
-      "abi": "FederationRegistry.json",
-      "errors": 20,
-      "events": 12,
-      "functions": 41,
-      "kind": "contract",
-      "name": "FederationRegistry",
-      "sha256": "4b3712a4b14c3391e2eafb6374d42ccb5768141f0ef5742420baa1bce2000ac2",
-      "solc": "0.8.37+commit.f401782d",
-      "source": "src/federated/FederationRegistry.sol"
     },
     {
       "abi": "GovernanceConfigurator.json",
@@ -241,10 +150,10 @@
       "errors": 17,
       "events": 13,
       "functions": 39,
-      "interfaceId": "0xb06572e4",
+      "interfaceId": "0x1bec3945",
       "kind": "interface",
       "name": "IArtistRegistry",
-      "sha256": "3a29c0785984c52678a03ed640ab3c8ee15441cf3a32ce7d66bd7058a1573a32",
+      "sha256": "ddff369585e760be0be08b23cab3e115bc1fd72fa288e2ce6d261417807a99c0",
       "solc": "0.8.37+commit.f401782d",
       "source": "src/interfaces/IArtistRegistry.sol"
     },
@@ -445,72 +354,12 @@
       "errors": 12,
       "events": 6,
       "functions": 12,
-      "interfaceId": "0xa8a2a007",
+      "interfaceId": "0x549d75c9",
       "kind": "interface",
       "name": "IEntropyModule",
-      "sha256": "28d66589c468208effdf7e24903b2449f655cee3d822249862ca8e7761f94d92",
+      "sha256": "276e6b2ea99fc350a78fabf7c56892ece0568a421b2f265164f28caa4edaf4a1",
       "solc": "0.8.37+commit.f401782d",
       "source": "src/interfaces/IEntropyModule.sol"
-    },
-    {
-      "abi": "IFederatedDeployer.json",
-      "errors": 1,
-      "events": 2,
-      "functions": 4,
-      "interfaceId": "0xf53f1196",
-      "kind": "interface",
-      "name": "IFederatedDeployer",
-      "sha256": "b6d72fb1fefaeb1e01a014e657110242d569e609801fc4ba743534429d973ac8",
-      "solc": "0.8.37+commit.f401782d",
-      "source": "src/interfaces/IFederatedDeployer.sol"
-    },
-    {
-      "abi": "IFederatedMembership.json",
-      "errors": 3,
-      "events": 0,
-      "functions": 3,
-      "interfaceId": "0xe5ad7ba9",
-      "kind": "interface",
-      "name": "IFederatedMembership",
-      "sha256": "5818233eb18b5fb5d39f5112cc8ffda17dcdc59567016c0efcbbdbc121c8374a",
-      "solc": "0.8.37+commit.f401782d",
-      "source": "src/interfaces/IFederatedMembership.sol"
-    },
-    {
-      "abi": "IFederatedStream.json",
-      "errors": 8,
-      "events": 4,
-      "functions": 12,
-      "interfaceId": "0x38e21cce",
-      "kind": "interface",
-      "name": "IFederatedStream",
-      "sha256": "01d8b7bb069816faf774a19c2edb9ee54a74fadb78c8420b8bf24bb168f98110",
-      "solc": "0.8.37+commit.f401782d",
-      "source": "src/interfaces/IFederatedStream.sol"
-    },
-    {
-      "abi": "IFederationGate.json",
-      "errors": 0,
-      "events": 0,
-      "functions": 3,
-      "interfaceId": "0x63de0fba",
-      "kind": "interface",
-      "name": "IFederationGate",
-      "sha256": "4878ea736c84c91dcfa93f8ef2e0e077383f069229102d19d3fc903c01376e00",
-      "solc": "0.8.37+commit.f401782d",
-      "source": "src/interfaces/core/IFederationGate.sol"
-    },
-    {
-      "abi": "IFederationRegistry.json",
-      "errors": 13,
-      "events": 10,
-      "functions": 7,
-      "interfaceId": "0x74a7e21a",
-      "kind": "interface",
-      "name": "IFederationRegistry",
-      "sha256": "ed0bfe18b0e5d8577f0f25616b4b3357da274162fc8d8cabe0bc6d2903dc6601",
-      "solc": "0.8.37+commit.f401782d",
-      "source": "src/interfaces/IFederationRegistry.sol"
     },
     {
       "abi": "IGovernedVault.json",
@@ -523,6 +372,66 @@
       "sha256": "016d23c9c15d5ddfd58344aa1fcfd83ae5aa0bba995c04bc359072c50c8a8954",
       "solc": "0.8.37+commit.f401782d",
       "source": "src/economics/interfaces/IGovernedVault.sol"
+    },
+    {
+      "abi": "IIndependentStream.json",
+      "errors": 8,
+      "events": 4,
+      "functions": 12,
+      "interfaceId": "0x38e21cce",
+      "kind": "interface",
+      "name": "IIndependentStream",
+      "sha256": "01d8b7bb069816faf774a19c2edb9ee54a74fadb78c8420b8bf24bb168f98110",
+      "solc": "0.8.37+commit.f401782d",
+      "source": "src/interfaces/IIndependentStream.sol"
+    },
+    {
+      "abi": "IIndependentStreamDeployer.json",
+      "errors": 1,
+      "events": 2,
+      "functions": 4,
+      "interfaceId": "0xf53f1196",
+      "kind": "interface",
+      "name": "IIndependentStreamDeployer",
+      "sha256": "b6d72fb1fefaeb1e01a014e657110242d569e609801fc4ba743534429d973ac8",
+      "solc": "0.8.37+commit.f401782d",
+      "source": "src/interfaces/IIndependentStreamDeployer.sol"
+    },
+    {
+      "abi": "IIndependentStreamGate.json",
+      "errors": 0,
+      "events": 0,
+      "functions": 3,
+      "interfaceId": "0x63de0fba",
+      "kind": "interface",
+      "name": "IIndependentStreamGate",
+      "sha256": "4878ea736c84c91dcfa93f8ef2e0e077383f069229102d19d3fc903c01376e00",
+      "solc": "0.8.37+commit.f401782d",
+      "source": "src/interfaces/core/IIndependentStreamGate.sol"
+    },
+    {
+      "abi": "IIndependentStreamMembership.json",
+      "errors": 3,
+      "events": 0,
+      "functions": 3,
+      "interfaceId": "0xe5ad7ba9",
+      "kind": "interface",
+      "name": "IIndependentStreamMembership",
+      "sha256": "5818233eb18b5fb5d39f5112cc8ffda17dcdc59567016c0efcbbdbc121c8374a",
+      "solc": "0.8.37+commit.f401782d",
+      "source": "src/interfaces/IIndependentStreamMembership.sol"
+    },
+    {
+      "abi": "IIndependentStreamRegistry.json",
+      "errors": 13,
+      "events": 10,
+      "functions": 7,
+      "interfaceId": "0x74a7e21a",
+      "kind": "interface",
+      "name": "IIndependentStreamRegistry",
+      "sha256": "c90190ddc462a8897ac187694d1454171ff654b113b03638eec49e377030987a",
+      "solc": "0.8.37+commit.f401782d",
+      "source": "src/interfaces/IIndependentStreamRegistry.sol"
     },
     {
       "abi": "IItemApprovals.json",
@@ -637,10 +546,10 @@
       "errors": 12,
       "events": 8,
       "functions": 11,
-      "interfaceId": "0x312dc1e1",
+      "interfaceId": "0xd15ddb3f",
       "kind": "interface",
       "name": "ISaleAdapter",
-      "sha256": "b7ed76afe999f83b1c82a4d19815c4f94f19eca5c7f0cc40d032f802a4f7384c",
+      "sha256": "c25a2fd80a9bcb745527373af3f5060a450a8b064ce901b4474c96bc83019d84",
       "solc": "0.8.37+commit.f401782d",
       "source": "src/interfaces/ISaleAdapter.sol"
     },
@@ -724,7 +633,7 @@
       "interfaceId": "0x327daaaf",
       "kind": "interface",
       "name": "IUniformEditionAuction",
-      "sha256": "9e5cce45a6985faa99f9205e1c85a577ca398ba263636c9b0d3a24d12dfdf71a",
+      "sha256": "fffe46c912eef1b0564a68e7b1b95cc1e6c02e98eeef483b10f26ba7ad2d7177",
       "solc": "0.8.37+commit.f401782d",
       "source": "src/interfaces/IUniformEditionAuction.sol"
     },
@@ -733,10 +642,10 @@
       "errors": 0,
       "events": 0,
       "functions": 42,
-      "interfaceId": "0xae341d03",
+      "interfaceId": "0x4e4407dd",
       "kind": "interface",
       "name": "IUniformEditionAuctionLens",
-      "sha256": "069589c6b3fafd331a28325dd90c43e13e3c957ca0493db210ec7e0acbd48745",
+      "sha256": "7ce1e1a03a0256ab58d0debbe326ddf49f8e8ea5ab99f963cb5b8c312d68a1de",
       "solc": "0.8.37+commit.f401782d",
       "source": "src/interfaces/IUniformEditionAuctionLens.sol"
     },
@@ -799,6 +708,75 @@
       "sha256": "e7ac59db44c8eb9048077fef9753f98097b28a6b744f9ba358be0fc9c0e5b13a",
       "solc": "0.8.37+commit.f401782d",
       "source": "src/interfaces/core/IWorkRules.sol"
+    },
+    {
+      "abi": "IndependentEditionAuction.json",
+      "errors": 30,
+      "events": 20,
+      "forwardsTo": "IndependentEditionAuctionLens",
+      "fullAbi": "full/IndependentEditionAuction.json",
+      "fullSha256": "c719054da261a694446bf974e8addb99ccc97b19b921150306f7b1fbd3e7fd0e",
+      "functions": 21,
+      "kind": "contract",
+      "name": "IndependentEditionAuction",
+      "sha256": "5b3ce110acd44b9f51a06986a401e70a4014a95412ce87de8f6bc6db156f12ea",
+      "solc": "0.8.37+commit.f401782d",
+      "source": "src/independent/IndependentEditionAuction.sol"
+    },
+    {
+      "abi": "IndependentEditionAuctionLens.json",
+      "errors": 15,
+      "events": 0,
+      "functions": 43,
+      "kind": "contract",
+      "name": "IndependentEditionAuctionLens",
+      "sha256": "1ba0e412a2b73a236ca7e4267838e22dba333032b2a3724714b0d6b8894936b4",
+      "solc": "0.8.37+commit.f401782d",
+      "source": "src/independent/IndependentEditionAuctionLens.sol"
+    },
+    {
+      "abi": "IndependentStream6529.json",
+      "errors": 25,
+      "events": 19,
+      "functions": 50,
+      "kind": "contract",
+      "name": "IndependentStream6529",
+      "sha256": "fa4e5c0ae908805fa4c4c4a393601e836edaf3d2cab6dac0ab217807a2dd5edb",
+      "solc": "0.8.37+commit.f401782d",
+      "source": "src/independent/IndependentStream6529.sol"
+    },
+    {
+      "abi": "IndependentStreamDeployer.json",
+      "errors": 5,
+      "events": 2,
+      "functions": 4,
+      "kind": "contract",
+      "name": "IndependentStreamDeployer",
+      "sha256": "944c0cbfaf9c571abfdaeea2186a4962ed873b848f5667c0ac9592e0043de05e",
+      "solc": "0.8.37+commit.f401782d",
+      "source": "src/independent/IndependentStreamDeployer.sol"
+    },
+    {
+      "abi": "IndependentStreamEditions6529.json",
+      "errors": 20,
+      "events": 15,
+      "functions": 31,
+      "kind": "contract",
+      "name": "IndependentStreamEditions6529",
+      "sha256": "6b8a731865852807c7bae37805ac4523400516b0f40e5182668096311c0b7620",
+      "solc": "0.8.37+commit.f401782d",
+      "source": "src/independent/IndependentStreamEditions6529.sol"
+    },
+    {
+      "abi": "IndependentStreamRegistry.json",
+      "errors": 20,
+      "events": 12,
+      "functions": 41,
+      "kind": "contract",
+      "name": "IndependentStreamRegistry",
+      "sha256": "c3068599a702de93aaa5210b6a2f2eeb85f0d475a21d70736858eb41974d597c",
+      "solc": "0.8.37+commit.f401782d",
+      "source": "src/independent/IndependentStreamRegistry.sol"
     },
     {
       "abi": "PackageRegistry.json",
@@ -867,15 +845,37 @@
       "source": "src/records/StatementLog.sol"
     },
     {
-      "abi": "Stream.json",
+      "abi": "Stream6529.json",
       "errors": 24,
       "events": 22,
       "functions": 53,
       "kind": "contract",
-      "name": "Stream",
+      "name": "Stream6529",
       "sha256": "c86e29e2f310c4cf7b5181f35ffec62b1fc23a7954cf8ca9cd63e2de6ddd7cbd",
       "solc": "0.8.37+commit.f401782d",
-      "source": "src/core/Stream.sol"
+      "source": "src/core/Stream6529.sol"
+    },
+    {
+      "abi": "StreamDirectory6529.json",
+      "errors": 6,
+      "events": 6,
+      "functions": 15,
+      "kind": "contract",
+      "name": "StreamDirectory6529",
+      "sha256": "f0880e191f4fcda22fa042d71e142acf14b753822ef1644ad0027903589e9326",
+      "solc": "0.8.37+commit.f401782d",
+      "source": "src/core/StreamDirectory6529.sol"
+    },
+    {
+      "abi": "StreamEditions6529.json",
+      "errors": 23,
+      "events": 22,
+      "functions": 42,
+      "kind": "contract",
+      "name": "StreamEditions6529",
+      "sha256": "90817741867863e3666de64e422502287b0eab619ffc91e4a1dc844aac6e8596",
+      "solc": "0.8.37+commit.f401782d",
+      "source": "src/core/StreamEditions6529.sol"
     },
     {
       "abi": "StreamTerms.json",
@@ -889,12 +889,23 @@
       "source": "src/terms/StreamTerms.sol"
     },
     {
+      "abi": "StreamWorkFacts6529.json",
+      "errors": 12,
+      "events": 7,
+      "functions": 12,
+      "kind": "contract",
+      "name": "StreamWorkFacts6529",
+      "sha256": "825b4d1b6cd150bd21d0fc63f86ce885dab2d7c811f32b166406066f3d894edd",
+      "solc": "0.8.37+commit.f401782d",
+      "source": "src/core/StreamWorkFacts6529.sol"
+    },
+    {
       "abi": "UniformEditionAuction.json",
       "errors": 30,
       "events": 21,
       "forwardsTo": "UniformEditionAuctionLens",
       "fullAbi": "full/UniformEditionAuction.json",
-      "fullSha256": "45503b64fe047ad67417b38d2a33858038b6704bbfc1f812c56adcd7e41ddca9",
+      "fullSha256": "e8f9187a040d6c802b62dbb4639890e5d7a485127411f42b886106f0af3742fc",
       "functions": 21,
       "kind": "contract",
       "name": "UniformEditionAuction",
@@ -909,7 +920,7 @@
       "functions": 43,
       "kind": "contract",
       "name": "UniformEditionAuctionLens",
-      "sha256": "edaaa9b7b1f5487dba862202bcc959bb6dd83bef047e0a5197dabf6a4befeba8",
+      "sha256": "d19e1df622a964c33d6d80b9204783deace8d459f8f1d9c2d35f1263ce39a908",
       "solc": "0.8.37+commit.f401782d",
       "source": "src/sales/UniformEditionAuctionLens.sol"
     },
@@ -920,7 +931,7 @@
       "functions": 30,
       "kind": "contract",
       "name": "VrfEntropyModule",
-      "sha256": "e759f7c173c2b702746c05623424f67f426f0fc8ee86d18bfc1a6e93c9d8bd27",
+      "sha256": "4a668248375584a2a306a67853403f45498cba1e131da4060c3bd78cdc60dd2d",
       "solc": "0.8.37+commit.f401782d",
       "source": "src/entropy/VrfEntropyModule.sol"
     },
@@ -934,17 +945,6 @@
       "sha256": "5f9cf081b45a7a8befc4982f396f025b53abe6385c5504aba2387a5c58c79737",
       "solc": "0.8.37+commit.f401782d",
       "source": "src/stream/WorkDelivery.sol"
-    },
-    {
-      "abi": "WorkFacts.json",
-      "errors": 12,
-      "events": 7,
-      "functions": 12,
-      "kind": "contract",
-      "name": "WorkFacts",
-      "sha256": "825b4d1b6cd150bd21d0fc63f86ce885dab2d7c811f32b166406066f3d894edd",
-      "solc": "0.8.37+commit.f401782d",
-      "source": "src/core/WorkFacts.sol"
     },
     {
       "abi": "WorkRules.json",

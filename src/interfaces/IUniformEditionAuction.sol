@@ -20,9 +20,9 @@ import { ISaleAdapter } from "./ISaleAdapter.sol";
 ///         part rounds down), paid to the recipient the economics resolver names at settlement.
 /// @dev Sales are keyed like the English auction's: `saleId = saleIdOf(token, id)`, the edition
 ///      contract and edition ID (for 6529 Stream Editions, the master's 6529 Stream token ID), so
-///      one adapter can serve every listed token and federated pairs. The adapter is one minter
-///      of the edition contract among any others the network adds; `open` creates the edition
-///      (`IEditions.create`), which makes this adapter its only minter. `saleKind()` is
+///      one adapter can serve every listed token and Independent Stream pairs. The adapter is one
+///      minter of the edition contract among any others the network adds; `open` creates the
+///      edition (`IEditions.create`), which makes this adapter its only minter. `saleKind()` is
 ///      `SaleKind.UNIFORM_AUCTION`.
 ///
 ///      The edition contract is permanent and holds only the supply; this adapter holds the
@@ -461,8 +461,9 @@ interface IUniformEditionAuction is ISaleAdapter {
     ///         from the 1/1 auction's start until the edition close; refused while the adapter is
     ///         paused (`SalePaused`). Locks the creator's cap, the current `config()`, and the
     ///         economics: for 6529 Stream Editions, `IEconomicsResolver.newWorkTerms(
-    ///         PRODUCT_EDITIONS, item.payees)`; for a federated pair, the federation module's fee
-    ///         share for the token (`IFederationGate.feeShareOf`). Creates the edition
+    ///         PRODUCT_EDITIONS,
+    ///         item.payees)`; for an Independent Stream pair, the Independent Stream module's fee
+    ///         share for the token (`IIndependentStreamGate.feeShareOf`). Creates the edition
     ///         (`IEditions.create(id, cap, royaltyReceiver, the master's royalty rate)`), which
     ///         makes this adapter its only minter, so an edition that already exists refuses the
     ///         open (`IEditions.EditionExists`). Emits `AuctionOpened` and
@@ -478,12 +479,13 @@ interface IUniformEditionAuction is ISaleAdapter {
     ///        (`IStream.itemHashOf`, with `workOf(id).kind` 1), and the package it was approved in, which must still be
     ///        approved and contain the item (`IItemApprovals.isApprovedItem` of the package
     ///        registry the lens names: a revoked package or a disabled signer opens no sale; a sale
-    ///        already open is untouched). For a federated pair: `abi.encode(PackageItem item)`.
-    ///        The edition terms must name `SaleKind.UNIFORM_AUCTION` and `CURRENCY_ETH`, their
-    ///        `maxCount` is the cap, and their params are empty. Before locking anything, `open`
-    ///        deploys the seller's and the royalty receiver's split wallets if they have no code
-    ///        (`ISplitFactory.createWallet`), so no payment from this sale, and no royalty on its
-    ///        copies, can reach an undeployed wallet.
+    ///        already open is untouched). For an Independent Stream pair:
+    ///        `abi.encode(PackageItem item)`. The edition terms must name
+    ///        `SaleKind.UNIFORM_AUCTION` and `CURRENCY_ETH`, their `maxCount` is the cap, and their
+    ///        params are empty. Before locking anything, `open` deploys the seller's and the
+    ///        royalty receiver's split wallets if they have no code (`ISplitFactory.createWallet`),
+    ///        so no payment from this sale, and no royalty on its copies, can reach an undeployed
+    ///        wallet.
     /// @return saleId `saleIdOf(token, id)`.
     function open(address token, uint256 id, bytes calldata data) external returns (uint256 saleId);
 

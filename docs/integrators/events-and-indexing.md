@@ -10,13 +10,13 @@ emits an event for every state change, enough to rebuild its state from its own 
 
 - **Key every log by emitter address and topic0.** Stream and Editions share `RoyaltySet`,
   the module and minter events, `OwnershipTransferred`, `ContractURIUpdated`, `ContractURISet` and the ERC-4906
-  events; `Directory` shares the module events. `Transfer(address,address,uint256)` is also
-  ERC-20's (the ERC-721 log has four topics).
+  events; `StreamDirectory6529` shares the module events. `Transfer(address,address,uint256)` is
+  also ERC-20's (the ERC-721 log has four topics).
 - **Topics.** `indexed` parameters are topics 1 to 3. Structs, strings, bytes and arrays are in
   the data. Struct names below (`MintFacts`, `Outcome`, `License`, `PackageItem`, `MediaFile`)
   are encoded as tuples or `uint8` in the canonical signature; topic0 is computed from that.
 - **Module slots** (`bytes32 slot`) are ASCII names left-aligned: `"TERMS"`, `"RENDERER"`,
-  `"RECORDS"`, `"ACCOUNTS"`, `"FEDERATION"`, `"FEDERATED_TERMS"`, `"FEDERATED_RECORDS"`.
+  `"RECORDS"`, `"ACCOUNTS"`, `"INDEPENDENT_STREAM"`, `"INDEPENDENT_TERMS"`, `"INDEPENDENT_RECORDS"`.
 - **Where to start.** Scan from the deployment record's `startBlock` in
   [`deployments/11155111/`](../../deployments/11155111). The Sepolia round for this code is r6;
   earlier rounds ran an earlier design.
@@ -28,7 +28,7 @@ Topics are the full 32 bytes, from the compiled interfaces.
 
 ### Stream
 
-`IStream` and `IModules`; each federated 1/1 token emits the same.
+`IStream` and `IModules`; each Independent Stream 1/1 token emits the same.
 
 | Event | topic0 | When |
 | --- | --- | --- |
@@ -53,12 +53,12 @@ Topics are the full 32 bytes, from the compiled interfaces.
 | `MetadataUpdate(uint256)` | `0xf8e1a15aba9398e019f0b49df1a4fde98ee17ae345cb5f6b5e2c27f5033e8ce7` | ERC-4906, from `emitMetadataUpdate` (WorkFacts, RECORDS, TERMS) |
 | `BatchMetadataUpdate(uint256,uint256)` | `0x6bd5c950a8d8df17f772f5af37cb3655737899cbf903264b9795592da439661c` | ERC-4906 |
 
-A federated token has no minter list: its minters are the federation module's answer, so
-`MinterAdded` and `MinterRemoved` come from that module, not the token.
+An Independent Stream token has no minter list: its minters are the Independent Stream module's
+answer, so `MinterAdded` and `MinterRemoved` come from that module, not the token.
 
 ### Editions
 
-`IEditions`; each federated editions token emits the same.
+`IEditions`; each Independent Stream Editions token emits the same.
 
 | Event | topic0 | When |
 | --- | --- | --- |
@@ -78,7 +78,7 @@ A federated token has no minter list: its minters are the federation module's an
 | Event | topic0 | When |
 | --- | --- | --- |
 | `UnclaimedPeriodSet(uint48 previous, uint48 next)` | `0x675bb988a9e92cf64b105c329cfef3c29dcb2475b43701d44ba80b5d5277657c` | `setUnclaimedPeriod` |
-| `ModuleProposed`, `ModuleSet`, `ModuleDelaySet` | as for Stream | slots `ACCOUNTS`, `FEDERATION`, `FEDERATED_TERMS`, `FEDERATED_RECORDS` |
+| `ModuleProposed`, `ModuleSet`, `ModuleDelaySet` | as for Stream | slots `ACCOUNTS`, `INDEPENDENT_STREAM`, `INDEPENDENT_TERMS`, `INDEPENDENT_RECORDS` |
 
 ### WorkFacts
 
@@ -136,7 +136,8 @@ The 1/1 sale contract. Sale IDs are `uint256(keccak256(abi.encode(token, tokenId
 
 ### UniformEditionAuction
 
-The edition sale contract; `FederatedEditionAuction` emits the same. Key a bid by `(saleId, bidId)`.
+The edition sale contract; `IndependentEditionAuction` emits the same. Key a bid by
+`(saleId, bidId)`.
 
 | Event | topic0 |
 | --- | --- |
@@ -187,7 +188,7 @@ The mint policy.
 
 ### Accounts
 
-The accounts module behind `Directory.ACCOUNTS`.
+The accounts module behind `StreamDirectory6529.ACCOUNTS`.
 
 | Event | topic0 |
 | --- | --- |
@@ -206,9 +207,9 @@ The accounts module behind `Directory.ACCOUNTS`.
 | `PackageRegistrySet(address previous, address next)` | `0xf602f9bca87ed171d7fdb8fdcbde47a70bb58e7a2029620f431ea07ddb8edb93` |
 | `ReplacementAcceptanceConsumed(uint256 indexed artistId, bytes32 digest)` | `0xe1bf6b84e73459c51246c8f5fc3e7f3c0fc2e9bd11eb59219b353501e7975df8` |
 
-### FederationRegistry
+### IndependentStreamRegistry
 
-The federation module behind `Directory.FEDERATION`.
+The Independent Stream module behind `StreamDirectory6529.INDEPENDENT_STREAM`.
 
 | Event | topic0 |
 | --- | --- |
@@ -224,7 +225,7 @@ The federation module behind `Directory.FEDERATION`.
 | `StatusSet(address indexed token, Status previous, Status status, bytes32 ref)` | `0x8341d2d84f9596d820848da5651bb557815048d9abe29c5dcec029579338c585` |
 | `TemplateSet(address indexed deployer, bytes32 creationHash, uint32 version, Form form, TemplateStatus status)` | `0x5afcee2db062b23dc1020a5f1c56661da035bcb835fe4638e2688030c4cc74db` |
 
-### FederatedDeployer
+### IndependentStreamDeployer
 
 | Event | topic0 |
 | --- | --- |
@@ -339,7 +340,7 @@ Deployed twice: `FeeRecipientVault` and `MuseumVault`.
 | --- | --- |
 | `ConfigSet(VrfConfig previous, VrfConfig next)` | `0xc5843e7141f604b3110f98ce25e5557fe89b0f64cff0657e5cefc993f00511a9` |
 | `CoordinatorSet(address previous, address next, bytes32 codeHash)` | `0x04092dc0da2aa8151ef027969128a1ab74240da2198b35dd3a2118b6043617ff` |
-| `FederatedSeedRequested(address indexed token, bytes32 indexed contentHash, bytes32 key, uint256 requestId)` | `0x7a7aa29fb0ffab016b29cc1392382f7424244740c5bf90004d7f6a8a012bbad7` |
+| `IndependentSeedRequested(address indexed token, bytes32 indexed contentHash, bytes32 key, uint256 requestId)` | `0x0cef5942b04d271e4bfb17392ed9c8b3d324991563ba71c4023311fd21d9a8ab` |
 | `SeedDelivered(bytes32 indexed contentHash, uint256 requestId, bytes32 seed)` | `0x2a1a98d789f6210c2fb6c327204a52242c65b0c98a164f3fc8bc1c6b0479eb0d` |
 | `SeedLinked(bytes32 indexed itemHash, bytes32 indexed contentHash)` | `0xf4e9ac388df032c7aa58c87fffa65eea30eafa553518699548720ef2f6f64f42` |
 | `SeedRequested(bytes32 indexed itemHash, uint256 requestId)` | `0x13ccebb8a291fc5c387c182a5403c0aa3e322623fa2b250e1820cf8be4c55b2e` |
@@ -404,7 +405,7 @@ OpenZeppelin `AccessManager`'s events and the network handover and brake.
 - **Modules and minters.** `ModuleSet` (genesis and activation, zero on removal),
   `ModuleProposed` (pending), `MinterAdded`, `MinterRemoved`, and the `*DelaySet` events give the
   current settings.
-- **A record.** The `WorkFacts` events for `(token, tokenId)` in order.
+- **A record.** The `StreamWorkFacts6529` events for `(token, tokenId)` in order.
 - **An edition.** `EditionCreated`, `EditionMinted`, `EditionSupplySealed`, `EditionRebound`,
   `RoyaltySet`.
 

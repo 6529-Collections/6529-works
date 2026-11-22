@@ -3,14 +3,14 @@ pragma solidity ^0.8.24;
 
 import { Test } from "forge-std/Test.sol";
 import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
-import { Stream } from "src/core/Stream.sol";
+import { Stream6529 } from "src/core/Stream6529.sol";
 import { MintFacts, PendingModule, Slots } from "src/interfaces/core/CoreTypes.sol";
 import { IModules, IModuleSlots } from "src/interfaces/core/IModules.sol";
 import { MockRenderer, MockSale, MockTerms } from "../mocks/core/CoreMocks.sol";
 import { MockPinnedFacts } from "../mocks/core/StreamCoreMocks.sol";
 
 /// @notice Halmos proofs on the module seam (`src/core/Modules.sol`), run through the real
-///         `Stream` behind a real AccessManager whose admin is this test: a module or a minter
+///         `Stream6529` behind a real AccessManager whose admin is this test: a module or a minter
 ///         becomes active only once the delay in force when it was announced has passed, a later
 ///         change of the delay does not move it, and a removal takes effect in the same block.
 ///         Run with `FOUNDRY_PROFILE=symbolic halmos --contract ModulesSymbolicTest`.
@@ -22,7 +22,7 @@ contract ModulesSymbolicTest is Test {
     bytes32 internal constant CONTENT = keccak256("content");
 
     AccessManager internal manager;
-    Stream internal stream;
+    Stream6529 internal stream;
     MockSale internal sale;
     MockSale internal next;
     address internal renderer;
@@ -37,7 +37,7 @@ contract ModulesSymbolicTest is Test {
         nextRenderer = address(new MockRenderer());
         address[] memory minters = new address[](1);
         minters[0] = address(sale);
-        stream = new Stream(
+        stream = new Stream6529(
             address(manager),
             address(new MockPinnedFacts()),
             address(0xA),

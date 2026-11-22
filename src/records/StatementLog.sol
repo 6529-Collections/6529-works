@@ -28,12 +28,11 @@ import { StatementKinds } from "../interfaces/types/StatementKinds.sol";
 ///
 ///      Dispute outcomes. A DISPUTE_OUTCOME about a token must name one that exists when it is
 ///      recorded. Every ERC-1155 subject is refused: an edition's outcome is recorded on its
-///      master, which the edition's metadata shows, and an outcome about a federated ERC-1155
-///      work goes on its master or waits for v1.1. Other subjects (an item before its mint, a
-///      work ID, an artist in the artist registry) are not checked.
-///      {latestDisputeOutcome} answers for a work: the latest outcome about the token, or, while
-///      it has none, the latest about the package item it was minted from (read from the token's
-///      `IStream.itemHashOf`).
+///      master, which the edition's metadata shows, and an outcome about an Independent Stream
+///      ERC-1155 work goes on its master or waits for v1.1. Other subjects (an item before its
+///      mint, a work ID, an artist in the artist registry) are not checked. {latestDisputeOutcome}
+///      answers for a work: the latest outcome about the token, or, while it has none, the latest
+///      about the package item it was minted from (read from the token's `IStream.itemHashOf`).
 ///
 ///      Authorization per role:
 ///      - ARTIST: the pluggable {IArtistRoleResolver} says the signer is an artist of the subject.

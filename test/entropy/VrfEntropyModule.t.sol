@@ -247,8 +247,8 @@ contract VrfEntropyModuleTest is EntropyBase {
             ^ IEntropyModule.seedOf.selector ^ IEntropyModule.requestOf.selector
             ^ IEntropyModule.retryDelay.selector ^ IEntropyModule.coordinator.selector
             ^ IEntropyModule.setCoordinator.selector ^ IEntropyModule.isDeliveredContent.selector
-            ^ IEntropyModule.seedOfContent.selector ^ IEntropyModule.requestFederatedSeed.selector
-            ^ IEntropyModule.federatedSeedOf.selector;
+            ^ IEntropyModule.seedOfContent.selector ^ IEntropyModule.requestIndependentSeed.selector
+            ^ IEntropyModule.independentSeedOf.selector;
         assertEq(type(IEntropyModule).interfaceId, expected);
     }
 

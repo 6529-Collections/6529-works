@@ -62,18 +62,18 @@ NETWORK_ROLES = frozenset({"ADMIN", "NETWORK", "PARAMETER_SETTER", "FUNDS_SETTER
 ADDRESS = re.compile(r"^0x[0-9a-fA-F]{40}$")
 # Functions `GovernanceConfig.isGenesisSelector` admits (the package registry's Stream bind
 # and entropy module, sale targets, the ETH opening bid, the
-# federation module's adapters, template versions and entropy module, the epoch-0 manifest).
+# Independent Stream module's adapters, template versions and entropy module, the epoch-0 manifest).
 GENESIS_FUNCTIONS = frozenset({
     "bindStream", "setTarget", "setOpeningBid", "setAdapter",
     "approveTemplate", "setEntropyModule", "appendGovernanceManifest",
 })
 
-# Wiring arguments that name a federated template: `DeployV1.templateCodeHash` computes the
+# Wiring arguments that name an Independent Stream template: `DeployV1.templateCodeHash` computes the
 # runtime code hash from the build, so the JSON holds the name, never a literal (a `bytes32`
 # argument); and each template's deployer, which `DeployV1` deploys (not a governed target, so
 # not in `contracts`), an `address` argument (ADR 0008).
-TEMPLATE_HASHES = frozenset({"FederatedStream", "FederatedEditions"})
-TEMPLATE_DEPLOYERS = frozenset({"FederatedStreamDeployer", "FederatedEditionsDeployer"})
+TEMPLATE_HASHES = frozenset({"IndependentStream6529", "IndependentStreamEditions6529"})
+TEMPLATE_DEPLOYERS = frozenset({"IndependentStream721Deployer", "IndependentStreamEditionsDeployer"})
 
 # What a deployment's copy of the configuration may change (check 6).
 DEPLOYMENT_KEYS = frozenset({"holders", "description", "network", "brake"})
@@ -383,7 +383,7 @@ def check(
                 if not here:
                     continue
                 # A `via` entry is a selector of another contract that asks the manager about
-                # this target (each federated token asks `canCall(caller, Directory, selector)`
+                # this target (each Independent Stream token asks `canCall(caller, StreamDirectory6529, selector)`
                 # for its network functions), so it is checked against that contract's ABI.
                 where = ids(e["via"]) if e.get("via") else methods
                 if sig not in where:

@@ -3,8 +3,8 @@ pragma solidity ^0.8.24;
 
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
-import { Editions } from "src/core/Editions.sol";
-import { Stream } from "src/core/Stream.sol";
+import { StreamEditions6529 } from "src/core/StreamEditions6529.sol";
+import { Stream6529 } from "src/core/Stream6529.sol";
 import { Edition, Minter, MintFacts } from "src/interfaces/core/CoreTypes.sol";
 import { IArtistRoleResolver } from "src/interfaces/IArtistRoleResolver.sol";
 import { HashRef, Role, Statement } from "src/interfaces/IStatementLog.sol";
@@ -67,9 +67,10 @@ contract ArtistBook {
 }
 
 /// @dev Stateful harness for Medusa (docs/testing/README.md, second fuzzer) over the real
-///      `StatementLog`, the real core `Stream` as the subject token (works minted, moved and
-///      burned by a sale contract) and the real core `Editions` of those works, with stand-ins
-///      for the authority, the artist resolver, the record contract, the renderer and TERMS.
+///      `StatementLog`, the real core `Stream6529` as the subject token (works minted, moved and
+///      burned by a sale contract) and the real core `StreamEditions6529` of those works, with
+///      stand-ins for the authority, the artist resolver, the record contract, the renderer and
+///      TERMS.
 ///
 ///      The model is written from docs/spec/disputes-and-statements.md (DSP-1, DSP-3 to DSP-5,
 ///      DSP-9, DSP-10, INV-DSP-7), the log's NatSpec on dispute subjects and the item fallback,
@@ -88,8 +89,8 @@ contract LogMedusa is MedusaBase {
     bytes32 internal constant HEAD_DOMAIN = keccak256("6529.works.StatementLog.head.v1");
 
     StatementLog public log;
-    Stream public stream;
-    Editions public editions;
+    Stream6529 public stream;
+    StreamEditions6529 public editions;
     LogGate public gate;
     ArtistBook public artists;
     MockSale public workSale;
@@ -150,7 +151,7 @@ contract LogMedusa is MedusaBase {
         terms = new MockTerms();
         address[] memory minters = new address[](1);
         minters[0] = address(workSale);
-        stream = new Stream(
+        stream = new Stream6529(
             address(gate),
             address(new CoreNoPins()),
             address(governor),
@@ -167,7 +168,7 @@ contract LogMedusa is MedusaBase {
             minters[a] = address(edSales[a]);
             mActiveFrom[a] = block.timestamp;
         }
-        editions = new Editions(
+        editions = new StreamEditions6529(
             address(gate), address(stream), address(governor), address(terms), minters
         );
     }

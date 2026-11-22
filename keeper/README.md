@@ -17,13 +17,13 @@ longer due, so two keepers, or a keeper and anyone else, can run side by side. R
 schedule (every few minutes); each run picks up where the chain is.
 
 Sales are in ETH only. The waiting periods that are network settings are read on every run,
-never assumed: the unclaimed period (`Directory.unclaimedPeriod()`, 180 days at launch) and the
-rescue period (`Stream.rescueDelay()`, 14 days at launch).
+never assumed: the unclaimed period (`StreamDirectory6529.unclaimedPeriod()`, 180 days at launch)
+and the rescue period (`Stream6529.rescueDelay()`, 14 days at launch).
 
 | Step | When it is due | Call |
 | --- | --- | --- |
 | `start` | A request in `--starts` whose content has no live token | `SaleStarter.start(auction, stream, mintData, media)`: the sale, the work's vaults and its record in one transaction |
-| `start`, already started | Someone started the same item directly, so `SaleStarter.start` would revert | `SplitFactory.createWallet` for each missing vault and `WorkFacts.open(stream, tokenId, item, media)`, all permissionless |
+| `start`, already started | Someone started the same item directly, so `SaleStarter.start` would revert | `SplitFactory.createWallet` for each missing vault and `StreamWorkFacts6529.open(stream, tokenId, item, media)`, all permissionless |
 | `open` | An edition master's 1/1 has started, its edition sale is not open, and the 1/1 has not settled | `UniformEditionAuction.open(editions, tokenId, abi.encode(item, packageRoot, proof))`, which also creates the edition |
 | `settle` | A 1/1 auction has ended | `EnglishAuction.settle(saleId)` |
 | `editions` | An edition sale is past its close (or its 1/1 was cancelled) and not settled | `settle(saleId, settlementOrderFor(saleId, keeper))`, repeated until it returns true; the settlement seals the edition at the count sold |
@@ -31,10 +31,10 @@ rescue period (`Stream.rescueDelay()`, 14 days at launch).
 | `adopt` | The network moved an edition to the edition auction (`EditionRebound`) and it has no sale there | Nothing is sent: `adopt` is the network's action. The keeper prints it |
 | `finalize` | A work's finalize notice has come due (`WorkRules.FINALIZE_NOTICE`, 14 days) | `WorkRules.finalize(stream, tokenId, 0)` |
 | `vaults` | A work's seller vault, or its royalty vault, is not deployed | `SplitFactory.createWallet(payees, 0)`: the seller vault from the item's payees; the royalty vault from the seller vault, the network fee recipient and the sale's fee share, sent only when that list gives the work's royalty receiver |
-| `attest` | An opened work is not marked complete on chain | `ContentStore.attestComplete(fileId, 512)` for each media file not yet walked, then `WorkFacts.markOnChainComplete(stream, tokenId)`. A file with a missing chunk is skipped until the chunk is written |
+| `attest` | An opened work is not marked complete on chain | `ContentStore.attestComplete(fileId, 512)` for each media file not yet walked, then `StreamWorkFacts6529.markOnChainComplete(stream, tokenId)`. A file with a missing chunk is skipped until the chunk is written |
 | `expire` | Money credited in either auction, or in the revenue escrow, has itself waited the unclaimed period | `EnglishAuction.expireCredit(account)`, `UniformEditionAuction.expireCredit(account, 0)`, `RevenueEscrow.expire(wallet, 0)` |
 | `forfeit` | A split-wallet mark the payee has not released up to is older than the unclaimed period | `SplitFactory.forfeit(payees, salt, 0, index)` |
-| `rescues` | A removed minter still holds an unsold token, and the rescue period has passed since the removal | Nothing is sent: `Stream.rescue(tokenId, to)` is the network's action. The keeper prints it |
+| `rescues` | A removed minter still holds an unsold token, and the rescue period has passed since the removal | Nothing is sent: `Stream6529.rescue(tokenId, to)` is the network's action. The keeper prints it |
 | `release` (opt-in, `--release`) | A fixed payee of a split wallet has ETH to release | `ClaimRouter.claim(claims, true)` in batches of at most `MAX_CONTINUE_CLAIMS` (8); the network's own index is left out of a batch that releases another payee of the same wallet |
 | `mark` (opt-in, `--mark`) | A payee other than the network has ETH releasable and no pending mark | `SplitFactory.mark(payees, salt, 0, index)`, which starts the payee's unclaimed period |
 | `notice` (opt-in, `--notice`) | A work's first sale has an outcome and it has no finalize notice | `WorkRules.finalize(stream, tokenId, 0)` from a non-artist, which records the notice |
@@ -73,8 +73,8 @@ standard (canonical) ABI encoding that `abi.encode` and ethers produce.
 
 - It does not watch for anything between runs, alert anyone, or retry on a schedule.
 - It does not bid, claim on anyone's behalf (except the fixed-payee pushes of `--release`), push
-  edition claims (`claimBidFor`), flush the escrow, or call `settleOrRefund` for a federated
-  sale that will not settle.
+  edition claims (`claimBidFor`), flush the escrow, or call `settleOrRefund` for an Independent
+  Stream sale that will not settle.
 - It does not page `settlementOrderFor` for very large edition books.
 - It holds no role: anything it sends, anyone may send. Its key only pays gas. Network actions
   (`rescue`, `adopt`) are printed, never sent.

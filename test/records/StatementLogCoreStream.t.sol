@@ -7,7 +7,7 @@ import { Statement } from "src/interfaces/IStatementLog.sol";
 import { HashRef } from "src/interfaces/types/HashRef.sol";
 import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
 
-/// @notice `latestDisputeOutcome` against the real permanent `Stream` (`CoreFixture`): the item
+/// @notice `latestDisputeOutcome` against the real permanent `Stream6529` (`CoreFixture`): the item
 ///         fallback reads `itemHashOf` on a token that declares the core `IStream`, a burned or
 ///         unminted token reads zero, and a token's own outcome comes first.
 contract StatementLogCoreStreamTest is CoreFixture {

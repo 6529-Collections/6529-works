@@ -55,8 +55,8 @@ these values.
 | --- | --- | --- |
 | `kind` | `ORIGINAL` or `EDITION_MASTER` (a 1/1 that anchors one edition). | An original has empty edition terms; a master's pass `EditionRules.isValid`. |
 | `collectionId` | A 6529 Stream collection. | Stream `mint`: the collection exists. |
-| `contentHash` | SHA-256 of the primary media; the uniqueness key. | Nonzero; no live token holds it. `WorkFacts.open`: equals the primary file's SHA-256. |
-| `mediaHash` | Hash over every media file (file ID, SHA-256, role), primary first. | `WorkFacts.open`. |
+| `contentHash` | SHA-256 of the primary media; the uniqueness key. | Nonzero; no live token holds it. `StreamWorkFacts6529.open`: equals the primary file's SHA-256. |
+| `mediaHash` | Hash over every media file (file ID, SHA-256, role), primary first. | `StreamWorkFacts6529.open`. |
 | `recordFileId` | Content-store file of the JSON record; replaceable until finalize. | At `setRecord` and `finalize`. |
 | `parties` | 1 to 16 `(account, role)` entries, lead `ARTIST` first. | CUR-6. |
 | `payees` | The payee list of the artist portion. | CUR-8. |
@@ -92,8 +92,8 @@ per-artist bitmap of 255 per word; tools use nonces 0, 1, 2 and so on.
 The contracts cannot check these; the signer's tooling does before it attests:
 
 - every declared SHA-256 against the decoded bytes, including the content hash;
-- a simulation of `WorkFacts.open` for every item: its media checks do not run at mint, so a
-  mis-committed item mints and its record never opens;
+- a simulation of `StreamWorkFacts6529.open` for every item: its media checks do not run at mint, so
+  a mis-committed item mints and its record never opens;
 - strict Base64 (as `ContentStore.attestBase64` checks);
 - the conservation floor when the wave's policy runs it
   ([DCL-5](declarations-and-conventions.md#the-conservation-floor)), published per item as
@@ -146,7 +146,7 @@ full matrix is [roles.md](../audit/roles.md).
 | CUR-9 | An authorized item has a nonzero content hash, a seed exactly under `ARTIST`, empty edition terms if `ORIGINAL`, and terms `EditionRules.isValid` accepts if `EDITION_MASTER`; a kind, seed policy or party role value the policy does not know is refused. | `PackageRegistry._checkItem`, `_checkTerms` | `test_invalidItem_seedPolicy`, `test_invalidItem_valuesTodaysEnumsDoNotName`, `test_invalidItem_zeroContentHash`, `test_invalidItem_originalWithEditionTerms`, `test_invalidItem_masterEditionTerms`, `test_invalidItem_masterEditionTermsSharedRule` |
 | CUR-10 | A move is signed by a wallet of the lead's account over this registry's `MoveToStream` digest for this item, unexpired, on an unused nonce; the nonce is spent whatever the signature encoding. | `PackageRegistry._useMove`, `_spendMoveNonce` | `test_move_revertsExpired`, `test_move_revertsWrongSigner`, `test_move_revertsWrongChain`, `test_move_bindsItem`, `test_move_signedByCurrentAuthorityAfterRecovery`, `test_move_nonceSpentWhateverTheSignatureForm`, `test_Move_AnyWalletOfTheLeadAccount` |
 | CUR-11 | Only a wallet of the artist's account revokes its unused move nonces; a used or revoked nonce reverts; nonces are isolated per artist and bit. | `PackageRegistry.revokeMove` | `test_revokeMove_beforeUse`, `test_revokeMove_onlyCurrentAuthority`, `test_revokeMove_revertsWhenUsedOrRevoked`, `testFuzz_revokeMove_bitmapIsolation` |
-| CUR-12 | An item mints at most once, through any root; Stream holds at most one live token per content hash. | `PackageRegistry.authorize`, `Stream.mint` | `test_consume_revertsDoubleConsume`, `test_consume_itemIsSingleUseAcrossPackages`, `invariant_itemConsumedAtMostOnce` |
+| CUR-12 | An item mints at most once, through any root; Stream holds at most one live token per content hash. | `PackageRegistry.authorize`, `Stream6529.mint` | `test_consume_revertsDoubleConsume`, `test_consume_itemIsSingleUseAcrossPackages`, `invariant_itemConsumedAtMostOnce` |
 | CUR-13 | Retired: the registry no longer records edition claims. The ID is not reused. | none | none |
 | CUR-14 | A release is the network's, needs the token `tokenOfContent` names to be burned and a registered beneficiary, reserves the content for items led by that artist, and bars the burned item. | `PackageRegistry.releaseContent` | |
 | CUR-15 | Only an active minter of the bound Stream (`IModules(token).isMinter`) calls `authorize`. | `PackageRegistry.authorize` | `test_unboundRegistryRefusesEveryone` |
@@ -175,7 +175,7 @@ A move nonce spent by `authorize` emits nothing of its own, and a repeat accepta
 | The verifier's code no longer has the pinned hash. | `registerPackage` reverts; registered roots keep working. | `setVerifier` to a reviewed verifier (7 days). |
 | Pre-signed acceptances differ in profile fields. | The first relayed sets a new identity's profile; the others revert (`ProfileMismatch`). | The artist re-signs with the recorded profile. |
 | An unwanted move signature exists. | Anyone holding it can start the work before its deadline. | `revokeMove`, or let the deadline pass. |
-| An item's media commitments do not match the content store. | It mints, but its record never opens. | None on chain; the signer's `WorkFacts.open` simulation is the control. |
+| An item's media commitments do not match the content store. | It mints, but its record never opens. | None on chain; the signer's `StreamWorkFacts6529.open` simulation is the control. |
 | A copier's work is minted from another artist's content. | During the auction an upheld dispute burns it; after the sale, a statement only. | `releaseContent` reserves the content for the rightful artist. |
 | A release names an artist with no identity. | `UnknownArtist`. | The rightful artist registers first, by a first acceptance. |
 | The mint policy is replaced. | The new policy decides future mints. | A replacement carries over the barred items and releases it needs (see [known limitations](../audit/known-limitations.md)). |

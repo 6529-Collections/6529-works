@@ -7,7 +7,7 @@ import { IEditions } from "src/interfaces/core/IEditions.sol";
 import { IStream } from "src/interfaces/core/IStream.sol";
 import { IWorkFacts } from "src/interfaces/core/IWorkFacts.sol";
 import { License } from "src/interfaces/types/PackageTypes.sol";
-import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
+import { IIndependentStreamRegistry } from "src/interfaces/IIndependentStreamRegistry.sol";
 
 /// @notice A renderer module that answers a fixed string.
 contract MockRenderer {
@@ -121,8 +121,8 @@ contract MockAccounts {
     }
 }
 
-/// @notice A federation gate whose answers the test sets.
-contract MockFederationGate {
+/// @notice An Independent Stream gate whose answers the test sets.
+contract MockIndependentStreamGate {
     mapping(address => mapping(address => bool)) public canMint;
     mapping(address => bool) public wasMinter;
     mapping(address => uint256) public minterRemovedAt;
@@ -137,8 +137,8 @@ contract MockFederationGate {
         minterRemovedAt[minter] = when;
     }
 
-    /// @dev No federated listing (StreamTerms reads a federated pair from it).
-    function entry(address) external pure returns (IFederationRegistry.Entry memory e) { }
+    /// @dev No Independent Stream listing (StreamTerms reads an Independent Stream pair from it).
+    function entry(address) external pure returns (IIndependentStreamRegistry.Entry memory e) { }
 }
 
 /// @notice A module that misbehaves in any seam position: as a renderer it reverts, burns all

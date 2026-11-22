@@ -13,7 +13,7 @@ address constant CURRENCY_DEFAULT = address(type(uint160).max);
 // content uniqueness.
 bytes32 constant PRODUCT_STREAM = keccak256("PRODUCT_STREAM");
 bytes32 constant PRODUCT_EDITIONS = keccak256("PRODUCT_EDITIONS");
-bytes32 constant PRODUCT_FEDERATED = keccak256("PRODUCT_FEDERATED");
+bytes32 constant PRODUCT_INDEPENDENT = keccak256("PRODUCT_INDEPENDENT");
 
 /// @notice The network's governed economics for one product.
 /// @dev `feeShare` is the network part of primary sales and of royalties (25,000 at launch);

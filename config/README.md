@@ -18,10 +18,10 @@ its description and its address fields:
 
 A change to a role, a delay class or a wiring call is a change to this file, made by PR.
 
-Genesis modules and minters are constructor arguments of `Stream`, `Editions` and `Directory`,
-so nothing is bound by wiring. Every function that changes a waiting period, a module or a
-minter, and the two timed moves (`rescue`, `rebind`), maps to NETWORK with no role delay: the
-wait that applies is the contract's own setting, which the network changes at once.
+Genesis modules and minters are constructor arguments of `Stream6529`, `StreamEditions6529` and
+`StreamDirectory6529`, so nothing is bound by wiring. Every function that changes a waiting period,
+a module or a minter, and the two timed moves (`rescue`, `rebind`), maps to NETWORK with no role
+delay: the wait that applies is the contract's own setting, which the network changes at once.
 
 | Key | Contents |
 | --- | --- |
@@ -31,8 +31,8 @@ wait that applies is the contract's own setting, which the network changes at on
 | `peers` | Ungoverned addresses that wiring passes as arguments, including the manager (the epoch-0 manifest's subject) |
 | `manager` | The manager's own functions beyond its OpenZeppelin base: `transferNetwork` and `setBrake` (ADMIN), the open `acceptNetwork` and `brakeOnce` |
 | `contracts` | The governed targets: per contract its artifact and its governed selectors, each with its role, delay class and delay; `genesisOnly` one-shot binds (wired, never mapped) |
-| `wiring` | The genesis calls `configure` makes before mapping any selector: the package registry's `bindStream` and entropy module, the edition auction's `setTarget(Editions)`, the ETH opening bid of 0.05 ETH (`setOpeningBid`), the federation module's two adapters, two templates and entropy module, and the epoch-0 governance manifest. A call on a contract the deployment lacks (the entropy module without VRF) is left out |
-| `settings` | The launch values of the four waiting periods, which `VerifyCore` reads back: `moduleDelay` 604,800 s on `Stream`, `Editions` and `Directory`; `rescueDelay` 1,209,600 s on `Stream`; `rebindDelay` 1,209,600 s on `Editions`; `unclaimedPeriod` 15,552,000 s on `Directory` |
+| `wiring` | The genesis calls `configure` makes before mapping any selector: the package registry's `bindStream` and entropy module, the edition auction's `setTarget(StreamEditions6529)`, the ETH opening bid of 0.05 ETH (`setOpeningBid`), the Independent Stream module's two adapters, two templates and entropy module, and the epoch-0 governance manifest. A call on a contract the deployment lacks (the entropy module without VRF) is left out |
+| `settings` | The launch values of the four waiting periods, which `VerifyCore` reads back: `moduleDelay` 604,800 s on `Stream6529`, `StreamEditions6529` and `StreamDirectory6529`; `rescueDelay` 1,209,600 s on `Stream6529`; `rebindDelay` 1,209,600 s on `StreamEditions6529`; `unclaimedPeriod` 15,552,000 s on `StreamDirectory6529` |
 | `initialInstalls` | Which initial settings are constructor arguments and which are wiring |
 | `unusedRoles` | Roles with no selector |
 

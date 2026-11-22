@@ -9,7 +9,7 @@ import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
 import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import {
     PRODUCT_EDITIONS,
-    PRODUCT_FEDERATED,
+    PRODUCT_INDEPENDENT,
     PRODUCT_STREAM
 } from "src/interfaces/types/EconomicsTypes.sol";
 import { ArtistIdentity } from "src/interfaces/types/IdentityTypes.sol";
@@ -206,7 +206,7 @@ contract RecipientValidationPortedTest is IntegrationBase {
             address(accounts),
             address(registry)
         ];
-        bytes32[3] memory products = [PRODUCT_STREAM, PRODUCT_EDITIONS, PRODUCT_FEDERATED];
+        bytes32[3] memory products = [PRODUCT_STREAM, PRODUCT_EDITIONS, PRODUCT_INDEPENDENT];
         bytes[11] memory calls;
         for (uint256 i; i < refused.length; ++i) {
             bytes32 product = products[i % 3];

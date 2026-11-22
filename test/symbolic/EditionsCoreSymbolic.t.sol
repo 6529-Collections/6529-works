@@ -18,8 +18,8 @@ contract SymbolicMaster {
 
 /// @notice `EditionsBase` with the simplest hooks: minters and removal times the test sets, the
 ///         test as the network and admin. The base's own rules are what the proofs cover; the
-///         hooks of `Editions` and `FederatedEditions` only answer who may mint and when a
-///         minter was removed.
+///         hooks of `StreamEditions6529` and `IndependentStreamEditions6529` only answer who may
+///         mint and when a minter was removed.
 contract EditionsHarness is EditionsBase {
     address public immutable network;
     mapping(address account => bool) public minter;

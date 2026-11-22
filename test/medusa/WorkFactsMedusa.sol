@@ -2,8 +2,8 @@
 pragma solidity ^0.8.24;
 
 import { ContentStore } from "src/content/ContentStore.sol";
-import { Stream } from "src/core/Stream.sol";
-import { WorkFacts } from "src/core/WorkFacts.sol";
+import { Stream6529 } from "src/core/Stream6529.sol";
+import { StreamWorkFacts6529 } from "src/core/StreamWorkFacts6529.sol";
 import { Facts, MintFacts, Slots } from "src/interfaces/core/CoreTypes.sol";
 import { IWorkFacts } from "src/interfaces/core/IWorkFacts.sol";
 import { MediaFile } from "src/interfaces/types/ContentTypes.sol";
@@ -13,15 +13,16 @@ import { MockRecords, MockRenderer, MockSale, MockTerms } from "../mocks/core/Co
 import { Actor, Gate, MedusaBase } from "./MedusaBase.sol";
 
 /// @dev Stateful harness for Medusa (docs/testing/README.md, second fuzzer) over the real
-///      `WorkFacts`, the real core `Stream` it records and the real `ContentStore`, with a
-///      pass-through RECORDS module (`MockRecords`, the "records module actor"), two renderers
-///      that take turns in Stream's RENDERER slot, and a stranger who calls `WorkFacts` directly.
+///      `StreamWorkFacts6529`, the real core `Stream6529` it records and the real `ContentStore`,
+///      with a pass-through RECORDS module (`MockRecords`, the "records module actor"), two
+///      renderers that take turns in Stream's RENDERER slot, and a stranger who calls
+///      `StreamWorkFacts6529` directly.
 ///
-///      The model is written from the guarantees `IWorkFacts` and `WorkFacts` state (ADR 0010)
-///      and docs/spec/works-and-storage.md, not from the code: which works are minted from which
-///      item, which files the store holds complete, each record's media, record file, license,
-///      locks, finalization and pinned renderer, and the RENDERER slot. Licenses and files come
-///      from fixed tables whose properties the harness states by hand (which identifiers are
+///      The model is written from the guarantees `IWorkFacts` and `StreamWorkFacts6529` state (ADR
+///      0010) and docs/spec/works-and-storage.md, not from the code: which works are minted from
+///      which item, which files the store holds complete, each record's media, record file,
+///      license, locks, finalization and pinned renderer, and the RENDERER slot. Licenses and files
+///      come from fixed tables whose properties the harness states by hand (which identifiers are
 ///      valid SPDX, which are CC0, which texts are small, registered or complete), so the model
 ///      never asks the contract or its libraries. It predicts every call's outcome; the
 ///      `property_*` functions compare the model with the contracts after every call.
@@ -31,8 +32,8 @@ contract WorkFactsMedusa is MedusaBase {
     uint256 internal constant RECORD_FILES = 5;
     uint256 internal constant MAX_TOKENS = 8;
 
-    WorkFacts public facts;
-    Stream public stream;
+    StreamWorkFacts6529 public facts;
+    Stream6529 public stream;
     ContentStore public store;
     MockRecords public records;
     MockSale public sale;
@@ -85,7 +86,7 @@ contract WorkFactsMedusa is MedusaBase {
         gate = new Gate(address(governor));
         store = new ContentStore();
         _registerFiles();
-        facts = new WorkFacts(address(store), cc0Text);
+        facts = new StreamWorkFacts6529(address(store), cc0Text);
         rendererA = new MockRenderer();
         rendererB = new MockRenderer();
         rendererC = new MockRenderer();
@@ -93,7 +94,7 @@ contract WorkFactsMedusa is MedusaBase {
         records = new MockRecords(facts);
         address[] memory minters = new address[](1);
         minters[0] = address(sale);
-        stream = new Stream(
+        stream = new Stream6529(
             address(gate),
             address(facts),
             address(governor),

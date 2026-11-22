@@ -4,7 +4,7 @@ The royalty policy of existing works: a replaceable module behind the permanent 
 
 | File | What it is |
 | --- | --- |
-| `StreamTerms.sol` | The TERMS module ([`ITerms`](../interfaces/core/ITerms.sol)) of 6529 Stream and 6529 Stream Editions, and, through the directory's `FEDERATED_TERMS` slot, of federated tokens. The only caller of the tokens' royalty setters. |
+| `StreamTerms.sol` | The TERMS module ([`ITerms`](../interfaces/core/ITerms.sol)) of 6529 Stream and 6529 Stream Editions, and, through the directory's `INDEPENDENT_TERMS` slot, of Independent Stream tokens. The only caller of the tokens' royalty setters. |
 
 ## Rules it holds
 
@@ -22,9 +22,9 @@ The royalty policy of existing works: a replaceable module behind the permanent 
   old receiver. An edition with a receiver of its own is lowered by naming the editions
   contract as the token. The network pairs each editions contract with its token contract
   (`setEditions`).
-- **Federated tokens.** Any token but 6529 Stream counts as federated: a new share may not
-  exceed the federation module's current share for that token (`IFederationGate.feeShareOf`),
-  which only ever goes down.
+- **Independent Stream tokens.** Any token but 6529 Stream counts as Independent Stream: a new share
+  may not exceed the Independent Stream module's current share for that token
+  (`IIndependentStreamGate.feeShareOf`), which only ever goes down.
 
 ## What it cannot do
 

@@ -692,19 +692,6 @@
     "type": "function"
   },
   {
-    "inputs": [],
-    "name": "federationRegistry",
-    "outputs": [
-      {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
-      }
-    ],
-    "stateMutability": "pure",
-    "type": "function"
-  },
-  {
     "inputs": [
       {
         "internalType": "address",
@@ -726,6 +713,19 @@
       }
     ],
     "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "independentStreamRegistry",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "pure",
     "type": "function"
   },
   {
@@ -1080,7 +1080,7 @@
         "type": "address"
       }
     ],
-    "name": "setFederationRegistry",
+    "name": "setIndependentStreamRegistry",
     "outputs": [],
     "stateMutability": "pure",
     "type": "function"

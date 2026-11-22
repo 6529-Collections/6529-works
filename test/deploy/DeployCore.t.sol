@@ -30,7 +30,7 @@ contract DeployCoreTest is CoreDeployFixture {
         }
         assertEq(address(d.manager), address(d.configurator.worksManager()));
         assertEq(DeployCore.PERMANENT_COUNT, 11);
-        assertEq(list[DeployCore.PERMANENT_COUNT - 1], "Editions");
+        assertEq(list[DeployCore.PERMANENT_COUNT - 1], "StreamEditions6529");
     }
 
     function test_AddressesDependOnlyOnTheNamespaceAndTheName() public view {
@@ -54,9 +54,9 @@ contract DeployCoreTest is CoreDeployFixture {
         assertEq(d.editions.moduleOf(Slots.TERMS), d.streamTerms);
         assertTrue(d.editions.isMinter(d.editionAuction));
         assertEq(d.directory.moduleOf(Slots.ACCOUNTS), d.accounts);
-        assertEq(d.directory.moduleOf(Slots.FEDERATION), d.federationRegistry);
-        assertEq(d.directory.moduleOf(Slots.FEDERATED_TERMS), d.streamTerms);
-        assertEq(d.directory.moduleOf(Slots.FEDERATED_RECORDS), d.workRules);
+        assertEq(d.directory.moduleOf(Slots.INDEPENDENT_STREAM), d.independentStreamRegistry);
+        assertEq(d.directory.moduleOf(Slots.INDEPENDENT_TERMS), d.streamTerms);
+        assertEq(d.directory.moduleOf(Slots.INDEPENDENT_RECORDS), d.workRules);
         assertEq(address(d.splitLedger.resolver()), address(d.directory));
     }
 
@@ -79,7 +79,7 @@ contract DeployCoreTest is CoreDeployFixture {
         x.renderer = address(0xBAD);
         vm.expectRevert(
             abi.encodeWithSelector(
-                VerifyCore.Mismatch.selector, "Stream.RENDERER", address(d.stream)
+                VerifyCore.Mismatch.selector, "Stream6529.RENDERER", address(d.stream)
             )
         );
         this.verifyExternal(x);
@@ -88,7 +88,9 @@ contract DeployCoreTest is CoreDeployFixture {
     function test_AChangedSettingFailsTheGenesisReadback() public {
         _asNetwork(address(d.stream), abi.encodeCall(d.stream.setRescueDelay, (1 days)));
         vm.expectRevert(
-            abi.encodeWithSelector(VerifyCore.Mismatch.selector, "Stream.rescueDelay", address(0))
+            abi.encodeWithSelector(
+                VerifyCore.Mismatch.selector, "Stream6529.rescueDelay", address(0)
+            )
         );
         this.verifyExternal(d);
     }
@@ -101,7 +103,7 @@ contract DeployCoreTest is CoreDeployFixture {
         vm.expectRevert(
             abi.encodeWithSelector(
                 VerifyCore.Mismatch.selector,
-                "Directory.ACCOUNTS announced at genesis",
+                "StreamDirectory6529.ACCOUNTS announced at genesis",
                 address(d.directory)
             )
         );

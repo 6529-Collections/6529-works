@@ -29,9 +29,9 @@ import { UniformClearing } from "./UniformClearing.sol";
 
 /// @title UniformEditionAuctionLensBase
 /// @notice The read side of {UniformEditionAuctionBase}, shared by the lens of each deployment
-///         ({UniformEditionAuctionLens}, {FederatedEditionAuctionLens}): every view of a sale and of the adapter's
-///         settings, computed from the adapter's storage words with the clearing code its
-///         settlement runs, and the master and abandonment checks its `open` and `abandon`
+///         ({UniformEditionAuctionLens}, {IndependentEditionAuctionLens}): every view of a sale and
+///         of the adapter's settings, computed from the adapter's storage words with the clearing
+///         code its settlement runs, and the master and abandonment checks its `open` and `abandon`
 ///         consult. See {IUniformEditionAuctionLens}.
 /// @dev Stateless, and bound to no adapter: deployed in its own transaction (so the adapter's
 ///      deployment fits a block), it reads every sale from `msg.sender`, the adapter forwarding
@@ -1243,12 +1243,12 @@ contract UniformEditionAuctionLens is UniformEditionAuctionLensBase {
     }
 
     /// @inheritdoc IUniformEditionAuctionLens
-    function federationRegistry() external pure returns (address) {
+    function independentStreamRegistry() external pure returns (address) {
         return address(0);
     }
 
     /// @inheritdoc IUniformEditionAuctionLens
-    function setFederationRegistry(address, address next) external pure {
+    function setIndependentStreamRegistry(address, address next) external pure {
         revert ISaleAdapter.TargetNotAllowed(next);
     }
 

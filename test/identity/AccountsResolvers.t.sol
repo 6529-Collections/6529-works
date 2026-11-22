@@ -1,26 +1,28 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { Directory } from "src/core/Directory.sol";
+import { StreamDirectory6529 } from "src/core/StreamDirectory6529.sol";
 import { Accounts } from "src/identity/Accounts.sol";
 import { ConsolidationAdapter, IDelegationManagement } from "src/identity/ConsolidationAdapter.sol";
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
-import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
+import { IIndependentStreamRegistry } from "src/interfaces/IIndependentStreamRegistry.sol";
 import { MintFacts, Slots } from "src/interfaces/core/CoreTypes.sol";
 import { CoreFixture } from "../mocks/core/CoreFixture.sol";
 import { DelegationManagementMock } from "../mocks/identity/DelegationManagementMock.sol";
 import { SplitFactoryWalletsMock } from "../mocks/identity/IdentityWorksMocks.sol";
 
-/// @notice A federation module answering `entry` as the test sets it.
+/// @notice An Independent Stream module answering `entry` as the test sets it.
 contract EntryStub {
-    mapping(address token => IFederationRegistry.Entry) internal _entries;
+    mapping(address token => IIndependentStreamRegistry.Entry) internal _entries;
 
-    function set(address token, uint256 artistId, IFederationRegistry.Status status) external {
+    function set(address token, uint256 artistId, IIndependentStreamRegistry.Status status)
+        external
+    {
         _entries[token].artistId = artistId;
         _entries[token].status = status;
     }
 
-    function entry(address token) external view returns (IFederationRegistry.Entry memory) {
+    function entry(address token) external view returns (IIndependentStreamRegistry.Entry memory) {
         return _entries[token];
     }
 }
@@ -48,12 +50,13 @@ contract RawWorkToken {
 
 /// @notice The accounts module against the real permanent core: `isArtist` for 6529 Stream
 ///         works and editions (any token answering `workOf`, any edition through its master),
-///         `federatedListing` forwarding the federation module, `registerFederated` taking its
-///         caller from the directory, and `payoutAddress` through the real `Directory`.
+///         `independentListing` forwarding the Independent Stream module, `registerIndependent`
+///         taking its caller from the directory, and `payoutAddress` through the real
+///         `StreamDirectory6529`.
 contract AccountsResolversTest is CoreFixture {
     Accounts internal acc;
-    Directory internal dir;
-    EntryStub internal federation;
+    StreamDirectory6529 internal dir;
+    EntryStub internal independentStream;
     DelegationManagementMock internal delegation;
     ConsolidationAdapter internal adapter;
     address internal packageRegistry = makeAddr("packageRegistry");
@@ -70,11 +73,15 @@ contract AccountsResolversTest is CoreFixture {
         wallet = vm.addr(walletKey);
         delegation = new DelegationManagementMock();
         adapter = new ConsolidationAdapter(IDelegationManagement(address(delegation)));
-        federation = new EntryStub();
+        independentStream = new EntryStub();
         SplitFactoryWalletsMock factory = new SplitFactoryWalletsMock();
         address predicted = vm.computeCreateAddress(address(this), vm.getNonce(address(this)) + 1);
-        dir = new Directory(
-            address(manager), predicted, address(federation), address(terms), address(records)
+        dir = new StreamDirectory6529(
+            address(manager),
+            predicted,
+            address(independentStream),
+            address(terms),
+            address(records)
         );
         acc = new Accounts(
             address(manager),
@@ -156,15 +163,16 @@ contract AccountsResolversTest is CoreFixture {
         assertTrue(acc.isArtist(address(raw), id, artist), "an edition naming a master");
     }
 
-    // ------------------------------------------------------------------ federation forwards
+    // ------------------------------------------------------------------ Independent Stream
+    // forwards
 
-    function test_FederationRegistry_IsTheDirectorysFederationModule() public {
-        assertEq(acc.federationRegistry(), address(federation));
-        dir.removeModule(Slots.FEDERATION);
-        assertEq(acc.federationRegistry(), address(0), "an empty slot answers nothing");
+    function test_IndependentStreamRegistry_IsTheDirectorysIndependentStreamModule() public {
+        assertEq(acc.independentStreamRegistry(), address(independentStream));
+        dir.removeModule(Slots.INDEPENDENT_STREAM);
+        assertEq(acc.independentStreamRegistry(), address(0), "an empty slot answers nothing");
     }
 
-    function test_RegisterFederated_OnlyTheDirectorysFederationModule() public {
+    function test_RegisterIndependent_OnlyTheDirectorysIndependentStreamModule() public {
         uint256 key = 0xF1;
         address account = vm.addr(key);
         uint64 deadline = uint64(block.timestamp + 1 days);
@@ -172,21 +180,22 @@ contract AccountsResolversTest is CoreFixture {
             _sign(key, acc.registrationDigest(account, bytes32(0), bytes32(0), deadline));
         vm.prank(outsider);
         vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.UnboundCaller.selector, outsider));
-        acc.registerFederated(account, bytes32(0), bytes32(0), deadline, sig);
+        acc.registerIndependent(account, bytes32(0), bytes32(0), deadline, sig);
         vm.prank(packageRegistry);
         vm.expectRevert(
             abi.encodeWithSelector(IArtistRegistry.UnboundCaller.selector, packageRegistry)
         );
-        acc.registerFederated(account, bytes32(0), bytes32(0), deadline, sig);
-        vm.prank(address(federation));
+        acc.registerIndependent(account, bytes32(0), bytes32(0), deadline, sig);
+        vm.prank(address(independentStream));
         assertEq(
-            acc.registerFederated(account, bytes32(0), bytes32(0), deadline, sig), uint160(account)
+            acc.registerIndependent(account, bytes32(0), bytes32(0), deadline, sig),
+            uint160(account)
         );
         assertEq(acc.authorityOf(uint160(account)), account);
     }
 
-    function test_RegisterFederated_RefusedWhileTheSlotIsEmpty() public {
-        dir.removeModule(Slots.FEDERATION);
+    function test_RegisterIndependent_RefusedWhileTheSlotIsEmpty() public {
+        dir.removeModule(Slots.INDEPENDENT_STREAM);
         uint256 key = 0xF1;
         address account = vm.addr(key);
         uint64 deadline = uint64(block.timestamp + 1 days);
@@ -194,12 +203,14 @@ contract AccountsResolversTest is CoreFixture {
             _sign(key, acc.registrationDigest(account, bytes32(0), bytes32(0), deadline));
         vm.prank(address(0));
         vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.UnboundCaller.selector, address(0)));
-        acc.registerFederated(account, bytes32(0), bytes32(0), deadline, sig);
-        vm.prank(address(federation));
+        acc.registerIndependent(account, bytes32(0), bytes32(0), deadline, sig);
+        vm.prank(address(independentStream));
         vm.expectRevert(
-            abi.encodeWithSelector(IArtistRegistry.UnboundCaller.selector, address(federation))
+            abi.encodeWithSelector(
+                IArtistRegistry.UnboundCaller.selector, address(independentStream)
+            )
         );
-        acc.registerFederated(account, bytes32(0), bytes32(0), deadline, sig);
+        acc.registerIndependent(account, bytes32(0), bytes32(0), deadline, sig);
     }
 
     // ------------------------------------------------------------------ payout through Directory

@@ -37,12 +37,12 @@ assume the number.
 
 | Contract | Setting | Launch value |
 | --- | --- | --- |
-| Stream | `moduleDelay()` | 7 days |
-| Stream | `rescueDelay()` | 14 days |
-| Editions | `moduleDelay()` | 7 days |
-| Editions | `rebindDelay()` | 14 days |
-| Directory | `moduleDelay()` | 7 days |
-| Directory | `unclaimedPeriod()` | 180 days |
+| Stream6529 | `moduleDelay()` | 7 days |
+| Stream6529 | `rescueDelay()` | 14 days |
+| StreamEditions6529 | `moduleDelay()` | 7 days |
+| StreamEditions6529 | `rebindDelay()` | 14 days |
+| StreamDirectory6529 | `moduleDelay()` | 7 days |
+| StreamDirectory6529 | `unclaimedPeriod()` | 180 days |
 
 ## How to read the matrix
 
@@ -93,9 +93,9 @@ once; the network roles answer for `network()` only ([`Roles.sol`](../../src/gov
 
 ## Matrix by contract
 
-### Stream
+### Stream6529
 
-Source: [`src/core/Stream.sol`](../../src/core/Stream.sol).
+Source: [`src/core/Stream6529.sol`](../../src/core/Stream6529.sol).
 
 | Function | Selector | Role | Class | Delay | Cancel | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -111,9 +111,9 @@ Source: [`src/core/Stream.sol`](../../src/core/Stream.sol).
 | `setRescueDelay(uint48)` | `0x1d2c9862` | `NETWORK` | No delay | immediate | No: executes at once | A setting of the network, at once, zero allowed; read when a rescue is attempted. |
 | `rescue(uint256,address)` | `0xa923625c` | `NETWORK` | No delay | immediate | No: executes at once | Only a token a removed minter still holds with no outcome, once `rescueDelay()` has passed since the removal. It can never reach a token a collector holds. |
 
-### Editions
+### StreamEditions6529
 
-Source: [`src/core/Editions.sol`](../../src/core/Editions.sol).
+Source: [`src/core/StreamEditions6529.sol`](../../src/core/StreamEditions6529.sol).
 
 | Function | Selector | Role | Class | Delay | Cancel | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -128,9 +128,9 @@ Source: [`src/core/Editions.sol`](../../src/core/Editions.sol).
 | `setRebindDelay(uint48)` | `0xf39ce910` | `NETWORK` | No delay | immediate | No: executes at once | A setting of the network, at once, zero allowed; read when a rebind is attempted. |
 | `rebind(uint256,address)` | `0x89e09f12` | `NETWORK` | No delay | immediate | No: executes at once | Only an edition with no copies and no seal, once `rebindDelay()` has passed since its minter was removed; the new minter adopts it. |
 
-### Directory
+### StreamDirectory6529
 
-Source: [`src/core/Directory.sol`](../../src/core/Directory.sol).
+Source: [`src/core/StreamDirectory6529.sol`](../../src/core/StreamDirectory6529.sol).
 
 | Function | Selector | Role | Class | Delay | Cancel | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -150,9 +150,9 @@ Source: [`src/records/WorkRules.sol`](../../src/records/WorkRules.sol).
 
 | Function | Selector | Role | Class | Delay | Cancel | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| `relicense(address,uint256,(string,bytes32),(…),bytes32,uint64,bytes[])` | `0x830b57ca` | `FUNDS_SETTER` | 3 days | 3 days | The network or the scheduler, during the delay; the brake may delay it once | Also needs every party's signed consent. `WorkFacts` refuses to leave CC0 or pass a lock. |
+| `relicense(address,uint256,(string,bytes32),(…),bytes32,uint64,bytes[])` | `0x830b57ca` | `FUNDS_SETTER` | 3 days | 3 days | The network or the scheduler, during the delay; the brake may delay it once | Also needs every party's signed consent. `StreamWorkFacts6529` refuses to leave CC0 or pass a lock. |
 | `setRoyaltyRate(address,uint256,uint24,(…),bytes32,uint64,bytes[])` | `0xbea2c915` | `FUNDS_SETTER` | 3 days | 3 days | The network or the scheduler, during the delay; the brake may delay it once | Also needs every party's signed consent; refused once the rate is locked in the token. |
-| `repinRenderer(address,uint256,address,bytes32)` | `0x7b3d605d` | `SUCCESSOR_SETTER` | 7 days | 7 days | The network or the scheduler, during the delay; the brake may delay it once | Refused for good once the lead artist renounced the repin power (a lock in `WorkFacts`). |
+| `repinRenderer(address,uint256,address,bytes32)` | `0x7b3d605d` | `SUCCESSOR_SETTER` | 7 days | 7 days | The network or the scheduler, during the delay; the brake may delay it once | Refused for good once the lead artist renounced the repin power (a lock in `StreamWorkFacts6529`). |
 | `renounce(address,uint256,uint16,bytes32,uint64,bytes)` | `0x12af57c4` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once | Relays the artist's signature; the royalty and license powers also need this role. |
 | `setDelivery(address,address)` | `0x118e803d` | `SUCCESSOR_SETTER` | 7 days | 7 days | The network or the scheduler, during the delay; the brake may delay it once | Replaces the delivery contract (locators and preferences). No fact of any work changes. |
 | `addStore(address,bytes32)` | `0xce8238dd` | `SUCCESSOR_SETTER` | 7 days | 7 days | The network or the scheduler, during the delay; the brake may delay it once | Adds a store media may be found complete in, for good; code-hash pinned. |
@@ -320,9 +320,9 @@ Source: [`src/entropy/VrfEntropyModule.sol`](../../src/entropy/VrfEntropyModule.
 | `lowerCallbackGasLimit(uint32,uint32)` | `0x37f9925e` | `SUCCESSOR_SETTER` | 7 days | 7 days | The network or the scheduler, during the delay; the brake may delay it once | Never below the floor. |
 | `setWrapper(address,address,bytes32)` | `0x40cacfc9` | `SUCCESSOR_SETTER` | 7 days | 7 days | The network or the scheduler, during the delay; the brake may delay it once |  |
 
-### FederationRegistry
+### IndependentStreamRegistry
 
-Source: [`src/federated/FederationRegistry.sol`](../../src/federated/FederationRegistry.sol).
+Source: [`src/independent/IndependentStreamRegistry.sol`](../../src/independent/IndependentStreamRegistry.sol).
 
 | Function | Selector | Role | Class | Delay | Cancel | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -333,14 +333,14 @@ Source: [`src/federated/FederationRegistry.sol`](../../src/federated/FederationR
 | `resumeTemplate(address)` | `0x57ffef55` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once |  |
 | `setStatus(address[],uint8,bytes32)` | `0x565f9c3d` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once |  |
 | `reinstateTemplate(address)` | `0x2ee4469d` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once | Moves a revoked template version back to approved. |
-| `setAccountDelisted(uint256,bool,bytes32)` | `0xe86d1238` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once | Delisting stops new mints for the account's federated contracts at once. |
+| `setAccountDelisted(uint256,bool,bytes32)` | `0xe86d1238` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once | Delisting stops new mints for the account's Independent Stream contracts at once. |
 | `lowerFeeShare(address,uint32)` | `0x11c13b07` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once | Lower only. |
 | `releaseContent(address,uint256,bytes32,uint256)` | `0x98764eda` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once |  |
 | `setEntropyModule(address)` | `0x795390b0` | `SUCCESSOR_SETTER` | 7 days | 7 days | The network or the scheduler, during the delay; the brake may delay it once |  |
 
-### FederatedEditionAuction
+### IndependentEditionAuction
 
-Source: [`src/federated/FederatedEditionAuction.sol`](../../src/federated/FederatedEditionAuction.sol).
+Source: [`src/independent/IndependentEditionAuction.sol`](../../src/independent/IndependentEditionAuction.sol).
 
 | Function | Selector | Role | Class | Delay | Cancel | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -369,15 +369,15 @@ and renounces its installer record; it then proposes the network, which accepts.
 
 | # | Contract | Call | Arguments |
 | ---: | --- | --- | --- |
-| 0 | PackageRegistry | `bindStream(address)` | Stream (the one Stream the package registry admits for) |
+| 0 | PackageRegistry | `bindStream(address)` | Stream6529 (the one Stream the package registry admits for) |
 | 1 | PackageRegistry | `setEntropyModule(address,address)` | `address(0)` (ETH), EntropyModule (left out when there is no entropy module) |
-| 2 | UniformEditionAuction | `setTarget(address,bool)` | Editions, `true` |
+| 2 | UniformEditionAuction | `setTarget(address,bool)` | StreamEditions6529, `true` |
 | 3 | AssetAllowlist | `setOpeningBid(address,uint64,uint256)` | `address(0)` (ETH), 1, 50000000000000000 (ETH opening bid 0.05 ETH: a 1-wei self-bid cannot keep an unsold work from the museum) |
-| 4 | FederationRegistry | `setAdapter(address,uint8,bool)` | EnglishAuction, 0, `true` |
-| 5 | FederationRegistry | `setAdapter(address,uint8,bool)` | FederatedEditionAuction, 1, `true` |
-| 6 | FederationRegistry | `approveTemplate(address,uint32,uint8)` | FederatedStreamDeployer, 1, 0 |
-| 7 | FederationRegistry | `approveTemplate(address,uint32,uint8)` | FederatedEditionsDeployer, 1, 1 |
-| 8 | FederationRegistry | `setEntropyModule(address)` | EntropyModule (left out when there is no entropy module) |
+| 4 | IndependentStreamRegistry | `setAdapter(address,uint8,bool)` | EnglishAuction, 0, `true` |
+| 5 | IndependentStreamRegistry | `setAdapter(address,uint8,bool)` | IndependentEditionAuction, 1, `true` |
+| 6 | IndependentStreamRegistry | `approveTemplate(address,uint32,uint8)` | IndependentStream721Deployer, 1, 0 |
+| 7 | IndependentStreamRegistry | `approveTemplate(address,uint32,uint8)` | IndependentStreamEditionsDeployer, 1, 1 |
+| 8 | IndependentStreamRegistry | `setEntropyModule(address)` | EntropyModule (left out when there is no entropy module) |
 | 9 | StatementLog | `appendGovernanceManifest((…))` |  |
 
 ## The AccessManager's own functions

@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import { GasBase } from "./GasBase.sol";
 
-/// @notice `Stream.royaltyInfo` under a caller's gas limit (ADR 0004's table: 50,000 gas of
+/// @notice `Stream6529.royaltyInfo` under a caller's gas limit (ADR 0004's table: 50,000 gas of
 ///         execution), on the deployed stack. Marketplaces call it with their own limits, so the
 ///         call must fit the budget, and with less gas it must revert, never answer a zero or
 ///         partial royalty.

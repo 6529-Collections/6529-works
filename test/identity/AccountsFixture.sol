@@ -13,8 +13,8 @@ import {
     SplitFactoryWalletsMock
 } from "../mocks/identity/IdentityWorksMocks.sol";
 
-/// @notice A directory whose module slots the test sets: `Accounts` asks it for the federation
-///         module (the only `registerFederated` caller).
+/// @notice A directory whose module slots the test sets: `Accounts` asks it for the Independent
+///         Stream module (the only `registerIndependent` caller).
 contract DirectoryStub {
     mapping(bytes32 slot => address) public moduleOf;
 

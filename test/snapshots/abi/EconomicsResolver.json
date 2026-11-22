@@ -375,9 +375,9 @@
     "type": "function"
   },
   {
-    "id": "0x9eed6a12",
+    "id": "0x65a88835",
     "inputs": [],
-    "name": "FEDERATED_FEE_SHARE",
+    "name": "INDEPENDENT_FEE_SHARE",
     "outputs": [
       {
         "internalType": "uint32",
@@ -385,7 +385,7 @@
         "type": "uint32"
       }
     ],
-    "signature": "FEDERATED_FEE_SHARE()",
+    "signature": "INDEPENDENT_FEE_SHARE()",
     "stateMutability": "view",
     "type": "function"
   },

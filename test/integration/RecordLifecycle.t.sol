@@ -16,11 +16,11 @@ import { WorkRules } from "src/records/WorkRules.sol";
 import { RecordFlowsBase } from "./RecordFlowsBase.sol";
 
 /// @notice A work's record through its whole life on the real stack, `WorkRules` (the RECORDS
-///         module) over `WorkFacts` (the permanent record): opened by `SaleStarter` or by anyone,
-///         edited by the artist, relicensed with every party's consent and the network's call,
-///         finalized by the artist or by anyone 14 days after a notice that follows the sale's
-///         outcome, then fixed; media fixed from the start; CC0 never left; one-way locks; the
-///         network's repin before the pin is locked; a finalized work drawn by its pinned
+///         module) over `StreamWorkFacts6529` (the permanent record): opened by `SaleStarter` or by
+///         anyone, edited by the artist, relicensed with every party's consent and the network's
+///         call, finalized by the artist or by anyone 14 days after a notice that follows the
+///         sale's outcome, then fixed; media fixed from the start; CC0 never left; one-way locks;
+///         the network's repin before the pin is locked; a finalized work drawn by its pinned
 ///         renderer whatever the token's RENDERER module becomes.
 contract RecordLifecycleTest is RecordFlowsBase {
     address internal lead;

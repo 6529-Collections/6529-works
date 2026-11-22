@@ -9,15 +9,16 @@ import { FileRole, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { HashRef } from "src/interfaces/types/HashRef.sol";
 import { ReplayBase } from "./ReplayBase.sol";
 
-/// @notice A real work end to end on the deployed stack: the 6529 Network Museum's record of Vera Molnár and Martin Grasser, *Themes and Variations #210* (6529NM-W-0029),
-///         at a pinned Museum commit (`test/fixtures/real/museum-work.json`, written by
-///         `tools/make_vectors.py` from the Museum's own CC0 records). Its record goes into the
-///         content store with the uploader's layout, its display image is registered by the
-///         digests the Museum's file gives, the work is minted through a curated sale, its
-///         record opened in `WorkFacts` and finalized through the rules module, and `tokenURI`
-///         shows the record; a curator's catalogue statement cites the Museum record by its own
-///         envelope digest. Every ID and hash is checked against the value Python computed
-///         independently, and every permanent contract's indexer replays the whole run.
+/// @notice A real work end to end on the deployed stack: the 6529 Network Museum's record of Vera
+///         Molnár and Martin Grasser, *Themes and Variations #210* (6529NM-W-0029), at a pinned
+///         Museum commit (`test/fixtures/real/museum-work.json`, written by `tools/make_vectors.py`
+///         from the Museum's own CC0 records). Its record goes into the content store with the
+///         uploader's layout, its display image is registered by the digests the Museum's file
+///         gives, the work is minted through a curated sale, its record opened in
+///         `StreamWorkFacts6529` and finalized through the rules module, and `tokenURI` shows the
+///         record; a curator's catalogue statement cites the Museum record by its own envelope
+///         digest. Every ID and hash is checked against the value Python computed independently,
+///         and every permanent contract's indexer replays the whole run.
 contract RealVectorsTest is ReplayBase {
     string internal constant PATH = "test/fixtures/real/museum-work.json";
     bytes32 internal constant ENTRY_DOMAIN = keccak256("6529.works.StatementLog.entry.v1");

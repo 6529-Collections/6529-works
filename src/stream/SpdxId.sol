@@ -5,9 +5,9 @@ import { Limits } from "../interfaces/types/Limits.sol";
 
 /// @title SpdxId
 /// @notice The license-identifier rule: 1 to `Limits.MAX_LICENSE_ID_BYTES` bytes of
-///         `[A-Za-z0-9.+-]`. The mint policy applies it to an item's license, and `WorkFacts`
-///         applies it whenever a license is replaced, locked or frozen by finalize, so every
-///         license a finalized work shows is one a renderer can print.
+///         `[A-Za-z0-9.+-]`. The mint policy applies it to an item's license, and
+///         `StreamWorkFacts6529` applies it whenever a license is replaced, locked or frozen by
+///         finalize, so every license a finalized work shows is one a renderer can print.
 /// @dev The identifier keeps its original case (`License`); only `WorksHashing.licenseKey`
 ///      lowercases it. Plain code: one comparison chain per byte, no assembly.
 library SpdxId {

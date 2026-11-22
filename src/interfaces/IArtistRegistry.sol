@@ -30,8 +30,8 @@ interface IConsolidationSource is IERC165 {
 /// @notice The accounts module: artist accounts, their payout and profile. An account is a 6529
 ///         consolidated account: its root wallet and every wallet consolidated with the root act
 ///         for it with the same rights (`IAccounts`). The module is replaceable: the permanent
-///         `Directory` names the current one (slot `ACCOUNTS`), and the split ledger reaches it
-///         only through `Directory.payoutAddress`.
+///         `StreamDirectory6529` names the current one (slot `ACCOUNTS`), and the split ledger
+///         reaches it only through `StreamDirectory6529.payoutAddress`.
 /// @dev Artist IDs: an account's ID is `artistIdOf(wallet)` when nonzero, otherwise
 ///      `uint256(uint160(wallet))`, the ID its first package acceptance creates. IDs fit 160 bits
 ///      and never change when the root does; every address that has been an account's root maps
@@ -192,17 +192,17 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver, IAccoun
     function register(address root, bytes32 profileId, bytes32 profileDocHash)
         external
         returns (uint256 artistId);
-    /// @notice Creates an account exactly as `register` does, for an uncurated (federated)
-    ///         artist. The federation module only (`Directory.moduleOf(Slots.FEDERATION)`).
-    ///         `account` signs `ArtistRegistration` in this module's EIP-712 domain
-    ///         (`registrationDigest`).
+    /// @notice Creates an account exactly as `register` does, for an uncurated (Independent Stream)
+    ///         artist. The Independent Stream module only
+    ///         (`StreamDirectory6529.moduleOf(Slots.INDEPENDENT_STREAM)`). `account` signs
+    ///         `ArtistRegistration` in this module's EIP-712 domain (`registrationDigest`).
     /// @param account The consenting wallet, which becomes the root and the payout.
     /// @param profileId The artist's claimed 6529 profile ID, as signed.
     /// @param profileDocHash The hash of the profile document, as signed.
     /// @param deadline The Unix time in seconds after which the signature is expired.
     /// @param signature `account`'s signature (ECDSA, EIP-7702 or ERC-1271).
     /// @return artistId `uint256(uint160(account))`.
-    function registerFederated(
+    function registerIndependent(
         address account,
         bytes32 profileId,
         bytes32 profileDocHash,
@@ -331,7 +331,7 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver, IAccoun
     /// @notice The package registry, the only `register` caller.
     /// @return The package registry.
     function packageRegistry() external view returns (address);
-    /// @notice The permanent directory that names this module and the federation module.
+    /// @notice The permanent directory that names this module and the Independent Stream module.
     /// @return The directory.
     function directory() external view returns (address);
     /// @notice 6529 Stream, whose address is refused as a payout.
@@ -340,10 +340,10 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver, IAccoun
     /// @notice 6529 Stream Editions, whose address is refused as a payout.
     /// @return The 6529 Stream Editions contract.
     function editions() external view returns (address);
-    /// @notice The current federation module, the only `registerFederated` caller: the
-    ///         directory's `FEDERATION` slot.
-    /// @return The federation module, or zero.
-    function federationRegistry() external view returns (address);
+    /// @notice The current Independent Stream module, the only `registerIndependent` caller: the
+    ///         directory's `INDEPENDENT_STREAM` slot.
+    /// @return The Independent Stream module, or zero.
+    function independentStreamRegistry() external view returns (address);
     /// @notice The split factory, whose wallets are refused as payouts.
     /// @return The split factory.
     function splitFactory() external view returns (address);

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The local walkthrough: deploys the plain core (script/DeployCore.s.sol) on a fresh anvil node,
 # accepts the network, reads the deployment back (script/VerifyCore.s.sol), then walks one
-# curated work, its editions and one federated work through their whole life and swaps one
+# curated work, its editions and one Independent Stream work through their whole life and swaps one
 # module (script/local/README.md).
 #
 # Usage: script/local/walkthrough.sh            (from the repository root, in bash or Git Bash)
@@ -86,7 +86,7 @@ walk() {
   echo "$out" | sed -n '/^== Logs ==/,/^$/p' | sed '1d;/^$/d'
 }
 
-step "Phase 1: curate, store, accept, start with a bid, edition bids, a competing bid, a federated work"
+step "Phase 1: curate, store, accept, start with a bid, edition bids, a competing bid, an Independent Stream work"
 walk curate
 step "Move the clock past the 1/1's end (24 hours)"
 warp 86401
@@ -96,7 +96,7 @@ step "Move the clock past the edition close (the 1/1's end plus 15 minutes)"
 warp 3600
 step "Phase 3: settle the edition auction, claim copies and refunds, release the proceeds"
 walk editions
-DELAY="$(cast call "$(sed -n 's/.*"Stream": *"\(0x[0-9a-fA-F]*\)".*/\1/p' "$RECORD")" \
+DELAY="$(cast call "$(sed -n 's/.*"Stream6529": *"\(0x[0-9a-fA-F]*\)".*/\1/p' "$RECORD")" \
   "moduleDelay()(uint48)" --rpc-url "$RPC" | awk '{print $1}')"
 step "Move the clock past Stream's module waiting period ($DELAY seconds)"
 warp "$DELAY"

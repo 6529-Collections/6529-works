@@ -1,6 +1,6 @@
 # Stream and auctions
 
-6529 Stream is one shared ERC-721, `Stream`, holding every curated 1/1. It is permanent and
+6529 Stream is one shared ERC-721, `Stream6529`, holding every curated 1/1. It is permanent and
 plain ([ADR 0010](../adr/0010-plain-permanent-core.md)): it keeps who owns each token, the
 facts fixed at mint and how the first sale ended. Everything else is a replaceable module. The
 1/1s sell through `EnglishAuction`, a replaceable sale contract that Stream lists as a minter.
@@ -12,12 +12,12 @@ Payments are in ETH only.
 
 | Contract | Kind | What it does |
 | --- | --- | --- |
-| [`Stream`](../../src/core/Stream.sol) on [`StreamBase`](../../src/core/StreamBase.sol) | permanent | ERC-721, ERC-2981, ERC-4906. Mints for an active minter, records the outcome of the first sale, `royaltyInfo`, `tokenURI`, `rescue`, module slots and minters ([`Modules`](../../src/core/Modules.sol)). Interface: [`IStream`](../../src/interfaces/core/IStream.sol), [`IModules`](../../src/interfaces/core/IModules.sol). |
-| [`EnglishAuction`](../../src/sales/EnglishAuction.sol) | module (minter) | Starts a sale by asking the mint policy and minting into its own custody; bids, pull credits, settlement, the dispute pause, the emergency pause, the federated refusal exit. Stores each sale's seller and fee share. |
+| [`Stream6529`](../../src/core/Stream6529.sol) on [`StreamBase`](../../src/core/StreamBase.sol) | permanent | ERC-721, ERC-2981, ERC-4906. Mints for an active minter, records the outcome of the first sale, `royaltyInfo`, `tokenURI`, `rescue`, module slots and minters ([`Modules`](../../src/core/Modules.sol)). Interface: [`IStream`](../../src/interfaces/core/IStream.sol), [`IModules`](../../src/interfaces/core/IModules.sol). |
+| [`EnglishAuction`](../../src/sales/EnglishAuction.sol) | module (minter) | Starts a sale by asking the mint policy and minting into its own custody; bids, pull credits, settlement, the dispute pause, the emergency pause, the Independent Stream refusal exit. Stores each sale's seller and fee share. |
 | Mint policy: [`PackageRegistry`](../../src/curation/PackageRegistry.sol) | module | Decides what may be minted and answers the mint facts and sale terms ([`IMintPolicy`](../../src/interfaces/core/IMintPolicy.sol), [Curation](curation.md)). Holds content release and tombstones. |
 | `TERMS` module: `StreamTerms` | module | Sets a token's royalty receiver and rate, locks the rate, lowers the network's fee share ([Economics and payouts](economics-and-payouts.md)). |
 | `RENDERER` module: [`Renderer`](../../src/content/Renderer.sol) | module | Draws a work that is not finalized ([Rendering](rendering-and-tokenuri.md)). |
-| `RECORDS` module: `WorkRules` | module | Edits a work's record within what `WorkFacts` allows ([Works and storage](works-and-storage.md)). |
+| `RECORDS` module: `WorkRules` | module | Edits a work's record within what `StreamWorkFacts6529` allows ([Works and storage](works-and-storage.md)). |
 
 ## The seam
 
@@ -27,8 +27,8 @@ Stream accepts four things from modules and nothing else:
    whose sale has no outcome, it may record the outcome once, or burn the token.
 2. The **TERMS** module sets a token's royalty receiver and rate, and may lock the rate for good.
 3. The **RENDERER** module draws a work that is not finalized. A finalized work is drawn by the
-   renderer pinned in `WorkFacts`.
-4. The **RECORDS** module changes a work's record within what `WorkFacts` allows.
+   renderer pinned in `StreamWorkFacts6529`.
+4. The **RECORDS** module changes a work's record within what `StreamWorkFacts6529` allows.
 
 No module can move a token, change a fact fixed at mint, or touch money in a vault or the escrow.
 The one move by anyone but the owner is `rescue` (below).
@@ -53,7 +53,7 @@ contract, not promises of the token:
 | Increment | 5% of the high bid, at least 0.001 ETH | governed |
 | Opening bid | 0.05 ETH | governed |
 | Dispute pause | at most 3 days, once per auction | compiled |
-| Federated refusal exit | 2 days after the end | compiled |
+| Independent Stream refusal exit | 2 days after the end | compiled |
 | Recipient's redirect of a pending delivery | 14 days after the end | compiled |
 | Unclaimed credit | the unclaimed period in force (180 days at launch), counted from when that money itself started waiting | network setting read by the auction |
 | Delivery gas; ETH payout gas | 300,000; 100,000 per wallet | compiled |
@@ -69,12 +69,12 @@ contract, not promises of the token:
 2. **Bid** (anyone). A bid must reach the minimum; a bid in the last window extends the end. An
    outbid bid is credited to its payer, never pushed.
 3. **Settle** (anyone, after the end). With a bid, the auction calls
-   `Stream.recordPrimarySale(tokenId, true, buyer, price)`, delivers the token and pays the
+   `Stream6529.recordPrimarySale(tokenId, true, buyer, price)`, delivers the token and pays the
    seller and the network; a refused payout goes to the escrow, a failed delivery waits as a
    pending delivery. With no bid, it records `UNSOLD`; a 6529 Stream work is then transferred by
-   the auction to the museum the economics resolver names at that moment; an unsold federated
-   work stays in the auction and can be started again there for the same item.
-4. **Cancel after an upheld dispute** (network). The auction calls `Stream.burn(tokenId)`.
+   the auction to the museum the economics resolver names at that moment; an unsold Independent
+   Stream work stays in the auction and can be started again there for the same item.
+4. **Cancel after an upheld dispute** (network). The auction calls `Stream6529.burn(tokenId)`.
 
 Stream stores only the outcome. The price is in the `PrimarySale` log.
 
@@ -84,25 +84,24 @@ The English auction and both edition auctions keep credits by one shared rule,
 [`AgedCredits`](../../src/libraries/AgedCredits.sol). Each account has a total, a waiting part
 and the time that part started waiting. A credit to an account with nothing starts a wait for
 that amount; a credit while a wait runs joins the total only. Once the unclaimed period in force
-(`Directory.unclaimedPeriod()`, read when the expiry is attempted) has passed since the wait
-started, anyone may send the waiting part, and nothing else, to the network; the rest starts a
-new wait at that moment. The account's own claim takes everything. So no money goes to the
-network before it has itself waited the period, and no deposit or call by anyone else can
-shorten or postpone a running wait. The revenue escrow's rule
-([Economics and payouts](economics-and-payouts.md)) gives the same guarantee differently: it
-groups credits in windows that stay open for one period and expire a period after their last
-credit (a deposit into an open window can move its due time later, at most to two periods after
-the window's first deposit), so an amount waits at least one period and, while the period stays the same, less
-than two; its due time can be
-computed without anyone calling `expire`. The auctions use the simpler rule because their
-credits are short-lived refunds that their owners usually claim at once, so a batch that waits
-longer until someone calls `expireCredit` costs nobody anything, and one storage word with
-three fields is easier to prove than four words of windows. The escrow, which is permanent and
-was reviewed on its own, is left as it is.
+(`StreamDirectory6529.unclaimedPeriod()`, read when the expiry is attempted) has passed since the
+wait started, anyone may send the waiting part, and nothing else, to the network; the rest starts a
+new wait at that moment. The account's own claim takes everything. So no money goes to the network
+before it has itself waited the period, and no deposit or call by anyone else can shorten or
+postpone a running wait. The revenue escrow's rule
+([Economics and payouts](economics-and-payouts.md)) gives the same guarantee differently: it groups
+credits in windows that stay open for one period and expire a period after their last credit (a
+deposit into an open window can move its due time later, at most to two periods after the window's
+first deposit), so an amount waits at least one period and, while the period stays the same, less
+than two; its due time can be computed without anyone calling `expire`. The auctions use the simpler
+rule because their credits are short-lived refunds that their owners usually claim at once, so a
+batch that waits longer until someone calls `expireCredit` costs nobody anything, and one storage
+word with three fields is easier to prove than four words of windows. The escrow, which is permanent
+and was reviewed on its own, is left as it is.
 
 ### A token that will not settle
 
-A federated token may fail a call `settle` makes into it. From 2 days after the sale's end
+An Independent Stream token may fail a call `settle` makes into it. From 2 days after the sale's end
 (compiled in the auction), anyone may call `settleOrRefund(saleId)`. It attempts the whole
 settlement in a frame of fixed, governed gas; if the attempt fails, the sale closes with the
 standing bid credited back and the work left in the auction. 6529 Stream's sales are never
@@ -114,11 +113,11 @@ A token that settles is never affected: the exit only opens after the end plus t
 cooperating settlement inside the refusal gas always succeeds. The bidder's money comes back in
 full; the network's fee is paid exactly on completed sales.
 
-### What a federated template must guarantee
+### What an Independent Stream template must guarantee
 
-A federated token is the same token code as Stream (`StreamBase`), so it inherits every rule of
-this page; its minters are the federation module's answer. It must settle within the refusal gas
-and must not depend on a reentrancy guard a third party can hold.
+An Independent Stream token is the same token code as Stream (`StreamBase`), so it inherits every
+rule of this page; its minters are the Independent Stream module's answer. It must settle within the
+refusal gas and must not depend on a reentrancy guard a third party can hold.
 
 **Rescue.** If the network removes a minter that still holds a token with no outcome, the
 network may `rescue(tokenId, to)` once `rescueDelay` has passed since the removal. The outcome
@@ -161,7 +160,7 @@ the seller when the share is zero.
 | AUC-25 | Retired: no currency freeze (ETH only). | |
 | AUC-26 | A dispute pause is once per live auction and lasts at most 3 days (a compiled value of the auction). | |
 | AUC-27 | A resumed auction runs at least the longer of the governed duration and its locked window. | |
-| AUC-28 | A federated token sells only while the federation module reports it active; an unsold federated work stays in the auction and can be started again there for the same item. | |
+| AUC-28 | An Independent Stream token sells only while the Independent Stream module reports it active; an unsold Independent Stream work stays in the auction and can be started again there for the same item. | |
 | AUC-29 | The auction refuses every safe transfer into it except its own mint. | |
 | AUC-30 | Governed auction parameters stay within bounds and are compare-and-set. | |
 | AUC-31 | No reentrant call reaches a value-moving function. | |
@@ -175,13 +174,13 @@ the seller when the share is zero.
 | AUC-39 | Retired: Stream holds no dependencies. | |
 | AUC-40 | `supportsInterface` answers ERC-165, ERC-721, ERC-2981, ERC-4906, `IStream` and `IModules`. | |
 | AUC-41 | `rescueDelay` is the network's setting (14 days at launch), changed at once, zero allowed, with old and new in `RescueDelaySet`. | `test_RescueDelay_FourteenDaysAtDeploymentOnlyTheNetworkSetsIt`, `testFuzz_Rescue_RefusedBeforeThePeriodInForce` |
-| AUC-42 | `tokenURI` of a finalized work uses the renderer pinned in `WorkFacts`; otherwise the RENDERER module. A missing, failing or changed renderer reverts; there is no fallback. | |
+| AUC-42 | `tokenURI` of a finalized work uses the renderer pinned in `StreamWorkFacts6529`; otherwise the RENDERER module. A missing, failing or changed renderer reverts; there is no fallback. | |
 | AUC-43 | `WorkMinted` carries the whole `MintFacts`; Stream's state is rebuilt from its logs alone. | |
 | AUC-44 | One live token per content hash: a content mints again only after the token it names is burned, and then only as the mint policy allows. | `test_Mint_OnlyAMinterAndOneLiveTokenPerContent` |
-| AUC-45 | `settleOrRefund` is for federated sales only, from 2 days after the end; a failed attempt closes the sale with the bid credited back. | |
+| AUC-45 | `settleOrRefund` is for Independent Stream sales only, from 2 days after the end; a failed attempt closes the sale with the bid credited back. | |
 | AUC-46 | The refusal delay is 2 days, compiled in the auction. | |
 | AUC-47 | The refusal gas is governed, raise-only, at most doubled per step, between bounds in code. | |
-| AUC-48 | A federated sale's fee share is the federation module's, stored in the sale at start; the fee goes to the recipient the economics resolver names. | |
+| AUC-48 | An Independent Stream sale's fee share is the Independent Stream module's, stored in the sale at start; the fee goes to the recipient the economics resolver names. | |
 | AUC-49 | Retired: there is no view extension. | |
 | AUC-50 | The TERMS module may lower a work's fee share, never raise it, and deploys the new split wallet before naming it. | |
 | AUC-51 | Only money that has itself waited the unclaimed period in force goes from a credit to the network; a later credit starts no earlier clock and no third party can shorten or postpone one. | |
@@ -206,6 +205,6 @@ ERC-721 and ERC-4906.
 | Bid too low or late | `BidTooLow(required, offered)`, `InvalidAuctionState` | Read `minimumBid(saleId)`. |
 | Recipient refuses the token | `DeliveryPending`; settlement completes | The winner calls `claimDelivery` to any address. |
 | A payout wallet refuses ETH | Credited in the escrow | Anyone flushes the escrow to the wallet. |
-| A federated token will not settle | `settle` reverts | `settleOrRefund` from 2 days after the end. |
+| An Independent Stream token will not settle | `settle` reverts | `settleOrRefund` from 2 days after the end. |
 | The minter holding a work was removed | The work waits | The network re-adds the minter, or rescues after `rescueDelay`. |
 | `tokenURI`'s renderer is missing or fails | Reverts | Install a RENDERER module, or finalize to pin one. |

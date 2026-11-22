@@ -15,18 +15,18 @@ import { IRevenueEscrow } from "../economics/interfaces/IRevenueEscrow.sol";
 import { RevenuePayment } from "../economics/RevenuePayment.sol";
 import { MintFacts, MintTerms, Outcome, Slots } from "../interfaces/core/CoreTypes.sol";
 import { IDirectory } from "../interfaces/core/IDirectory.sol";
-import { IFederationGate } from "../interfaces/core/IFederationGate.sol";
+import { IIndependentStreamGate } from "../interfaces/core/IIndependentStreamGate.sol";
 import { IMintPolicy } from "../interfaces/core/IMintPolicy.sol";
 import { IStream } from "../interfaces/core/IStream.sol";
 import { IEconomicsResolver } from "../interfaces/IEconomicsResolver.sol";
-import { IFederationRegistry } from "../interfaces/IFederationRegistry.sol";
+import { IIndependentStreamRegistry } from "../interfaces/IIndependentStreamRegistry.sol";
 import { IEnglishAuction } from "../interfaces/IEnglishAuction.sol";
 import { IEnglishAuctionClock } from "../interfaces/IEnglishAuctionClock.sol";
 import { IEnglishAuctionRefusal } from "../interfaces/IEnglishAuctionRefusal.sol";
 import { IStatementLog } from "../interfaces/IStatementLog.sol";
 import {
     CURRENCY_ETH,
-    PRODUCT_FEDERATED,
+    PRODUCT_INDEPENDENT,
     PRODUCT_STREAM
 } from "../interfaces/types/EconomicsTypes.sol";
 import { SaleKind } from "../interfaces/types/SaleTypes.sol";
@@ -43,25 +43,26 @@ import { Dependency } from "../libraries/Dependency.sol";
 ///      pause). Credits are one `Credit` struct per account.
 ///
 ///      What the auction trusts. 6529 Stream (immutable) and its genesis token code; the
-///      directory (immutable), whose federation module is the mint policy of every other token
-///      and answers which tokens this auction may mint for; the economics resolver (immutable)
-///      for the museum and the fee recipients; the escrow for refused payouts; the statement
-///      log for dispute outcomes. A token this auction sells is either Stream or a token the
-///      federation module admits, so its code is reviewed code.
+///      directory (immutable), whose Independent Stream module is the mint policy of every other
+///      token and answers which tokens this auction may mint for; the economics resolver
+///      (immutable) for the museum and the fee recipients; the escrow for refused payouts; the
+///      statement log for dispute outcomes. A token this auction sells is either Stream or a token
+///      the Independent Stream module admits, so its code is reviewed code.
 ///
 ///      ETH balance. The contract's balance always equals the standing bids of sales that are
 ///      not settled or cancelled plus every account's credit: a bid adds both, an outbid moves a
 ///      bid to a credit, a settlement pays a bid out, a claim or expiry pays a credit out.
 ///
-///      Federated works and replacement. Whether a federated sale goes on is whether the
-///      federation module still serves its token (`IFederationRegistry.isActive`: listed, not
-///      delisted, its version not revoked), never whether this auction may still mint new works.
-///      A federated token lets the account that minted a work record that work's sale for good
-///      (`IFederatedStream.hasMinted`), so an auction the network removed or replaced stays the
-///      venue of the works it minted: its running sales finish, and its unsold works can be
-///      offered again here (`restart`) for as long as the token is served. The network's other
-///      path is `IStream.rescue`, once the token's `rescueDelay` has passed since the removal:
-///      it ends the work's primary sale as RESCUED and moves the work where the network says.
+///      Independent Stream works and replacement. Whether an Independent Stream sale goes on is
+///      whether the Independent Stream module still serves its token
+///      (`IIndependentStreamRegistry.isActive`: listed, not delisted, its version not revoked),
+///      never whether this auction may still mint new works. An Independent Stream token lets the
+///      account that minted a work record that work's sale for good
+///      (`IIndependentStream.hasMinted`), so an auction the network removed or replaced stays the
+///      venue of the works it minted: its running sales finish, and its unsold works can be offered
+///      again here (`restart`) for as long as the token is served. The network's other path is
+///      `IStream.rescue`, once the token's `rescueDelay` has passed since the removal: it ends the
+///      work's primary sale as RESCUED and moves the work where the network says.
 contract EnglishAuction is
     IEnglishAuction,
     IEnglishAuctionClock,
@@ -84,7 +85,7 @@ contract EnglishAuction is
     /// @notice How long after a sale's end only the winning bidder may send a pending delivery to
     ///         an address other than the recipient it named.
     uint256 public constant REDIRECT_DELAY = 14 days;
-    /// @notice How long after a federated sale's end a refused settlement may close it.
+    /// @notice How long after an Independent Stream sale's end a refused settlement may close it.
     uint256 public constant REFUSAL_DELAY = 2 days;
 
     uint32 private constant MIN_DURATION = 1 hours;
@@ -128,7 +129,7 @@ contract EnglishAuction is
 
     /// @notice 6529 Stream.
     address public immutable stream;
-    /// @notice The directory: the federation module and the unclaimed period.
+    /// @notice The directory: the Independent Stream module and the unclaimed period.
     IDirectory public immutable directory;
     /// @notice The economics resolver: the museum, the fee recipients, the asset allowlist.
     IEconomicsResolver public immutable economics;
@@ -215,7 +216,7 @@ contract EnglishAuction is
         ) revert InvalidAuctionState(saleId, _state(s));
         if (!_served(token)) revert TargetNotAllowed(token);
         // The network's share only goes down: a restart takes the share in force now.
-        uint256 share = IFederationGate(policyOf(token)).feeShareOf(token);
+        uint256 share = IIndependentStreamGate(policyOf(token)).feeShareOf(token);
         if (share > DENOMINATOR) revert InvalidSaleTerms(token, s.tokenId);
         uint40 end = SafeCast.toUint40(block.timestamp + c.duration);
         // Checked above: at most 100,000.
@@ -259,13 +260,13 @@ contract EnglishAuction is
 
     /// @inheritdoc IEnglishAuction
     /// @dev In order: a work no longer in custody (only the network's `IStream.rescue` can move
-    ///      it) closes with refunds; a federated work whose token the federation module no
-    ///      longer serves (delisted, or its version revoked) has its standing bid credited back
-    ///      and ends unsold, while a removed auction or a suspended version settles as usual;
-    ///      with no bid, a
-    ///      6529 Stream work is recorded UNSOLD and sent to the museum, a federated work stays in
-    ///      custody for `restart`; with a bid, the outcome is recorded SOLD, the seller and the
-    ///      network are paid and the work is delivered (or left pending).
+    ///      it) closes with refunds; an Independent Stream work whose token the Independent Stream
+    ///      module no longer serves (delisted, or its version revoked) has its standing bid
+    ///      credited back and ends unsold, while a removed auction or a suspended version settles
+    ///      as usual; with no bid, a 6529 Stream work is recorded UNSOLD and sent to the museum, an
+    ///      Independent Stream work stays in custody for `restart`; with a bid, the outcome is
+    ///      recorded SOLD, the seller and the network are paid and the work is delivered (or left
+    ///      pending).
     function settle(uint256 saleId) external nonReentrant {
         Sale storage s = _require(saleId, AuctionState.ENDED);
         s.status = AuctionState.SETTLED;
@@ -275,11 +276,11 @@ contract EnglishAuction is
             emit RescuedSaleClosed(saleId);
             return;
         }
-        bool federated = token != stream;
-        if (federated && !_served(token)) _refundHighBid(saleId, s);
+        bool independent = token != stream;
+        if (independent && !_served(token)) _refundHighBid(saleId, s);
         if (s.bidder == address(0)) {
             address holder = address(this);
-            if (!federated) {
+            if (!independent) {
                 holder = economics.museum();
                 if (holder == address(0)) revert InvalidRecipient(holder);
                 IStream(token).recordPrimarySale(tokenId, false, address(0), 0);
@@ -288,7 +289,7 @@ contract EnglishAuction is
             _emitSettled(saleId, s, holder, 0, address(0), 0);
             return;
         }
-        _settleSold(saleId, s, token, tokenId, federated);
+        _settleSold(saleId, s, token, tokenId, independent);
     }
 
     /// @dev Records the sale, pays the seller and the network, and delivers the work.
@@ -297,7 +298,7 @@ contract EnglishAuction is
         Sale storage s,
         address token,
         uint256 tokenId,
-        bool federated
+        bool independent
     ) private {
         uint256 price = s.bid;
         IStream(token).recordPrimarySale(tokenId, true, s.bidder, price);
@@ -306,7 +307,7 @@ contract EnglishAuction is
         address feeRecipient;
         if (fee != 0) {
             feeRecipient =
-                economics.networkFeeRecipient(federated ? PRODUCT_FEDERATED : PRODUCT_STREAM);
+                economics.networkFeeRecipient(independent ? PRODUCT_INDEPENDENT : PRODUCT_STREAM);
         }
         _pay(s.seller, price - fee);
         _pay(feeRecipient, fee);
@@ -341,14 +342,14 @@ contract EnglishAuction is
     }
 
     /// @inheritdoc IEnglishAuctionRefusal
-    /// @dev Federated sales only, from the end plus {REFUSAL_DELAY}. The attempt is {settle}
-    ///      itself, called on this contract with exactly the refusal gas, which the caller must
-    ///      be able to forward in full, so a shortfall is never taken for a refusal. If it fails,
-    ///      every effect is undone, the standing bid is credited back and the work stays in
-    ///      custody, where anyone may offer it again (`restart`). Refused inside a guarded call
-    ///      of this contract or of the escrow, so neither a token from inside its own settlement
-    ///      nor a caller inside the escrow can make an attempt fail on a guard. The escrow is
-    ///      asked through its `locked()` view, a plain call: if that read fails, this reverts.
+    /// @dev Independent Stream sales only, from the end plus {REFUSAL_DELAY}. The attempt is
+    ///      {settle} itself, called on this contract with exactly the refusal gas, which the caller
+    ///      must be able to forward in full, so a shortfall is never taken for a refusal. If it
+    ///      fails, every effect is undone, the standing bid is credited back and the work stays in
+    ///      custody, where anyone may offer it again (`restart`). Refused inside a guarded call of
+    ///      this contract or of the escrow, so neither a token from inside its own settlement nor a
+    ///      caller inside the escrow can make an attempt fail on a guard. The escrow is asked
+    ///      through its `locked()` view, a plain call: if that read fails, this reverts.
     function settleOrRefund(uint256 saleId) external {
         Sale storage s = _require(saleId, AuctionState.ENDED);
         if (s.token == stream) revert SaleNotRefusable(saleId);
@@ -491,7 +492,7 @@ contract EnglishAuction is
     /// @inheritdoc IEnglishAuction
     function policyOf(address token) public view returns (address) {
         if (token == stream) return streamPolicy;
-        return directory.moduleOf(Slots.FEDERATION);
+        return directory.moduleOf(Slots.INDEPENDENT_STREAM);
     }
 
     /// @inheritdoc IEnglishAuction
@@ -637,7 +638,8 @@ contract EnglishAuction is
     /// @dev Records a bid of `msg.value` by the caller for `recipient` (the caller when zero).
     function _bid(uint256 saleId, address recipient) private {
         Sale storage s = _require(saleId, AuctionState.ACTIVE);
-        // A federated token the federation module no longer serves (delisted) takes no bids.
+        // An Independent Stream token the Independent Stream module no longer serves (delisted)
+        // takes no bids.
         if (s.token != stream && !_served(s.token)) revert TargetNotAllowed(s.token);
         if (recipient == address(0)) recipient = msg.sender;
         if (recipient == address(this)) revert InvalidRecipient(recipient);
@@ -784,11 +786,12 @@ contract EnglishAuction is
         return pausedAt + length + Math.max(s.endTime - pausedAt, reopening);
     }
 
-    /// @dev Whether the federation module the directory names now still serves the federated
-    ///      `token` (`IFederationRegistry.isActive`); false while the FEDERATION slot is empty.
+    /// @dev Whether the Independent Stream module the directory names now still serves the
+    ///      Independent Stream `token` (`IIndependentStreamRegistry.isActive`); false while the
+    ///      INDEPENDENT_STREAM slot is empty.
     function _served(address token) private view returns (bool) {
-        address gate = directory.moduleOf(Slots.FEDERATION);
-        return gate != address(0) && IFederationRegistry(gate).isActive(token);
+        address gate = directory.moduleOf(Slots.INDEPENDENT_STREAM);
+        return gate != address(0) && IIndependentStreamRegistry(gate).isActive(token);
     }
 
     /// @dev The token's recipient: the stored one, or the bidder.

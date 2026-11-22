@@ -67,7 +67,7 @@ contract CoreRoleMapTest is CoreDeployFixture {
     ///         the role the file gives it.
     function test_TheInstalledMapIsThePolicyFile() public view {
         string memory json = vm.readFile(GENESIS);
-        string[3] memory names = ["Stream", "Editions", "Directory"];
+        string[3] memory names = ["Stream6529", "StreamEditions6529", "StreamDirectory6529"];
         address[3] memory at = [address(d.stream), address(d.editions), address(d.directory)];
         uint256 checked;
         for (uint256 c; c < 3; ++c) {
@@ -81,7 +81,7 @@ contract CoreRoleMapTest is CoreDeployFixture {
                 ++checked;
             }
         }
-        // Directory also carries the four network functions every federated token asks it
+        // Directory also carries the four network functions every Independent Stream token asks it
         // about (`rescue`, `setRescueDelay`, `rebind`, `setRebindDelay`).
         assertEq(checked, 11 + 10 + 9);
     }

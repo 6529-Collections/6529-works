@@ -4,24 +4,25 @@ The accounts module and its consolidation adapter: who an artist or collaborator
 consolidated account: a root wallet and every wallet consolidated with it, all equal), where the
 account's money goes, how the account changes its root, payout or profile (2 days), and how the
 network replaces a root (14 days' notice, contestable) or freezes an account at once (14 days).
-The module is replaceable: the permanent [`Directory`](../core/Directory.sol) names the current
-one in its `ACCOUNTS` slot ([ADR 0010](../../docs/adr/0010-plain-permanent-core.md)). The rules
-are in [Identity and recovery](../../docs/spec/identity-and-recovery.md) (`ID-*`).
+The module is replaceable: the permanent [`StreamDirectory6529`](../core/StreamDirectory6529.sol)
+names the current one in its `ACCOUNTS` slot
+([ADR 0010](../../docs/adr/0010-plain-permanent-core.md)). The rules are in
+[Identity and recovery](../../docs/spec/identity-and-recovery.md) (`ID-*`).
 
 ## Files
 
 | File | What it is |
 | --- | --- |
-| `Accounts.sol` | The accounts module: [`IArtistRegistry`](../interfaces/IArtistRegistry.sol), which is also [`IAccounts`](../interfaces/core/IAccounts.sol) (who may act for an account), the statement log's [`IArtistRoleResolver`](../interfaces/IArtistRoleResolver.sol) (`isArtist`) and [`IArtistPayoutResolver`](../economics/interfaces/IArtistPayoutResolver.sol) (`payoutAddress`, which split vaults reach through `Directory.payoutAddress`). Replaceable. |
+| `Accounts.sol` | The accounts module: [`IArtistRegistry`](../interfaces/IArtistRegistry.sol), which is also [`IAccounts`](../interfaces/core/IAccounts.sol) (who may act for an account), the statement log's [`IArtistRoleResolver`](../interfaces/IArtistRoleResolver.sol) (`isArtist`) and [`IArtistPayoutResolver`](../economics/interfaces/IArtistPayoutResolver.sol) (`payoutAddress`, which split vaults reach through `StreamDirectory6529.payoutAddress`). Replaceable. |
 | `ConsolidationAdapter.sol` | `IConsolidationSource` (declared in `IArtistRegistry.sol`) over the 6529 delegation contract: `isConsolidated(root, wallet)`, a live two-way all-collections use-case-999 consolidation, no minimum age. |
 
 ## Entry points
 
 | Caller | Calls |
 | --- | --- |
-| Any contract checking an account (federated tokens, the federation module, the mint policy, the rules modules) | `isWallet`, `requireSigned`, `requireConsent`, `consentDigest`, `frozenUntil` |
+| Any contract checking an account (Independent Stream tokens, the Independent Stream module, the mint policy, the rules modules) | `isWallet`, `requireSigned`, `requireConsent`, `consentDigest`, `frozenUntil` |
 | The package registry | `register` on an account's first package acceptance |
-| The federation module (the directory's `FEDERATION` slot) | `registerFederated`, with the wallet's own signature |
+| The Independent Stream module (the directory's `INDEPENDENT_STREAM` slot) | `registerIndependent`, with the wallet's own signature |
 | Anyone, relaying a wallet's signature | `stageChange`; `executeChange` once due; `expireContest` once lapsed |
 | A wallet of the account | `cancelChange` (cancel an own change, contest a replacement, never while frozen); `revokeNonce` |
 | The network | `freeze`, `unfreeze`, `cancelReplacement`, `cancelOwnChange`, `stageReplacement`, `resolveContested`, `setConsolidationSource`, `setPackageRegistry` |
@@ -45,8 +46,8 @@ no bind step. The four `bind*` functions remain only so older tooling compiles, 
 ## Developer notes
 
 - **`isArtist`** resolves the lead artist of any token that answers `IStream.workOf` (6529 Stream
-  and every federated token), or of an edition through `IEditions.stream()` and the same ID. A
-  token that answers neither, or answers malformed data, is "false".
+  and every Independent Stream token), or of an edition through `IEditions.stream()` and the same
+  ID. A token that answers neither, or answers malformed data, is "false".
 - **Payout refusals.** A payout may not be this module, the directory, 6529 Stream or Editions,
   the split ledger or one of its vaults, the statement log, the package registry, or any
   contract declaring (ERC-165) the interface of a network contract that cannot pull money.
@@ -55,7 +56,7 @@ no bind step. The four `bind*` functions remain only so older tooling compiles, 
 - **Compiled waits.** `OWN_CHANGE_DELAY` 2 days, `REPLACEMENT_NOTICE` 14 days, `CONTEST_LAPSE`
   90 days, `FREEZE_PERIOD` 14 days. The module is replaceable, so these are its current rules,
   not promises of the permanent contracts.
-- **`federatedListing`** forwards the federation module's `entry`, for the entropy module.
+- **`independentListing`** forwards the Independent Stream module's `entry`, for the entropy module.
 - **Tests:** `test/identity/` (run with `FOUNDRY_TEST=test/identity` until the rest of the tree
   compiles again at integration).
 

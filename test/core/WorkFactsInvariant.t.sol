@@ -2,8 +2,8 @@
 pragma solidity ^0.8.24;
 
 import { Test } from "forge-std/Test.sol";
-import { WorkFacts } from "src/core/WorkFacts.sol";
-import { Stream } from "src/core/Stream.sol";
+import { StreamWorkFacts6529 } from "src/core/StreamWorkFacts6529.sol";
+import { Stream6529 } from "src/core/Stream6529.sol";
 import { Facts, Slots } from "src/interfaces/core/CoreTypes.sol";
 import { License } from "src/interfaces/types/PackageTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
@@ -12,11 +12,12 @@ import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
 import { CodeRenderer } from "../mocks/records/RulesMocks.sol";
 import { RulesFixture } from "../records/RulesFixture.sol";
 
-/// @notice A hostile RECORDS module: it calls every `WorkFacts` function with any arguments,
-///         swaps the token's RENDERER module, and records what each successful call changed.
+/// @notice A hostile RECORDS module: it calls every `StreamWorkFacts6529` function with any
+///         arguments, swaps the token's RENDERER module, and records what each successful call
+///         changed.
 contract WorkFactsHandler is Test {
-    WorkFacts internal facts;
-    Stream internal token;
+    StreamWorkFacts6529 internal facts;
+    Stream6529 internal token;
     uint256[] internal ids;
     bytes32[] internal recordFiles;
     License[] internal licenses;
@@ -44,8 +45,8 @@ contract WorkFactsHandler is Test {
     }
 
     constructor(
-        WorkFacts facts_,
-        Stream token_,
+        StreamWorkFacts6529 facts_,
+        Stream6529 token_,
         uint256[] memory ids_,
         bytes32[] memory recordFiles_,
         License[] memory licenses_,
@@ -106,7 +107,8 @@ contract WorkFactsHandler is Test {
     }
 }
 
-/// @notice Invariants of `WorkFacts` under a hostile RECORDS module (256 runs, depth 128).
+/// @notice Invariants of `StreamWorkFacts6529` under a hostile RECORDS module (256 runs, depth
+///         128).
 /// forge-config: default.invariant.runs = 256
 /// forge-config: default.invariant.depth = 128
 /// forge-config: default.invariant.fail-on-revert = true

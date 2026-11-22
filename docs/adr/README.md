@@ -9,7 +9,7 @@
 | [0005](0005-stream-editions-auction.md) | The edition auction and 6529 Stream Editions | Accepted (31 October 2026); amended 31 October and 1 November 2026 (§6 to §11), by 0007 (§14), by 0008 (decision 9) and by 0009 |
 | [0006](0006-work-powers-and-conventions.md) | Work powers and conventions | Accepted by owner instruction (13 November 2026); amended by 0007 (`RENDERER_REPIN`) and by 0009 |
 | [0007](0007-permanence.md) | Permanence | Accepted by owner instruction (14-15 November 2026); P6 specified by 0008; amended by 0009 and 0010 |
-| [0008](0008-federation.md) | 6529 Stream Federated in v1 | Accepted by owner instruction (15 November 2026); budget raised 16 November 2026; amended by 0009; templates amended by 0010 |
+| [0008](0008-independent-stream.md) | 6529 Independent Stream in v1 | Accepted by owner instruction (15 November 2026); budget raised 16 November 2026; amended by 0009; templates amended by 0010 |
 | [0009](0009-second-permanence-pass.md) | The second permanence pass | Accepted by owner instruction (16 November 2026); its compiled waits in permanent contracts became network settings in 0010 |
 | [0010](0010-plain-permanent-core.md) | A plain permanent core | Accepted by owner instruction (22 November 2026) |
 

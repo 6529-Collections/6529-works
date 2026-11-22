@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
-import { Directory } from "src/core/Directory.sol";
+import { StreamDirectory6529 } from "src/core/StreamDirectory6529.sol";
 import { SplitLedger } from "src/economics/SplitLedger.sol";
 import { IArtistPayoutResolver } from "src/economics/interfaces/IArtistPayoutResolver.sol";
 import { ISplitLedger } from "src/economics/interfaces/ISplitLedger.sol";
@@ -18,13 +18,14 @@ contract PayoutOnlyResolver is IArtistPayoutResolver {
     }
 }
 
-/// @notice The unclaimed period of the split ledger is the network's setting in `Directory`
-///         (`IDirectory.unclaimedPeriod`), read when a forfeit is attempted. The ledger here is
-///         deployed with the real `Directory` as its resolver, as the deployment does.
+/// @notice The unclaimed period of the split ledger is the network's setting in
+///         `StreamDirectory6529` (`IDirectory.unclaimedPeriod`), read when a forfeit is attempted.
+///         The ledger here is deployed with the real `StreamDirectory6529` as its resolver, as the
+///         deployment does.
 /// @dev Each test fails against the ledger with a compiled 180 days: a period other than 180
 ///      days, zero, or a change after the mark would decide the forfeit differently.
 contract SplitLedgerUnclaimedPeriodTest is EconomicsBase {
-    Directory internal directory;
+    StreamDirectory6529 internal directory;
     MockAccounts internal accounts;
 
     function setUp() public override {
@@ -32,7 +33,7 @@ contract SplitLedgerUnclaimedPeriodTest is EconomicsBase {
         accounts = new MockAccounts();
         accounts.setPayout(ARTIST, artistPayout);
         // The other three slots only need code; the ledger reads ACCOUNTS alone.
-        directory = new Directory(
+        directory = new StreamDirectory6529(
             address(manager),
             address(accounts),
             address(accounts),
@@ -130,7 +131,8 @@ contract SplitLedgerUnclaimedPeriodTest is EconomicsBase {
         }
     }
 
-    /// @dev Only the network sets the period, in `Directory`; the event carries old and new.
+    /// @dev Only the network sets the period, in `StreamDirectory6529`; the event carries old and
+    ///      new.
     function testFuzz_OnlyTheNetworkSetsThePeriod(address stranger, uint48 next) public {
         vm.assume(stranger != address(this));
         vm.prank(stranger);

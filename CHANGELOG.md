@@ -2,27 +2,38 @@
 
 ## Unreleased
 
+- **Final names.** The products are 6529 Stream, 6529 Stream Editions, 6529 Independent Stream
+  and 6529 Independent Stream Editions. The permanent contracts are `Stream6529`,
+  `StreamEditions6529`, `StreamWorkFacts6529`, `StreamDirectory6529`, `IndependentStream6529` and
+  `IndependentStreamEditions6529`; the replaceable ones keep plain names
+  (`IndependentStreamRegistry`, `IndependentStreamDeployer`, `IndependentEditionAuction` and its
+  lens). The directory slots are `INDEPENDENT_STREAM`, `INDEPENDENT_TERMS` and
+  `INDEPENDENT_RECORDS`; the product ID is `PRODUCT_INDEPENDENT`; the rule IDs of the
+  Independent Stream page are `IND-n`. 6529 Stream's symbol is `6529STREAM`. Names only: no
+  behaviour changed. Selectors, topic0 values, interface IDs, one typehash, one consent domain
+  string and the product ID that contained the old name changed with it
+  ([ADR 0008](docs/adr/0008-independent-stream.md) carries the naming note).
 - **The plain permanent core, integrated** ([ADR 0010](docs/adr/0010-plain-permanent-core.md)).
-  The permanent contracts (`Stream`, `Editions`, `WorkFacts`, `Directory`, the split ledger and
-  its vaults, the escrow, the content store) hold only token ownership and the collection
-  address, the facts of a finished work and money already owed; every rule moved to a
-  replaceable module (`StreamTerms`, `WorkRules` and `WorkDelivery`, `Renderer`, `Accounts`,
-  `FederationRegistry`, `PackageRegistry`, the sale contracts). Modules and minters are added
-  after `moduleDelay` and removed at once. Every waiting period in a permanent contract is a
-  network setting with a launch value: `moduleDelay` 7 days, `rescueDelay` 14 days,
-  `rebindDelay` 14 days, `unclaimedPeriod` 180 days. ETH only at launch. One credit rule for both
-  auctions (`AgedCredits`): only money that has itself waited the unclaimed period goes to the
-  network. The old `Stream`, `WorkRecords`, `Editions`, `ArtistRegistry`, the English auction's
-  lens, the old deploy and verify scripts and their tests are removed.
+  The permanent contracts (`Stream6529`, `StreamEditions6529`, `StreamWorkFacts6529`,
+  `StreamDirectory6529`, the split ledger and its vaults, the escrow, the content store) hold only
+  token ownership and the collection address, the facts of a finished work and money already owed;
+  every rule moved to a replaceable module (`StreamTerms`, `WorkRules` and `WorkDelivery`,
+  `Renderer`, `Accounts`, `IndependentStreamRegistry`, `PackageRegistry`, the sale contracts).
+  Modules and minters are added after `moduleDelay` and removed at once. Every waiting period in a
+  permanent contract is a network setting with a launch value: `moduleDelay` 7 days, `rescueDelay`
+  14 days, `rebindDelay` 14 days, `unclaimedPeriod` 180 days. ETH only at launch. One credit rule
+  for both auctions (`AgedCredits`): only money that has itself waited the unclaimed period goes to
+  the network. The old `Stream`, `WorkRecords`, `Editions`, `ArtistRegistry`, the
+  English auction's lens, the old deploy and verify scripts and their tests are removed.
 - Developer path on the new contracts: `script/DeployCore.s.sol` and `VerifyCore.s.sol`; the local
-  walkthrough (a full sale, an edition sale, a federated work and a module swap on anvil); the
-  reference keeper; nine integrator examples, one of them new (a module swap seen by an
+  walkthrough (a full sale, an edition sale, an Independent Stream work and a module swap on anvil);
+  the reference keeper; nine integrator examples, one of them new (a module swap seen by an
   integrator); Sepolia round r6 tooling, simulated.
 - Documentation: the curation, entropy, disputes and declarations pages cut to the new code;
   known limitations pruned to what is true of it (removed and closed rows reduced to their IDs);
   the invariants catalogue on the core, with the campaigns still being ported listed as
   placeholders; trust assumptions and the runbook gain the points of care found by review
-  (federated tokens need an immediate role, an edition can be sealed at zero, a replacement
+  (Independent Stream tokens need an immediate role, an edition can be sealed at zero, a replacement
   module carries state over, a finalized work's copies are named by the delivery module, an
   unreleased share can still be forfeited); every event and topic0 and the module interface IDs
   regenerated from the build; the audit scope regenerated; the testing guide rewritten; the
@@ -101,8 +112,8 @@
 - Testing build ("all frameworks", November 2026; tests, tools, CI and docs only, no contract
   change; [Testing](docs/testing/README.md)):
   - 36 Halmos proofs of the permanent contracts' state rules (ledger, escrow and governed vault,
-    statement log, Stream and work records, Editions, the federated template), beside the 31
-    library proofs; the Halmos job runs one test contract per job.
+    statement log, Stream and work records, Editions, the Independent Stream template), beside the
+    31 library proofs; the Halmos job runs one test contract per job.
   - A second fuzzer: three Medusa harnesses (`test/medusa/`, `medusa.json`) with their own models
     of the rules, run by Forge on every pull request and by Medusa nightly.
   - Safe v1.4.1 fork tests: the network, an artist wallet, holders, the museum and the fee
@@ -111,14 +122,14 @@
     vectors from a 6529 Network Museum record (`tools/make_vectors.py`, `test/fixtures/real/`).
   - A handler self-test in every invariant campaign, four fixed handlers that had not reached
     what they were written for, and four new campaigns (delivery contracts, the governed vault,
-    federated template state, curation signers), run in a fourth CI partition.
+    Independent Stream template state, curation signers), run in a fourth CI partition.
   - `tools/check_snapshots.py`: every `src/` contract's ABI and storage layout against committed
     snapshots (`foundry.toml` adds `extra_output = ["storageLayout"]`; every `src/` contract's
     bytecode is unchanged). `tools/check_rules.py`: every spec rule and invariant names a test
     that exists, with the rules that have none listed in `tools/rules-uncovered.txt`.
   - The `deep` profile runs every fuzz test 10,000 times, nightly.
   - Docs: the invariants page catalogues every campaign (new INV-CNT, INV-FSA, INV-WD,
-    INV-FED, INV-ECO-15 to 17 and INV-CUR-7 to 9 rows), the spec's test cells name the new
+    INV-IND, INV-ECO-15 to 17 and INV-CUR-7 to 9 rows), the spec's test cells name the new
     proofs and tests, WS-1 excepts `finalizeNoticeAt`, and the economics rule table renders
     whole again.
 - Second pass (owner decisions of 16 November 2026; not yet reviewed as a whole):
@@ -148,17 +159,17 @@
   - Sales: every edition sale closes exactly 15 minutes after its 1/1 (no per-sale offset);
     edition bids are firm (no `withdrawBid`); `abandon` opens 21 days after the close and creates
     the edition when the master's sale settled; a dispute pause lasts at most 3 days and the
-    network resumes or cancels with no wait; the federated refusal exit opens 2 days after the
-    end; the currency-freeze exit and the delivery redirect wait 14 days; the network fee takes
-    the rounding and goes to the recipient read at settlement (R18); a credit unclaimed for
-    180 days may be sent to the network (`expireCredit`); EIP-2612 permit payments are refused;
-    no edition base-price cap (`StepLadder.BASE_PRICE_BOUND`, a storage bound); opening an
-    edition sale checks the item's package is still approved (C23); new stateless `SaleStarter`
-    starts a 1/1, deploys its vaults and opens its record in one transaction.
-  - Federation: a joined federated contract stays in the federation (no exit, no artist-owned
-    minters); any wallet of the artist's consolidated account acts for it; works may name
-    collaborators who consent on chain; VRF works take a seed the requester pays the VRF
-    provider for; the network share in force is the smaller of the deployed share and the artist
+    network resumes or cancels with no wait; the Independent Stream refusal exit opens 2 days after
+    the end; the currency-freeze exit and the delivery redirect wait 14 days; the network fee takes
+    the rounding and goes to the recipient read at settlement (R18); a credit unclaimed for 180 days
+    may be sent to the network (`expireCredit`); EIP-2612 permit payments are refused; no edition
+    base-price cap (`StepLadder.BASE_PRICE_BOUND`, a storage bound); opening an edition sale checks
+    the item's package is still approved (C23); new stateless `SaleStarter` starts a 1/1, deploys
+    its vaults and opens its record in one transaction.
+  - Independent Stream: a joined Independent Stream contract stays in the Independent Stream (no
+    exit, no artist-owned minters); any wallet of the artist's consolidated account acts for it;
+    works may name collaborators who consent on chain; VRF works take a seed the requester pays the
+    VRF provider for; the network share in force is the smaller of the deployed share and the artist
     registry's record (lower only); the network can reinstate a revoked template.
   - Conventions: the promise grade is removed (tool, schema, rules DCL-29 to DCL-31); the promise
     card is now a neutral fact sheet (`fact-sheet.v1`, `python -m tools.conventions
@@ -168,65 +179,67 @@
   - Review fixes: escrow and sale credits start their 180-day clock only when they go from zero;
     a due non-artist finalize finalizes the record as it stands; `ChangeContested` carries
     `priorOutcome`; `killSignerApprovals` is a no-delay network action; a curated lead artist is
-    paid only through its account; `FederatedEditions.createEdition` needs a SOLD master or a
-    bound sale; `canMint` checks the partner template; `propagateRevocation` is removed; VRF
-    curated and federated draws have separate seed maps and tenures; Deploy and Verify refuse a
-    genesis brake off anvil; `SaleStarter` refuses itself as payer; the deployment record no
-    longer has `pendingLanes`. Gas: `startWithBid` hands its first bid the terms record the
-    start locked instead of reading it back (about 5,300 gas less; tightest start row 341,582).
-    Owner, 17 November 2026: an edition is created for any completed
-    1/1, unbid included; collaborator consent has no expiry; declarations carry no intended
-    renunciations.
+    paid only through its account; `IndependentStreamEditions6529.createEdition` needs a SOLD master
+    or a bound sale; `canMint` checks the partner template; `propagateRevocation` is removed; VRF
+    curated and Independent Stream draws have separate seed maps and tenures; Deploy and Verify
+    refuse a genesis brake off anvil; `SaleStarter` refuses itself as payer; the deployment record
+    no longer has `pendingLanes`. Gas: `startWithBid` hands its first bid the terms record the start
+    locked instead of reading it back (about 5,300 gas less; tightest start row 341,582). Owner, 17
+    November 2026: an edition is created for any completed 1/1, unbid included; collaborator consent
+    has no expiry; declarations carry no intended renunciations.
   - Documents: [ADR 0009](docs/adr/0009-second-permanence-pass.md) records the pass, with dated
     amendment notes on ADRs 0001, 0002, 0005, 0006, 0007 and 0008; the specs, audit pages,
     integrator pages, glossary, architecture and runbook describe the code as merged, with the
     network's duties as current practice; the control-proof tool reads the consolidation
     source's `isConsolidated`; `docs/facts.json` regenerated.
 
-- Federation review fixes (reviews F and G; [ADR 0008](docs/adr/0008-federation.md) §1, §2, §8,
-  §10, §12; FED-64 to FED-70, ID-41): a template version is its runtime code hash bound to an
-  ownerless `FederatedDeployer` (new; `IFederatedDeployer` `0xf53f1196`), which holds the
-  version's creation code in data contracts written at construction, deploys copies for anyone
-  and records each (`Deployed`, `CreationCodeStored`); a contract joins only if its version's
-  deployer recorded it (`approveTemplate(bytes32 codeHash, address deployer, uint32 version,
-  uint8 form)`, `TemplateSet` and `Registered` name the deployer;
-  `IFederatedToken.joinFederation(IFederationRegistry.Join)`; `IFederationRegistry` `0xc32f19cd`,
-  `IFederatedToken` `0xc6c898cc`, `IFederatedStream` `0x5b4e5ccb`); the artist registry lists a
-  contract only with its artist's `FederatedListing` signature over the entry's facts
-  (`listFederatedContract(FederatedListing, bytes consent)`; `IArtistRegistry` `0x8efc5e8c`); an
-  exit from DELISTED, or a delisting after an exit, is `LEFT_DELISTED`, served by nothing; a batch
-  status write skips what it cannot change; a pair joins editions first and each half's minting
-  and restarts follow the other's listing; a 1/1 template names the canonical content store
-  (`contentStore()`, `ContentStoreSet`); a replaced registry answers as the current one; each
-  genesis setter reaches only targets declaring its interface (`GovernanceConfig.genesisInterface`).
-  The `FederationRegistry` constructor takes the content store. The source-line budget is 16,500.
-  Pass 3: a federated license text must be a registered SHA-256 file of at most 16 chunks at the
-  first mint and complete to finalize (`IFederatedStream.InvalidLicenseText`); the federated
-  edition lens refuses a non-canonical split ledger; `setStatus` and `propagateRevocation` take
-  at most `MAX_BATCH` (256) contracts (`BatchTooLarge`). A work's file roles take four bits
-  each below the count; `setDefaultRenderer(expected, renderer, codeHash)` is compare-and-set
-  and `DefaultRendererSet(previous, next, codeHash)` is 6529 Stream's event (`IFederatedStream`
-  is now `0x5b4e5ccb`); the federated edition auction refuses bids and raises on a delisted
+- Independent Stream review fixes (reviews F and G; [ADR 0008](docs/adr/0008-independent-stream.md)
+  §1, §2, §8, §10, §12; IND-64 to IND-70, ID-41): a template version is its runtime code hash bound
+  to an ownerless `IndependentStreamDeployer` (new; `IIndependentStreamDeployer` `0xf53f1196`),
+  which holds the version's creation code in data contracts written at construction, deploys copies
+  for anyone and records each (`Deployed`, `CreationCodeStored`); a contract joins only if its
+  version's deployer recorded it
+  (`approveTemplate(bytes32 codeHash, address deployer, uint32 version, uint8
+  form)`, `TemplateSet` and `Registered` name the deployer;
+  `IIndependentToken.joinIndependentStream(IIndependentStreamRegistry.Join)`;
+  `IIndependentStreamRegistry` `0xc32f19cd`, `IIndependentToken` `0xc6c898cc`, `IIndependentStream`
+  `0x5b4e5ccb`); the artist registry lists a contract only with its artist's `IndependentListing`
+  signature over the entry's facts (`listIndependentContract(IndependentListing, bytes consent)`;
+  `IArtistRegistry` `0x8efc5e8c`); an exit from DELISTED, or a delisting after an exit, is
+  `LEFT_DELISTED`, served by nothing; a batch status write skips what it cannot change; a pair joins
+  editions first and each half's minting and restarts follow the other's listing; a 1/1 template
+  names the canonical content store (`contentStore()`, `ContentStoreSet`); a replaced registry
+  answers as the current one; each genesis setter reaches only targets declaring its interface
+  (`GovernanceConfig.genesisInterface`). The `IndependentStreamRegistry` constructor takes the
+  content store. The source-line budget is 16,500. Pass 3: an Independent Stream license text must
+  be a registered SHA-256 file of at most 16 chunks at the first mint and complete to finalize
+  (`IIndependentStream.InvalidLicenseText`); the Independent Stream edition lens refuses a
+  non-canonical split ledger; `setStatus` and `propagateRevocation` take at most `MAX_BATCH` (256)
+  contracts (`BatchTooLarge`). A work's file roles take four bits each below the count;
+  `setDefaultRenderer(expected, renderer, codeHash)` is compare-and-set and
+  `DefaultRendererSet(previous, next, codeHash)` is 6529 Stream's event (`IIndependentStream` is now
+  `0x5b4e5ccb`); the Independent Stream edition auction refuses bids and raises on a delisted
   contract (`BiddingClosed`) and voids a sale delisted mid-scan; `VerifyV1.checkSuccessorParity`
   backs the registry replacement's last check; `check_genesis.py` types symbolic wiring names.
-- Federation ([ADR 0008](docs/adr/0008-federation.md); [Federation](docs/spec/federation.md),
-  FED-1 to FED-63): Federated Stream and Federated Stream Editions templates (full copies, no
+- Independent Stream
+  ([ADR 0008](docs/adr/0008-independent-stream.md); [Independent Stream](docs/spec/independent-stream.md),
+  IND-1 to IND-63): Independent Stream and Independent Stream Editions templates (full copies, no
   immutables, joined by the token itself and listed in the artist registry's directory; works
-  approved on chain by the artist, naming no party but the artist; unsold works held by the
-  template and restartable; 90/10 royalty vaults deployed at mint; read by the shared renderer
-  through `coreOf` and `extsload` at `StreamLayout`'s slots; locators printable ASCII);
-  `FederationRegistry` (template code hashes, admitted adapters, entries composed on read, no
-  entry for a contract that left, delisting by vote, suspension and revocation); the uniform
-  edition auction and its lens split into shared bases with a second deployment,
-  `FederatedEditionAuction`, for federated pairs (its abandonment waits the locked delay alone:
-  a federated 1/1 has no rescue); `IFederationRegistry` reshaped to what adapters and templates
-  call (`register`, `entry`, `isActive`, `canMint`; interface ID `0x2063bc84`); new
-  `IFederatedToken` `0xe5ed11e8`, `IFederatedStream` `0xc7aac428`, `IFederatedEditions`
-  `0x5c20a834`. Genesis deploys the registry, the federated edition auction and its lens,
-  binds the registry in the artist registry, points the English auction at it, admits both
-  shared adapters and approves the two v1 template code hashes computed by
-  `DeployV1.templateCodeHash` (`GovernanceConfig.isGenesisSelector` admits these three
-  selectors); `VerifyV1.checkFederation` reads them back. The source-line budget is 16,000.
+  approved on chain by the artist, naming no party but the artist; unsold works held by the template
+  and restartable; 90/10 royalty vaults deployed at mint; read by the shared renderer through
+  `coreOf` and `extsload` at `StreamLayout`'s slots; locators printable ASCII);
+  `IndependentStreamRegistry` (template code hashes, admitted adapters, entries composed on read, no
+  entry for a contract that left, delisting by vote, suspension and revocation); the uniform edition
+  auction and its lens split into shared bases with a second deployment,
+  `IndependentEditionAuction`, for Independent Stream pairs (its abandonment waits the locked delay
+  alone: an Independent Stream 1/1 has no rescue); `IIndependentStreamRegistry` reshaped to what
+  adapters and templates call (`register`, `entry`, `isActive`, `canMint`; interface ID
+  `0x2063bc84`); new `IIndependentToken` `0xe5ed11e8`, `IIndependentStream` `0xc7aac428`,
+  `IIndependentStreamEditions` `0x5c20a834`. Genesis deploys the registry, the Independent Stream
+  edition auction and its lens, binds the registry in the artist registry, points the English
+  auction at it, admits both shared adapters and approves the two v1 template code hashes computed
+  by `DeployV1.templateCodeHash` (`GovernanceConfig.isGenesisSelector` admits these three
+  selectors); `VerifyV1.checkIndependentStream` reads them back. The source-line budget is 16,000.
 - Permanence ([ADR 0007](docs/adr/0007-permanence.md); owner instruction of 14 and 15 November
   2026), two integration rounds and the fixes of four independent reviews. Pre-launch interface
   reshaping:
@@ -246,7 +259,7 @@
       answer whole). ClaimRouter: a continue-mode signed batch carries at most 131,072
       signature bytes (`SignaturesTooLong`).
     - Events: `TimerSet(Timer indexed, uint48 previous, uint48 value)` (`0xf67b0661…`) and
-      `FederatedContractStatus(token, artistId, previous, status, ref)` (`0x34ddebd7…`) carry
+      `IndependentContractStatus(token, artistId, previous, status, ref)` (`0x34ddebd7…`) carry
       the previous value. `Typehashes.ARTIST_REGISTRATION` moves to the shared typehashes.
     - Rule texts follow ADR 0007's gas rule (AGENTS.md, CONTRIBUTING.md, `.coderabbit.yaml`):
       no gas number in permanent contracts or the renderer, return data always bounded.
@@ -333,27 +346,27 @@
   - **Renderer.** Every read forwards all gas (no compiled caps; a shortfall reverts with
     `BoundedCallShortfall`), the preview bound is `Limits.MAX_PREVIEW_BYTES` (16,384), and the
     locator kind is an open `uint8`. 24,321 to 23,714 bytes; its size exemption is removed.
-  - **English auction.** `settleOrRefund` ends a federated sale whose token will not settle,
-    after a governed refusal delay and in a frame of exactly the governed refusal gas, crediting
-    the bid (AUC-45 to AUC-48; LIM-SAL-16 solved for federated sales; 6529 Stream's sales never
-    take it). Opening bids move to the asset allowlist (`AssetAllowlist.setOpeningBid`,
-    PARAMETER_SETTER, compare-and-set on the asset's revision; read with the currency's status
-    in one call): the auction is 24,062 bytes (margin 514) and its exemption is removed; no
-    payment method is removed. `IEnglishAuction` `0xb9e9cdd3`, `IEnglishAuctionRefusal`
-    `0x625761b5`.
+  - **English auction.** `settleOrRefund` ends an Independent Stream sale whose token will not
+    settle, after a governed refusal delay and in a frame of exactly the governed refusal gas,
+    crediting the bid (AUC-45 to AUC-48; LIM-SAL-16 solved for Independent Stream sales; 6529
+    Stream's sales never take it). Opening bids move to the asset allowlist
+    (`AssetAllowlist.setOpeningBid`, PARAMETER_SETTER, compare-and-set on the asset's revision; read
+    with the currency's status in one call): the auction is 24,062 bytes (margin 514) and its
+    exemption is removed; no payment method is removed. `IEnglishAuction` `0xb9e9cdd3`,
+    `IEnglishAuctionRefusal` `0x625761b5`.
   - **Edition auction.** It seals the edition at the clearing count and prices every mint; an
     edition's terms may name its close offset (`params = abi.encode(uint256 seconds)`) up to a
     governed maximum (30 days at launch); governed limits (`setLimits`: maximum close offset,
     abandonment delay, payout gas, formerly `PAYOUT_GAS`); `abandon` voids a sale that has
     paid nothing 150 days after its end (full refunds, the edition sealed at zero); `open`
-    deploys the seller and royalty wallets; no federation registry on the adapter
+    deploys the seller and royalty wallets; no Independent Stream registry on the adapter
     (EA-17 to EA-20). `IUniformEditionAuction` `0x94ff7508`; margin 696 bytes.
-  - **ArtistRegistry**: a permanent federation directory (per-token entries with the code hash
-    it reads itself, exit by the token, a replaceable federation registry
-    `setFederationRegistry`, consented federated identities `registerFederated`); the five
-    identity timers governed between floors and ceilings (`setTimer`) and locked at staging;
-    best-effort refresh on every recovery path, with a shortfall always reverting; payout-only
-    overrides need dormancy (ID-33 to ID-39).
+  - **ArtistRegistry**: a permanent Independent Stream directory (per-token entries with the code
+    hash it reads itself, exit by the token, a replaceable Independent Stream registry
+    `setIndependentStreamRegistry`, consented Independent Stream identities `registerIndependent`);
+    the five identity timers governed between floors and ceilings (`setTimer`) and locked at
+    staging; best-effort refresh on every recovery path, with a shortfall always reverting;
+    payout-only overrides need dormancy (ID-33 to ID-39).
   - **Split ledger replaces the split factory, wallets and release verifier.** One permanent
     `SplitLedger` deploys every split wallet as a 66-byte `SplitVault` at the same CREATE2
     derivation, keeps every wallet's accounting, verifies signed releases and executes every
@@ -377,7 +390,7 @@
     GV-47); genesis names a third admin Safe and the deploy requires three off anvil; Verify
     refuses a handed-over manager or an unlisted target.
   - **Genesis and deployment.** New governed selectors (`setRescueDelay`,
-    `setFederationRegistry`, `setTimer`, `sweepExcess`, both vaults' `setDestination`,
+    `setIndependentStreamRegistry`, `setTimer`, `sweepExcess`, both vaults' `setDestination`,
     `setDelivery`, `addStore`, the edition auction's `setLimits`, `AssetAllowlist.setOpeningBid`,
     the manager's functions and a new `open` group), the role matrix regenerated; `DeployV1`
     deploys the split ledger, both vaults (genesis addresses 0xa013 and 0xa014) and the edition
@@ -415,10 +428,10 @@
     custody check), run in the Build and checks job with `CONVENTIONS_CAST_REQUIRE`.
   - **Bytecode.** `WorkRecords` grows from 23,139 to 23,946 bytes (630 under EIP-170). No other
     contract's executable code changes: with `IWorkRecords.sol` (a NatSpec correction),
-    `Typehashes.sol` and `StatementKinds.sol` changed, the metadata hash moves for `Stream`,
-    `Editions`, `StatementLog`, `ArtistRegistry`, `PackageRegistry`, `Eip712CurationVerifier`,
-    `EnglishAuction`, `EconomicsResolver` and `Renderer`. `IWorkRecords`' ID stays
-    `0xc109676d`.
+    `Typehashes.sol` and `StatementKinds.sol` changed, the metadata hash moves for `Stream6529`,
+    `StreamEditions6529`, `StatementLog`, `ArtistRegistry`, `PackageRegistry`,
+    `Eip712CurationVerifier`, `EnglishAuction`, `EconomicsResolver` and `Renderer`. `IWorkRecords`'
+    ID stays `0xc109676d`.
   - **Gas.** ADR 0004's table is re-measured: the re-rate, which now lowers the rate, rose by
     248 to 190,150; `tokenURI`'s worst case fell by 67 to 2,736,559; the start rows moved by at
     most 20 with the deployment addresses, and the binding start row is 338,273.
@@ -434,9 +447,9 @@
     The lifecycle invariant gains the start pause and a hostile bidder and receiver
     (RFX-SAL-4). `EnglishAuction` grows to 23,429 bytes (1,147 under EIP-170). Known
     limitations: LIM-SAL-3, LIM-SAL-15 and LIM-EA-9 state 60 days, LIM-SAL-10 covers every asset
-    sent outside the auction's flows, and the new LIM-SAL-16 records that a listed or federated
-    token whose settlement calls fail holds a standing bid with no exit, which v1, listing only
-    6529 Stream, cannot meet, and which admitting any other token must solve first.
+    sent outside the auction's flows, and the new LIM-SAL-16 records that a listed or Independent
+    Stream token whose settlement calls fail holds a standing bid with no exit, which v1, listing
+    only 6529 Stream, cannot meet, and which admitting any other token must solve first.
   - **Split wallets.** A release also accepts an ERC-20 `transfer` that returns nothing, still
     requiring exact balance deltas (`TokenTransfer.transferExactAllowingNoReturn`, ECO-23,
     RFX-ECO-1); payments, escrow and the sale adapters keep the strict check. `SplitWallet`
@@ -474,7 +487,7 @@
     configuration; in epoch mode against the epoch's configuration alone, so a genesis mapping
     the epoch dropped passes only once the selector is back with ADMIN (GV-15, RFX-TOOL-2).
   - **Budgets and tests.** `check_budgets.py` keeps 512 bytes of EIP-170 margin for every
-    contract declared in `src/`, with recorded exemptions in `tools/size-margins.json` (`Stream`
+    contract declared in `src/`, with recorded exemptions in `tools/size-margins.json` (`Stream6529`
     203, `Renderer` 211, `UniformEditionAuction` 420; RFX-TOOL-1); a contract declared there
     without a size measurement fails the gate. The Sepolia fork simulation expects 14 governed
     targets and 18 wiring calls, the anvil run's 13 and 18 plus the entropy module. `RoyaltyInfoGas.t.sol` calls
@@ -615,8 +628,8 @@
 
 - 6529 Editions is renamed 6529 Stream Editions (ADR 0005, D139) in every current document and
   NatSpec comment; `name()` is "6529 Stream Editions" and `symbol()` `STREAMEDITIONS`. The
-  identifiers `Editions`, `IEditions`, `PRODUCT_EDITIONS` and the `"EDITIONS"` binding label do
-  not change, and the records of Sepolia r1 to r3 keep the former name.
+  identifiers `StreamEditions6529`, `IEditions`, `PRODUCT_EDITIONS` and the `"EDITIONS"` binding
+  label do not change, and the records of Sepolia r1 to r3 keep the former name.
 - Editions: `EditionTerms` is `{maxCount, currency, saleKind, params}` and edition minting is
   generic (ADR 0005, owner decision 14). `EditionRules` checks only a nonzero sale kind and at
   most 1,024 bytes of params; the sale adapter validates the currency and params when it opens.
@@ -723,7 +736,7 @@
   artist no longer holds up an unbid canonical work, and only the museum recorded at
   settlement can claim one whose delivery is pending (AUC-33). The museum branch is gated in
   code on 6529 Stream, which `EnglishAuction` now takes as a constructor argument: any other
-  token, federated or listed later by governance, keeps the rc.1 behaviour (its artist), at
+  token, Independent Stream or listed later by governance, keeps the rc.1 behaviour (its artist), at
   settlement and at the freeze exit. ADR 0004's table gains the no-bid settlement (1 new slot, no new
   account), and LIM-SAL-12 records the museum as a governed address.
 
@@ -767,7 +780,7 @@
     an ERC-20.
   - The English auction reads `ownerOf` after `settlePrimary` to learn where an unsold work
     went. It no longer trusts the `holder` the token reports (CALLS I-2).
-  - `Stream.setDependency` refuses a replacement that answers `authority()` with an
+  - `Stream6529.setDependency` refuses a replacement that answers `authority()` with an
     AccessManager other than Stream's (G I-1, GV-35).
   - The English auction's lens is deployed in its own transaction before the auction. The
     lens is now stateless and reads its caller. The auction's constructor takes the lens's
@@ -816,7 +829,7 @@
   submissions per profile. The curation spec, glossary (Main Stage), README, architecture and
   trust assumptions follow. No contract changes.
 - Owner decisions 18 to 24 (1 November 2026), the contract and deploy side:
-  - Decision 20: `Stream.rescueToMuseum(tokenId)` (SUCCESSOR_SETTER, 30 days) moves a work
+  - Decision 20: `Stream6529.rescueToMuseum(tokenId)` (SUCCESSOR_SETTER, 30 days) moves a work
     stranded in a removed sale adapter's custody to the museum, and nothing else. It applies
     only to a work whose primary sale never settled, still held by the adapter that minted it,
     90 days after governance removed that adapter. The work is then settled as UNBID
@@ -843,9 +856,10 @@
   mainnet governance section and genesis checklist and in LIM-GV-18 (D67, D98; review finding
   G-3). Still open there: the holders of the operational keys and the cold recovery admin, how
   one security council fills the three guardian Safes the deploy requires, and a deploy-side
-  guard for the decision, which does not exist yet. LIM-GV-16 is accepted (decision 21); every unsold canonical 6529 Stream 1/1 goes to the
-  museum whatever its sale method, and return-to-creator sales belong in their own collections
-  (decision 22, ADR 0005 §11 and the Stream spec).
+  guard for the decision, which does not exist yet. LIM-GV-16 is accepted (decision 21); every
+  unsold canonical 6529 Stream 1/1 goes to the museum whatever its sale method, and
+  return-to-creator sales belong in their own collections (decision 22, ADR 0005 §11 and the Stream
+  spec).
 
 ### Deployment
 
@@ -878,7 +892,7 @@
   admits it on 6529 Stream Editions and lists Editions as its target (17 wiring calls, was
   15). Its five governed selectors are in the role matrix: `pause` (PAUSER), `unpause`
   (UNPAUSER), `setConfig` (PARAMETER_SETTER, 48 hours), `setTarget` and
-  `setFederationRegistry` (SUCCESSOR_SETTER, 30 days). Every sale adapter's admission,
+  `setIndependentStreamRegistry` (SUCCESSOR_SETTER, 30 days). Every sale adapter's admission,
   `setAdmittedMinter` on Stream and on Editions, stays in the 30-day class. Verify checks the
   lens is the auction's own and its code hash the recorded one. The anvil dry-run record in
   `deployments/31337/` is regenerated.
@@ -969,7 +983,7 @@
   function they test, or into real-stack suites named for the behaviour they pin; no test is
   removed. Test names describe behaviour, and a regression test carries its finding's ID in a
   `/// Regression:` NatSpec line. Mocks live in `test/mocks/<module>/` with one behaviour per
-  name: the duplicated Permit2, EIP-2612 token and federation registry mocks are merged, and
+  name: the duplicated Permit2, EIP-2612 token and Independent Stream registry mocks are merged, and
   the renderer's and the artist registry's Stream stand-ins are one `StreamMock`.
   [`test/README.md`](test/README.md) maps the tree.
 - Sepolia rehearsal r3 (15 October 2026): `main` at `e5fe78c` deployed with r1's Safes and keys,
@@ -1020,7 +1034,7 @@
   profile (CIDv1, sha2-256, raw leaves, 262,144-byte chunks, balanced layout) and its `ipfs://`
   locator, checked against IPIP-0499's fixtures and the real `WorkRecords` locator rule.
 - Repository created for the 6529 network's art protocol: 6529 Stream, 6529
-  Editions and 6529 Stream Federated.
+  Editions and 6529 Independent Stream.
 - ADR 0001 records the accepted v1 scope (originally 6529Stream ADR 0055).
 - ADR 0003 records the build-time decisions for v1: ABI package hashing, the Stream
   core and records split, the 350K start-gas budget, pull-only artist payouts,
@@ -1095,7 +1109,7 @@
   public grace for missing wallets), a payout freeze while a change would move
   the payout, payout validation, and one-shot bindings. The adapter reads 6529
   consolidations with age and expiry. `IArtistRegistry` gains the standing
-  surface, `FederatedListFull` and `AcceptanceUsed`; `IConsolidationSource`
+  surface, `IndependentListFull` and `AcceptanceUsed`; `IConsolidationSource`
   gains `consolidations` and `effectiveAt`; `OVERRIDE_ACCEPTANCE` is nonce-free
   and consumed once by digest.
 - Identity: contested overrides (ADR 0003 owner decision 1). A captured wallet's
@@ -1258,8 +1272,8 @@
   `Limits.MAX_PREVIEW_BYTES` (16 KiB stored, `Identity` counted four times; gzip files are never
   inlined, so not bounded). With the content-address locators this restores the 8M `tokenURI`
   budget, now proven on the real stack with every cap at once
-  (`test/integration/TokenUriBudget.t.sol`: at most 7.80M Prague gas, `Editions.uri` included,
-  about 2.5% under the budget).
+  (`test/integration/TokenUriBudget.t.sol`: at most 7.80M Prague gas, `StreamEditions6529.uri`
+  included, about 2.5% under the budget).
 - Stream: `createCollection` refuses names with control characters, `<`, `"` or `\`, which JSON
   escaping makes up to six bytes in every work's metadata; the budget proof uses the dearest
   name it accepts.
@@ -1275,9 +1289,9 @@
   names the CC0 text the resolver was deployed with (`cc0TextFileId`, immutable), since
   `openRecord` refuses a CC0 license with any other text.
 - Stream and records (DEPS-6): renderer code-hash pins are checked at use. `rendererOf` (the
-  `tokenURI` and `Editions.uri` path) compares the default renderer's code with the hash it was
-  installed with, and `WorkRecords.pinnedRenderer` a finalized work's renderer with the hash it
-  was pinned with at finalize or the errata repin. Changed code makes the metadata view revert
+  `tokenURI` and `StreamEditions6529.uri` path) compares the default renderer's code with the hash
+  it was installed with, and `WorkRecords.pinnedRenderer` a finalized work's renderer with the hash
+  it was pinned with at finalize or the errata repin. Changed code makes the metadata view revert
   (fail closed) until a renderer is installed again.
 - Renderer (CONTENT-2): a work whose record file the content store does not know (an approved
   manifest that was never registered) renders core-only metadata marked `incomplete` instead of
@@ -1320,7 +1334,7 @@
     status last changed and its total earlier deprecation time (no new storage slot).
   - MARKET-6: alone, PLATFORM opens an edition sale only on the package's approved terms:
     no leaf-priced phase (prices above or below the package price need the artist) and only
-    for a listed edition of FIXED size. An OPEN edition's one-time window, or a federated
+    for a listed edition of FIXED size. An OPEN edition's one-time window, or an Independent Stream
     token's sale, needs the artist (`ArtistApprovalRequired`): the creator opens it, or
     PLATFORM relays the creator's signed phase configuration (fixed price). `IEditions`
     gains `formatOf(editionId)`. The unreachable `PriceBelowPackage` error is removed.
@@ -1344,12 +1358,12 @@
     after the dispute pause: the pause records, in spare bits of the sale's third slot, the
     chain position a later outcome must reach. An outcome recorded before the pause, or one
     about the package item, cannot cancel the auction.
-  - MARKET-3: a federated auction pays its registry fee share to the economics resolver's
-    federated network fee recipient, never to the recipient the token reports, as the
+  - MARKET-3: an Independent Stream auction pays its registry fee share to the economics resolver's
+    Independent Stream network fee recipient, never to the recipient the token reports, as the
     fixed-price and Dutch adapters do. The auction's constructor takes the economics resolver
     (ERC-165 checked) in place of the asset allowlist, which it derives from the resolver;
     `DeployV1` passes the resolver.
-  - MARKET-5: a federated contract delisted while its auction runs takes no more bids
+  - MARKET-5: an Independent Stream contract delisted while its auction runs takes no more bids
     (`TargetNotAllowed`), and the auction settles by crediting the high bid back and giving the
     work to its artist, as with no bid.
   - MONEY-1: auction delivery never depends on a payout. An ERC-20 settlement payout runs in
@@ -1372,9 +1386,9 @@
       says when to re-admit a currency to keep its auctions alive.
     - LIFECYCLE-4 (L4): `cancel`, like `resume`, waits 48 hours from the pause.
     - MONEY-1 (L5): `claimFor` refuses ETH; it serves credited ERC-20 payouts.
-    - MARKET-3 (L6): a federated start checks the network's federated fee recipient, not the
-      token's own. The sales README lists, as a federation install prerequisite, that this
-      recipient must stay nonzero while a registry is installed.
+    - MARKET-3 (L6): an Independent Stream start checks the network's Independent Stream fee
+      recipient, not the token's own. The sales README lists, as an Independent Stream install
+      prerequisite, that this recipient must stay nonzero while a registry is installed.
     - MARKET-6: PLATFORM closes only a sale it opened without the artist's approval. A Dutch
       sale the creator opens counts as approved, as on fixed price. While the creator
       resolves to zero (a pending recovery override), PLATFORM may close any sale.

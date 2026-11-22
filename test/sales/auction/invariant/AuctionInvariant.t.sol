@@ -18,7 +18,7 @@ contract AuctionHandler is CommonBase, StdCheats, StdUtils {
     IDirectory public immutable directory;
     MockStatementLog public immutable statements;
     address public immutable stream;
-    address public immutable fed;
+    address public immutable ind;
     address public immutable network;
 
     address[3] public actors;
@@ -40,10 +40,10 @@ contract AuctionHandler is CommonBase, StdCheats, StdUtils {
         IDirectory directory_,
         MockStatementLog statements_,
         address stream_,
-        address fed_
+        address ind_
     ) {
-        (auction, directory, statements, stream, fed) =
-        (auction_, directory_, statements_, stream_, fed_);
+        (auction, directory, statements, stream, ind) =
+        (auction_, directory_, statements_, stream_, ind_);
         network = msg.sender;
         actors = [address(0xA1), address(0xA2), address(0xA3)];
         for (uint256 i; i < 3; ++i) {
@@ -66,8 +66,8 @@ contract AuctionHandler is CommonBase, StdCheats, StdUtils {
 
     // -------------------------------------------------------------------------- actions
 
-    function start(bool federated, uint256 actorSeed, uint256 amount, bool withBid) external {
-        address token = federated ? fed : stream;
+    function start(bool independent, uint256 actorSeed, uint256 amount, bool withBid) external {
+        address token = independent ? ind : stream;
         bytes memory request = abi.encode(++starts);
         address actor = actors[actorSeed % 3];
         uint256 before = _snapshot();
@@ -238,7 +238,7 @@ contract AuctionInvariantTest is AuctionFixture {
     function setUp() public override {
         super.setUp();
         handler = new AuctionHandler(
-            auction, IDirectory(address(directory)), statements, address(stream), address(fed)
+            auction, IDirectory(address(directory)), statements, address(stream), address(ind)
         );
         targetContract(address(handler));
     }

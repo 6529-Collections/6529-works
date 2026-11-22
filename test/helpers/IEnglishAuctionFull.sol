@@ -30,7 +30,7 @@ interface IEnglishAuctionFull is
     function allowlist() external view returns (IAssetAllowlist);
     function economicsResolver() external view returns (IEconomicsResolver);
     function permit2() external view returns (address);
-    function federationRegistryCodeHash() external view returns (bytes32);
+    function independentStreamRegistryCodeHash() external view returns (bytes32);
     function lens() external view returns (address);
     function storageWords(bytes32[] calldata slots) external view returns (bytes32[] memory);
     function settlePayout(address currency, address wallet, uint256 amount) external;

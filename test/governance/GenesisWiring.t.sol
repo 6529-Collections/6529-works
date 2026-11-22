@@ -3,10 +3,10 @@ pragma solidity ^0.8.24;
 
 import { DeployCore } from "script/DeployCore.sol";
 import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
-import { FederationRegistry } from "src/federated/FederationRegistry.sol";
+import { IndependentStreamRegistry } from "src/independent/IndependentStreamRegistry.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { Roles } from "src/governance/Roles.sol";
-import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
+import { IIndependentStreamRegistry } from "src/interfaces/IIndependentStreamRegistry.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IStatementLog } from "src/interfaces/IStatementLog.sol";
@@ -49,10 +49,10 @@ contract GenesisWiringTest is IntegrationBase {
         bytes4[8] memory ifaces = [
             type(IPackageRegistry).interfaceId,
             type(IPackageRegistry).interfaceId,
-            type(IFederationRegistry).interfaceId,
+            type(IIndependentStreamRegistry).interfaceId,
             type(ISaleAdapter).interfaceId,
-            type(IFederationRegistry).interfaceId,
-            type(IFederationRegistry).interfaceId,
+            type(IIndependentStreamRegistry).interfaceId,
+            type(IIndependentStreamRegistry).interfaceId,
             GovernanceConfig.ANY_TARGET,
             GovernanceConfig.ANY_TARGET
         ];
@@ -90,7 +90,7 @@ contract GenesisWiringTest is IntegrationBase {
             assertTrue(GovernanceConfig.isGenesisSelector(sel));
             if (
                 sel == IPackageRegistry.setEntropyModule.selector
-                    || sel == FederationRegistry.setEntropyModule.selector
+                    || sel == IndependentStreamRegistry.setEntropyModule.selector
             ) ++entropyCalls;
         }
         assertEq(entropyCalls, 2);
@@ -103,20 +103,25 @@ contract GenesisWiringTest is IntegrationBase {
         assertEq(registry.stream(), address(stream), "bindStream");
         assertEq(registry.entropyModule(), address(entropy), "PackageRegistry.setEntropyModule");
         assertEq(
-            federation.entropyModule(), address(entropy), "FederationRegistry.setEntropyModule"
+            independentStream.entropyModule(),
+            address(entropy),
+            "IndependentStreamRegistry.setEntropyModule"
         );
         assertTrue(
             IUniformEditionAuctionLens(address(editionAuction)).isTarget(address(editions)),
             "setTarget"
         );
         assertEq(allowlist.openingBid(CURRENCY_ETH), OPENING_BID, "setOpeningBid");
-        address[2] memory adapters = [address(auction), deployment.federatedEditionAuction];
+        address[2] memory adapters = [address(auction), deployment.independentEditionAuction];
         for (uint256 i; i < 2; ++i) {
-            IFederationRegistry.SaleContract memory s = federation.saleContractOf(adapters[i]);
+            IIndependentStreamRegistry.SaleContract memory s =
+                independentStream.saleContractOf(adapters[i]);
             assertTrue(s.addedAt != 0 && s.removedAt == 0, "setAdapter");
         }
-        _template(deployment.federatedStreamDeployer, IFederationRegistry.Form.ERC721);
-        _template(deployment.federatedEditionsDeployer, IFederationRegistry.Form.ERC1155);
+        _template(deployment.independentStream721Deployer, IIndependentStreamRegistry.Form.ERC721);
+        _template(
+            deployment.independentStreamEditionsDeployer, IIndependentStreamRegistry.Form.ERC1155
+        );
         (uint64 count,) = statements.chainOf(address(manager), 0);
         assertEq(count, 1, "the epoch-0 manifest is the manager's first statement");
     }
@@ -155,10 +160,10 @@ contract GenesisWiringTest is IntegrationBase {
     }
 
     function test_GenesisWiring_AGenesisSelectorReachesOnlyATargetDeclaringItsInterface() public {
-        _refused(address(registry), FederationRegistry.setAdapter.selector);
-        _refused(address(registry), FederationRegistry.approveTemplate.selector);
-        _refused(address(federation), IPackageRegistry.bindStream.selector);
-        _refused(address(federation), ISaleAdapter.setTarget.selector);
+        _refused(address(registry), IndependentStreamRegistry.setAdapter.selector);
+        _refused(address(registry), IndependentStreamRegistry.approveTemplate.selector);
+        _refused(address(independentStream), IPackageRegistry.bindStream.selector);
+        _refused(address(independentStream), ISaleAdapter.setTarget.selector);
         _refused(address(stream), ISaleAdapter.setTarget.selector);
         _refused(address(stream), IModules.addMinter.selector);
         _refused(address(editions), IModules.addMinter.selector);
@@ -195,10 +200,10 @@ contract GenesisWiringTest is IntegrationBase {
         return [
             IPackageRegistry.bindStream.selector,
             IPackageRegistry.setEntropyModule.selector,
-            FederationRegistry.setEntropyModule.selector,
+            IndependentStreamRegistry.setEntropyModule.selector,
             ISaleAdapter.setTarget.selector,
-            FederationRegistry.setAdapter.selector,
-            FederationRegistry.approveTemplate.selector,
+            IndependentStreamRegistry.setAdapter.selector,
+            IndependentStreamRegistry.approveTemplate.selector,
             IAssetAllowlist.setOpeningBid.selector,
             IStatementLog.appendGovernanceManifest.selector
         ];
@@ -211,11 +216,11 @@ contract GenesisWiringTest is IntegrationBase {
         return false;
     }
 
-    function _template(address deployer_, IFederationRegistry.Form form) internal view {
-        IFederationRegistry.Template memory t = federation.templateOf(deployer_);
+    function _template(address deployer_, IIndependentStreamRegistry.Form form) internal view {
+        IIndependentStreamRegistry.Template memory t = independentStream.templateOf(deployer_);
         assertEq(t.version, 1, "approveTemplate");
         assertEq(uint8(t.form), uint8(form));
-        assertEq(uint8(t.status), uint8(IFederationRegistry.TemplateStatus.APPROVED));
+        assertEq(uint8(t.status), uint8(IIndependentStreamRegistry.TemplateStatus.APPROVED));
     }
 
     function _call(address target, bytes4 sel)

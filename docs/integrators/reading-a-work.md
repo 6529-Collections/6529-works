@@ -16,13 +16,13 @@ interface IDs are in [ABIs and interface IDs](abis-and-interface-ids.md).
 | --- | --- | --- |
 | A work's metadata | `tokenURI(tokenId)` | 6529 Stream (ERC-721) |
 | An edition's metadata | `uri(id)` | 6529 Stream Editions (ERC-1155) |
-| The metadata with all media inlined (up to 1 MiB) | `fullTokenURI(tokenContract, id)` | the renderer that `Stream.rendererOf(id)` names |
+| The metadata with all media inlined (up to 1 MiB) | `fullTokenURI(tokenContract, id)` | the renderer that `Stream6529.rendererOf(id)` names |
 | A work's facts (artist, collection, serial, kind, seed, outcome, royalty) | `workOf(tokenId)` | 6529 Stream |
 | A work's record, media, license, finalize state and pinned renderer | `factsOf(stream, tokenId)` | WorkFacts |
 | Which renderer serves a token | `rendererOf(tokenId)` | 6529 Stream |
 | Royalties | `royaltyInfo(id, salePrice)` | 6529 Stream or 6529 Stream Editions (ERC-2981) |
 | The dispute status | `latestDisputeOutcome(stream, tokenId)` | StatementLog |
-| An edition | `editionOf(editionId)`; the master is the same ID on `Editions.stream()` | 6529 Stream Editions |
+| An edition | `editionOf(editionId)`; the master is the same ID on `StreamEditions6529.stream()` | 6529 Stream Editions |
 | When to refresh | `MetadataUpdate`, `BatchMetadataUpdate` (ERC-4906) | both tokens |
 | The primary sale | `workOf(tokenId).outcome`; the price is in the `PrimarySale` log | 6529 Stream |
 
@@ -209,13 +209,14 @@ Work 40 is serial 12 of "Spring", a VRF-seeded work whose record nobody has open
 ```
 
 - `record_status` is the signal ([RND-9][rnd]): `not_open` (nobody has called
-  `WorkFacts.open`), `incomplete` (the record file is not fully uploaded) or `invalid`
+  `StreamWorkFacts6529.open`), `incomplete` (the record file is not fully uploaded) or `invalid`
   (the record breaks a rule). There is no media, no license and no `content_hash` in this form.
 - The name is the collection and the serial, not the token ID.
 - `Artist ID` is the lead artist ID as lowercase hex, with leading zero bytes dropped. For most
   artists it is their first root address, but it is an ID, not a wallet to pay.
 - `Seed` appears here only for a VRF work. An artist-chosen seed appears once the record opens.
-- Anyone can open a record (`WorkFacts.open` is permissionless), so this state is usually short.
+- Anyone can open a record (`StreamWorkFacts6529.open` is permissionless), so this state is usually
+  short.
 
 ### An edition
 
@@ -354,8 +355,8 @@ the primary is over the threshold and has no Arweave or IPFS copy, or when its p
 is the on-chain one (which has no URL). Then:
 
 - call `fullTokenURI` (up to 1 MiB), or
-- read the file from the content store by its file ID, from `WorkFacts.factsOf(stream, tokenId).media`,
-  chunk by chunk.
+- read the file from the content store by its file ID, from
+  `StreamWorkFacts6529.factsOf(stream, tokenId).media`, chunk by chunk.
 
 ## Dispute statements
 
@@ -372,7 +373,7 @@ The value is an entry hash in the statement log, not the outcome itself. To read
 2. `latestDisputeOutcome(stream, tokenId)` returns the same entry hash: the latest
    `DISPUTE_OUTCOME` about the token, or, if the token has none, the latest about the package
    item it was minted from (subject `(address(0), uint256(itemHash))`, with `itemHash` from
-   `Stream.itemHashOf(tokenId)`).
+   `Stream6529.itemHashOf(tokenId)`).
 3. `disputeOutcomeOf(stream, tokenId)` returns the token's own latest outcome only (no item
    fallback) and its position in the token's chain.
 4. Find the `StatementAppended` event whose `entryHash` matches. Filter by `subjectKey`
@@ -393,11 +394,11 @@ conventions, specified with their JSON Schemas in
 who made them.
 
 - **The declarations document.** One AUXILIARY media file of MIME type
-  `application/vnd.6529-works.declarations+json`, fixed from approval: read `WorkFacts.factsOf(stream, tokenId).media`,
-  then `ContentStore.fileInfo(fileId)` for each AUXILIARY entry, then `ContentStore.read`, or
-  fetch a locator's copy and check its SHA-256 against the media entry ([DCL-3][dcl]). It holds
-  the conservation floor, named custodians of a physical twin, citations at birth, and a
-  living-work note. A living work changes with no ERC-4906
+  `application/vnd.6529-works.declarations+json`, fixed from approval: read
+  `StreamWorkFacts6529.factsOf(stream, tokenId).media`, then `ContentStore.fileInfo(fileId)` for
+  each AUXILIARY entry, then `ContentStore.read`, or fetch a locator's copy and check its SHA-256
+  against the media entry ([DCL-3][dcl]). It holds the conservation floor, named custodians of a
+  physical twin, citations at birth, and a living-work note. A living work changes with no ERC-4906
   event ([DCL-9][dcl]).
 - **Convention statements.** Index `StatementAppended` for the work's subject and read each kind
   only under the role the [kind registry](../spec/disputes-and-statements.md#statement-kind-registry)
@@ -453,7 +454,7 @@ not know which works use the file:
 | Change | Signal to watch | Refresh |
 | --- | --- | --- |
 | A record file or a preview image becomes complete in the store | `ContentStore.ManifestRegistered` or `ChunkWritten`, or poll `ContentStore.isComplete(fileId)` | works whose `record_status` is `incomplete` (the file ID is `WorkRecords.record(tokenId).recordFileId`), or whose preview was a locator |
-| A base64 file is attested | `ContentStore.Base64Attested(fileId)` | works listing that file (`WorkFacts.factsOf`) |
+| A base64 file is attested | `ContentStore.Base64Attested(fileId)` | works listing that file (`StreamWorkFacts6529.factsOf`) |
 | A dispute outcome is recorded | `StatementLog.StatementAppended` with kind `DISPUTE_OUTCOME` | the work in the subject, or every work minted from the item in the subject; and its edition |
 
 A simple policy: refresh on every ERC-4906 event, and re-fetch at intervals any work that is

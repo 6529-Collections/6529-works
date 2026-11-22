@@ -12,7 +12,7 @@ import {
 } from "@openzeppelin/contracts/token/ERC721/extensions/IERC721Metadata.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
-import { Stream } from "src/core/Stream.sol";
+import { Stream6529 } from "src/core/Stream6529.sol";
 import {
     Collection,
     Core,
@@ -29,8 +29,8 @@ import { CoreFixture } from "../mocks/core/CoreFixture.sol";
 import { MockRenderer, MockSale, MockTerms } from "../mocks/core/CoreMocks.sol";
 import { MockPinnedFacts, RefusingReceiver } from "../mocks/core/StreamCoreMocks.sol";
 
-/// @notice Unit and fuzz tests of the permanent ERC-721 (`src/core/Stream.sol`): every function,
-///         every revert by selector, every event.
+/// @notice Unit and fuzz tests of the permanent ERC-721 (`src/core/Stream6529.sol`): every
+///         function, every revert by selector, every event.
 contract StreamTest is CoreFixture {
     using stdStorage for StdStorage;
 
@@ -54,7 +54,7 @@ contract StreamTest is CoreFixture {
 
     function test_Constructor_WiringAndLaunchSettings() public view {
         assertEq(stream.name(), "6529 Stream");
-        assertEq(stream.symbol(), "STREAM");
+        assertEq(stream.symbol(), "6529STREAM");
         assertEq(stream.facts(), address(facts));
         assertEq(stream.owner(), marketOwner);
         assertEq(stream.authority(), address(manager));
@@ -79,7 +79,7 @@ contract StreamTest is CoreFixture {
         minters[0] = address(0x111);
         minters[1] = address(0x222);
         vm.recordLogs();
-        Stream s = new Stream(
+        Stream6529 s = new Stream6529(
             address(manager),
             address(facts),
             marketOwner,
@@ -838,7 +838,7 @@ contract StreamTest is CoreFixture {
 
     function test_RendererOf_PinnedThenModuleThenNone() public {
         MockPinnedFacts pinned = new MockPinnedFacts();
-        Stream s = _streamWithFacts(address(pinned));
+        Stream6529 s = _streamWithFacts(address(pinned));
         uint256 id = sale.mint(address(s), _facts(1));
         assertEq(s.rendererOf(id), address(renderer));
         assertEq(s.tokenURI(id), "data:,mock");
@@ -871,10 +871,10 @@ contract StreamTest is CoreFixture {
         stream.tokenURI(2);
     }
 
-    function _streamWithFacts(address factsAddress) internal returns (Stream s) {
+    function _streamWithFacts(address factsAddress) internal returns (Stream6529 s) {
         address[] memory minters = new address[](1);
         minters[0] = address(sale);
-        s = new Stream(
+        s = new Stream6529(
             address(manager),
             factsAddress,
             marketOwner,

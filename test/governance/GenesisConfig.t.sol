@@ -107,7 +107,7 @@ contract GenesisConfigTest is IntegrationBase {
 
     function test_GenesisConfig_EachPauserStopsTheSalesAtOnceAndOnlyTheNetworkResumes() public {
         address[3] memory sales =
-            [address(auction), address(editionAuction), deployment.federatedEditionAuction];
+            [address(auction), address(editionAuction), deployment.independentEditionAuction];
         address[3] memory pausers = [pauser1, pauser2, pauser3];
         for (uint256 i; i < 3; ++i) {
             for (uint256 k; k < 3; ++k) {

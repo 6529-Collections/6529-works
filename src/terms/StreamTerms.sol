@@ -6,16 +6,16 @@ import { ISplitFactory } from "../economics/interfaces/ISplitFactory.sol";
 import { Splits } from "../economics/Splits.sol";
 import { Edition, Slots, Work } from "../interfaces/core/CoreTypes.sol";
 import { IEditions } from "../interfaces/core/IEditions.sol";
-import { IFederationGate } from "../interfaces/core/IFederationGate.sol";
+import { IIndependentStreamGate } from "../interfaces/core/IIndependentStreamGate.sol";
 import { IModuleSlots } from "../interfaces/core/IModules.sol";
 import { IStream } from "../interfaces/core/IStream.sol";
 import { ITerms } from "../interfaces/core/ITerms.sol";
-import { IFederationRegistry } from "../interfaces/IFederationRegistry.sol";
+import { IIndependentStreamRegistry } from "../interfaces/IIndependentStreamRegistry.sol";
 
 /// @title StreamTerms
 /// @notice The TERMS module (replaceable): the royalty policy of existing works, for 6529 Stream
-///         and its editions and, through the directory's `FEDERATED_TERMS` slot, for federated
-///         tokens. It is the only caller of the tokens' royalty setters.
+///         and its editions and, through the directory's `INDEPENDENT_TERMS` slot, for Independent
+///         Stream tokens. It is the only caller of the tokens' royalty setters.
 ///         - The royalty rate changes only through the token's RECORDS module, which checked
 ///           every party's consent and the network's call; a master's edition follows it.
 ///         - The rate is locked for good only through the RECORDS module.
@@ -24,13 +24,14 @@ import { IFederationRegistry } from "../interfaces/IFederationRegistry.sol";
 ///           receiver the token stores, so this module stores nothing per work. The new split
 ///           vault is deployed before it is set, so royalties never point at an address without
 ///           code.
-/// @dev For a federated token (any token but `stream` and its editions) the new share may not
-///      exceed the federation module's current share for that token
-///      (`IFederationGate.feeShareOf`), which only ever goes down. A federated pair needs no
-///      pairing here: unless the network paired a token itself (`setEditions`), a token's
-///      partner is the one the federation module lists (`IFederationRegistry.entry(token)
-///      .partner`), read when it is needed, so a master's rate change reaches its edition and
-///      the share of a federated edition can be lowered.
+/// @dev For an Independent Stream token (any token but `stream` and its editions) the new share may
+///      not exceed the Independent Stream module's current share for that token
+///      (`IIndependentStreamGate.feeShareOf`), which only ever goes down. An Independent Stream
+///      pair needs no pairing here: unless the network paired a token itself (`setEditions`), a
+///      token's partner is the one the Independent Stream module lists
+///      (`IIndependentStreamRegistry.entry(token)
+///      .partner`), read when it is needed, so a master's rate change reaches its edition and the
+///      share of an Independent Stream edition can be lowered.
 contract StreamTerms is AccessManaged, ITerms {
     /// @notice The network paired an editions contract with a token contract.
     /// @param token The ERC-721 token contract.
@@ -46,9 +47,9 @@ contract StreamTerms is AccessManaged, ITerms {
 
     /// @notice The split factory that deploys royalty vaults.
     address public immutable splitFactory;
-    /// @notice 6529 Stream, the one token that is not federated.
+    /// @notice 6529 Stream, the one token that is not Independent Stream.
     address public immutable stream;
-    /// @notice The directory, through which the federation module is found.
+    /// @notice The directory, through which the Independent Stream module is found.
     address public immutable directory;
 
     mapping(address token => address editions) private _editionsOf;
@@ -114,8 +115,10 @@ contract StreamTerms is AccessManaged, ITerms {
         if (!isEdition) master = token;
         if (newShare >= currentShare) revert InvalidFeeShare();
         if (master != stream) {
-            address gate = IModuleSlots(directory).moduleOf(Slots.FEDERATION);
-            if (newShare > IFederationGate(gate).feeShareOf(master)) revert InvalidFeeShare();
+            address gate = IModuleSlots(directory).moduleOf(Slots.INDEPENDENT_STREAM);
+            if (newShare > IIndependentStreamGate(gate).feeShareOf(master)) {
+                revert InvalidFeeShare();
+            }
         }
         address previous;
         uint24 rate;
@@ -159,26 +162,26 @@ contract StreamTerms is AccessManaged, ITerms {
 
     /// @inheritdoc ITerms
     /// @dev The pairing the network set here, else, for a token other than 6529 Stream, the
-    ///      ERC1155 partner the federation module lists for it (zero while none is listed or
-    ///      the FEDERATION slot is empty).
+    ///      ERC1155 partner the Independent Stream module lists for it (zero while none is listed
+    ///      or the INDEPENDENT_STREAM slot is empty).
     function editionsOf(address token) public view returns (address editions) {
         editions = _editionsOf[token];
         if (editions == address(0) && token != stream) {
-            IFederationRegistry.Entry memory e = _entry(token);
-            if (e.form == IFederationRegistry.Form.ERC721) editions = e.partner;
+            IIndependentStreamRegistry.Entry memory e = _entry(token);
+            if (e.form == IIndependentStreamRegistry.Form.ERC721) editions = e.partner;
         }
     }
 
     /// @notice The ERC-721 token contract an editions contract is paired with, or zero: the
-    ///         pairing the network set here, else the ERC721 partner the federation module lists
-    ///         (never for 6529 Stream, which is no editions contract).
+    ///         pairing the network set here, else the ERC721 partner the Independent Stream module
+    ///         lists (never for 6529 Stream, which is no editions contract).
     /// @param editions The editions contract.
     /// @return token The token contract.
     function tokenOfEditions(address editions) public view returns (address token) {
         token = _tokenOfEditions[editions];
         if (token == address(0) && editions != stream) {
-            IFederationRegistry.Entry memory e = _entry(editions);
-            if (e.form == IFederationRegistry.Form.ERC1155) token = e.partner;
+            IIndependentStreamRegistry.Entry memory e = _entry(editions);
+            if (e.form == IIndependentStreamRegistry.Form.ERC1155) token = e.partner;
         }
     }
 
@@ -194,11 +197,15 @@ contract StreamTerms is AccessManaged, ITerms {
         emit EditionsSet(token, editions);
     }
 
-    /// @dev The federation module's entry for `token` (empty while it is unlisted or the
-    ///      FEDERATION slot is empty).
-    function _entry(address token) private view returns (IFederationRegistry.Entry memory e) {
-        address gate = IModuleSlots(directory).moduleOf(Slots.FEDERATION);
-        if (gate != address(0)) e = IFederationRegistry(gate).entry(token);
+    /// @dev The Independent Stream module's entry for `token` (empty while it is unlisted or the
+    ///      INDEPENDENT_STREAM slot is empty).
+    function _entry(address token)
+        private
+        view
+        returns (IIndependentStreamRegistry.Entry memory e)
+    {
+        address gate = IModuleSlots(directory).moduleOf(Slots.INDEPENDENT_STREAM);
+        if (gate != address(0)) e = IIndependentStreamRegistry(gate).entry(token);
     }
 
     /// @dev Only the token's RECORDS module.

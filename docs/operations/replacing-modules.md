@@ -1,7 +1,7 @@
 # Replacing a module
 
-A checklist for the network when it replaces a module of `Stream`, `Editions`, `Directory` or a
-federated token. The calls and their timing are in the
+A checklist for the network when it replaces a module of `Stream6529`, `StreamEditions6529`,
+`StreamDirectory6529` or an Independent Stream token. The calls and their timing are in the
 [runbook](../../script/README.md#modules-and-minters); the rules are in the
 [governance spec](../spec/governance.md). The contracts do not enforce this checklist.
 
@@ -23,7 +23,7 @@ replacement never changes them. What a replacement does change is listed below, 
 5. **Activate it**: anyone calls `activateModule(slot)` from the ready time.
 6. **Read it back**: the slot names the new instance, and the checks below pass.
 
-## Accounts (`ACCOUNTS` on `Directory`)
+## Accounts (`ACCOUNTS` on `StreamDirectory6529`)
 
 A new accounts module starts empty. It has no read-through to the one it replaces and no
 import function, so:
@@ -46,7 +46,7 @@ it takes effect, check `payoutAddress` for a sample of artists with money waitin
 ## Mint policy (`PackageRegistry`)
 
 A new mint policy starts with no content releases and no barred items. Content uniqueness
-still holds through `Stream.tokenOfContent`, so the content of a burned work stays unmintable
+still holds through `Stream6529.tokenOfContent`, so the content of a burned work stays unmintable
 until the network releases it again in the new policy (`releaseContent`), which bars the
 burned item there too. A release made in the old policy and not yet used must be made again.
 
@@ -54,16 +54,17 @@ burned item there too. A release made in the old policy and not yet used must be
 
 - A removed sale contract still finishes the sales it started.
 - A token left in a removed sale contract with no outcome can be rescued after `rescueDelay`
-  (`Stream.rescue`); an edition with no copies and no seal can be rebound after `rebindDelay`
-  (`Editions.rebind`), then opened with `adopt` or closed with `closeEdition` on the new
+  (`Stream6529.rescue`); an edition with no copies and no seal can be rebound after `rebindDelay`
+  (`StreamEditions6529.rebind`), then opened with `adopt` or closed with `closeEdition` on the new
   edition auction.
-- For federated tokens, the federation module's `setAdapter(adapter, form, admitted)` admits
-  a sale contract for one token form (ERC-721 or ERC-1155).
+- For Independent Stream tokens, the Independent Stream module's
+  `setAdapter(adapter, form, admitted)` admits a sale contract for one token form (ERC-721 or
+  ERC-1155).
 
 ## Delivery (`WorkRules.setDelivery`)
 
-A finalized work's content hashes are permanent in `WorkFacts`. Where its off-chain copies are
-served from is the delivery module's answer, so a new delivery module needs the locators of
+A finalized work's content hashes are permanent in `StreamWorkFacts6529`. Where its off-chain copies
+are served from is the delivery module's answer, so a new delivery module needs the locators of
 existing works set again.
 
 ## Renderer (`RENDERER`)

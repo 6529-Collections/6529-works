@@ -6,12 +6,12 @@ assertion, not the test's name; [Gaps](#gaps) lists what no campaign covers.
 
 > Pre-audit. See the [project status](../../README.md#status).
 
-**The plain core.** [ADR 0010](../adr/0010-plain-permanent-core.md) replaced `Stream`, `Editions`,
-`WorkRecords` and the federated templates with a small permanent core. Its invariants come first,
-under [The permanent core](#the-permanent-core). Campaigns of the modules that were rewritten
-(the English auction, the edition auction on the whole stack, the records modules, federated
-sales) are being ported: until then their rows name the test they had, as placeholders, and
-`tools/check_rules.py` reports them.
+**The plain core.** [ADR 0010](../adr/0010-plain-permanent-core.md) replaced `Stream6529`,
+`StreamEditions6529`, `WorkRecords` and the Independent Stream templates with a small permanent
+core. Its invariants come first, under [The permanent core](#the-permanent-core). Campaigns of the
+modules that were rewritten (the English auction, the edition auction on the whole stack, the
+records modules, Independent Stream sales) are being ported: until then their rows name the test
+they had, as placeholders, and `tools/check_rules.py` reports them.
 
 ## The permanent core
 
@@ -19,7 +19,7 @@ Invariant campaigns at 256 runs, depth 128, `fail_on_revert`.
 
 **Stream** ([`StreamCoreInvariant.t.sol`](../../test/core/invariant/StreamCoreInvariant.t.sol),
 handler [`StreamCoreHandler`](../../test/core/invariant/StreamCoreHandler.sol)): the real
-`Stream`, three stand-in minters and a TERMS stand-in; six content hashes, three collectors.
+`Stream6529`, three stand-in minters and a TERMS stand-in; six content hashes, three collectors.
 
 | ID | Invariant | Test | Handler actions |
 | --- | --- | --- | --- |
@@ -30,13 +30,14 @@ handler [`StreamCoreHandler`](../../test/core/invariant/StreamCoreHandler.sol)):
 | INV-CORE-5 | `itemHash`, `artistId`, `collectionId`, `serial`, `kind`, `seedPolicy` and `seed` never change after mint. | `invariant_FactsNeverChange` | every action |
 | INV-CORE-6 | A locked royalty rate never changes. | `invariant_LockedRateNeverChanges` | set royalty, lock |
 
-The same campaign runs on a federated 1/1 token
-([`FederatedStreamInvariant.t.sol`](../../test/federated/invariant/FederatedStreamInvariant.t.sol)),
-whose minters are the federation module's answer, with one more check:
+The same campaign runs on an Independent Stream 1/1 token
+([`IndependentStreamInvariant.t.sol`](../../test/independent/invariant/IndependentStreamInvariant.t.sol)),
+whose minters are the Independent Stream module's answer, with one more check:
 `invariant_HasMintedMatchesTheModel`.
 
 **Editions** ([`EditionsInvariant.t.sol`](../../test/core/EditionsInvariant.t.sol), handler
-[`EditionsHandler`](../../test/core/EditionsHandler.sol)): the real `Editions` and `Stream`.
+[`EditionsHandler`](../../test/core/EditionsHandler.sol)): the real `StreamEditions6529` and
+`Stream6529`.
 
 | ID | Invariant | Test | Handler actions |
 | --- | --- | --- | --- |
@@ -45,7 +46,7 @@ whose minters are the federation module's answer, with one more check:
 | INV-CORE-10 | The sum of balances plus burned copies equals `minted`. | `invariant_BalancesPlusBurnedEqualMinted` | mint, burn, transfer |
 
 **WorkFacts** ([`WorkFactsInvariant.t.sol`](../../test/core/WorkFactsInvariant.t.sol)): the real
-`WorkFacts` with the records fixture.
+`StreamWorkFacts6529` with the records fixture.
 
 | ID | Invariant | Test | Handler actions |
 | --- | --- | --- | --- |
@@ -60,9 +61,9 @@ whose minters are the federation module's answer, with one more check:
 - INV-CORE-15: expiry or forfeit never takes money that has waited less than the unclaimed period
   in force, and never money that arrived after a mark or after a credit aged (ledger, escrow and
   both auctions, one `AgedCredits` rule in the auctions).
-- INV-CORE-16: in every seam position (minter, TERMS, RENDERER, RECORDS, accounts, federation
-  gate), a module that lies, reverts, burns all its gas or re-enters moves no token, changes no
-  fact and moves no balance; `ownerOf` and transfers still work.
+- INV-CORE-16: in every seam position (minter, TERMS, RENDERER, RECORDS, accounts, Independent
+  Stream gate), a module that lies, reverts, burns all its gas or re-enters moves no token, changes
+  no fact and moves no balance; `ownerOf` and transfers still work.
 
 ## Campaign settings
 
@@ -224,13 +225,13 @@ state, never `releasable`, and measures releases by balance deltas.
 ## English auction
 
 [`AuctionInvariant.t.sol`](../../test/sales/auction/invariant/AuctionInvariant.t.sol), handler
-`AuctionHandler` in the same file. The real `EnglishAuction` on the real `Stream` and `Directory`
-(`AuctionFixture`), with the real split ledger, escrow, asset allowlist and economics resolver;
-a stand-in mint policy, federation policy, federated token and statement log. The handler
-starts curated and federated sales with and without a bid, bids, moves the clock, settles,
-refuses settlement, restarts, claims, expires credits, pauses for a dispute, withdraws,
-cancels and changes the unclaimed period, and keeps a model of every credit's money with the
-time each part arrived.
+`AuctionHandler` in the same file. The real `EnglishAuction` on the real `Stream6529` and
+`StreamDirectory6529` (`AuctionFixture`), with the real split ledger, escrow, asset allowlist and
+economics resolver; a stand-in mint policy, Independent Stream policy, Independent Stream token and
+statement log. The handler starts curated and Independent Stream sales with and without a bid, bids,
+moves the clock, settles, refuses settlement, restarts, claims, expires credits, pauses for a
+dispute, withdraws, cancels and changes the unclaimed period, and keeps a model of every credit's
+money with the time each part arrived.
 
 | ID | Invariant | Test | Handler actions |
 | --- | --- | --- | --- |
@@ -248,8 +249,13 @@ Placeholders for the rest of the earlier campaign (each becomes a row when its t
 - INV-AUC-8: A bid extends the end to at least `now + the locked window`; settlement delivers the token (or leaves it pending) to the high bid's recipient, or the museum if none; a second dispute pause reverts (`PauseExhausted`); a withdrawal leaves the sale paused; the network's `resume` lands at any moment of the pause.
 - INV-AUC-9: An unended sale refuses `settle`; settlement after the end delivers or leaves a pending delivery.
 - INV-AUC-10: With hostile tokens, the auction's balance equals the actors' credits plus the live high bids, and every deposited bid is held, claimed, or paid to the seller, the network or the escrow for them.
-- INV-AUC-11: The network receives exactly the fee on every sold sale (the listed terms, or for a federated sale the registry's share locked at start), paid to the recipient current at settlement, and nothing on a refused, rescued or unsold one.
-- INV-AUC-12: From any state the campaign reaches, once 2 days have passed after each sale's end, `settleOrRefund` brings every unsettled federated sale to SETTLED whatever its token does, and `settle` the stand-in's, leaving no standing bid, with INV-AUC-10, INV-AUC-11 and INV-AUC-13 still holding.
+- INV-AUC-11: The network receives exactly the fee on every sold sale (the listed terms, or for an
+  Independent Stream sale the registry's share locked at start), paid to the recipient current at
+  settlement, and nothing on a refused, rescued or unsold one.
+- INV-AUC-12: From any state the campaign reaches, once 2 days have passed after each sale's end,
+  `settleOrRefund` brings every unsettled Independent Stream sale to SETTLED whatever its token
+  does, and `settle` the stand-in's, leaving no standing bid, with INV-AUC-10, INV-AUC-11 and
+  INV-AUC-13 still holding.
 - INV-AUC-13: A bidder holds a sale's work, by the token's own ledger, only if that sale is SETTLED with it as the winning bidder, so it paid, and the network's fee on it is counted in INV-AUC-11.
 
 ## Edition sales
@@ -288,11 +294,11 @@ outsiders.
 | INV-ID-1 | `requireSigned` passes exactly for the account's wallets (the root, or a wallet the source says is consolidated with it), never for an outsider and never while the account is frozen ([ID-2, ID-3](../spec/identity-and-recovery.md#rules-and-invariants)). | `invariant_RequireSignedPassesExactlyForTheAccountsWallets` | as named in the handler |
 
 The earlier identity campaign (INV-ID-2 to INV-ID-13: the restraint flag, activity and nonces,
-reservations, past authorities, the standing snapshot, timers, the federation directory with
+reservations, past authorities, the standing snapshot, timers, the Independent Stream directory with
 LEFT, and the source acting only for dormant artists) left with that machinery in the second
 permanence pass; the contest, replacement and freeze rules are unit-tested in
 `ArtistRegistry.t.sol` (`test_Contest_*`) and the
-directory in `FederationDirectory.t.sol`.
+directory in `IndependentStreamDirectory.t.sol`.
 
 ## Statements
 
@@ -359,19 +365,22 @@ outcome at once.
 
 Non-vacuity: `ContentStoreInvariantTest.test_EveryActionRuns`.
 
-## Federated sales
+## Independent Stream sales
 
 The earlier campaign is being ported to the plain core.
 
 Placeholders for campaigns being ported (each becomes a row when its test exists):
 
 - INV-FSA-1: The auction's ETH balance equals every bidder's claimable credit plus the high bid of every unsettled sale.
-- INV-FSA-2: The network fee recipient receives exactly its locked share on every sold federated sale, and nothing otherwise.
-- INV-FSA-3: A person holds a federated work only if its sale is SOLD, and then it is the bidder who paid.
-- INV-FSA-4: Federation never touches 6529 Stream (its supply and the curated token's owner) or a curated artist's identity.
+- INV-FSA-2: The network fee recipient receives exactly its locked share on every sold Independent
+  Stream sale, and nothing otherwise.
+- INV-FSA-3: A person holds an Independent Stream work only if its sale is SOLD, and then it is the
+  bidder who paid.
+- INV-FSA-4: Independent Stream never touches 6529 Stream (its supply and the curated token's owner)
+  or a curated artist's identity.
 - INV-FSA-5: Every sale ends: after each is refused, the auction owes only credits, and INV-FSA-1 and INV-FSA-2 still hold.
 
-Non-vacuity: `FederationInvariantTest.test_HandlerPathsReachState`.
+Non-vacuity: `IndependentStreamInvariantTest.test_HandlerPathsReachState`.
 
 ## Invariants removed or changed
 
@@ -386,9 +395,9 @@ The behaviour these checked was removed or changed by the owner's decisions of 1
 | INV-STR-14 (old) | A royalty rate never rises | Changed: a rate stays within 100,000 and is fixed once renounced |
 | INV-EA-10 (old) | Withdrawals of bids placed before a 1/1 dispute pause | Changed: no edition bid is ever withdrawn |
 | INV-EA-7 (old) | A per-sale close offset | Changed: every sale closes 15 minutes after its 1/1 |
-| INV-STR-1 to INV-STR-8 | Stream and work records on the old `Stream` and `WorkRecords` | Replaced by INV-CORE-1 to INV-CORE-6 and INV-CORE-11 ([ADR 0010](../adr/0010-plain-permanent-core.md)) |
-| INV-ED-1 to INV-ED-6 | The old `Editions` contract | Replaced by INV-CORE-8 to INV-CORE-10 |
-| INV-FED-1 to INV-FED-6 | The old federated templates | The federated tokens run the core code: INV-CORE-1 to INV-CORE-10 |
+| INV-STR-1 to INV-STR-8 | Stream and work records on the old `Stream6529` and `WorkRecords` | Replaced by INV-CORE-1 to INV-CORE-6 and INV-CORE-11 ([ADR 0010](../adr/0010-plain-permanent-core.md)) |
+| INV-ED-1 to INV-ED-6 | The old `StreamEditions6529` contract | Replaced by INV-CORE-8 to INV-CORE-10 |
+| INV-IND-1 to INV-IND-6 | The old Independent Stream templates | The Independent Stream tokens run the core code: INV-CORE-1 to INV-CORE-10 |
 
 ## Properties tested by fuzz and unit tests
 
@@ -425,7 +434,7 @@ Properties with no campaign of their own, or tested more directly outside one: b
 | PROP-GV-8 | Only the network holds a network role, for any account and network role. | [`NetworkAndBrake.t.sol`](../../test/governance/NetworkAndBrake.t.sol) `testFuzz_OnlyTheNetworkHoldsTheNetworkRoles` |
 | PROP-GV-2 | A raise-only parameter moves by at most 2× per step and never above its ceiling, for any sequence of raises. | [`BoundedParameter.t.sol`](../../test/governance/BoundedParameter.t.sol) `testFuzz_RaiseMatchesSpecification`, `testFuzz_RaiseSequenceStaysBounded` |
 | PROP-GV-3 | Only genesis selectors pass wiring validation. | |
-| PROP-ID-1 | The value rules hold for any input: a royalty rate up to 100,000 rises or falls with agreement; a fee share only ever falls; a federated share in force never exceeds the deployed share; every release path pays the network its share; a mark never takes money that arrived after it; every edition sale closes 15 minutes after its 1/1. | ; `Stream.t.sol` ; ; [`NetworkShare.t.sol`](../../test/economics/NetworkShare.t.sol) `testFuzz_EveryReleasePathPaysTheNetwork`, `testFuzz_AMarkNeverTakesLaterMoney`; [`UniformEditionAuctionWindow.t.sol`](../../test/sales/edition/UniformEditionAuctionWindow.t.sol) `testFuzz_Window_TheCloseIsTheOneOfOneEndPlusFifteenMinutes` |
+| PROP-ID-1 | The value rules hold for any input: a royalty rate up to 100,000 rises or falls with agreement; a fee share only ever falls; an Independent Stream share in force never exceeds the deployed share; every release path pays the network its share; a mark never takes money that arrived after it; every edition sale closes 15 minutes after its 1/1. | ; `Stream.t.sol` ; ; [`NetworkShare.t.sol`](../../test/economics/NetworkShare.t.sol) `testFuzz_EveryReleasePathPaysTheNetwork`, `testFuzz_AMarkNeverTakesLaterMoney`; [`UniformEditionAuctionWindow.t.sol`](../../test/sales/edition/UniformEditionAuctionWindow.t.sol) `testFuzz_Window_TheCloseIsTheOneOfOneEndPlusFifteenMinutes` |
 | PROP-DSP-1 | Any append sequence matches the model, relays round-trip and never replay, and the nonce bitmap tracks exactly the spent nonces. | [`StatementLog.t.sol`](../../test/records/StatementLog.t.sol) `testFuzz_SequenceMatchesModel`, `testFuzz_RelayRoundTripAndReplay`, `testFuzz_NonceBitmapTracksExactlyTheSpentNonces` |
 | PROP-HASH-1 | The item hash binds the collection and the shares and does not depend on the chain. | [`WorksHashing.t.sol`](../../test/interfaces/WorksHashing.t.sol) `testFuzz_itemHash_bindsCollection`, `testFuzz_itemHash_bindsShares`, `testFuzz_itemHash_independentOfChain` |
 | PROP-STR-2 | Retired: Stream holds no dependencies and no artist registry. | none |
@@ -462,7 +471,7 @@ What no stateful campaign covers today, after the plain-core integration. Covera
 testing and Halmos proofs are in [Testing](../testing/README.md).
 
 - **The campaigns being ported.** The English auction, the edition auction on the whole stack,
-  the records modules (`WorkRules`, `WorkDelivery`), federated sales, log replay and the
+  the records modules (`WorkRules`, `WorkDelivery`), Independent Stream sales, log replay and the
   settings and money rules of the core (INV-CORE-7, INV-CORE-14 to INV-CORE-16) have no campaign
   on the new code yet; their rows above name the tests they had.
 - **The fully wired system.** The core campaigns run the real permanent contracts with stand-in

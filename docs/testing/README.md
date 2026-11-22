@@ -45,7 +45,7 @@ the examples alone. The other entry points:
 
 | What | Command |
 | --- | --- |
-| The local walkthrough: deploy on anvil, accept, read back, one full sale, one federated work, one module swap | `bash script/local/walkthrough.sh` ([script/local](../../script/local/README.md)) |
+| The local walkthrough: deploy on anvil, accept, read back, one full sale, one Independent Stream work, one module swap | `bash script/local/walkthrough.sh` ([script/local](../../script/local/README.md)) |
 | The reference keeper, with its end-to-end tests on anvil | `KEEPER_E2E_REQUIRE=1 python -m unittest keeper.test_keeper` ([keeper](../../keeper/README.md)) |
 | The tool self-tests | `python -m unittest discover -s tools -p "test_*.py"` |
 
@@ -61,7 +61,7 @@ the examples alone. The other entry points:
 | Integration | [`test/integration/`](../../test/integration/README.md) | The whole stack deployed by `script/DeployCore.sol` with the committed genesis | `forge test --match-path "test/integration/*"` |
 | Symbolic | [`test/symbolic/`](../../test/symbolic) | Halmos proofs (`check_*`) of the pure libraries and of state rules of the permanent contracts | [below](#symbolic-proofs-halmos) |
 | Second fuzzer | [`test/medusa/`](../../test/medusa), `medusa.json` | Cheatcode-free harnesses with their own model of the rules | [below](#second-fuzzer-medusa) |
-| Log replay | [`test/replay/`](../../test/replay) | `Stream`, `Editions`, `WorkFacts` and the federated tokens rebuilt from their logs alone | `forge test --match-path "test/replay/*"` |
+| Log replay | [`test/replay/`](../../test/replay) | `Stream6529`, `StreamEditions6529`, `StreamWorkFacts6529` and the Independent Stream tokens rebuilt from their logs alone | `forge test --match-path "test/replay/*"` |
 | Fork | [`test/fork/`](../../test/fork/README.md) | The network as a real Safe on a fork, with an RPC URL | [fork tests](../../test/fork/README.md) |
 | ABI and storage snapshots | [`test/snapshots/`](../../test/snapshots), [`tools/check_snapshots.py`](../../tools/check_snapshots.py) | Every `src/` contract's ABI and storage layout against the committed snapshot | `python tools/check_snapshots.py` |
 | Rule traceability | [`tools/check_rules.py`](../../tools/check_rules.py), [`tools/rules-uncovered.txt`](../../tools/rules-uncovered.txt) | Every spec rule names a test that exists, every invariant its function | `python tools/check_rules.py --uncovered` |
@@ -115,7 +115,7 @@ through actor contracts, and no action ever reverts. Each predicts every call's 
 | Harness | Real contracts | Properties |
 | --- | --- | --- |
 | `LedgerMedusa` | `SplitLedger`, its wallets, `RevenueEscrow`, `GovernedVault` | `property_WalletsConserveValue`, `property_ReleasedWithinEntitlement`, `property_NoUnauthorizedRelease`, `property_NetworkShareIsPaidOrDue`, `property_EscrowIsSolvent`, `property_DustIsBounded` |
-| `StreamCoreMedusa` | `Stream` | `property_SupplyIsMintedMinusBurned`, `property_OneLiveTokenPerContent`, `property_OutcomesAndOwnersMatchTheModel`, `property_FactsNeverChange`, `property_LockedRateHolds` |
+| `StreamCoreMedusa` | `Stream6529` | `property_SupplyIsMintedMinusBurned`, `property_OneLiveTokenPerContent`, `property_OutcomesAndOwnersMatchTheModel`, `property_FactsNeverChange`, `property_LockedRateHolds` |
 
 ## Symbolic proofs (Halmos)
 

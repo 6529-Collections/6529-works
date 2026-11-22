@@ -117,7 +117,8 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, IItemApprovals, Acces
     IEconomicsResolver public immutable economics;
     /// @notice The deployment's CC0 text (`IWorkFacts.cc0TextFileId` of the bound Stream's
     ///         facts, which never changes): the text a CC0 item must name. Kept here so a start
-    ///         does not read it from `WorkFacts` each time; `bindStream` checks it is the same.
+    ///         does not read it from `StreamWorkFacts6529` each time; `bindStream` checks it is the
+    ///         same.
     bytes32 public immutable cc0TextFileId;
     /// @inheritdoc IPackageRegistry
     ICurationVerifier public verifier;
@@ -496,11 +497,11 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, IItemApprovals, Acces
     ///      ETH at launch); a lead party; a known seed policy coherent with its seed, and a VRF
     ///      item only with an entropy module; a license ID that follows the `SpdxId` rule; a CC0
     ///      license naming the deployment's CC0 text (`IWorkFacts.cc0TextFileId`), the rule
-    ///      `WorkFacts.open` enforces. The media rules of `WorkFacts.open` (one to
-    ///      `MAX_MEDIA_FILES` files, the primary first with the content hash, each registered in
+    ///      `StreamWorkFacts6529.open` enforces. The media rules of `StreamWorkFacts6529.open` (one
+    ///      to `MAX_MEDIA_FILES` files, the primary first with the content hash, each registered in
     ///      the content store with its stated SHA-256) cannot be checked here, since the request
-    ///      carries only the media commitment: curation checks them before it signs a package,
-    ///      and `SaleStarter` opens the record in the same transaction as the start.
+    ///      carries only the media commitment: curation checks them before it signs a package, and
+    ///      `SaleStarter` opens the record in the same transaction as the start.
     function _checkItem(PackageItem calldata item) private view {
         address currency = item.sale.currency;
         if (item.sale.saleKind == 0 || (currency != CURRENCY_ETH && currency != CURRENCY_DEFAULT)) {
@@ -514,9 +515,9 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, IItemApprovals, Acces
                 || (policy == uint8(SeedPolicy.VRF) && entropyModule == address(0))
         ) revert InvalidSeedPolicy();
         if (!SpdxId.isValidCalldata(item.license.spdxId)) revert InvalidLicenseId();
-        // `WorkFacts.open` refuses a CC0 item whose text is not the deployment's CC0 text, and
-        // takes only the exact item a token was minted from: such a token could never get a
-        // record. The text is compared first, so an item naming the CC0 text costs no more.
+        // `StreamWorkFacts6529.open` refuses a CC0 item whose text is not the deployment's CC0
+        // text, and takes only the exact item a token was minted from: such a token could never get
+        // a record. The text is compared first, so an item naming the CC0 text costs no more.
         if (
             item.license.textFileId != cc0TextFileId
                 && WorksHashing.licenseKey(item.license.spdxId) == WorksHashing.CC0_LICENSE_KEY

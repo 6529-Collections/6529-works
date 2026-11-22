@@ -168,8 +168,8 @@ class RenderTest(unittest.TestCase):
     def test_the_settings_are_listed_as_the_networks_with_their_launch_values(self) -> None:
         text = gm.render(committed_config())
         self.assertIn("## Settings of the permanent contracts", text)
-        self.assertIn("| Directory | `unclaimedPeriod()` | 180 days |", text)
-        self.assertIn("| Stream | `rescueDelay()` | 14 days |", text)
+        self.assertIn("| StreamDirectory6529 | `unclaimedPeriod()` | 180 days |", text)
+        self.assertIn("| Stream6529 | `rescueDelay()` | 14 days |", text)
         self.assertIn("No delay on this page is a guarantee.", text)
         self.assertNotIn("the number is the guarantee", text.lower())
 

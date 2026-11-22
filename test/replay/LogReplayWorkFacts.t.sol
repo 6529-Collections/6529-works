@@ -9,12 +9,12 @@ import { MockRenderer } from "../mocks/core/CoreMocks.sol";
 import { ReplayBase } from "./ReplayBase.sol";
 import { ReplayEvents } from "./ReplayEvents.sol";
 
-/// @notice Log replay of `WorkFacts` on the deployed stack: every record, rebuilt from the
-///         contract's logs alone, equals `factsOf` after each step of a history that emits each
-///         of its events through the real modules (records opened by anyone, a work found
-///         complete on-chain, the artist's record change, the network's relicense with every
-///         party's consent, the license and repin powers renounced, the artist's finalize, a
-///         finalize by anyone after the notice, and the network's repin).
+/// @notice Log replay of `StreamWorkFacts6529` on the deployed stack: every record, rebuilt from
+///         the contract's logs alone, equals `factsOf` after each step of a history that emits each
+///         of its events through the real modules (records opened by anyone, a work found complete
+///         on-chain, the artist's record change, the network's relicense with every party's
+///         consent, the license and repin powers renounced, the artist's finalize, a finalize by
+///         anyone after the notice, and the network's repin).
 contract LogReplayWorkFactsTest is ReplayBase {
     address internal artist;
     address internal buyer = makeAddr("factsBuyer");
@@ -88,7 +88,9 @@ contract LogReplayWorkFactsTest is ReplayBase {
         assertTrue(facts.factsOf(address(stream), a).repinLocked);
         assertEq(facts.factsOf(address(stream), a).renderer, address(errata));
         assertTrue(facts.factsOf(address(stream), b).finalized);
-        _assertEveryEventReplayed("WorkFacts", factsIdx, ReplayEvents.workFacts(), _none());
+        _assertEveryEventReplayed(
+            "StreamWorkFacts6529", factsIdx, ReplayEvents.workFacts(), _none()
+        );
     }
 
     // ------------------------------------------------------------------ negative controls

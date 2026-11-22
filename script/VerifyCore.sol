@@ -7,11 +7,11 @@ import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { Slots } from "src/interfaces/core/CoreTypes.sol";
 import { IModuleSlots } from "src/interfaces/core/IModules.sol";
-import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
+import { IIndependentStreamRegistry } from "src/interfaces/IIndependentStreamRegistry.sol";
 import { IStatementLog } from "src/interfaces/IStatementLog.sol";
 import {
     PRODUCT_EDITIONS,
-    PRODUCT_FEDERATED,
+    PRODUCT_INDEPENDENT,
     PRODUCT_STREAM
 } from "src/interfaces/types/EconomicsTypes.sol";
 import { DeployCore } from "./DeployCore.sol";
@@ -95,57 +95,77 @@ library VerifyCore {
     {
         address m = address(d.manager);
         // WorkFacts and the money contracts.
-        _eq(d.workFacts.contentStore(), address(d.contentStore), "WorkFacts.contentStore");
+        _eq(d.workFacts.contentStore(), address(d.contentStore), "StreamWorkFacts6529.contentStore");
         if (d.workFacts.cc0TextFileId() != d.cc0TextFileId) {
-            revert Mismatch("WorkFacts.cc0TextFileId", address(d.workFacts));
+            revert Mismatch("StreamWorkFacts6529.cc0TextFileId", address(d.workFacts));
         }
         _eq(address(d.splitLedger.resolver()), address(d.directory), "SplitLedger.resolver");
         _eq(d.splitLedger.network(), address(d.feeRecipientVault), "SplitLedger.network");
         _eq(address(d.claimRouter.ledger()), address(d.splitLedger), "ClaimRouter.ledger");
 
         // Directory.
-        _eq(IAccessManaged(address(d.directory)).authority(), m, "Directory.authority");
-        _slot(address(d.directory), Slots.ACCOUNTS, d.accounts, "Directory.ACCOUNTS");
-        _slot(address(d.directory), Slots.FEDERATION, d.federationRegistry, "Directory.FEDERATION");
+        _eq(IAccessManaged(address(d.directory)).authority(), m, "StreamDirectory6529.authority");
+        _slot(address(d.directory), Slots.ACCOUNTS, d.accounts, "StreamDirectory6529.ACCOUNTS");
         _slot(
-            address(d.directory), Slots.FEDERATED_TERMS, d.streamTerms, "Directory.FEDERATED_TERMS"
+            address(d.directory),
+            Slots.INDEPENDENT_STREAM,
+            d.independentStreamRegistry,
+            "StreamDirectory6529.INDEPENDENT_STREAM"
         );
         _slot(
             address(d.directory),
-            Slots.FEDERATED_RECORDS,
-            d.workRules,
-            "Directory.FEDERATED_RECORDS"
+            Slots.INDEPENDENT_TERMS,
+            d.streamTerms,
+            "StreamDirectory6529.INDEPENDENT_TERMS"
         );
-        _setting(d.directory.moduleDelay(), DeployCore.LAUNCH_MODULE_DELAY, "Directory.moduleDelay");
+        _slot(
+            address(d.directory),
+            Slots.INDEPENDENT_RECORDS,
+            d.workRules,
+            "StreamDirectory6529.INDEPENDENT_RECORDS"
+        );
+        _setting(
+            d.directory.moduleDelay(),
+            DeployCore.LAUNCH_MODULE_DELAY,
+            "StreamDirectory6529.moduleDelay"
+        );
         _setting(
             d.directory.unclaimedPeriod(),
             DeployCore.LAUNCH_UNCLAIMED_PERIOD,
-            "Directory.unclaimedPeriod"
+            "StreamDirectory6529.unclaimedPeriod"
         );
 
         // Stream.
-        _eq(IAccessManaged(address(d.stream)).authority(), m, "Stream.authority");
-        _eq(d.stream.facts(), address(d.workFacts), "Stream.facts");
-        _eq(d.stream.owner(), p.marketOwner, "Stream.owner");
-        _slot(address(d.stream), Slots.RENDERER, d.renderer, "Stream.RENDERER");
-        _slot(address(d.stream), Slots.TERMS, d.streamTerms, "Stream.TERMS");
-        _slot(address(d.stream), Slots.RECORDS, d.workRules, "Stream.RECORDS");
+        _eq(IAccessManaged(address(d.stream)).authority(), m, "Stream6529.authority");
+        _eq(d.stream.facts(), address(d.workFacts), "Stream6529.facts");
+        _eq(d.stream.owner(), p.marketOwner, "Stream6529.owner");
+        _slot(address(d.stream), Slots.RENDERER, d.renderer, "Stream6529.RENDERER");
+        _slot(address(d.stream), Slots.TERMS, d.streamTerms, "Stream6529.TERMS");
+        _slot(address(d.stream), Slots.RECORDS, d.workRules, "Stream6529.RECORDS");
         if (!d.stream.isMinter(d.englishAuction)) {
             revert Mismatch("Stream minter", d.englishAuction);
         }
-        _setting(d.stream.moduleDelay(), DeployCore.LAUNCH_MODULE_DELAY, "Stream.moduleDelay");
-        _setting(d.stream.rescueDelay(), DeployCore.LAUNCH_RESCUE_DELAY, "Stream.rescueDelay");
+        _setting(d.stream.moduleDelay(), DeployCore.LAUNCH_MODULE_DELAY, "Stream6529.moduleDelay");
+        _setting(d.stream.rescueDelay(), DeployCore.LAUNCH_RESCUE_DELAY, "Stream6529.rescueDelay");
 
         // Editions.
-        _eq(IAccessManaged(address(d.editions)).authority(), m, "Editions.authority");
-        _eq(d.editions.stream(), address(d.stream), "Editions.stream");
-        _eq(d.editions.owner(), p.marketOwner, "Editions.owner");
-        _slot(address(d.editions), Slots.TERMS, d.streamTerms, "Editions.TERMS");
+        _eq(IAccessManaged(address(d.editions)).authority(), m, "StreamEditions6529.authority");
+        _eq(d.editions.stream(), address(d.stream), "StreamEditions6529.stream");
+        _eq(d.editions.owner(), p.marketOwner, "StreamEditions6529.owner");
+        _slot(address(d.editions), Slots.TERMS, d.streamTerms, "StreamEditions6529.TERMS");
         if (!d.editions.isMinter(d.editionAuction)) {
             revert Mismatch("Editions minter", d.editionAuction);
         }
-        _setting(d.editions.moduleDelay(), DeployCore.LAUNCH_MODULE_DELAY, "Editions.moduleDelay");
-        _setting(d.editions.rebindDelay(), DeployCore.LAUNCH_REBIND_DELAY, "Editions.rebindDelay");
+        _setting(
+            d.editions.moduleDelay(),
+            DeployCore.LAUNCH_MODULE_DELAY,
+            "StreamEditions6529.moduleDelay"
+        );
+        _setting(
+            d.editions.rebindDelay(),
+            DeployCore.LAUNCH_REBIND_DELAY,
+            "StreamEditions6529.rebindDelay"
+        );
     }
 
     /// @notice Checks the replaceable modules: each governed contract's manager, the minter
@@ -183,9 +203,9 @@ library VerifyCore {
             "UniformEditionAuction.lens"
         );
         _eq(
-            IUniformWiring(d.federatedEditionAuction).lens(),
-            d.federatedEditionAuctionLens,
-            "FederatedEditionAuction.lens"
+            IUniformWiring(d.independentEditionAuction).lens(),
+            d.independentEditionAuctionLens,
+            "IndependentEditionAuction.lens"
         );
 
         // Curation, accounts, records, terms and rendering.
@@ -200,9 +220,9 @@ library VerifyCore {
             "Accounts.packageRegistry"
         );
         _eq(
-            IAccountsWiring(d.accounts).federationRegistry(),
-            d.federationRegistry,
-            "Accounts.federationRegistry"
+            IAccountsWiring(d.accounts).independentStreamRegistry(),
+            d.independentStreamRegistry,
+            "Accounts.independentStreamRegistry"
         );
         _eq(IAccountsWiring(d.accounts).directory(), address(d.directory), "Accounts.directory");
         _eq(IRulesWiring(d.workRules).delivery(), d.workDelivery, "WorkRules.delivery");
@@ -211,12 +231,12 @@ library VerifyCore {
         _eq(
             ITermsWiring(d.streamTerms).editionsOf(address(d.stream)),
             address(d.editions),
-            "StreamTerms.editionsOf(Stream)"
+            "StreamTerms.editionsOf(Stream6529)"
         );
         _eq(
             ITermsWiring(d.streamTerms).tokenOfEditions(address(d.editions)),
             address(d.stream),
-            "StreamTerms.tokenOfEditions(Editions)"
+            "StreamTerms.tokenOfEditions(StreamEditions6529)"
         );
         _eq(
             IRendererWiring(d.renderer).contentStore(),
@@ -224,8 +244,11 @@ library VerifyCore {
             "Renderer.contentStore"
         );
         _eq(IRendererWiring(d.renderer).statementLog(), d.statementLog, "Renderer.statementLog");
-        _template(d.federatedStreamDeployer, "FederatedStream.sol:FederatedStream");
-        _template(d.federatedEditionsDeployer, "FederatedEditions.sol:FederatedEditions");
+        _template(d.independentStream721Deployer, "IndependentStream6529.sol:IndependentStream6529");
+        _template(
+            d.independentStreamEditionsDeployer,
+            "IndependentStreamEditions6529.sol:IndependentStreamEditions6529"
+        );
 
         // Money: the vaults' destinations and where the economics send fees and unsold works.
         _eq(d.feeRecipientVault.destination(), p.feeRecipient, "FeeRecipientVault.destination");
@@ -235,7 +258,11 @@ library VerifyCore {
         address fees = address(d.feeRecipientVault);
         _eq(economics.networkFeeRecipient(PRODUCT_STREAM), fees, "fee recipient (Stream)");
         _eq(economics.networkFeeRecipient(PRODUCT_EDITIONS), fees, "fee recipient (Editions)");
-        _eq(economics.networkFeeRecipient(PRODUCT_FEDERATED), fees, "fee recipient (federated)");
+        _eq(
+            economics.networkFeeRecipient(PRODUCT_INDEPENDENT),
+            fees,
+            "fee recipient (Independent Stream)"
+        );
     }
 
     /// @notice Checks the effect of every genesis wiring call of `json` that applies to `d`
@@ -337,7 +364,7 @@ library VerifyCore {
             _eq(
                 IRegistryWiring(c.target).entropyModule(),
                 abi.decode(args, (address)),
-                "FederationRegistry.entropyModule"
+                "IndependentStreamRegistry.entropyModule"
             );
         } else if (selector == IUniformWiring.setTarget.selector) {
             (address token, bool listed) = abi.decode(args, (address, bool));
@@ -351,7 +378,7 @@ library VerifyCore {
             }
         } else if (selector == IRegistryWiring.setAdapter.selector) {
             (address adapter, uint8 form, bool admitted) = abi.decode(args, (address, uint8, bool));
-            IFederationRegistry.SaleContract memory s =
+            IIndependentStreamRegistry.SaleContract memory s =
                 IRegistryWiring(c.target).saleContractOf(adapter);
             if ((s.addedAt != 0 && s.removedAt == 0) != admitted || uint8(s.form) != form) {
                 revert Mismatch("setAdapter", adapter);
@@ -359,10 +386,11 @@ library VerifyCore {
         } else if (selector == IRegistryWiring.approveTemplate.selector) {
             (address deployer, uint32 version, uint8 form) =
                 abi.decode(args, (address, uint32, uint8));
-            IFederationRegistry.Template memory t = IRegistryWiring(c.target).templateOf(deployer);
+            IIndependentStreamRegistry.Template memory t =
+                IRegistryWiring(c.target).templateOf(deployer);
             if (
                 t.version != version || uint8(t.form) != form
-                    || t.status != IFederationRegistry.TemplateStatus.APPROVED
+                    || t.status != IIndependentStreamRegistry.TemplateStatus.APPROVED
             ) revert Mismatch("approveTemplate", deployer);
         } else if (selector == IStatementLog.appendGovernanceManifest.selector) {
             (uint64 count,) = IStatementLog(c.target).chainOf(address(d.manager), 0);
@@ -390,7 +418,7 @@ library VerifyCore {
 
     function _template(address deployer, string memory artifact) private view {
         if (ITemplateWiring(deployer).creationHash() != keccak256(vm.getCode(artifact))) {
-            revert Mismatch("FederatedDeployer.creationHash", deployer);
+            revert Mismatch("IndependentStreamDeployer.creationHash", deployer);
         }
     }
 
@@ -443,11 +471,11 @@ interface IRegistryWiring {
     function saleContractOf(address minter)
         external
         view
-        returns (IFederationRegistry.SaleContract memory);
+        returns (IIndependentStreamRegistry.SaleContract memory);
     function templateOf(address deployer)
         external
         view
-        returns (IFederationRegistry.Template memory);
+        returns (IIndependentStreamRegistry.Template memory);
     function setEntropyModule(address next) external;
     function setAdapter(address adapter, uint8 form, bool admitted) external;
     function approveTemplate(address deployer, uint32 version, uint8 form) external;
@@ -460,7 +488,7 @@ interface IAllowlistWiring {
 
 interface IAccountsWiring {
     function packageRegistry() external view returns (address);
-    function federationRegistry() external view returns (address);
+    function independentStreamRegistry() external view returns (address);
     function directory() external view returns (address);
 }
 

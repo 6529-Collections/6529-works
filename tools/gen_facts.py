@@ -51,8 +51,8 @@ ADR_0005 = "docs/adr/0005-stream-editions-auction.md"
 EDITION_PARAMETERS_HEADING = "### 4. Governed parameters and delay classes"
 STEP_LADDER = "src/interfaces/types/StepLadder.sol"
 EDITION_AUCTION = "src/sales/UniformEditionAuction.sol"
-EDITIONS = "src/core/Editions.sol"
-STREAM = "src/core/Stream.sol"
+EDITIONS = "src/core/StreamEditions6529.sol"
+STREAM = "src/core/Stream6529.sol"
 DEPLOY_LIBRARY = "script/DeployCore.sol"
 
 # ADR 0005 §4's rows for the edition auction's `AuctionConfig`, by name (less any parenthetical).
@@ -413,7 +413,7 @@ def parameters(root: Path) -> dict:
             "governedBy": "FUNDS_SETTER",
             "royaltyRate": ratio(c.integer(resolver, "DEFAULT_ROYALTY_RATE"), denominator),
             "networkFeeShare": ratio(c.integer(resolver, "DEFAULT_FEE_SHARE"), denominator),
-            "federatedNetworkFeeShare": ratio(c.integer(resolver, "FEDERATED_FEE_SHARE"), denominator),
+            "independentNetworkFeeShare": ratio(c.integer(resolver, "INDEPENDENT_FEE_SHARE"), denominator),
         },
         "storage": {
             "source": ["src/content/ContentStore.sol", "src/content/Renderer.sol"],
@@ -594,9 +594,9 @@ def collections(root: Path) -> list[dict]:
         raise FactError(f"{STREAM}: no StreamBase(name, symbol, ...)")
     c = Constants(root)
     return [
-        {"contract": "Stream", "standard": "ERC-721", "name": m.group(1), "symbol": m.group(2)},
+        {"contract": "Stream6529", "standard": "ERC-721", "name": m.group(1), "symbol": m.group(2)},
         {
-            "contract": "Editions",
+            "contract": "StreamEditions6529",
             "standard": "ERC-1155",
             "name": c.string(EDITIONS, "name"),
             "symbol": c.string(EDITIONS, "symbol"),

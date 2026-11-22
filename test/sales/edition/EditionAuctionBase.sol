@@ -3,8 +3,8 @@ pragma solidity ^0.8.24;
 
 import { Test } from "forge-std/Test.sol";
 import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
-import { Directory } from "src/core/Directory.sol";
-import { Editions } from "src/core/Editions.sol";
+import { StreamDirectory6529 } from "src/core/StreamDirectory6529.sol";
+import { StreamEditions6529 } from "src/core/StreamEditions6529.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
@@ -32,13 +32,13 @@ import {
     MockWorkTermsResolver
 } from "./EditionAuctionMocks.sol";
 
-/// @notice The edition auction on the real 6529 Stream Editions (`src/core/Editions.sol`) and
-///         the real `Directory`, with mocks for the rest: a harness the unit, vector, hostile
-///         and invariant suites share. The 1/1 English auction, the master token (which also
-///         answers the package registry's approval check) and the economics resolver are mocks
-///         whose state the test sets; the adapter, its lens, the clearing library and the
-///         edition contract are the real ones. This contract is the AccessManager's admin, so it
-///         may call every restricted setter at once.
+/// @notice The edition auction on the real 6529 Stream Editions (`src/core/StreamEditions6529.sol`)
+///         and the real `StreamDirectory6529`, with mocks for the rest: a harness the unit, vector,
+///         hostile and invariant suites share. The 1/1 English auction, the master token (which
+///         also answers the package registry's approval check) and the economics resolver are mocks
+///         whose state the test sets; the adapter, its lens, the clearing library and the edition
+///         contract are the real ones. This contract is the AccessManager's admin, so it may call
+///         every restricted setter at once.
 /// @dev Helpers keep ghost accounting of every wei the auction takes in and pays out, so a suite
 ///      can check conservation at any point: `escrowIn - refundsOut - paidOut ==
 ///      address(auction).balance - credits`.
@@ -53,8 +53,8 @@ abstract contract EditionAuctionBase is Test {
     MockRevenueEscrow internal escrow;
     MockWorkTermsResolver internal economics;
     MockMasterStream internal stream;
-    Editions internal editions;
-    Directory internal directory;
+    StreamEditions6529 internal editions;
+    StreamDirectory6529 internal directory;
     MockOneOfOneAuction internal english;
     UniformEditionAuction internal auction;
     /// @dev The adapter through its frozen interface (the views reach the lens).
@@ -83,10 +83,10 @@ abstract contract EditionAuctionBase is Test {
         economics.set(seller, networkFee, FEE_SHARE);
         stream = new MockMasterStream();
         stream.setRenderer(address(new MockEditionRenderer()));
-        editions = new Editions(
+        editions = new StreamEditions6529(
             address(manager), address(stream), makeAddr("marketOwner"), address(0), new address[](0)
         );
-        directory = new Directory(
+        directory = new StreamDirectory6529(
             address(manager), address(0xACC), address(0xFED), address(0x7E), address(0x2EC)
         );
         english = new MockOneOfOneAuction();

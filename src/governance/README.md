@@ -36,9 +36,10 @@ Flows: [Genesis configure](../../docs/spec/governance.md#genesis-configure),
 
 - **Delays.** The class delays are the network's: one 7-day action can remap a selector or change
   a class, so a class's delay holds until such a remap changes it. The waiting periods of the
-  permanent contracts (`moduleDelay`, `rescueDelay`, `rebindDelay`, `Directory.unclaimedPeriod`)
-  are not role delays: they are settings stored in those contracts, with launch values, which the
-  network changes at once through the NETWORK role (ADR 0010).
+  permanent contracts (`moduleDelay`, `rescueDelay`, `rebindDelay`,
+  `StreamDirectory6529.unclaimedPeriod`) are not role delays: they are settings stored in those
+  contracts, with launch values, which the network changes at once through the NETWORK role (ADR
+  0010).
 - **A new governed function** follows GV-15 to GV-22
   ([rules](../../docs/spec/governance.md#rules-and-invariants)): mark it `restricted`, map its
   selector in [`config/genesis.core.example.json`](../../config/genesis.core.example.json) (for the plain-core

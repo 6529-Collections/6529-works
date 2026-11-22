@@ -33,17 +33,17 @@ The IDs below are computed from the frozen interfaces in
 
 | Interface | ID | Answered by |
 | --- | --- | --- |
-| [`IStream`](../../src/interfaces/core/IStream.sol) | `0xe38078e5` | Stream, each federated 1/1 token |
-| [`IEditions`](../../src/interfaces/core/IEditions.sol) | `0xa7c1a138` | Editions, each federated editions token |
+| [`IStream`](../../src/interfaces/core/IStream.sol) | `0xe38078e5` | Stream, each Independent Stream 1/1 token |
+| [`IEditions`](../../src/interfaces/core/IEditions.sol) | `0xa7c1a138` | Editions, each Independent Stream Editions token |
 | [`IModuleSlots`](../../src/interfaces/core/IModules.sol) | `0x9ce5ed0a` | Stream, Editions, Directory |
 | [`IModules`](../../src/interfaces/core/IModules.sol) | `0x733435b6` | Stream, Editions |
 | [`IDirectory`](../../src/interfaces/core/IDirectory.sol) | `0xe8ee5a5e` | Directory |
 | [`IWorkFacts`](../../src/interfaces/core/IWorkFacts.sol) | `0xf9ce2773` | WorkFacts |
 | [`IWorkRules`](../../src/interfaces/core/IWorkRules.sol) | `0x745fb7f4` | WorkRules (RECORDS) |
 | [`ITerms`](../../src/interfaces/core/ITerms.sol) | `0xf22b5cc8` | StreamTerms (TERMS) |
-| [`IMintPolicy`](../../src/interfaces/core/IMintPolicy.sol) | `0x207cd15b` | PackageRegistry, FederationRegistry |
+| [`IMintPolicy`](../../src/interfaces/core/IMintPolicy.sol) | `0x207cd15b` | PackageRegistry, IndependentStreamRegistry |
 | [`IAccounts`](../../src/interfaces/core/IAccounts.sol) | `0xc27b4543` | Accounts |
-| [`IFederationGate`](../../src/interfaces/core/IFederationGate.sol) | `0x2a7a53b2` | FederationRegistry |
+| [`IIndependentStreamGate`](../../src/interfaces/core/IIndependentStreamGate.sol) | `0x2a7a53b2` | IndependentStreamRegistry |
 | [`ILocators`](../../src/interfaces/core/ILocators.sol) | `0x4e8975bf` | WorkDelivery |
 | ERC-721, ERC-1155, ERC-2981, ERC-4906 | `0x80ac58cd`, `0xd9b67a26`, `0x2a55205a`, `0x49064906` | the token contracts |
 
@@ -58,16 +58,16 @@ The module interfaces, with the IDs `test/interfaces/InterfacesCompile.t.sol` pi
 | [`IEnglishAuction`](../../src/interfaces/IEnglishAuction.sol) | `0x54df3713` | EnglishAuction |
 | [`IEnglishAuctionClock`](../../src/interfaces/IEnglishAuctionClock.sol) | `0x968c7b07` | EnglishAuction (read by the edition auction) |
 | [`IEnglishAuctionRefusal`](../../src/interfaces/IEnglishAuctionRefusal.sol) | `0x625761b5` | EnglishAuction |
-| [`IUniformEditionAuction`](../../src/interfaces/IUniformEditionAuction.sol) | `0xa34e53aa` | UniformEditionAuction, FederatedEditionAuction |
-| [`ISaleAdapter`](../../src/interfaces/ISaleAdapter.sol) | `0x312dc1e1` | the sale contracts |
-| [`IArtistRegistry`](../../src/interfaces/IArtistRegistry.sol) | `0xb06572e4` | Accounts |
+| [`IUniformEditionAuction`](../../src/interfaces/IUniformEditionAuction.sol) | `0xa34e53aa` | UniformEditionAuction, IndependentEditionAuction |
+| [`ISaleAdapter`](../../src/interfaces/ISaleAdapter.sol) | `0xd15ddb3f` | the sale contracts |
+| [`IArtistRegistry`](../../src/interfaces/IArtistRegistry.sol) | `0x1bec3945` | Accounts |
 | [`IArtistRoleResolver`](../../src/interfaces/IArtistRoleResolver.sol) | `0x3074ca00` | Accounts |
 | [`IConsolidationSource`](../../src/interfaces/IArtistRegistry.sol) | `0x42129132` | ConsolidationAdapter |
 | [`IArtistPayoutResolver`](../../src/economics/interfaces/IArtistPayoutResolver.sol) | `0x9b2c1793` | Directory |
-| [`IFederationRegistry`](../../src/interfaces/IFederationRegistry.sol) | `0x74a7e21a` | FederationRegistry |
+| [`IIndependentStreamRegistry`](../../src/interfaces/IIndependentStreamRegistry.sol) | `0x74a7e21a` | IndependentStreamRegistry |
 | [`IWorkPowers`](../../src/interfaces/IWorkPowers.sol) | `0xf2f560e3` | WorkRules |
 | [`IStatementLog`](../../src/interfaces/IStatementLog.sol) | `0xbb5574c7` | StatementLog |
-| [`IEntropyModule`](../../src/interfaces/IEntropyModule.sol) | `0xa8a2a007` | VrfEntropyModule |
+| [`IEntropyModule`](../../src/interfaces/IEntropyModule.sol) | `0x549d75c9` | VrfEntropyModule |
 | [`IRenderer`](../../src/interfaces/IRenderer.sol) | `0xa772216d` | Renderer |
 | [`IContentStore`](../../src/interfaces/IContentStore.sol) | `0xe5a30736` | ContentStore |
 | [`IDependencyRegistry`](../../src/interfaces/IDependencyRegistry.sol) | `0xe5338d57` | DependencyRegistry |
@@ -112,9 +112,9 @@ Type strings exactly as in code; typehashes pinned by `test_signedPayloadTypehas
 | `Typehashes.RENOUNCE_POWERS` | `RenouncePowers(uint256 tokenId,uint16 powers,bytes32 stateHash,uint64 deadline)` | `0xff8cc1b150cf1b390fd870b4a587d3c2632e80f32efbefe166b9f7b0131d3aff` | Records module; any wallet of the lead artist's account (with the network for `ROYALTY_RATE` or `RELICENSE`) |
 | `Typehashes.IDENTITY_CHANGE` | `IdentityChange(uint256 artistId,address root,address payout,bytes32 profileId,bytes32 profileDocHash,uint256 nonce,uint64 deadline)` | `0x861dd247b7856a4fbd738106b59a20eabf86c787bcc7c5c77f8bf506b24e4495` | Accounts module; any wallet of the account (the account's own change) |
 | `Typehashes.REPLACEMENT_ACCEPTANCE` | `ReplacementAcceptance(uint256 artistId,address root,address payout,bytes32 profileId,bytes32 profileDocHash,bytes32 evidenceHash,uint64 deadline)` | `0xa0e556173f6123b1243ffd400cc5066b72e9f63a185f7c223a7a9761be52aeff` | Accounts module; the new root of a network replacement (a raw signature, used once) |
-| `Typehashes.ACCOUNT_CONSENT` | `Consent(address subject,bytes32 what)` | `0x698c989ad77f65b3786711063b64ef5589a2f9efc6261c97a73e4eee803af539` | Accounts module; any wallet of the account, for the contract `subject` only (`requireConsent`; a federated collaborator's consent to an item) |
-| `Typehashes.ARTIST_REGISTRATION` | `ArtistRegistration(address account,bytes32 profileId,bytes32 profileDocHash,uint64 deadline)` | `0x251edc52a2bb08ba54c8c256d514ddd287d55597cda1692026fb5fcbf0f8a8d9` | Accounts module; the new account itself (a raw signature, `registerFederated`) |
-| `Typehashes.FEDERATED_LISTING` | `FederatedListing(uint256 artistId,address token,uint8 form,address partner,uint32 feeShare,address feeRecipient,uint64 deadline)` | `0x4a9cf66981feefe0dcd25aa0b9657554118bc34d7928f2709a3e651e9c5da1ce` | Accounts module; any wallet of the artist's account (`listFederatedContract`) |
+| `Typehashes.ACCOUNT_CONSENT` | `Consent(address subject,bytes32 what)` | `0x698c989ad77f65b3786711063b64ef5589a2f9efc6261c97a73e4eee803af539` | Accounts module; any wallet of the account, for the contract `subject` only (`requireConsent`; an Independent Stream collaborator's consent to an item) |
+| `Typehashes.ARTIST_REGISTRATION` | `ArtistRegistration(address account,bytes32 profileId,bytes32 profileDocHash,uint64 deadline)` | `0x251edc52a2bb08ba54c8c256d514ddd287d55597cda1692026fb5fcbf0f8a8d9` | Accounts module; the new account itself (a raw signature, `registerIndependent`) |
+| `Typehashes.INDEPENDENT_LISTING` | `IndependentListing(uint256 artistId,address token,uint8 form,address partner,uint32 feeShare,address feeRecipient,uint64 deadline)` | `0xc6c1acdb6e5275d9f6ab97f01f142831a32aa8d4d19a2562f68647103f1436d0` | Accounts module; any wallet of the artist's account (`listIndependentContract`) |
 | `StatementLog` `HASHREF_TYPEHASH` | `HashRef(uint16 algorithm,bytes32 digest)` | `0x121a61476ab0828add4a5b9b9f2bb805adcfa15d81ff19494f98b0fd3e0bd6ed` | (a member type) |
 | `StatementLog` `STATEMENT_TYPEHASH` | `Statement(address token,uint256 id,bytes32 kind,bytes32 schema,HashRef content,string uri,bytes32 fileId,bytes32 supersedes)HashRef(uint16 algorithm,bytes32 digest)` | `0xc5917de59a1e9cd194c71a1bfa5d2b7a821403b15a6c26ba9ed4aaa207f324f6` | (a member type, and the statement's identity in the entry hash) |
 | `StatementLog` `AUTHORIZATION_TYPEHASH` | `Authorization(uint8 role,address signer,uint256 nonce,uint64 deadline,Statement statement)HashRef(uint16 algorithm,bytes32 digest)Statement(address token,uint256 id,bytes32 kind,bytes32 schema,HashRef content,string uri,bytes32 fileId,bytes32 supersedes)` | `0x31b41af4c88eb6a6042a07475f214b72f1819151382b4f7c6600f092bf061f89` | Statement log; the relayed signer |
@@ -155,7 +155,7 @@ change, a listing consent, a collaborator consent, a work-records consent), the 
 proof `abi.encodePacked(wallet, signature)`: `wallet` is the signing wallet, the root or any
 wallet consolidated with it, and `signature` its signature over the digest, checked by
 `SignatureVerifier` (ECDSA, ERC-1271 or EIP-7702). The accounts module's `requireSigned` checks
-both that the wallet acts for the account and the signature. `registerFederated` and a
+both that the wallet acts for the account and the signature. `registerIndependent` and a
 replacement's acceptance take the new address's raw signature.
 
 ## Protocol hashes recomputed off-chain
@@ -277,7 +277,7 @@ an input; a renunciation moves the state hash through the version it bumps.
 | Seller wallet | The salt-zero wallet for the item's payees | `IEconomicsResolver.newWorkTerms` |
 | Royalty receiver | The seller when the fee share is zero; otherwise the salt-zero wallet for the two fixed payees `(0, seller, 100,000 - feeShare)` and `(0, feeRecipient, feeShare)`, sorted ascending by address | `Splits.royaltyPayees` in [`Splits.sol`](../../src/economics/Splits.sol) |
 | Sale kind | `keccak256("ENGLISH_AUCTION")` `0x42bdbbaa…`, `keccak256("UNIFORM_AUCTION")` `0x81234ccc…`; reserved: `keccak256("FIXED_PRICE")` `0xce977739…`, `keccak256("DUTCH")` `0x57099dca…` | [`SaleTypes.sol`](../../src/interfaces/types/SaleTypes.sol) |
-| Product ID | `keccak256("PRODUCT_STREAM")` `0x8d6f9a23…`, `keccak256("PRODUCT_EDITIONS")` `0xdda24e9b…`, `keccak256("PRODUCT_FEDERATED")` `0x12f6fbd5…` | [`EconomicsTypes.sol`](../../src/interfaces/types/EconomicsTypes.sol) |
+| Product ID | `keccak256("PRODUCT_STREAM")` `0x8d6f9a23…`, `keccak256("PRODUCT_EDITIONS")` `0xdda24e9b…`, `keccak256("PRODUCT_INDEPENDENT")` `0xceae10ee…` | [`EconomicsTypes.sol`](../../src/interfaces/types/EconomicsTypes.sol) |
 | Reserved statement kinds | `keccak256("DISPUTE_OUTCOME")` `0xd529e549…`, `keccak256("CURATION_EVIDENCE")` `0x10d8533b…`, `keccak256("GOVERNANCE_MANIFEST")` `0xda3e4cfe…` | [`StatementKinds.sol`](../../src/interfaces/types/StatementKinds.sol) |
 | Currency | ETH is `address(0)` (sales are ETH only) | [`EconomicsTypes.sol`](../../src/interfaces/types/EconomicsTypes.sol) |
 | Curation signer epoch | `since << 128 \| salt << 64 \| changes`; read `signerEpoch(signer)` | `Eip712CurationVerifier.signerEpoch` |

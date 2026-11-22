@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { Directory } from "../../src/core/Directory.sol";
+import { StreamDirectory6529 } from "../../src/core/StreamDirectory6529.sol";
 import { GovernedVault } from "../../src/economics/GovernedVault.sol";
 import { IReleaseVerifier } from "../../src/economics/interfaces/IReleaseVerifier.sol";
 import { ISplitWallet } from "../../src/economics/interfaces/ISplitWallet.sol";
@@ -127,8 +127,8 @@ library MedusaWindows {
 }
 
 /// @dev The ACCOUNTS module as the harness sets it: one artist, whose payout address the harness
-///      rotates between two keys or freezes (zero, unresolved). The real `Directory` answers the
-///      ledger's `payoutAddress` from it.
+///      rotates between two keys or freezes (zero, unresolved). The real `StreamDirectory6529`
+///      answers the ledger's `payoutAddress` from it.
 contract PayoutBook {
     address internal immutable _keeper;
     mapping(uint256 artistId => address) public payoutAddress;
@@ -157,9 +157,9 @@ contract PayoutBook {
 ///      model with the contracts. No cheatcodes: time passes by Medusa's block timestamp delay,
 ///      or by the Forge runner's clock contract.
 ///
-///      The ledger's resolver is the real `Directory`, whose unclaimed period the governor changes
-///      mid-run (`setPeriod`, zero allowed); the ledger's forfeits and the escrow's windows read
-///      it, and the model keeps its own copy.
+///      The ledger's resolver is the real `StreamDirectory6529`, whose unclaimed period the
+///      governor changes mid-run (`setPeriod`, zero allowed); the ledger's forfeits and the
+///      escrow's windows read it, and the model keeps its own copy.
 ///
 ///      Wallets: W0 is a royalty wallet `(fee vault 10%, alice 90%)`, deployed at construction;
 ///      W1 and W1b are the same three-payee list `(alice 30%, bob 30%, artist 7 40%)` under salts
@@ -176,7 +176,7 @@ contract LedgerMedusa is MedusaBase {
     GovernedVault public vault;
     PlainToken public token;
     PayoutBook public book;
-    Directory public directory;
+    StreamDirectory6529 public directory;
     Gate public gate;
 
     Actor public governor;
@@ -235,7 +235,9 @@ contract LedgerMedusa is MedusaBase {
         book = new PayoutBook();
         gate = new Gate(address(governor));
         vault = new GovernedVault(address(gate), address(sinkA));
-        directory = new Directory(address(gate), address(book), address(0), address(0), address(0));
+        directory = new StreamDirectory6529(
+            address(gate), address(book), address(0), address(0), address(0)
+        );
         ledger = new SplitLedger(IArtistPayoutResolver(address(directory)), address(vault));
         escrow = new RevenueEscrow(address(gate), ledger);
         book.set(ARTIST, address(keyA));

@@ -321,10 +321,11 @@ library DeployGuards {
     }
 
     /// @notice On mainnet, the accounts the deployment pins at construction are not the
-    ///         deployer EOA (for a mainnet deploy script; `DeployCore.s.sol` does not call it): the 6529 Network Museum, the marketplace `owner()` and the network
-    ///         fee recipient. Each is changed later only by a governed action (the museum vault's
-    ///         destination in 7 days, SUCCESSOR_SETTER; the others in 3, FUNDS_SETTER), and the
-    ///         deployer's key, used once to deploy, is not a network-held account.
+    ///         deployer EOA (for a mainnet deploy script; `DeployCore.s.sol` does not call it): the
+    ///         6529 Network Museum, the marketplace `owner()` and the network fee recipient. Each
+    ///         is changed later only by a governed action (the museum vault's destination in 7
+    ///         days, SUCCESSOR_SETTER; the others in 3, FUNDS_SETTER), and the deployer's key, used
+    ///         once to deploy, is not a network-held account.
     function checkRecipients(DeployCore.Params memory p) internal pure {
         if (p.museum == p.deployer) revert RecipientIsTheDeployer("MUSEUM", p.museum);
         if (p.marketOwner == p.deployer) {

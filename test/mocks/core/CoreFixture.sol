@@ -4,14 +4,14 @@ pragma solidity ^0.8.24;
 import { Test } from "forge-std/Test.sol";
 import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
 import { ContentStore } from "src/content/ContentStore.sol";
-import { Directory } from "src/core/Directory.sol";
-import { Editions } from "src/core/Editions.sol";
-import { Stream } from "src/core/Stream.sol";
-import { WorkFacts } from "src/core/WorkFacts.sol";
+import { StreamDirectory6529 } from "src/core/StreamDirectory6529.sol";
+import { StreamEditions6529 } from "src/core/StreamEditions6529.sol";
+import { Stream6529 } from "src/core/Stream6529.sol";
+import { StreamWorkFacts6529 } from "src/core/StreamWorkFacts6529.sol";
 import { MintFacts } from "src/interfaces/core/CoreTypes.sol";
 import {
     MockAccounts,
-    MockFederationGate,
+    MockIndependentStreamGate,
     MockRecords,
     MockRenderer,
     MockSale,
@@ -24,16 +24,16 @@ import {
 abstract contract CoreFixture is Test {
     AccessManager internal manager;
     ContentStore internal store;
-    WorkFacts internal facts;
-    Stream internal stream;
-    Editions internal editions;
-    Directory internal directory;
+    StreamWorkFacts6529 internal facts;
+    Stream6529 internal stream;
+    StreamEditions6529 internal editions;
+    StreamDirectory6529 internal directory;
     MockRenderer internal renderer;
     MockTerms internal terms;
     MockRecords internal records;
     MockSale internal sale;
     MockAccounts internal accounts;
-    MockFederationGate internal gate;
+    MockIndependentStreamGate internal gate;
 
     address internal marketOwner = makeAddr("marketOwner");
     address internal collector = makeAddr("collector");
@@ -44,16 +44,16 @@ abstract contract CoreFixture is Test {
         vm.warp(1_800_000_000);
         manager = new AccessManager(address(this));
         store = new ContentStore();
-        facts = new WorkFacts(address(store), CC0_TEXT);
+        facts = new StreamWorkFacts6529(address(store), CC0_TEXT);
         renderer = new MockRenderer();
         terms = new MockTerms();
         records = new MockRecords(facts);
         sale = new MockSale();
         accounts = new MockAccounts();
-        gate = new MockFederationGate();
+        gate = new MockIndependentStreamGate();
         address[] memory minters = new address[](1);
         minters[0] = address(sale);
-        stream = new Stream(
+        stream = new Stream6529(
             address(manager),
             address(facts),
             marketOwner,
@@ -62,9 +62,10 @@ abstract contract CoreFixture is Test {
             address(records),
             minters
         );
-        editions =
-            new Editions(address(manager), address(stream), marketOwner, address(terms), minters);
-        directory = new Directory(
+        editions = new StreamEditions6529(
+            address(manager), address(stream), marketOwner, address(terms), minters
+        );
+        directory = new StreamDirectory6529(
             address(manager), address(accounts), address(gate), address(terms), address(records)
         );
         stream.createCollection("Genesis", bytes32(uint256(1)));

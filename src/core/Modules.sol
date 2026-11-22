@@ -81,7 +81,7 @@ abstract contract ModuleSlots is AccessManaged, IModuleSlots {
     }
 
     /// @dev Who may announce and remove: by default whoever the AccessManager lets call the
-    ///      function. A federated token overrides it with its artist's account.
+    ///      function. An Independent Stream token overrides it with its artist's account.
     function _checkModuleAdmin() internal virtual {
         _checkCanCall(msg.sender, msg.data);
     }

@@ -5,8 +5,8 @@ import { IWorkFacts } from "src/interfaces/core/IWorkFacts.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
 import { RulesFixture } from "../records/RulesFixture.sol";
 
-/// @notice `WorkFacts` pins only an installable contract as a renderer (review B, B-1): never an
-///         EIP-7702 delegated account, whose designator its key holder can change at will.
+/// @notice `StreamWorkFacts6529` pins only an installable contract as a renderer (review B, B-1):
+///         never an EIP-7702 delegated account, whose designator its key holder can change at will.
 contract WorkFactsFixesTest is RulesFixture {
     address internal b;
 

@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import { Vm } from "forge-std/Vm.sol";
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import { Directory } from "src/core/Directory.sol";
+import { StreamDirectory6529 } from "src/core/StreamDirectory6529.sol";
 import { IArtistPayoutResolver } from "src/economics/interfaces/IArtistPayoutResolver.sol";
 import { Slots } from "src/interfaces/core/CoreTypes.sol";
 import { IDirectory } from "src/interfaces/core/IDirectory.sol";
@@ -13,9 +13,9 @@ import { CoreFixture } from "../mocks/core/CoreFixture.sol";
 import { HostileModule } from "../mocks/core/CoreMocks.sol";
 import { HostileAccounts } from "../mocks/core/StreamCoreMocks.sol";
 
-/// @notice The permanent `Directory`: genesis wiring, `payoutAddress` forwarding (and never a
-///         default), the network's `unclaimedPeriod` setting, ERC-165. `moduleDelay` through the
-///         real Directory is in `StreamSettings.t.sol`.
+/// @notice The permanent `StreamDirectory6529`: genesis wiring, `payoutAddress` forwarding (and
+///         never a default), the network's `unclaimedPeriod` setting, ERC-165. `moduleDelay`
+///         through the real Directory is in `StreamSettings.t.sol`.
 contract DirectoryTest is CoreFixture {
     function _unauthorized(address caller) internal pure returns (bytes memory) {
         return abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller);
@@ -23,14 +23,14 @@ contract DirectoryTest is CoreFixture {
 
     function test_Constructor_GenesisModulesAndLaunchSettings() public {
         assertEq(directory.moduleOf(Slots.ACCOUNTS), address(accounts));
-        assertEq(directory.moduleOf(Slots.FEDERATION), address(gate));
-        assertEq(directory.moduleOf(Slots.FEDERATED_TERMS), address(terms));
-        assertEq(directory.moduleOf(Slots.FEDERATED_RECORDS), address(records));
+        assertEq(directory.moduleOf(Slots.INDEPENDENT_STREAM), address(gate));
+        assertEq(directory.moduleOf(Slots.INDEPENDENT_TERMS), address(terms));
+        assertEq(directory.moduleOf(Slots.INDEPENDENT_RECORDS), address(records));
         assertEq(directory.unclaimedPeriod(), 180 days);
         assertEq(directory.moduleDelay(), 7 days);
         assertEq(directory.authority(), address(manager));
         vm.recordLogs();
-        new Directory(address(manager), address(1), address(2), address(3), address(4));
+        new StreamDirectory6529(address(manager), address(1), address(2), address(3), address(4));
         Vm.Log[] memory logs = vm.getRecordedLogs();
         uint256 sets;
         uint256 launch;

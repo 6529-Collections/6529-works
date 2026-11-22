@@ -152,7 +152,7 @@
     },
     {
       "contract": "VrfEntropyModule",
-      "label": "_federatedSeeds",
+      "label": "_independentSeeds",
       "offset": 0,
       "slot": 11,
       "type": "mapping(bytes32 => struct VrfEntropyModule.Seed)"

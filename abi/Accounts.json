@@ -485,19 +485,6 @@
     "type": "function"
   },
   {
-    "inputs": [],
-    "name": "federationRegistry",
-    "outputs": [
-      {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
     "inputs": [
       {
         "internalType": "uint256",
@@ -524,6 +511,19 @@
         "internalType": "uint48",
         "name": "",
         "type": "uint48"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "independentStreamRegistry",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
       }
     ],
     "stateMutability": "view",
@@ -757,7 +757,7 @@
         "type": "bytes"
       }
     ],
-    "name": "registerFederated",
+    "name": "registerIndependent",
     "outputs": [
       {
         "internalType": "uint256",

@@ -9,7 +9,7 @@ import { IWorkFacts } from "src/interfaces/core/IWorkFacts.sol";
 import { MintFacts } from "src/interfaces/core/CoreTypes.sol";
 import {
     MockAccounts,
-    MockFederationGate,
+    MockIndependentStreamGate,
     MockRecords,
     MockRenderer,
     MockSale,
@@ -85,7 +85,7 @@ abstract contract CoreDeployFixture is Test {
         vm.etch(d.streamTerms, address(new MockTerms()).code);
         vm.etch(d.workRules, address(new MockRecords(IWorkFacts(address(d.workFacts)))).code);
         vm.etch(d.accounts, address(new MockAccounts()).code);
-        vm.etch(d.federationRegistry, address(new MockFederationGate()).code);
+        vm.etch(d.independentStreamRegistry, address(new MockIndependentStreamGate()).code);
         vm.etch(d.englishAuction, address(new MockSale()).code);
         vm.etch(d.editionAuction, address(new MockSale()).code);
         sale = MockSale(d.englishAuction);

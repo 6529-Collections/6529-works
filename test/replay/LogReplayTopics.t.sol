@@ -10,7 +10,7 @@ import { ReplayEvents } from "./ReplayEvents.sol";
 ///         events its suite requires to be replayed, each with the keccak of its signature.
 contract LogReplayTopicsTest is ReplayBase {
     /// @notice Open: the committed topics file still names the contracts before the plain-core
-    ///         restructuring (`WorkRecords`, `ArtistRegistry`, `FederationRegistry`, the old
+    ///         restructuring (`WorkRecords`, `ArtistRegistry`, `IndependentStreamRegistry`, the old
     ///         Stream and Editions). When the tool and the fixture name the plain-core contracts
     ///         this fails, and `check_TopicsFileListsTheCompiledEvents` becomes a regular test.
     function test_Replay_TopicsFileListsTheCompiledEvents() public {
@@ -18,19 +18,19 @@ contract LogReplayTopicsTest is ReplayBase {
             abi.encodeCall(this.check_TopicsFileListsTheCompiledEvents, ()),
             bytes4(0),
             "event-topics.json does not list the plain-core contracts' events: the CONTRACTS "
-            "list of tools/make_vectors.py must name Stream, Editions, WorkFacts, Directory, "
-            "FederatedStream, FederatedEditions, SplitLedger, RevenueEscrow, ContentStore and "
+            "list of tools/make_vectors.py must name Stream6529, StreamEditions6529, StreamWorkFacts6529, StreamDirectory6529, "
+            "IndependentStream6529, IndependentStreamEditions6529, SplitLedger, RevenueEscrow, ContentStore and "
             "StatementLog, and the fixture be written again"
         );
     }
 
     function check_TopicsFileListsTheCompiledEvents() external view {
-        _assertTopicsFile("Stream", ReplayEvents.stream());
-        _assertTopicsFile("Editions", ReplayEvents.editions());
-        _assertTopicsFile("WorkFacts", ReplayEvents.workFacts());
-        _assertTopicsFile("Directory", ReplayEvents.directory());
-        _assertTopicsFile("FederatedStream", ReplayEvents.federatedStream());
-        _assertTopicsFile("FederatedEditions", ReplayEvents.federatedEditions());
+        _assertTopicsFile("Stream6529", ReplayEvents.stream());
+        _assertTopicsFile("StreamEditions6529", ReplayEvents.editions());
+        _assertTopicsFile("StreamWorkFacts6529", ReplayEvents.workFacts());
+        _assertTopicsFile("StreamDirectory6529", ReplayEvents.directory());
+        _assertTopicsFile("IndependentStream6529", ReplayEvents.independentStream());
+        _assertTopicsFile("IndependentStreamEditions6529", ReplayEvents.independentEditions());
         _assertTopicsFile("SplitLedger", ReplayEvents.splitLedger());
         _assertTopicsFile("RevenueEscrow", ReplayEvents.revenueEscrow());
         _assertTopicsFile("ContentStore", ReplayEvents.contentStore());
@@ -43,8 +43,8 @@ contract LogReplayTopicsTest is ReplayBase {
         _distinct(ReplayEvents.editions());
         _distinct(ReplayEvents.workFacts());
         _distinct(ReplayEvents.directory());
-        _distinct(ReplayEvents.federatedStream());
-        _distinct(ReplayEvents.federatedEditions());
+        _distinct(ReplayEvents.independentStream());
+        _distinct(ReplayEvents.independentEditions());
         _distinct(ReplayEvents.splitLedger());
         _distinct(ReplayEvents.revenueEscrow());
         _distinct(ReplayEvents.contentStore());

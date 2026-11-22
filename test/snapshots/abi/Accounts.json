@@ -1329,21 +1329,6 @@
     "type": "function"
   },
   {
-    "id": "0xadb08ded",
-    "inputs": [],
-    "name": "federationRegistry",
-    "outputs": [
-      {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
-      }
-    ],
-    "signature": "federationRegistry()",
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
     "id": "0xd7a78db8",
     "inputs": [
       {
@@ -1376,6 +1361,21 @@
       }
     ],
     "signature": "frozenUntil(uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xf10a2534",
+    "inputs": [],
+    "name": "independentStreamRegistry",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "independentStreamRegistry()",
     "stateMutability": "view",
     "type": "function"
   },
@@ -1594,7 +1594,7 @@
     "type": "function"
   },
   {
-    "id": "0x33cc27e2",
+    "id": "0xc4ffc49a",
     "inputs": [
       {
         "internalType": "address",
@@ -1622,7 +1622,7 @@
         "type": "bytes"
       }
     ],
-    "name": "registerFederated",
+    "name": "registerIndependent",
     "outputs": [
       {
         "internalType": "uint256",
@@ -1630,7 +1630,7 @@
         "type": "uint256"
       }
     ],
-    "signature": "registerFederated(address,bytes32,bytes32,uint64,bytes)",
+    "signature": "registerIndependent(address,bytes32,bytes32,uint64,bytes)",
     "stateMutability": "nonpayable",
     "type": "function"
   },

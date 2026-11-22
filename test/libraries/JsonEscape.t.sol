@@ -21,9 +21,10 @@ contract JsonEscapeHarness {
     }
 }
 
-/// @notice Parity, golden and fuzz tests ported from 6529Stream PR #744's `StreamJsonEscaping.t.sol` and
-///         `StreamStaticPureEncoding.t.sol`. Every parity check compares against both the
-///         frozen byte-loop oracles and 6529Stream PR #744's optimized encoders, copied verbatim.
+/// @notice Parity, golden and fuzz tests ported from 6529Stream PR #744's
+///         `StreamJsonEscaping.t.sol` and `StreamStaticPureEncoding.t.sol`. Every parity check
+///         compares against both the frozen byte-loop oracles and 6529Stream PR #744's optimized
+///         encoders, copied verbatim.
 contract JsonEscapeTest is Test {
     bytes internal constant TAG = "</script";
 

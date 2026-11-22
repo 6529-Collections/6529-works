@@ -84,15 +84,15 @@
     "WorksAccessManager": "0xE5D3c6a04E5bbCB6Af31bA28b0FCffA90C738De2",
     "GovernanceConfigurator": "0xc719b427207bF418755281E6961F401b75Ffb651",
     "ContentStore": "0xb58aEd6F77Cb38728B582D8095B4Bb5E79Ecb201",
-    "WorkFacts": "0xC384A8Acf4f4511C44D85A25eB1B904a28cfd819",
-    "Directory": "0xf17EBF39F26F1bf07998F976f6de89EedFacDF31",
+    "StreamWorkFacts6529": "0xC384A8Acf4f4511C44D85A25eB1B904a28cfd819",
+    "StreamDirectory6529": "0xf17EBF39F26F1bf07998F976f6de89EedFacDF31",
     "FeeRecipientVault": "0x3754e1236c6D1Ba697ae3dEC4cE21dd7a0bcFFA7",
     "MuseumVault": "0x22A4533f567B7Db3CBF89bA184fc1DE1b0D8F067",
     "SplitFactory": "0xAB9F808F80e645820C3E99243134f4186B1B1986",
     "ClaimRouter": "0xF6454B9e58F1d26D914f85F5c59D74Fdc073f813",
     "RevenueEscrow": "0x34ECd6C38B0A2A41D2597CFD207180b2622007d8",
-    "Stream": "0x3A30E31eDcC8dC8969Dd174737EEB2113E3E26Af",
-    "Editions": "0x2b9961F6806E8643429404c62Bb5FFC62e27D1f4",
+    "Stream6529": "0x3A30E31eDcC8dC8969Dd174737EEB2113E3E26Af",
+    "StreamEditions6529": "0x2b9961F6806E8643429404c62Bb5FFC62e27D1f4",
     "ConsolidationAdapter": "0x81dcE369E2699dC307591BF713be2E0b92236a7d",
     "Accounts": "0x9E368A7962D60bCBfa5C8F139C5545C24bdFC9d8",
     "AssetAllowlist": "0xb989E423f34A697B42f27022035F31c7AB8dfB13",
@@ -109,41 +109,41 @@
     "EnglishAuction": "0xC602e1617DBFaEA956684d85db35c8cD7fE39352",
     "UniformEditionAuctionLens": "0x4C043cB17E1dB1BC82156e76a2fbe4F00aF067BA",
     "UniformEditionAuction": "0x4B78493941A59BC6c9a11212DFD40A41451F52C7",
-    "FederationRegistry": "0xEe2EFef88Bcb10d5BFB68e29B80eB00B6FB1D669",
-    "FederatedStreamDeployer": "0x08bC732398D894542252D23CDE5dF1116C3b0ec8",
-    "FederatedEditionsDeployer": "0x66ab80d99B3340005B127F2a1D7bf1f4C98fC75a",
-    "FederatedEditionAuctionLens": "0xad18512cad10c8CB2DF91492d316BFe421FaB3B7",
-    "FederatedEditionAuction": "0x8483b007f6C1de1104fB44D6fC71EC0015ee8dEa",
+    "IndependentStreamRegistry": "0xEe2EFef88Bcb10d5BFB68e29B80eB00B6FB1D669",
+    "IndependentStream721Deployer": "0x08bC732398D894542252D23CDE5dF1116C3b0ec8",
+    "IndependentStreamEditionsDeployer": "0x66ab80d99B3340005B127F2a1D7bf1f4C98fC75a",
+    "IndependentEditionAuctionLens": "0xad18512cad10c8CB2DF91492d316BFe421FaB3B7",
+    "IndependentEditionAuction": "0x8483b007f6C1de1104fB44D6fC71EC0015ee8dEa",
     "SaleStarter": "0x3fBd0532dB08B80946Afb8621F782B2Af6b88Bf3"
   },
   "settings": [
     {
-      "contract": "Stream",
+      "contract": "Stream6529",
       "getter": "moduleDelay()",
       "launch": 604800
     },
     {
-      "contract": "Stream",
+      "contract": "Stream6529",
       "getter": "rescueDelay()",
       "launch": 1209600
     },
     {
-      "contract": "Editions",
+      "contract": "StreamEditions6529",
       "getter": "moduleDelay()",
       "launch": 604800
     },
     {
-      "contract": "Editions",
+      "contract": "StreamEditions6529",
       "getter": "rebindDelay()",
       "launch": 1209600
     },
     {
-      "contract": "Directory",
+      "contract": "StreamDirectory6529",
       "getter": "moduleDelay()",
       "launch": 604800
     },
     {
-      "contract": "Directory",
+      "contract": "StreamDirectory6529",
       "getter": "unclaimedPeriod()",
       "launch": 15552000
     }

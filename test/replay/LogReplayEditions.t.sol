@@ -149,7 +149,7 @@ contract LogReplayEditionsTest is ReplayBase {
         assertEq(editions.editionOf(c).minter, address(next));
 
         _assertEveryEventReplayed(
-            "Editions", editionsIdx, ReplayEvents.editions(), _list("URI(string,uint256)")
+            "StreamEditions6529", editionsIdx, ReplayEvents.editions(), _list("URI(string,uint256)")
         );
     }
 

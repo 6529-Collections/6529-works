@@ -19,7 +19,7 @@ import {
     UniformEditionAuctionBase
 } from "src/sales/UniformEditionAuction.sol";
 import { UniformEditionAuctionLens } from "src/sales/UniformEditionAuctionLens.sol";
-import { Editions } from "src/core/Editions.sol";
+import { StreamEditions6529 } from "src/core/StreamEditions6529.sol";
 import { IEditions } from "src/interfaces/core/IEditions.sol";
 import { EthRefusingHolder, MockOneOfOneAuction } from "./EditionAuctionMocks.sol";
 import { EditionAuctionBase } from "./EditionAuctionBase.sol";
@@ -59,7 +59,7 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         IUniformEditionAuctionLens l2 = IUniformEditionAuctionLens(lensAddress);
         assertEq(l2.CLOSE_OFFSET(), 15 minutes, "every sale closes 15 minutes after its 1/1");
         assertEq(l2.ABANDON_DELAY(), 21 days);
-        assertEq(ua.federationRegistry(), address(0));
+        assertEq(ua.independentStreamRegistry(), address(0));
     }
 
     function _construct(
@@ -127,7 +127,7 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
             defaultLimits()
         );
         // The master read from Editions must answer IStream.
-        Editions strayEditions = new Editions(
+        StreamEditions6529 strayEditions = new StreamEditions6529(
             address(manager), address(english), address(this), address(0), new address[](0)
         );
         vm.expectRevert(
@@ -240,8 +240,13 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         assertEq(l.paused.selector, ISaleAdapter.paused.selector);
         assertEq(l.isTarget.selector, ISaleAdapter.isTarget.selector);
         assertEq(l.claimable.selector, ISaleAdapter.claimable.selector);
-        assertEq(l.federationRegistry.selector, ISaleAdapter.federationRegistry.selector);
-        assertEq(l.setFederationRegistry.selector, ISaleAdapter.setFederationRegistry.selector);
+        assertEq(
+            l.independentStreamRegistry.selector, ISaleAdapter.independentStreamRegistry.selector
+        );
+        assertEq(
+            l.setIndependentStreamRegistry.selector,
+            ISaleAdapter.setIndependentStreamRegistry.selector
+        );
         assertEq(l.supportsInterface.selector, IERC165.supportsInterface.selector);
     }
 
@@ -510,16 +515,16 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         auction.open(address(editions), ID, _openData(item));
     }
 
-    /// @dev The adapter sells only 6529 Stream Editions in v1 and keeps no federation registry:
-    ///      the lens answers zero and refuses any installation, from anyone.
-    function test_SetFederationRegistry_IsRefused() public {
-        address registry = makeAddr("federationRegistry");
+    /// @dev The adapter sells only 6529 Stream Editions in v1 and keeps no Independent Stream
+    ///      registry: the lens answers zero and refuses any installation, from anyone.
+    function test_SetIndependentStreamRegistry_IsRefused() public {
+        address registry = makeAddr("independentStreamRegistry");
         vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.TargetNotAllowed.selector, registry));
-        ua.setFederationRegistry(address(0), registry);
+        ua.setIndependentStreamRegistry(address(0), registry);
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.TargetNotAllowed.selector, address(0)));
-        ua.setFederationRegistry(address(0), address(0));
-        assertEq(ua.federationRegistry(), address(0));
+        ua.setIndependentStreamRegistry(address(0), address(0));
+        assertEq(ua.independentStreamRegistry(), address(0));
     }
 
     // ================================================================== open

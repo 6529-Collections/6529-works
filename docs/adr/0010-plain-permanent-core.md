@@ -2,7 +2,7 @@
 
 Status: Accepted by owner instruction, 22 November 2026. Amends [ADR 0001](0001-v1-scope.md),
 [ADR 0004](0004-gas-budgets-under-glamsterdam.md) (the start budget),
-[ADR 0007](0007-permanence.md) (what is permanent), [ADR 0008](0008-federation.md) (the
+[ADR 0007](0007-permanence.md) (what is permanent), [ADR 0008](0008-independent-stream.md) (the
 templates) and [ADR 0009](0009-second-permanence-pass.md) (its compiled waits in permanent contracts become settings).
 Pre-audit: nothing here claims an audit, production readiness or correctness.
 
@@ -50,10 +50,10 @@ A permanent contract accepts four things from a module and nothing else:
    token.
 2. The **TERMS** module may set a token's royalty receiver and rate, and lock the rate for good.
 3. The **RENDERER** module draws a work that is not finalized. A finalized work is drawn by the
-   renderer pinned in `WorkFacts`.
-4. The **RECORDS** module may change a work's record, license and pin within what `WorkFacts`
-   allows: never the media, never the record after finalize, never away from CC0, never past a
-   lock.
+   renderer pinned in `StreamWorkFacts6529`.
+4. The **RECORDS** module may change a work's record, license and pin within what
+   `StreamWorkFacts6529` allows: never the media, never the record after finalize, never away from
+   CC0, never past a lock.
 
 No module can move a token, change a fact fixed at mint, or touch money in a vault or the
 escrow. The one move by anyone but the owner is `rescue`: the network may move a token that a
@@ -69,13 +69,13 @@ carrying the old and the new value. They are not promises.
 
 | Waiting period | Launch value | Setting | How a change treats what is already running |
 | --- | --- | --- | --- |
-| Before an added module or minter takes effect | 7 days | `moduleDelay` in each token contract and in `Directory` | An addition already announced keeps the time it was given |
-| After a minter's removal, before `rescue` of a token it still holds unsold | 14 days | `Stream.rescueDelay` (each federated token has its own) | Read when the rescue is attempted |
-| After a minter's removal, before `rebind` of an edition with no copies and no seal | 14 days | `Editions.rebindDelay` | Read when the rebind is attempted |
-| Before unclaimed money can go to the network (a marked split-vault share; an aged escrow credit) | 180 days | `Directory.unclaimedPeriod`, read by `SplitLedger` and `RevenueEscrow` | Read when the forfeit or expiry is attempted, so it applies to marks and credits already running |
+| Before an added module or minter takes effect | 7 days | `moduleDelay` in each token contract and in `StreamDirectory6529` | An addition already announced keeps the time it was given |
+| After a minter's removal, before `rescue` of a token it still holds unsold | 14 days | `Stream6529.rescueDelay` (each Independent Stream token has its own) | Read when the rescue is attempted |
+| After a minter's removal, before `rebind` of an edition with no copies and no seal | 14 days | `StreamEditions6529.rebindDelay` | Read when the rebind is attempted |
+| Before unclaimed money can go to the network (a marked split-vault share; an aged escrow credit) | 180 days | `StreamDirectory6529.unclaimedPeriod`, read by `SplitLedger` and `RevenueEscrow` | Read when the forfeit or expiry is attempted, so it applies to marks and credits already running |
 
 Removing a module or minter is immediate. The split ledger stays unowned: it reads the unclaimed
-period from `Directory`, the address it already asks for payout addresses, so it gains no
+period from `StreamDirectory6529`, the address it already asks for payout addresses, so it gains no
 authority, no setter and no storage; one setting serves the ledger and the escrow. If that read
 fails, the forfeit or expiry reverts and the money stays where it is.
 
@@ -102,18 +102,18 @@ A call that runs out of gas reverts the whole call: no path returns a default.
 
 | Today | After |
 | --- | --- |
-| `Stream` (799 lines, 22,814 bytes) | `src/core/StreamBase.sol` and `Stream.sol`, with `Modules.sol` (prototype: about 320 lines, 13,393 bytes) |
-| Interned terms, fee recipients, fee share, museum routing, sale kinds in `Stream` | The sale contract (seller and fee share per sale) and the `TERMS` module |
-| Content release and tombstones in `Stream` | The mint policy (`PackageRegistry`); the token keeps "one live token per content" |
+| `Stream6529` (799 lines, 22,814 bytes) | `src/core/StreamBase.sol` and `Stream6529.sol`, with `Modules.sol` (prototype: about 320 lines, 13,393 bytes) |
+| Interned terms, fee recipients, fee share, museum routing, sale kinds in `Stream6529` | The sale contract (seller and fee share per sale) and the `TERMS` module |
+| Content release and tombstones in `Stream6529` | The mint policy (`PackageRegistry`); the token keeps "one live token per content" |
 | `StreamViews`, `StreamLayout`, `extsload` | Deleted; plain getters `workOf`, `collectionOf` |
-| `Editions` (502 lines, 19,966 bytes) | `src/core/EditionsBase.sol` and `Editions.sol` (prototype: 12,113 bytes) |
-| Edition creation rules and economics in `Editions` | The edition sale contract |
-| `WorkRecords` (737 lines, 22,934 bytes) | `src/core/WorkFacts.sol` (permanent facts, 9,076 bytes) and the `RECORDS` module `WorkRules` |
-| `ArtistRegistry` (permanent) | The replaceable `Accounts` module behind the permanent `src/core/Directory.sol` |
-| The federation directory in `ArtistRegistry` | `FederationRegistry` |
-| `FederatedStream`, `FederatedEditions` (full contracts with their own records) | The same plain token bases with a different gate; records in the shared `WorkFacts` |
+| `StreamEditions6529` (502 lines, 19,966 bytes) | `src/core/EditionsBase.sol` and `StreamEditions6529.sol` (prototype: 12,113 bytes) |
+| Edition creation rules and economics in `StreamEditions6529` | The edition sale contract |
+| `WorkRecords` (737 lines, 22,934 bytes) | `src/core/StreamWorkFacts6529.sol` (permanent facts, 9,076 bytes) and the `RECORDS` module `WorkRules` |
+| `ArtistRegistry` (permanent) | The replaceable `Accounts` module behind the permanent `src/core/StreamDirectory6529.sol` |
+| The Independent Stream directory in `ArtistRegistry` | `IndependentStreamRegistry` |
+| `IndependentStream6529`, `IndependentStreamEditions6529` (full contracts with their own records) | The same plain token bases with a different gate; records in the shared `StreamWorkFacts6529` |
 | `EnglishAuctionLens` | Folded back into `EnglishAuction` |
-| `SplitLedger`, `SplitVault` | Unchanged; deployed with `Directory` as payout resolver |
+| `SplitLedger`, `SplitVault` | Unchanged; deployed with `StreamDirectory6529` as payout resolver |
 | `RevenueEscrow`, `ContentStore` | Fixed on a separate branch: aged-credit expiry, `locked()`, ranged completeness attestation |
 | `StatementLog` | One read changes (`itemHashOf`) |
 
@@ -137,11 +137,11 @@ The frozen interfaces are in `src/interfaces/core/`.
    auctions; no third party can shorten or postpone a clock.
 7. The network may rebind a stuck edition (no copies, not sealed) once the rebind period (14
    days at launch) has passed since its sale contract was removed.
-8. An unsold federated work waits in the network's sale contract and can be offered again
+8. An unsold Independent Stream work waits in the network's sale contract and can be offered again
    there; the artist cannot take it without a sale.
 9. A freeze still blocks a contest of a replacement, and a freeze can be placed again; the
    documents say so.
-10. A collaborator's consent covers the royalty rate, for federated works.
+10. A collaborator's consent covers the royalty rate, for Independent Stream works.
 
 ### Gas
 
@@ -158,14 +158,14 @@ is re-measured on the built stack.
   burned. The mint policy reads that token to apply the release rules.
 - The seed is stored in the token at mint; the entropy "eras" list is gone.
 - The token contracts are split into a base with six frozen hooks (`StreamBase`,
-  `EditionsBase`) and a thin concrete contract, so the federated pair is the same code.
-- A federated token has no minter list: its minters are the federation module's answer, and
-  the waiting period applies to installing that module in `Directory`. Which contracts count as its
-  removed minters (for `rescue`) is also that module's answer.
+  `EditionsBase`) and a thin concrete contract, so the Independent Stream pair is the same code.
+- An Independent Stream token has no minter list: its minters are the Independent Stream module's
+  answer, and the waiting period applies to installing that module in `StreamDirectory6529`. Which
+  contracts count as its removed minters (for `rescue`) is also that module's answer.
 - Genesis modules and minters are constructor arguments (predicted addresses); after
   construction every addition goes through the waiting period in force.
 - An edition is created by its sale contract in one call (`create`), not by anyone later.
-- `IAccounts` loses its two federation views and gains `payoutAddress`.
+- `IAccounts` loses its two Independent Stream views and gains `payoutAddress`.
 
 ## Deferred
 

@@ -13,13 +13,14 @@ import { IEditions } from "src/interfaces/core/IEditions.sol";
 import { IModuleSlots } from "src/interfaces/core/IModules.sol";
 import { IStream } from "src/interfaces/core/IStream.sol";
 import { MockRenderer, MockSale } from "../mocks/core/CoreMocks.sol";
-import { FederatedTokenFixture } from "../federated/FederatedTokenFixture.sol";
+import { IndependentTokenFixture } from "../independent/IndependentTokenFixture.sol";
 
 /// @notice The fixes to the permanent tokens after the plain-core reviews: a removed edition
 ///         minter seals nothing and mints only what it sealed before its removal; a cancelled
 ///         minter addition never counts as a minter; `rescue` refuses the token contract itself;
-///         a pending module can be withdrawn; a federated token takes its own artist only.
-contract CoreTokenFixesTest is FederatedTokenFixture {
+///         a pending module can be withdrawn; an Independent Stream token takes its own artist
+///         only.
+contract CoreTokenFixesTest is IndependentTokenFixture {
     address internal buyer = makeAddr("buyer");
     MockSale internal other;
 
@@ -83,7 +84,7 @@ contract CoreTokenFixesTest is FederatedTokenFixture {
         assertTrue(editions.editionOf(id).supplySealed);
     }
 
-    function test_FederatedRemovedEditionMinter_CannotSeal() public {
+    function test_IndependentRemovedEditionMinter_CannotSeal() public {
         uint256 id = _fsell(1, collector);
         sale.createEdition(address(fe), id, 0, address(0xFEE), 6529);
         _gateRemove(address(sale), block.timestamp);
@@ -188,7 +189,7 @@ contract CoreTokenFixesTest is FederatedTokenFixture {
         assertEq(stream.ownerOf(tokenId), collector);
     }
 
-    function test_FederatedRescue_RefusesTheTokenContractItself() public {
+    function test_IndependentRescue_RefusesTheTokenContractItself() public {
         uint256 tokenId = _fmint(1);
         _gateRemove(address(sale), block.timestamp);
         skip(fs.rescueDelay());
@@ -231,7 +232,7 @@ contract CoreTokenFixesTest is FederatedTokenFixture {
         assertEq(directory.moduleOf(Slots.ACCOUNTS), address(accounts));
     }
 
-    function test_FederatedCancelModule_TheArtistsRendererSlot() public {
+    function test_IndependentCancelModule_TheArtistsRendererSlot() public {
         MockRenderer next = new MockRenderer();
         vm.prank(artistWallet);
         fs.proposeModule(Slots.RENDERER, address(next));
@@ -247,29 +248,30 @@ contract CoreTokenFixesTest is FederatedTokenFixture {
         fs.cancelModule(Slots.TERMS);
     }
 
-    // ----------------------------------------------- a federated token's artist (review A L-5)
+    // ----------------------------------------------- an Independent Stream token's artist (review
+    // A L-5)
 
-    function test_FederatedStream_RefusesAnotherArtistsWork() public {
+    function test_IndependentStream_RefusesAnotherArtistsWork() public {
         MintFacts memory f = _facts(1);
         f.artistId = ARTIST;
         vm.expectRevert(IStream.InvalidMint.selector);
         sale.mint(address(fs), f);
-        f.artistId = FED_ARTIST;
+        f.artistId = IND_ARTIST;
         uint256 tokenId = sale.mint(address(fs), f);
-        assertEq(fs.workOf(tokenId).artistId, FED_ARTIST);
+        assertEq(fs.workOf(tokenId).artistId, IND_ARTIST);
     }
 
-    function testFuzz_FederatedStream_TakesOnlyItsOwnArtist(uint160 artistId) public {
+    function testFuzz_IndependentStream_TakesOnlyItsOwnArtist(uint160 artistId) public {
         vm.assume(artistId != 0);
         MintFacts memory f = _facts(1);
         f.artistId = artistId;
-        if (artistId != FED_ARTIST) vm.expectRevert(IStream.InvalidMint.selector);
+        if (artistId != IND_ARTIST) vm.expectRevert(IStream.InvalidMint.selector);
         sale.mint(address(fs), f);
     }
 
     function test_Stream_TakesEveryArtist() public {
         MintFacts memory f = _facts(1);
-        f.artistId = FED_ARTIST;
+        f.artistId = IND_ARTIST;
         sale.mint(address(stream), f);
     }
 }

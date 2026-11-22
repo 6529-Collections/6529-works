@@ -533,7 +533,7 @@
   },
   {
     "anonymous": false,
-    "id": "0x7a7aa29fb0ffab016b29cc1392382f7424244740c5bf90004d7f6a8a012bbad7",
+    "id": "0x0cef5942b04d271e4bfb17392ed9c8b3d324991563ba71c4023311fd21d9a8ab",
     "inputs": [
       {
         "indexed": true,
@@ -560,8 +560,8 @@
         "type": "uint256"
       }
     ],
-    "name": "FederatedSeedRequested",
-    "signature": "FederatedSeedRequested(address,bytes32,bytes32,uint256)",
+    "name": "IndependentSeedRequested",
+    "signature": "IndependentSeedRequested(address,bytes32,bytes32,uint256)",
     "type": "event"
   },
   {
@@ -853,7 +853,7 @@
     "type": "function"
   },
   {
-    "id": "0x5336224d",
+    "id": "0x9d21e2a8",
     "inputs": [
       {
         "internalType": "address",
@@ -866,7 +866,7 @@
         "type": "bytes32"
       }
     ],
-    "name": "federatedSeedOf",
+    "name": "independentSeedOf",
     "outputs": [
       {
         "internalType": "bool",
@@ -879,7 +879,7 @@
         "type": "bytes32"
       }
     ],
-    "signature": "federatedSeedOf(address,bytes32)",
+    "signature": "independentSeedOf(address,bytes32)",
     "stateMutability": "view",
     "type": "function"
   },
@@ -996,7 +996,7 @@
     "type": "function"
   },
   {
-    "id": "0xef54ecfe",
+    "id": "0xdd7cf9d5",
     "inputs": [
       {
         "internalType": "address",
@@ -1151,7 +1151,7 @@
         "type": "tuple"
       }
     ],
-    "name": "requestFederatedSeed",
+    "name": "requestIndependentSeed",
     "outputs": [
       {
         "internalType": "uint256",
@@ -1159,7 +1159,7 @@
         "type": "uint256"
       }
     ],
-    "signature": "requestFederatedSeed(address,(uint8,uint256,bytes32,bytes32,bytes32,(address,uint8)[],(uint256,address,uint32)[],(string,bytes32),uint8,bytes32,(bytes32,address,bytes),(uint32,address,bytes32,bytes)))",
+    "signature": "requestIndependentSeed(address,(uint8,uint256,bytes32,bytes32,bytes32,(address,uint8)[],(uint256,address,uint32)[],(string,bytes32),uint8,bytes32,(bytes32,address,bytes),(uint32,address,bytes32,bytes)))",
     "stateMutability": "payable",
     "type": "function"
   },

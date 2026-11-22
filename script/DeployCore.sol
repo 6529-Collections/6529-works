@@ -3,10 +3,10 @@ pragma solidity 0.8.37;
 
 import { Vm } from "forge-std/Vm.sol";
 import { ContentStore } from "src/content/ContentStore.sol";
-import { Directory } from "src/core/Directory.sol";
-import { Editions } from "src/core/Editions.sol";
-import { Stream } from "src/core/Stream.sol";
-import { WorkFacts } from "src/core/WorkFacts.sol";
+import { StreamDirectory6529 } from "src/core/StreamDirectory6529.sol";
+import { StreamEditions6529 } from "src/core/StreamEditions6529.sol";
+import { Stream6529 } from "src/core/Stream6529.sol";
+import { StreamWorkFacts6529 } from "src/core/StreamWorkFacts6529.sol";
 import { ClaimRouter } from "src/economics/ClaimRouter.sol";
 import { GovernedVault } from "src/economics/GovernedVault.sol";
 import { RevenueEscrow } from "src/economics/RevenueEscrow.sol";
@@ -30,7 +30,7 @@ import { CoreFactory } from "./CoreFactory.sol";
 ///      only the deployer may make: a one-use proxy at a CREATE2 address that depends only on
 ///      the factory and the contract's name creates the contract in the same call. So every
 ///      address is known before anything is deployed, nobody else can create code at one, and
-///      the token contracts and `Directory` take their genesis modules and minters as
+///      the token contracts and `StreamDirectory6529` take their genesis modules and minters as
 ///      constructor arguments even though those modules are deployed after them. The factory's
 ///      own address commits to the namespace and the deployer. An address does not commit to
 ///      code: `VerifyCore` compares every contract's runtime code with a reference deployment
@@ -68,13 +68,13 @@ library DeployCore {
 
     /// @notice The launch value of every module's and minter's waiting period (`moduleDelay`).
     uint48 internal constant LAUNCH_MODULE_DELAY = 7 days;
-    /// @notice The launch value of `Stream.rescueDelay`.
+    /// @notice The launch value of `Stream6529.rescueDelay`.
     uint48 internal constant LAUNCH_RESCUE_DELAY = 14 days;
-    /// @notice The launch value of `Editions.rebindDelay`.
+    /// @notice The launch value of `StreamEditions6529.rebindDelay`.
     uint48 internal constant LAUNCH_REBIND_DELAY = 14 days;
-    /// @notice The launch value of `Directory.unclaimedPeriod`.
+    /// @notice The launch value of `StreamDirectory6529.unclaimedPeriod`.
     uint48 internal constant LAUNCH_UNCLAIMED_PERIOD = 180 days;
-    /// @notice How many entries of `order` are the permanent part (through `Editions`).
+    /// @notice How many entries of `order` are the permanent part (through `StreamEditions6529`).
     uint256 internal constant PERMANENT_COUNT = 11;
 
     struct Params {
@@ -116,15 +116,15 @@ library DeployCore {
         GovernanceConfigurator configurator;
         WorksAccessManager manager;
         ContentStore contentStore;
-        WorkFacts workFacts;
-        Directory directory;
+        StreamWorkFacts6529 workFacts;
+        StreamDirectory6529 directory;
         GovernedVault feeRecipientVault;
         GovernedVault museumVault;
         SplitLedger splitLedger;
         ClaimRouter claimRouter;
         address revenueEscrow;
-        Stream stream;
-        Editions editions;
+        Stream6529 stream;
+        StreamEditions6529 editions;
         // modules
         address consolidationAdapter;
         address accounts;
@@ -142,11 +142,11 @@ library DeployCore {
         address englishAuction;
         address editionAuctionLens;
         address editionAuction;
-        address federationRegistry;
-        address federatedStreamDeployer;
-        address federatedEditionsDeployer;
-        address federatedEditionAuctionLens;
-        address federatedEditionAuction;
+        address independentStreamRegistry;
+        address independentStream721Deployer;
+        address independentStreamEditionsDeployer;
+        address independentEditionAuctionLens;
+        address independentEditionAuction;
         address saleStarter;
     }
 
@@ -288,15 +288,15 @@ library DeployCore {
         string[31] memory all = [
             "GovernanceConfigurator",
             "ContentStore",
-            "WorkFacts",
-            "Directory",
+            "StreamWorkFacts6529",
+            "StreamDirectory6529",
             "FeeRecipientVault",
             "MuseumVault",
             "SplitFactory",
             "ClaimRouter",
             "RevenueEscrow",
-            "Stream",
-            "Editions",
+            "Stream6529",
+            "StreamEditions6529",
             "ConsolidationAdapter",
             "Accounts",
             "AssetAllowlist",
@@ -312,11 +312,11 @@ library DeployCore {
             "EnglishAuction",
             "UniformEditionAuctionLens",
             "UniformEditionAuction",
-            "FederationRegistry",
-            "FederatedStreamDeployer",
-            "FederatedEditionsDeployer",
-            "FederatedEditionAuctionLens",
-            "FederatedEditionAuction"
+            "IndependentStreamRegistry",
+            "IndependentStream721Deployer",
+            "IndependentStreamEditionsDeployer",
+            "IndependentEditionAuctionLens",
+            "IndependentEditionAuction"
         ];
         bool vrf = p.vrfCoordinator != address(0);
         list = new string[](all.length + 1 + (vrf ? 1 : 0));
@@ -342,17 +342,17 @@ library DeployCore {
             return bytes.concat(type(GovernanceConfigurator).creationCode, abi.encode(p.deployer));
         }
         if (n == keccak256("ContentStore")) return type(ContentStore).creationCode;
-        if (n == keccak256("WorkFacts")) {
+        if (n == keccak256("StreamWorkFacts6529")) {
             return bytes.concat(
-                type(WorkFacts).creationCode, abi.encode(d.contentStore, d.cc0TextFileId)
+                type(StreamWorkFacts6529).creationCode, abi.encode(d.contentStore, d.cc0TextFileId)
             );
         }
-        if (n == keccak256("Directory")) {
+        if (n == keccak256("StreamDirectory6529")) {
             // The genesis shared modules: one WorkRules and one StreamTerms serve both 6529
-            // Stream and every federated token (both are keyed by token).
+            // Stream and every Independent Stream token (both are keyed by token).
             return bytes.concat(
-                type(Directory).creationCode,
-                abi.encode(m, d.accounts, d.federationRegistry, d.streamTerms, d.workRules)
+                type(StreamDirectory6529).creationCode,
+                abi.encode(m, d.accounts, d.independentStreamRegistry, d.streamTerms, d.workRules)
             );
         }
         if (n == keccak256("FeeRecipientVault")) {
@@ -373,21 +373,21 @@ library DeployCore {
         if (n == keccak256("RevenueEscrow")) {
             return bytes.concat(type(RevenueEscrow).creationCode, abi.encode(m, d.splitLedger));
         }
-        if (n == keccak256("Stream")) {
+        if (n == keccak256("Stream6529")) {
             address[] memory minters = new address[](1);
             minters[0] = d.englishAuction;
             return bytes.concat(
-                type(Stream).creationCode,
+                type(Stream6529).creationCode,
                 abi.encode(
                     m, d.workFacts, p.marketOwner, d.renderer, d.streamTerms, d.workRules, minters
                 )
             );
         }
-        if (n == keccak256("Editions")) {
+        if (n == keccak256("StreamEditions6529")) {
             address[] memory minters = new address[](1);
             minters[0] = d.editionAuction;
             return bytes.concat(
-                type(Editions).creationCode,
+                type(StreamEditions6529).creationCode,
                 abi.encode(m, d.stream, p.marketOwner, d.streamTerms, minters)
             );
         }
@@ -509,8 +509,8 @@ library DeployCore {
     {
         address m = address(d.manager);
         if (n == keccak256("WorkRules")) {
-            // One token-keyed instance serves Stream and every federated token; its delivery
-            // contract is deployed next, at its predicted address.
+            // One token-keyed instance serves Stream and every Independent Stream token; its
+            // delivery contract is deployed next, at its predicted address.
             return _artifact(
                 "WorkRules.sol:WorkRules", abi.encode(m, d.workFacts, d.directory, d.workDelivery)
             );
@@ -523,15 +523,15 @@ library DeployCore {
         }
         if (n == keccak256("StreamTerms")) {
             // Manager, split ledger (vault derivation), 6529 Stream and its Editions
-            // (`editionsOf`), Directory (federated fee shares).
+            // (`editionsOf`), Directory (Independent Stream fee shares).
             return _artifact(
                 "StreamTerms.sol:StreamTerms",
                 abi.encode(m, d.splitLedger, d.stream, d.editions, d.directory)
             );
         }
         if (n == keccak256("EnglishAuction")) {
-            // ETH only. The mint policy for 6529 Stream is the package registry; for federated
-            // tokens it is the directory's FEDERATION module.
+            // ETH only. The mint policy for 6529 Stream is the package registry; for Independent
+            // Stream tokens it is the directory's INDEPENDENT_STREAM module.
             return _artifact(
                 "EnglishAuction.sol:EnglishAuction",
                 bytes.concat(
@@ -581,40 +581,42 @@ library DeployCore {
                 )
             );
         }
-        if (n == keccak256("FederationRegistry")) {
+        if (n == keccak256("IndependentStreamRegistry")) {
             // Manager, Directory, WorkFacts, economics resolver, content store, and no earlier
             // registry to inherit from.
             return _artifact(
-                "FederationRegistry.sol:FederationRegistry",
+                "IndependentStreamRegistry.sol:IndependentStreamRegistry",
                 abi.encode(
                     m, d.directory, d.workFacts, d.economicsResolver, d.contentStore, address(0)
                 )
             );
         }
-        if (n == keccak256("FederatedStreamDeployer")) {
+        if (n == keccak256("IndependentStream721Deployer")) {
             // The deployer holds the template's creation code.
             return _artifact(
-                "FederatedDeployer.sol:FederatedDeployer",
-                abi.encode(vm.getCode("FederatedStream.sol:FederatedStream"))
+                "IndependentStreamDeployer.sol:IndependentStreamDeployer",
+                abi.encode(vm.getCode("IndependentStream6529.sol:IndependentStream6529"))
             );
         }
-        if (n == keccak256("FederatedEditionsDeployer")) {
+        if (n == keccak256("IndependentStreamEditionsDeployer")) {
             return _artifact(
-                "FederatedDeployer.sol:FederatedDeployer",
-                abi.encode(vm.getCode("FederatedEditions.sol:FederatedEditions"))
+                "IndependentStreamDeployer.sol:IndependentStreamDeployer",
+                abi.encode(
+                    vm.getCode("IndependentStreamEditions6529.sol:IndependentStreamEditions6529")
+                )
             );
         }
-        if (n == keccak256("FederatedEditionAuctionLens")) {
-            // The federation module is found through Directory.
+        if (n == keccak256("IndependentEditionAuctionLens")) {
+            // The Independent Stream module is found through Directory.
             return _artifact(
-                "FederatedEditionAuctionLens.sol:FederatedEditionAuctionLens",
+                "IndependentEditionAuctionLens.sol:IndependentEditionAuctionLens",
                 abi.encode(d.englishAuction, d.revenueEscrow, d.directory, d.economicsResolver)
             );
         }
-        if (n == keccak256("FederatedEditionAuction")) {
-            address lens = d.federatedEditionAuctionLens;
+        if (n == keccak256("IndependentEditionAuction")) {
+            address lens = d.independentEditionAuctionLens;
             return _artifact(
-                "FederatedEditionAuction.sol:FederatedEditionAuction",
+                "IndependentEditionAuction.sol:IndependentEditionAuction",
                 bytes.concat(
                     abi.encode(
                         m, d.revenueEscrow, d.directory, d.englishAuction, lens, lens.codehash
@@ -700,15 +702,15 @@ library DeployCore {
         if (n == keccak256("CoreFactory")) return d.coreFactory;
         if (n == keccak256("GovernanceConfigurator")) return address(d.configurator);
         if (n == keccak256("ContentStore")) return address(d.contentStore);
-        if (n == keccak256("WorkFacts")) return address(d.workFacts);
-        if (n == keccak256("Directory")) return address(d.directory);
+        if (n == keccak256("StreamWorkFacts6529")) return address(d.workFacts);
+        if (n == keccak256("StreamDirectory6529")) return address(d.directory);
         if (n == keccak256("FeeRecipientVault")) return address(d.feeRecipientVault);
         if (n == keccak256("MuseumVault")) return address(d.museumVault);
         if (n == keccak256("SplitFactory")) return address(d.splitLedger);
         if (n == keccak256("ClaimRouter")) return address(d.claimRouter);
         if (n == keccak256("RevenueEscrow")) return d.revenueEscrow;
-        if (n == keccak256("Stream")) return address(d.stream);
-        if (n == keccak256("Editions")) return address(d.editions);
+        if (n == keccak256("Stream6529")) return address(d.stream);
+        if (n == keccak256("StreamEditions6529")) return address(d.editions);
         if (n == keccak256("ConsolidationAdapter")) return d.consolidationAdapter;
         if (n == keccak256("Accounts")) return d.accounts;
         if (n == keccak256("AssetAllowlist")) return d.assetAllowlist;
@@ -725,11 +727,15 @@ library DeployCore {
         if (n == keccak256("EnglishAuction")) return d.englishAuction;
         if (n == keccak256("UniformEditionAuctionLens")) return d.editionAuctionLens;
         if (n == keccak256("UniformEditionAuction")) return d.editionAuction;
-        if (n == keccak256("FederationRegistry")) return d.federationRegistry;
-        if (n == keccak256("FederatedStreamDeployer")) return d.federatedStreamDeployer;
-        if (n == keccak256("FederatedEditionsDeployer")) return d.federatedEditionsDeployer;
-        if (n == keccak256("FederatedEditionAuctionLens")) return d.federatedEditionAuctionLens;
-        if (n == keccak256("FederatedEditionAuction")) return d.federatedEditionAuction;
+        if (n == keccak256("IndependentStreamRegistry")) return d.independentStreamRegistry;
+        if (n == keccak256("IndependentStream721Deployer")) return d.independentStream721Deployer;
+        if (n == keccak256("IndependentStreamEditionsDeployer")) {
+            return d.independentStreamEditionsDeployer;
+        }
+        if (n == keccak256("IndependentEditionAuctionLens")) {
+            return d.independentEditionAuctionLens;
+        }
+        if (n == keccak256("IndependentEditionAuction")) return d.independentEditionAuction;
         if (n == keccak256("SaleStarter")) return d.saleStarter;
         revert UnknownContract(name);
     }
@@ -745,10 +751,10 @@ library DeployCore {
             d.configurator = GovernanceConfigurator(a);
         } else if (n == keccak256("ContentStore")) {
             d.contentStore = ContentStore(a);
-        } else if (n == keccak256("WorkFacts")) {
-            d.workFacts = WorkFacts(a);
-        } else if (n == keccak256("Directory")) {
-            d.directory = Directory(a);
+        } else if (n == keccak256("StreamWorkFacts6529")) {
+            d.workFacts = StreamWorkFacts6529(a);
+        } else if (n == keccak256("StreamDirectory6529")) {
+            d.directory = StreamDirectory6529(a);
         } else if (n == keccak256("FeeRecipientVault")) {
             d.feeRecipientVault = GovernedVault(payable(a));
         } else if (n == keccak256("MuseumVault")) {
@@ -759,10 +765,10 @@ library DeployCore {
             d.claimRouter = ClaimRouter(a);
         } else if (n == keccak256("RevenueEscrow")) {
             d.revenueEscrow = a;
-        } else if (n == keccak256("Stream")) {
-            d.stream = Stream(a);
-        } else if (n == keccak256("Editions")) {
-            d.editions = Editions(a);
+        } else if (n == keccak256("Stream6529")) {
+            d.stream = Stream6529(a);
+        } else if (n == keccak256("StreamEditions6529")) {
+            d.editions = StreamEditions6529(a);
         } else if (n == keccak256("ConsolidationAdapter")) {
             d.consolidationAdapter = a;
         } else if (n == keccak256("Accounts")) {
@@ -795,16 +801,16 @@ library DeployCore {
             d.editionAuctionLens = a;
         } else if (n == keccak256("UniformEditionAuction")) {
             d.editionAuction = a;
-        } else if (n == keccak256("FederationRegistry")) {
-            d.federationRegistry = a;
-        } else if (n == keccak256("FederatedStreamDeployer")) {
-            d.federatedStreamDeployer = a;
-        } else if (n == keccak256("FederatedEditionsDeployer")) {
-            d.federatedEditionsDeployer = a;
-        } else if (n == keccak256("FederatedEditionAuctionLens")) {
-            d.federatedEditionAuctionLens = a;
-        } else if (n == keccak256("FederatedEditionAuction")) {
-            d.federatedEditionAuction = a;
+        } else if (n == keccak256("IndependentStreamRegistry")) {
+            d.independentStreamRegistry = a;
+        } else if (n == keccak256("IndependentStream721Deployer")) {
+            d.independentStream721Deployer = a;
+        } else if (n == keccak256("IndependentStreamEditionsDeployer")) {
+            d.independentStreamEditionsDeployer = a;
+        } else if (n == keccak256("IndependentEditionAuctionLens")) {
+            d.independentEditionAuctionLens = a;
+        } else if (n == keccak256("IndependentEditionAuction")) {
+            d.independentEditionAuction = a;
         } else if (n == keccak256("SaleStarter")) {
             d.saleStarter = a;
         } else {
@@ -966,9 +972,9 @@ library DeployCore {
     }
 
     /// @dev Encodes a wiring call's arguments: an address by contract name or as a 0x literal,
-    ///      a bool, a bytes32 as a 0x literal or as a federated template's name (the keccak256
-    ///      of its runtime code), or an unsigned integer. False if a named contract is not
-    ///      deployed.
+    ///      a bool, a bytes32 as a 0x literal or as an Independent Stream template's name (the
+    ///      keccak256 of its runtime code), or an unsigned integer. False if a named contract is
+    ///      not deployed.
     function _encodeArgs(
         Deployment memory d,
         string memory json,

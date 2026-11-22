@@ -61,12 +61,16 @@ abstract contract CoreNetworkFlows is CoreDeployFixture {
         emit IModuleSlots.ModuleDelaySet(before, next);
         _asNetwork(address(d.directory), abi.encodeCall(IModuleSlots.setModuleDelay, (next)));
 
-        address federation = address(new MockTerms());
+        address independentStream = address(new MockTerms());
         _asNetwork(
             address(d.directory),
-            abi.encodeCall(IModuleSlots.proposeModule, (Slots.FEDERATION, federation))
+            abi.encodeCall(
+                IModuleSlots.proposeModule, (Slots.INDEPENDENT_STREAM, independentStream)
+            )
         );
-        assertEq(d.directory.pendingModule(Slots.FEDERATION).readyAt, block.timestamp + next);
+        assertEq(
+            d.directory.pendingModule(Slots.INDEPENDENT_STREAM).readyAt, block.timestamp + next
+        );
         assertEq(d.directory.pendingModule(Slots.ACCOUNTS).readyAt, firstReady);
     }
 

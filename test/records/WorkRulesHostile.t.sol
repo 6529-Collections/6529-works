@@ -50,7 +50,7 @@ contract WorkRulesHostileTest is RulesFixture {
     }
 
     /// @dev A lying accounts module can make anyone the artist of every work: it can then edit
-    ///      and finalize records within what `WorkFacts` allows, and nothing more.
+    ///      and finalize records within what `StreamWorkFacts6529` allows, and nothing more.
     function test_Hostile_ALyingAccountsModuleStaysInsideWhatWorkFactsAllows() public {
         (uint256 id,,) = _work(stream, 1);
         signers.setWallet(uint160(artist), stranger, true);

@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { Directory } from "src/core/Directory.sol";
+import { StreamDirectory6529 } from "src/core/StreamDirectory6529.sol";
 import { Test } from "forge-std/Test.sol";
 import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { ContentStore } from "src/content/ContentStore.sol";
-import { Stream } from "src/core/Stream.sol";
-import { WorkFacts } from "src/core/WorkFacts.sol";
+import { Stream6529 } from "src/core/Stream6529.sol";
+import { StreamWorkFacts6529 } from "src/core/StreamWorkFacts6529.sol";
 import { Eip712CurationVerifier } from "src/curation/Eip712CurationVerifier.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { PackageRegistry } from "src/curation/PackageRegistry.sol";
@@ -261,7 +261,7 @@ abstract contract CurationBase is CurationHelpers {
     CurationArtistRegistryMock internal artists;
     Eip712CurationVerifier internal verifier;
     PackageRegistry internal registry;
-    Stream internal core;
+    Stream6529 internal core;
     PolicyMinter internal minter;
     EntropyStub internal entropy;
 
@@ -300,8 +300,9 @@ abstract contract CurationBase is CurationHelpers {
         minter = new PolicyMinter();
         address[] memory minters = new address[](1);
         minters[0] = address(minter);
-        WorkFacts facts = new WorkFacts(address(new ContentStore()), keccak256("cc0 text file"));
-        core = new Stream(
+        StreamWorkFacts6529 facts =
+            new StreamWorkFacts6529(address(new ContentStore()), keccak256("cc0 text file"));
+        core = new Stream6529(
             address(manager),
             address(facts),
             admin,
@@ -338,7 +339,7 @@ abstract contract CurationBase is CurationHelpers {
             ICurationVerifier(address(verifier)),
             address(verifier).codehash,
             address(
-                new Directory(
+                new StreamDirectory6529(
                     address(manager), address(artists), address(0), address(0), address(0)
                 )
             ),

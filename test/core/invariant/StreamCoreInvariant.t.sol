@@ -6,7 +6,7 @@ import { CoreFixture } from "../../mocks/core/CoreFixture.sol";
 import { MockSale } from "../../mocks/core/CoreMocks.sol";
 import { StreamCoreHandler } from "./StreamCoreHandler.sol";
 
-/// @notice Stateful invariants of the permanent ERC-721 (`src/core/Stream.sol`), at the
+/// @notice Stateful invariants of the permanent ERC-721 (`src/core/Stream6529.sol`), at the
 ///         repository's invariant settings (256 runs, depth 128, `fail_on_revert`).
 contract StreamCoreInvariantTest is CoreFixture {
     StreamCoreHandler internal handler;

@@ -9,7 +9,7 @@ pragma solidity 0.8.37;
 import { KeeperFixture } from "../keeper/test/KeeperFixture.t.sol";
 import { ExampleBidInEth } from "../examples/BidInEth.t.sol";
 import { ExampleEditionSale } from "../examples/EditionSale.t.sol";
-import { ExampleFederationDirectory } from "../examples/FederationDirectory.t.sol";
+import { ExampleIndependentStreamDirectory } from "../examples/IndependentStreamDirectory.t.sol";
 import { ExampleIndexFromEvents } from "../examples/IndexFromEvents.t.sol";
 import { ExampleModuleSwap } from "../examples/ModuleSwap.t.sol";
 import { ExampleReadAWork } from "../examples/ReadAWork.t.sol";

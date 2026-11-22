@@ -5,11 +5,11 @@
 
 # Rows kept only to record that a rule was removed or retired; the ID is not reused.
 CUR-13 removed retired: the registry no longer records edition claims
-FED-9 removed second pass: no minters of the artist's own
-FED-47 removed second-pass review fixes: no revocation propagation call
-FED-59 removed second pass: no exit, so no left contract
-FED-62 removed second pass: the abandonment wait is a fixed 21 days
-FED-66 removed second pass: no LEFT or LEFT_DELISTED status
+IND-9 removed second pass: no minters of the artist's own
+IND-47 removed second-pass review fixes: no revocation propagation call
+IND-59 removed second pass: no exit, so no left contract
+IND-62 removed second pass: the abandonment wait is a fixed 21 days
+IND-66 removed second pass: no LEFT or LEFT_DELISTED status
 
 # Off-chain conventions (docs/spec/declarations-and-conventions.md): rules for readers, signers
 # and tooling, with the on-chain rules they rely on in their last cell. The schemas, floor check,
@@ -47,7 +47,7 @@ DCL-32 declaration off-chain convention
 DCL-33 declaration off-chain convention
 
 # Live rules with no test reference today.
-FED-57 uncovered cites "the edition auction suites": no test is named for the federated pair's use of the shared base
+IND-57 uncovered cites "the edition auction suites": no test is named for the Independent Stream pair's use of the shared base
 GV-18 uncovered cites "Per module": no test checks that every governed setter emits old and new values
 GV-20 uncovered cites "Per module": no single test covers the dependency checks across setters
 
@@ -71,47 +71,47 @@ ECO-33 removed retired by ADR 0010
 ECO-34 removed retired by ADR 0010
 ECO-36 removed retired by ADR 0010
 RND-28 removed retired by ADR 0010
-FED-2 removed retired by ADR 0010
-FED-5 removed retired by ADR 0010
-FED-12 removed retired by ADR 0010
-FED-13 removed retired by ADR 0010
-FED-15 removed retired by ADR 0010
-FED-16 removed retired by ADR 0010
-FED-18 removed retired by ADR 0010
-FED-19 removed retired by ADR 0010
-FED-20 removed retired by ADR 0010
-FED-21 removed retired by ADR 0010
-FED-22 removed retired by ADR 0010
-FED-23 removed retired by ADR 0010
-FED-24 removed retired by ADR 0010
-FED-25 removed retired by ADR 0010
-FED-26 removed retired by ADR 0010
-FED-27 removed retired by ADR 0010
-FED-28 removed retired by ADR 0010
-FED-29 removed retired by ADR 0010
-FED-31 removed retired by ADR 0010
-FED-32 removed retired by ADR 0010
-FED-33 removed retired by ADR 0010
-FED-34 removed retired by ADR 0010
-FED-35 removed retired by ADR 0010
-FED-36 removed retired by ADR 0010
-FED-43 removed retired by ADR 0010
-FED-61 removed retired by ADR 0010
-FED-68 removed retired by ADR 0010
-FED-69 removed retired by ADR 0010
+IND-2 removed retired by ADR 0010
+IND-5 removed retired by ADR 0010
+IND-12 removed retired by ADR 0010
+IND-13 removed retired by ADR 0010
+IND-15 removed retired by ADR 0010
+IND-16 removed retired by ADR 0010
+IND-18 removed retired by ADR 0010
+IND-19 removed retired by ADR 0010
+IND-20 removed retired by ADR 0010
+IND-21 removed retired by ADR 0010
+IND-22 removed retired by ADR 0010
+IND-23 removed retired by ADR 0010
+IND-24 removed retired by ADR 0010
+IND-25 removed retired by ADR 0010
+IND-26 removed retired by ADR 0010
+IND-27 removed retired by ADR 0010
+IND-28 removed retired by ADR 0010
+IND-29 removed retired by ADR 0010
+IND-31 removed retired by ADR 0010
+IND-32 removed retired by ADR 0010
+IND-33 removed retired by ADR 0010
+IND-34 removed retired by ADR 0010
+IND-35 removed retired by ADR 0010
+IND-36 removed retired by ADR 0010
+IND-43 removed retired by ADR 0010
+IND-61 removed retired by ADR 0010
+IND-68 removed retired by ADR 0010
+IND-69 removed retired by ADR 0010
 PROP-STR-2 removed retired by ADR 0010
 
 # Plain-core restructuring (ADR 0010): new rules whose tests land with the core lanes; each
 # entry is removed when the rule names its test at integration.
 ECO-47 uncovered escrow locked() view: tests land with the escrow fixes branch
 EA-21 uncovered adopt after rebind: tests land with lane 2
-FED-1 uncovered genuine copy of the plain token base: tests land with lane 5
-FED-30 uncovered missing or failing federation module stops minting only: lane 5 hostile-gate tests
-FED-41 uncovered per-token directory in the federation module: lane 5
-FED-63 uncovered genesis installs the federation module in Directory: lane 7 genesis tests at integration
-FED-71 uncovered collaborator consent to Core.federatedConsent(itemHash, royaltyRate): lane 5
-FED-76 uncovered hostile federation module cannot move, burn or re-record a sold token: lane 5
-FED-77 uncovered artist-set RENDERER slot of a federated token: lane 5
+IND-1 uncovered genuine copy of the plain token base: tests land with lane 5
+IND-30 uncovered missing or failing Independent Stream module stops minting only: lane 5 hostile-gate tests
+IND-41 uncovered per-token directory in the Independent Stream module: lane 5
+IND-63 uncovered genesis installs the Independent Stream module in Directory: lane 7 genesis tests at integration
+IND-71 uncovered collaborator consent to Core.independentConsent(itemHash, royaltyRate): lane 5
+IND-76 uncovered hostile Independent Stream module cannot move, burn or re-record a sold token: lane 5
+IND-77 uncovered artist-set RENDERER slot of an Independent Stream token: lane 5
 ID-17 uncovered Directory.payoutAddress forwards and never answers a default: lane 1
 GV-22 removed The one-shot bind steps are gone; genesis modules and minters are constructor arguments (ADR 0010)
 
@@ -145,38 +145,38 @@ ENT-12 uncovered awaiting its test on the integrated stack
 ENT-20 uncovered awaiting its test on the integrated stack
 ENT-21 uncovered awaiting its test on the integrated stack
 ENT-22 uncovered awaiting its test on the integrated stack
-FED-3 uncovered awaiting its test on the integrated stack
-FED-4 uncovered awaiting its test on the integrated stack
-FED-6 uncovered awaiting its test on the integrated stack
-FED-7 uncovered awaiting its test on the integrated stack
-FED-8 uncovered awaiting its test on the integrated stack
-FED-10 uncovered awaiting its test on the integrated stack
-FED-11 uncovered awaiting its test on the integrated stack
-FED-14 uncovered awaiting its test on the integrated stack
-FED-17 uncovered awaiting its test on the integrated stack
-FED-42 uncovered awaiting its test on the integrated stack
-FED-44 uncovered awaiting its test on the integrated stack
-FED-45 uncovered awaiting its test on the integrated stack
-FED-46 uncovered awaiting its test on the integrated stack
-FED-48 uncovered awaiting its test on the integrated stack
-FED-49 uncovered awaiting its test on the integrated stack
-FED-50 uncovered awaiting its test on the integrated stack
-FED-51 uncovered awaiting its test on the integrated stack
-FED-52 uncovered awaiting its test on the integrated stack
-FED-53 uncovered awaiting its test on the integrated stack
-FED-54 uncovered awaiting its test on the integrated stack
-FED-55 uncovered awaiting its test on the integrated stack
-FED-56 uncovered awaiting its test on the integrated stack
-FED-58 uncovered awaiting its test on the integrated stack
-FED-60 uncovered awaiting its test on the integrated stack
-FED-64 uncovered awaiting its test on the integrated stack
-FED-65 uncovered awaiting its test on the integrated stack
-FED-67 uncovered awaiting its test on the integrated stack
-FED-70 uncovered awaiting its test on the integrated stack
-FED-72 uncovered awaiting its test on the integrated stack
-FED-73 uncovered awaiting its test on the integrated stack
-FED-74 uncovered awaiting its test on the integrated stack
-FED-75 uncovered awaiting its test on the integrated stack
+IND-3 uncovered awaiting its test on the integrated stack
+IND-4 uncovered awaiting its test on the integrated stack
+IND-6 uncovered awaiting its test on the integrated stack
+IND-7 uncovered awaiting its test on the integrated stack
+IND-8 uncovered awaiting its test on the integrated stack
+IND-10 uncovered awaiting its test on the integrated stack
+IND-11 uncovered awaiting its test on the integrated stack
+IND-14 uncovered awaiting its test on the integrated stack
+IND-17 uncovered awaiting its test on the integrated stack
+IND-42 uncovered awaiting its test on the integrated stack
+IND-44 uncovered awaiting its test on the integrated stack
+IND-45 uncovered awaiting its test on the integrated stack
+IND-46 uncovered awaiting its test on the integrated stack
+IND-48 uncovered awaiting its test on the integrated stack
+IND-49 uncovered awaiting its test on the integrated stack
+IND-50 uncovered awaiting its test on the integrated stack
+IND-51 uncovered awaiting its test on the integrated stack
+IND-52 uncovered awaiting its test on the integrated stack
+IND-53 uncovered awaiting its test on the integrated stack
+IND-54 uncovered awaiting its test on the integrated stack
+IND-55 uncovered awaiting its test on the integrated stack
+IND-56 uncovered awaiting its test on the integrated stack
+IND-58 uncovered awaiting its test on the integrated stack
+IND-60 uncovered awaiting its test on the integrated stack
+IND-64 uncovered awaiting its test on the integrated stack
+IND-65 uncovered awaiting its test on the integrated stack
+IND-67 uncovered awaiting its test on the integrated stack
+IND-70 uncovered awaiting its test on the integrated stack
+IND-72 uncovered awaiting its test on the integrated stack
+IND-73 uncovered awaiting its test on the integrated stack
+IND-74 uncovered awaiting its test on the integrated stack
+IND-75 uncovered awaiting its test on the integrated stack
 ID-13 uncovered awaiting its test on the integrated stack
 ID-14 uncovered awaiting its test on the integrated stack
 GV-12 uncovered awaiting its test on the integrated stack

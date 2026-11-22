@@ -61,7 +61,7 @@ interface ISafeV141ProxyFactory {
 ///         value while a pending one keeps its time; it removes a minter at once; it rescues
 ///         only once `rescueDelay()` has passed since the removal, and after `setRescueDelay` the
 ///         new value decides; the same for `rebindDelay()`; and it sets
-///         `Directory.unclaimedPeriod()` at once. Every flow is `CoreNetworkFlows`.
+///         `StreamDirectory6529.unclaimedPeriod()` at once. Every flow is `CoreNetworkFlows`.
 /// @dev Opt-in like every fork suite: without `FORK_MAINNET_RPC` every test is skipped.
 ///      `FORK_MAINNET_RPC_BLOCK` pins the block. Each Safe transaction is signed by two owner
 ///      keys this test holds and executed by a relayer, so the Safe is `msg.sender`.

@@ -32,10 +32,10 @@ change, zero allowed), and the contract emits the old and the new value.
 
 | Setting | Contract | Launch value | Rule for what is already running |
 | --- | --- | --- | --- |
-| `moduleDelay` | `Stream`, `Editions`, `Directory`, each federated token | 7 days | An announced module or added minter keeps the time it was given |
-| `rescueDelay` | `Stream`, each federated token | 14 days | Read when a rescue is attempted |
-| `rebindDelay` | `Editions`, each federated editions token | 14 days | Read when a rebind is attempted |
-| `unclaimedPeriod` | `Directory` (read by `SplitLedger` and `RevenueEscrow`) | 180 days | Read when a forfeit or expiry is attempted |
+| `moduleDelay` | `Stream6529`, `StreamEditions6529`, `StreamDirectory6529`, each Independent Stream token | 7 days | An announced module or added minter keeps the time it was given |
+| `rescueDelay` | `Stream6529`, each Independent Stream token | 14 days | Read when a rescue is attempted |
+| `rebindDelay` | `StreamEditions6529`, each Independent Stream Editions token | 14 days | Read when a rebind is attempted |
+| `unclaimedPeriod` | `StreamDirectory6529` (read by `SplitLedger` and `RevenueEscrow`) | 180 days | Read when a forfeit or expiry is attempted |
 
 Adding a module or a minter waits `moduleDelay`; removing one is immediate. Anyone may install
 an announced module once its time has come.

@@ -6,8 +6,8 @@ import { License, PackageItem } from "../types/PackageTypes.sol";
 import { Facts } from "./CoreTypes.sol";
 
 /// @title IWorkFacts
-/// @notice The permanent record of each work, for 6529 Stream and every federated token, keyed
-///         by token contract and token ID: media, descriptive record, license and, once
+/// @notice The permanent record of each work, for 6529 Stream and every Independent Stream token,
+///         keyed by token contract and token ID: media, descriptive record, license and, once
 ///         finalized, the pinned renderer. Unowned and ungoverned.
 /// @dev Who may change a record, and when, is the business of each token's RECORDS module
 ///      (`IModuleSlots(token).moduleOf("RECORDS")`). What holds whatever that module does:

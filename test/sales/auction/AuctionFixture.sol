@@ -16,16 +16,17 @@ import { IStatementLog } from "src/interfaces/IStatementLog.sol";
 import { EnglishAuction } from "src/sales/EnglishAuction.sol";
 import { CoreFixture } from "test/mocks/core/CoreFixture.sol";
 import {
-    MockFederatedToken,
-    MockFederationPolicy,
+    MockIndependentToken,
+    MockIndependentStreamPolicy,
     MockMintPolicy,
     MockStatementLog
 } from "./AuctionMocks.sol";
 
-/// @notice The English auction on the real core (`CoreFixture`: the real `Stream`, `Directory`
-///         and `WorkFacts`), the real economics resolver, asset allowlist, split ledger and
-///         revenue escrow, a mock mint policy for 6529 Stream and a mock federation module with
-///         one federated token. The test contract is the network.
+/// @notice The English auction on the real core (`CoreFixture`: the real `Stream6529`,
+///         `StreamDirectory6529` and `StreamWorkFacts6529`), the real economics resolver, asset
+///         allowlist, split ledger and revenue escrow, a mock mint policy for 6529 Stream and a
+///         mock Independent Stream module with one Independent Stream token. The test contract is
+///         the network.
 abstract contract AuctionFixture is CoreFixture {
     SplitLedger internal ledger;
     RevenueEscrow internal escrow;
@@ -33,14 +34,14 @@ abstract contract AuctionFixture is CoreFixture {
     EconomicsResolver internal economics;
     MockStatementLog internal statements;
     MockMintPolicy internal policy;
-    MockFederationPolicy internal federation;
-    MockFederatedToken internal fed;
+    MockIndependentStreamPolicy internal independentStream;
+    MockIndependentToken internal ind;
     EnglishAuction internal auction;
 
     address internal feeRecipient = makeAddr("feeRecipient");
     address internal museum = makeAddr("museum");
     address internal seller = makeAddr("seller");
-    address internal fedSeller = makeAddr("fedSeller");
+    address internal indSeller = makeAddr("indSeller");
     address internal alice = makeAddr("alice");
     address internal bob = makeAddr("bob");
     address internal carol = makeAddr("carol");
@@ -50,7 +51,7 @@ abstract contract AuctionFixture is CoreFixture {
     uint32 internal constant SHARE = 5_000;
     uint32 internal constant REFUSAL_GAS = 3_000_000;
     uint32 internal constant FEE_SHARE = 10_000;
-    uint32 internal constant FED_FEE_SHARE = 5_000;
+    uint32 internal constant IND_FEE_SHARE = 5_000;
     uint256 internal constant FLOOR = 0.001 ether;
 
     function setUp() public virtual override {
@@ -81,13 +82,14 @@ abstract contract AuctionFixture is CoreFixture {
         stream.setModuleDelay(0);
         stream.addMinter(address(auction));
 
-        // The federation module: the directory's FEDERATION slot, one federated token.
-        federation = new MockFederationPolicy(fedSeller, feeRecipient, FED_FEE_SHARE);
+        // The Independent Stream module: the directory's INDEPENDENT_STREAM slot, one Independent
+        // Stream token.
+        independentStream = new MockIndependentStreamPolicy(indSeller, feeRecipient, IND_FEE_SHARE);
         directory.setModuleDelay(0);
-        directory.proposeModule(Slots.FEDERATION, address(federation));
-        directory.activateModule(Slots.FEDERATION);
-        fed = new MockFederatedToken(address(facts), IDirectory(address(directory)));
-        federation.setMinter(address(fed), address(auction), true);
+        directory.proposeModule(Slots.INDEPENDENT_STREAM, address(independentStream));
+        directory.activateModule(Slots.INDEPENDENT_STREAM);
+        ind = new MockIndependentToken(address(facts), IDirectory(address(directory)));
+        independentStream.setMinter(address(ind), address(auction), true);
 
         vm.deal(alice, 1_000 ether);
         vm.deal(bob, 1_000 ether);
@@ -100,8 +102,8 @@ abstract contract AuctionFixture is CoreFixture {
         return auction.start(address(stream), abi.encode(n));
     }
 
-    function _startFed(uint256 n) internal returns (uint256 saleId) {
-        return auction.start(address(fed), abi.encode(n));
+    function _startInd(uint256 n) internal returns (uint256 saleId) {
+        return auction.start(address(ind), abi.encode(n));
     }
 
     function _bid(address who, uint256 saleId, uint256 amount) internal {

@@ -13,7 +13,7 @@ gas. Reads go to the node over JSON-RPC; every transaction is signed and sent by
 This program never reads, prints or accepts a private key.
 
 The steps (script/README.md, "Operating procedures"). Sales are in ETH only (ADR 0010). The
-unclaimed period is the network's setting `Directory.unclaimedPeriod()` (180 days at launch),
+unclaimed period is the network's setting `StreamDirectory6529.unclaimedPeriod()` (180 days at launch),
 read on every run, never a constant here:
   start       start each 1/1 in --starts through SaleStarter (vaults and record in one call);
               when someone started it directly first, deploy its vaults and open its record
@@ -34,7 +34,7 @@ read on every run, never a constant here:
               (both auctions, the escrow); money that arrived later keeps its own clock
   forfeit     forfeit every split-wallet mark older than the unclaimed period
   rescues     report (never send) tokens a removed minter still holds unsold once the
-              network's rescue period (`Stream.rescueDelay()`) has passed: a network action
+              network's rescue period (`Stream6529.rescueDelay()`) has passed: a network action
   release     push the fixed payees' shares of royalty wallets through the ClaimRouter
               (opt-in: --release); the network's own index is left out of a batch whose
               wallet and asset also release another payee
@@ -277,7 +277,7 @@ class Keeper:
         (WorkMinted logs the whole MintFacts)."""
         out = {}
         sig = f"WorkMinted(uint256,uint256,uint256,address,uint32,{MINT_FACTS})"
-        for log in self.logs("Stream", sig):
+        for log in self.logs("Stream6529", sig):
             data = bytes.fromhex(log["data"][2:])
             # Non-indexed: minter, serial, then MintFacts inline (thirteen static words):
             # itemHash, contentHash, artistId, collectionId, kind, seedPolicy, seed,
@@ -295,31 +295,31 @@ class Keeper:
         (token and token ID indexed; item, media): the item ends where the media begin."""
         out = {}
         sig = f"RecordOpened(address,uint256,{ITEM},{MEDIA})"
-        for log in self.logs("WorkFacts", sig):
-            if topic_address(log, 1).lower() != self.c["Stream"].lower():
-                continue  # a federated token's record
+        for log in self.logs("StreamWorkFacts6529", sig):
+            if topic_address(log, 1).lower() != self.c["Stream6529"].lower():
+                continue  # an Independent Stream token's record
             data = bytes.fromhex(log["data"][2:])
             item, media = tail(data, w(data, 0), w(data, 1)), tail(data, w(data, 1))
             out[int(log["topics"][2], 16)] = (item, media)
         return out
 
     def facts(self, token_id: int) -> dict[str, bool]:
-        """The flags of a 6529 Stream work's permanent record (`WorkFacts.factsOf`): the
+        """The flags of a 6529 Stream work's permanent record (`StreamWorkFacts6529.factsOf`): the
         returned struct is dynamic, so its head starts at the offset in word 0."""
-        data = self.view("WorkFacts", "factsOf(address,uint256)", self.c["Stream"], token_id)
+        data = self.view("StreamWorkFacts6529", "factsOf(address,uint256)", self.c["Stream6529"], token_id)
         head = data[w(data, 0) :]
         return {"opened": bool(w(head, 3)), "finalized": bool(w(head, 4)), "onChain": bool(w(head, 5))}
 
     def work(self, token_id: int) -> bytes | None:
-        """`Stream.workOf` (eleven static words), or None for a burned or unknown token."""
+        """`Stream6529.workOf` (eleven static words), or None for a burned or unknown token."""
         try:
-            return self.view("Stream", "workOf(uint256)", token_id)
+            return self.view("Stream6529", "workOf(uint256)", token_id)
         except Reverted:
             return None
 
     def unclaimed_period(self) -> int:
-        """The network's unclaimed period now (`Directory.unclaimedPeriod()`)."""
-        return w(self.view("Directory", "unclaimedPeriod()"), 0)
+        """The network's unclaimed period now (`StreamDirectory6529.unclaimedPeriod()`)."""
+        return w(self.view("StreamDirectory6529", "unclaimedPeriod()"), 0)
 
     def sales(self, contract: str) -> list[tuple[int, str, int]]:
         sig = "SaleStarted(uint256,address,uint256,bytes32,address,uint256,uint64,uint64)"
@@ -343,7 +343,7 @@ class Keeper:
         """Start each request through SaleStarter; if it was started directly, finish it."""
         for req in self.starts:
             # One live token per content: a burned token's content may be minted again.
-            live = w(self.view("Stream", "tokenOfContent(bytes32)", req["content"]), 0)
+            live = w(self.view("Stream6529", "tokenOfContent(bytes32)", req["content"]), 0)
             if live and self.work(live) is None:
                 live = 0
             if live == 0:
@@ -351,7 +351,7 @@ class Keeper:
                     "SaleStarter",
                     f"start(address,address,bytes,{MEDIA})",
                     self.c["EnglishAuction"],
-                    self.c["Stream"],
+                    self.c["Stream6529"],
                     blob(req["mintData"]),
                     req["media"],
                     label=f"start {req['name']} through SaleStarter",
@@ -365,9 +365,9 @@ class Keeper:
             self.ensure_vaults(token_id, req["payees"], works.get(token_id, {}))
             if not self.facts(token_id)["opened"]:
                 self.send(
-                    "WorkFacts",
+                    "StreamWorkFacts6529",
                     f"open(address,uint256,{ITEM},{MEDIA})",
-                    self.c["Stream"],
+                    self.c["Stream6529"],
                     token_id,
                     req["item"],
                     req["media"],
@@ -413,7 +413,7 @@ class Keeper:
         """The royalty vault's payee list of a work sold by the English auction: the seller
         vault and the network fee recipient now, at the fee share the sale locked."""
         sig = "saleIdOf(address,uint256)"
-        sale = w(self.view("EnglishAuction", sig, self.c["Stream"], token_id), 0)
+        sale = w(self.view("EnglishAuction", sig, self.c["Stream6529"], token_id), 0)
         try:
             fee_share = w(self.view("EnglishAuction", "auction(uint256)", sale), 3)
         except Reverted:
@@ -430,7 +430,7 @@ class Keeper:
 
     def step_open(self, works: dict, items: dict) -> None:
         for sale_1, token, token_id in self.sales("EnglishAuction"):
-            if token.lower() != self.c["Stream"].lower():
+            if token.lower() != self.c["Stream6529"].lower():
                 continue
             item = self.item_of(token_id, works, items)
             if item is None or w(item, ITEM_KIND) != EDITION_MASTER:
@@ -438,7 +438,7 @@ class Keeper:
             if token_id not in works:
                 continue  # minted after this run's WorkMinted read; the next run sees it
             sig = "saleIdOf(address,uint256)"
-            sale = w(self.view("UniformEditionAuction", sig, self.c["Editions"], token_id), 0)
+            sale = w(self.view("UniformEditionAuction", sig, self.c["StreamEditions6529"], token_id), 0)
             if self.rpc.ok(self.c["UniformEditionAuction"], call_data("auction(uint256)", sale), ""):
                 continue  # already open (auction() reverts with UnknownAuction before)
             state = w(self.view("EnglishAuction", "auctionClock(uint256)", sale_1), 0)
@@ -450,7 +450,7 @@ class Keeper:
             self.send(
                 "UniformEditionAuction",
                 "open(address,uint256,bytes)",
-                self.c["Editions"],
+                self.c["StreamEditions6529"],
                 token_id,
                 blob(data),
                 label=f"open the edition sale of work {token_id}",
@@ -507,12 +507,12 @@ class Keeper:
         have no sale here yet. `adopt` opens that sale; it is the network's action, because the
         network chooses when the moved sale runs. The keeper only says it is waiting."""
         adapter = self.c["UniformEditionAuction"]
-        for log in self.logs("Editions", "EditionRebound(uint256,address,address)"):
+        for log in self.logs("StreamEditions6529", "EditionRebound(uint256,address,address)"):
             if topic_address(log, 3).lower() != adapter.lower():
                 continue
             edition_id = int(log["topics"][1], 16)
             sig = "saleIdOf(address,uint256)"
-            sale = w(self.view("UniformEditionAuction", sig, self.c["Editions"], edition_id), 0)
+            sale = w(self.view("UniformEditionAuction", sig, self.c["StreamEditions6529"], edition_id), 0)
             if self.rpc.ok(adapter, call_data("auction(uint256)", sale), self.sender):
                 continue  # adopted already
             print(
@@ -522,7 +522,7 @@ class Keeper:
 
     def step_finalize(self, works: dict, now: int, notice: bool) -> None:
         due = {}
-        stream = self.c["Stream"]
+        stream = self.c["Stream6529"]
         for log in self.logs("WorkRules", "FinalizeNoticeRecorded(address,uint256,uint256)"):
             if topic_address(log, 1).lower() == stream.lower():
                 due[int(log["topics"][2], 16)] = int(log["data"][2:66], 16)
@@ -569,9 +569,9 @@ class Keeper:
                 )
             if complete and files:
                 self.send(
-                    "WorkFacts",
+                    "StreamWorkFacts6529",
                     "markOnChainComplete(address,uint256)",
-                    self.c["Stream"],
+                    self.c["Stream6529"],
                     token_id,
                     label=f"mark work {token_id} complete on chain",
                 )
@@ -580,7 +580,7 @@ class Keeper:
         """Expire aged credits (src/libraries/AgedCredits.sol). An auction credit is
         (total, aged, since): only `aged`, which has itself waited the unclaimed period since
         `since`, can go to the network; money that arrived later keeps its own clock. The
-        period is the network's setting now (`Directory.unclaimedPeriod()`). The edition auction
+        period is the network's setting now (`StreamDirectory6529.unclaimedPeriod()`). The edition auction
         answers `creditOf(account)`; the English auction answers `expiresAt(account)`, which is
         `since` plus that period (zero with no credit). The escrow keeps its own windows and
         answers what an expiry would move now (`expirableAt`)."""
@@ -619,14 +619,14 @@ class Keeper:
         """Report tokens a removed minter still holds with no outcome, once the network's rescue
         period has passed since the removal. `rescue` is the network's action; the keeper only
         says it is possible."""
-        delay = w(self.view("Stream", "rescueDelay()"), 0)
+        delay = w(self.view("Stream6529", "rescueDelay()"), 0)
         for token_id in sorted(works):
             work = self.work(token_id)
             if work is None or w(work, 6) != OUTCOME_NONE:
                 continue
             minter = works[token_id]["minter"]
-            removed_at = w(self.view("Stream", "minterOf(address)", minter), 1)
-            holder = a(self.view("Stream", "ownerOf(uint256)", token_id), 0)
+            removed_at = w(self.view("Stream6529", "minterOf(address)", minter), 1)
+            holder = a(self.view("Stream6529", "ownerOf(uint256)", token_id), 0)
             if removed_at and holder.lower() == minter.lower() and now >= removed_at + delay:
                 print(
                     f"due   rescue of work {token_id} from removed minter {minter}"
@@ -751,8 +751,8 @@ def _short(exc: Exception) -> str:
 
 def contracts_of(record: dict) -> dict[str, str]:
     """Contract name -> address from a deployment record: the flat form
-    `script/DeployCore.s.sol` writes (`{"Stream": "0x..", ...}`), or the nested form
-    (`{"contracts": {"Stream": {"address": "0x.."}}}`)."""
+    `script/DeployCore.s.sol` writes (`{"Stream6529": "0x..", ...}`), or the nested form
+    (`{"contracts": {"Stream6529": {"address": "0x.."}}}`)."""
     if "contracts" in record:
         return {name: v["address"] for name, v in record["contracts"].items()}
     return {

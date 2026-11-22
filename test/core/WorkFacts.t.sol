@@ -13,9 +13,9 @@ import { HostileModule } from "../mocks/core/CoreMocks.sol";
 import { CodeRenderer, ReenteringToken } from "../mocks/records/RulesMocks.sol";
 import { RulesFixture } from "../records/RulesFixture.sol";
 
-/// @notice `WorkFacts`, the permanent record, driven through a token (`bare`) whose RECORDS
-///         module passes every call straight through: what holds here holds whatever a RECORDS
-///         module does.
+/// @notice `StreamWorkFacts6529`, the permanent record, driven through a token (`bare`) whose
+///         RECORDS module passes every call straight through: what holds here holds whatever a
+///         RECORDS module does.
 contract WorkFactsTest is RulesFixture {
     address internal b;
 

@@ -150,14 +150,14 @@ contract Flows is Script {
     function _addrs() internal view returns (Addrs memory a) {
         string memory json = _record();
         a.store = vm.parseJsonAddress(json, ".ContentStore");
-        a.facts = vm.parseJsonAddress(json, ".WorkFacts");
+        a.facts = vm.parseJsonAddress(json, ".StreamWorkFacts6529");
         a.registry = vm.parseJsonAddress(json, ".PackageRegistry");
         a.verifier = vm.parseJsonAddress(json, ".CurationVerifier");
         a.statements = vm.parseJsonAddress(json, ".StatementLog");
         a.artists = vm.parseJsonAddress(json, ".Accounts");
-        a.stream = vm.parseJsonAddress(json, ".Stream");
+        a.stream = vm.parseJsonAddress(json, ".Stream6529");
         a.rules = vm.parseJsonAddress(json, ".WorkRules");
-        a.editions = vm.parseJsonAddress(json, ".Editions");
+        a.editions = vm.parseJsonAddress(json, ".StreamEditions6529");
         a.auction = vm.parseJsonAddress(json, ".EnglishAuction");
         a.editionAuction = vm.parseJsonAddress(json, ".UniformEditionAuction");
         a.splits = vm.parseJsonAddress(json, ".SplitFactory");
@@ -794,7 +794,8 @@ contract Flows is Script {
 
     // ------------------------------------------------------------------ 4. records and VRF
 
-    /// @notice `WorkFacts.open` of Stream token `tokenId`, minted from item `index` (anyone).
+    /// @notice `StreamWorkFacts6529.open` of Stream token `tokenId`, minted from item `index`
+    ///         (anyone).
     function openRecordTx(uint256 index, uint256 tokenId) external view {
         Addrs memory a = _addrs();
         Work memory w = _works(a)[index];

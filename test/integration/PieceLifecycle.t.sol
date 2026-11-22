@@ -11,10 +11,11 @@ import { EditionAuctionStack } from "./EditionAuctionStack.sol";
 /// @notice A piece's whole life on the deployed stack (D138-D141, ADR 0005): an edition
 ///         master's 1/1 English auction and its uniform-price edition auction side by side. The
 ///         1/1's anti-snipe moves the edition close; the edition auction's own soft close
-///         extends it; both settle; winners claim their copies (minted by `Editions.mint`) and
-///         refunds; the proceeds split between the network and the seller; the edition carries
-///         its master's royalty rate. Also: an unbid 1/1 goes to the museum while its editions
-///         sell, and a cancelled 1/1 voids its edition sale with every bid refunded in full.
+///         extends it; both settle; winners claim their copies (minted by
+///         `StreamEditions6529.mint`) and refunds; the proceeds split between the network and the
+///         seller; the edition carries its master's royalty rate. Also: an unbid 1/1 goes to the
+///         museum while its editions sell, and a cancelled 1/1 voids its edition sale with every
+///         bid refunded in full.
 contract PieceLifecycleTest is EditionAuctionStack {
     uint256 internal constant DENOMINATOR = 100_000;
 

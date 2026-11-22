@@ -69,7 +69,8 @@ struct Payment {
 ///      artist's active authority, resolved through the artist registry when the terms are read.
 ///      It is zero while a recovery override is pending (`IArtistRegistry.activeAuthorityOf`).
 ///      Under ADR 0005 an unbid 6529 Stream work goes to the 6529 Network Museum
-///      (`IEconomicsResolver.museum`); only a federated work's creator receives an unbid token.
+///      (`IEconomicsResolver.museum`); only an Independent Stream work's creator receives an unbid
+///      token.
 struct PrimaryTerms {
     bytes32 saleKind;
     address currency;

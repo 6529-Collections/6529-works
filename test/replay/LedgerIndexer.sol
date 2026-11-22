@@ -150,8 +150,8 @@ contract LedgerIndexer is ReplayIndexer {
 ///         credit per wallet and asset in its three parts and their window times (`credits`),
 ///         `totalOwed` per asset, every recovery consent and the AccessManager. The parts age by
 ///         the escrow's rule at each logged change, from the log's block time, under the
-///         unclaimed period the `Directory`'s own logs set (`UnclaimedPeriodSet`, kept by the
-///         Directory indexer, never read from a contract), so they match the stored record.
+///         unclaimed period the `StreamDirectory6529`'s own logs set (`UnclaimedPeriodSet`, kept by
+///         the Directory indexer, never read from a contract), so they match the stored record.
 /// @dev A recovery consumes the consent of an ordinary account only; for a split wallet and for
 ///      the network's own credit it leaves the consent as it is. `Recovered` says which case
 ///      applied (`consentUsed`), so the indexer clears a consent exactly when the log says so.

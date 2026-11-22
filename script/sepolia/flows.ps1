@@ -411,7 +411,7 @@ switch ($Step) {
         Send-Items (Invoke-Plan 'content()' @())
     }
     'collections' {
-        $stream = $Contracts.Stream
+        $stream = $Contracts.Stream6529
         # Creates only the collections an instance lacks, so a re-run is a no-op where both
         # exist. The package uses collection IDs 1 and 2, not names.
         $count = [int](Invoke-Cli 'cast' @('call', $stream, 'collectionCount()(uint256)', '--rpc-url', $Rpc)).Trim()
@@ -451,8 +451,8 @@ switch ($Step) {
     }
     'sync' {
         # Records in WorkFacts that every media file of the work is complete in the content store.
-        $data = (Invoke-Cli 'cast' @('calldata', 'markOnChainComplete(address,uint256)', $Contracts.Stream, "$TokenId")).Trim()
-        Send-Planned "markOnChainComplete-$TokenId" 'any' $Contracts.WorkFacts '0' $data | Out-Null
+        $data = (Invoke-Cli 'cast' @('calldata', 'markOnChainComplete(address,uint256)', $Contracts.Stream6529, "$TokenId")).Trim()
+        Send-Planned "markOnChainComplete-$TokenId" 'any' $Contracts.StreamWorkFacts6529 '0' $data | Out-Null
     }
     'finalize' {
         Send-Items (Invoke-Plan 'finalizeTx(uint256)' @("$TokenId"))

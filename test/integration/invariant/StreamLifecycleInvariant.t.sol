@@ -6,7 +6,7 @@ import { Outcome } from "src/interfaces/core/CoreTypes.sol";
 import { StreamLifecycleHandler } from "./StreamLifecycleHandler.sol";
 
 /// @notice Stateful invariants of a work's whole lifecycle on the plain-core stack: 6529 Stream,
-///         the package registry, `WorkFacts` and `WorkRules`, the delivery contract, the
+///         the package registry, `StreamWorkFacts6529` and `WorkRules`, the delivery contract, the
 ///         English auction and the accounts module, deployed and configured by `DeployCore`
 ///         with the committed genesis.
 ///

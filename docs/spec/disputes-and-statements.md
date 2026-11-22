@@ -16,9 +16,9 @@ replacements cite the same outcomes. The log and the auction are **replaceable m
 | --- | --- | --- |
 | [`StatementLog`](../../src/records/StatementLog.sol) ([`IStatementLog`](../../src/interfaces/IStatementLog.sol)) | module | Append paths per role, EIP-712 relay and nonces, the per-subject hash chain, the latest dispute outcome per subject. Holds no value; no pause, edit or delete path. |
 | [`HashRef`](../../src/interfaces/types/HashRef.sol), [`StatementKinds`](../../src/interfaces/types/StatementKinds.sol) | types | The content hash type; the well-known kind labels. |
-| `Accounts` ([`IArtistRoleResolver`](../../src/interfaces/IArtistRoleResolver.sol)) | module (`Directory.ACCOUNTS`) | The artist resolver (`isArtist`) for ARTIST statements; `resolveContested`, which cites an outcome. |
+| `Accounts` ([`IArtistRoleResolver`](../../src/interfaces/IArtistRoleResolver.sol)) | module (`StreamDirectory6529.ACCOUNTS`) | The artist resolver (`isArtist`) for ARTIST statements; `resolveContested`, which cites an outcome. |
 | [`EnglishAuction`](../../src/sales/EnglishAuction.sol) | module (Stream minter) | The dispute pause, `withdrawBid` while paused, `resume`, the self-ending pause, and `cancel`, which must cite a recorded outcome. |
-| [`Stream`](../../src/core/Stream.sol) | permanent | `burn`, only by the sale contract that minted and holds the token, before its sale outcome is recorded. |
+| [`Stream6529`](../../src/core/Stream6529.sol) | permanent | `burn`, only by the sale contract that minted and holds the token, before its sale outcome is recorded. |
 | [`Renderer`](../../src/content/Renderer.sol) | module | The `Dispute statement` trait of a work and its edition. |
 
 ## Concepts
@@ -159,10 +159,10 @@ the contest began ([identity](identity-and-recovery.md)).
 | DSP-16 | `resume` and `cancel` are the network's, with no wait of their own: either may land at any moment of the live pause. | `EnglishAuction.resume`, `cancel` | |
 | DSP-17 | A resumed or lapsed auction runs for at least the longer of the governed duration and its anti-snipe window, or its remaining time if longer. | `EnglishAuction._resumedEnd`, `_reopening` | |
 | DSP-18 | `cancel` cites the token's own latest outcome, recorded after the pause; an earlier outcome, a superseded one or an item outcome cannot cancel. | `EnglishAuction.pause` (`outcomeFrom`), `cancel`, `_ownOutcome` | |
-| DSP-19 | `cancel` runs only while the pause is live, credits the high bid and burns the token. | `EnglishAuction.cancel`, `Stream.burn` | |
-| DSP-20 | Only a sale contract that is or was a minter burns a token, while holding it and before any sale outcome is recorded. | `Stream.burn` | |
+| DSP-19 | `cancel` runs only while the pause is live, credits the high bid and burns the token. | `EnglishAuction.cancel`, `Stream6529.burn` | |
+| DSP-20 | Only a sale contract that is or was a minter burns a token, while holding it and before any sale outcome is recorded. | `Stream6529.burn` | |
 | DSP-21 | `releaseContent` is the network's, needs the token `tokenOfContent` names to be burned and a registered beneficiary, reserves the content for the beneficiary's items and bars the burned item. | `PackageRegistry.releaseContent` | |
-| DSP-22 | After a sale, a dispute moves nothing: no path burns or transfers a settled work. | `Stream.burn` (`NotInPrimarySale`) | `Stream.t.sol` |
+| DSP-22 | After a sale, a dispute moves nothing: no path burns or transfers a settled work. | `Stream6529.burn` (`NotInPrimarySale`) | `Stream.t.sol` |
 | DSP-23 | Through pauses, withdrawals, resumptions and cancels, the auction's balance covers every live bid and credit, value is conserved, and custody is exact. | `EnglishAuction` | |
 | DSP-24 | Metadata shows the display rule's answer for a work, and the master's for an edition, and fails closed when the log cannot be read. | `Renderer._chainTraits` | [`Renderer.t.sol`](../../test/content/renderer/Renderer.t.sol) `test_Dispute_ShownWhenTheLogHasAnOutcome`, `test_Dispute_ReadsTheMastersSubjectForAnEdition`, `test_Dispute_ABrokenLogFailsClosed` |
 | DSP-25 | A contest resolves only with the artist's latest outcome, recorded after the contest began. | `Accounts.resolveContested` | `test_Contest_UpheldByAVoteRecordedAfterIt`, `test_Contest_VoidedByAVote` |

@@ -9,10 +9,11 @@ import { RecordFlowsBase } from "./RecordFlowsBase.sol";
 
 /// @notice Money nobody claims, on the real stack: the English auction's outbid credits
 ///         (`claimable`, `claim`, `expireCredit`) and the revenue escrow's credit windows
-///         (`expire`, `expirableAt`, `credits`), under the network's `Directory.unclaimedPeriod`,
-///         which it changes at once (zero allowed). Only money that has itself waited the period
-///         goes to the network; a change of the period applies to waits already running; nobody
-///         but the account's own claim moves an auction clock; the account's claim takes all.
+///         (`expire`, `expirableAt`, `credits`), under the network's
+///         `StreamDirectory6529.unclaimedPeriod`, which it changes at once (zero allowed). Only
+///         money that has itself waited the period goes to the network; a change of the period
+///         applies to waits already running; nobody but the account's own claim moves an auction
+///         clock; the account's claim takes all.
 contract CreditsTest is RecordFlowsBase {
     address internal lead;
     address internal bidder = makeAddr("creditBidder");

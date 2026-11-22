@@ -10,8 +10,9 @@ import { IntegrationBase } from "./IntegrationBase.sol";
 ///         5 media files of 1,024 chunks (about 125 MB). Re-ported from the retired
 ///         `SyncOnChainResume` suite: the per-work sync cursor is gone; the resumable part is
 ///         now each file's completeness prefix in the content store (`attestComplete`), which
-///         anyone advances over chunks of their choosing, and `WorkFacts.markOnChainComplete`
-///         then checks every file in one call that walks only what is not attested.
+///         anyone advances over chunks of their choosing, and
+///         `StreamWorkFacts6529.markOnChainComplete` then checks every file in one call that walks
+///         only what is not attested.
 /// @dev Chunks are planted as `ContentStoreCompletenessGas` plants them: a pointer etched with
 ///      the code the store reads (a STOP byte, then the chunk) and `chunkPointer[hash]` written
 ///      at the store's slot 2. The work is built in `setUp`, and storage is cooled before each

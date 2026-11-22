@@ -713,7 +713,7 @@
   },
   {
     "inputs": [],
-    "name": "federationRegistry",
+    "name": "independentStreamRegistry",
     "outputs": [
       {
         "internalType": "address",
@@ -1123,7 +1123,7 @@
         "type": "address"
       }
     ],
-    "name": "setFederationRegistry",
+    "name": "setIndependentStreamRegistry",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
@@ -1905,7 +1905,7 @@
         "type": "address"
       }
     ],
-    "name": "FederationRegistrySet",
+    "name": "IndependentStreamRegistrySet",
     "type": "event"
   },
   {

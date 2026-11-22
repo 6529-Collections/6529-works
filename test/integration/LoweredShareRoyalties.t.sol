@@ -8,7 +8,7 @@ import { PRODUCT_STREAM } from "src/interfaces/types/EconomicsTypes.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
 
 /// @notice Royalty receivers on the deployed stack, re-ported from the retired lowered-share
-///         suites (`LoweredShareRoyalties`, PR 118's `FederatedRoyaltyAfterLowering`):
+///         suites (`LoweredShareRoyalties`, PR 118's `IndependentRoyaltyAfterLowering`):
 ///         - A work started without `SaleStarter` names a royalty vault nobody has deployed
 ///           yet (a predicted CREATE2 address). Royalties a marketplace sends there are held at
 ///           the address; anyone deploys the vault and releases them, the network's part to the

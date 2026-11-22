@@ -31,17 +31,16 @@ import { TokenTransfer } from "./TokenTransfer.sol";
 ///
 ///      Expiry (ECO-45). The wait is the unclaimed period, the network's setting
 ///      (`IDirectory.unclaimedPeriod`, 180 days at launch), read from the split factory's resolver
-///      (the `Directory`) whenever the escrow ages a credit: at every deposit (the depositee's
-///      credit), recovery (the replacement's credit), expiry (the expired account's credit, and
-///      the fee vault's as it is credited), and in the view {expirableAt}. A flush takes the
-///      whole credit and reads no period. If that read fails, the call reverts and the money
-///      stays.
-///      Every amount credited to an account stays that account's at least for the period in
-///      force from the block it was credited in, and may move to the network ({expire}) less
-///      than twice that after it. Credits are grouped in windows: a credit to an account and
-///      asset with no open window opens one; the window takes every credit for one period, and
-///      all of its credits may move once a period has passed since its last one. Guarantees,
-///      whoever deposits and whenever (P is the period in force when the escrow looks):
+///      (the `StreamDirectory6529`) whenever the escrow ages a credit: at every deposit (the
+///      depositee's credit), recovery (the replacement's credit), expiry (the expired account's
+///      credit, and the fee vault's as it is credited), and in the view {expirableAt}. A flush
+///      takes the whole credit and reads no period. If that read fails, the call reverts and the
+///      money stays. Every amount credited to an account stays that account's at least for the
+///      period in force from the block it was credited in, and may move to the network ({expire})
+///      less than twice that after it. Credits are grouped in windows: a credit to an account and
+///      asset with no open window opens one; the window takes every credit for one period, and all
+///      of its credits may move once a period has passed since its last one. Guarantees, whoever
+///      deposits and whenever (P is the period in force when the escrow looks):
 ///      - no amount can move sooner than P after it was credited;
 ///      - a credit made when an amount is already P old never joins that amount's window, so
 ///        nothing anyone does moves the time from which such an amount may expire;
@@ -307,7 +306,7 @@ contract RevenueEscrow is IRevenueEscrow, AccessManaged, ReentrancyGuardTransien
     }
 
     /// @dev The unclaimed period in force: a plain read of the split factory's resolver (the
-    ///      `Directory`). If it fails, the calling deposit, recovery or expiry reverts.
+    ///      `StreamDirectory6529`). If it fails, the calling deposit, recovery or expiry reverts.
     function _period() private view returns (uint256) {
         return IDirectory(address(factory.resolver())).unclaimedPeriod();
     }

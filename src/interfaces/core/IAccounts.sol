@@ -6,20 +6,21 @@ pragma solidity 0.8.37;
 ///         may act for a 6529 consolidated account, and where an artist is paid. Every wallet of
 ///         an account has the same rights; none acts while the account is frozen or a network
 ///         replacement is pending.
-/// @dev Today's `src/interfaces/IAccounts.sol` without the two federation views (they move to
-///      `IFederationGate`), plus `payoutAddress`. A freeze blocks a contest of a
+/// @dev Today's `src/interfaces/IAccounts.sol` without the two Independent Stream views (they move
+///      to `IIndependentStreamGate`), plus `payoutAddress`. A freeze blocks a contest of a
 ///      replacement, and a freeze can be placed again (ADR 0010).
 ///
 ///      Replacing the module. Everything that needs an account asks the module the directory's
-///      ACCOUNTS slot names at that moment (split-vault payouts through `IDirectory`, federated
-///      tokens, records, terms, the federation module and the 6529 Stream mint policy), so a
-///      swap takes effect everywhere at once. A replacement must therefore answer for every
-///      account the module it replaces knows (identities, wallets, payouts, pending changes and
-///      freezes): until it does, artist-resolved releases revert and the money stays in the
-///      vaults. The first `Accounts` has no read-through to a predecessor and no import
-///      function, so carrying accounts over means a successor that reads through to it (as
-///      `FederationRegistry` does with `previous`) or imports its logged state, installed after
-///      the network's waiting period, and binding the package registry as its `register` caller.
+///      ACCOUNTS slot names at that moment (split-vault payouts through `IDirectory`, Independent
+///      Stream tokens, records, terms, the Independent Stream module and the 6529 Stream mint
+///      policy), so a swap takes effect everywhere at once. A replacement must therefore answer for
+///      every account the module it replaces knows (identities, wallets, payouts, pending changes
+///      and freezes): until it does, artist-resolved releases revert and the money stays in the
+///      vaults. The first `Accounts` has no read-through to a predecessor and no import function,
+///      so carrying accounts over means a successor that reads through to it (as
+///      `IndependentStreamRegistry` does with `previous`) or imports its logged state, installed
+///      after the network's waiting period, and binding the package registry as its `register`
+///      caller.
 interface IAccounts {
     /// @notice Whether `wallet` may act for the account now.
     /// @param accountId An artist ID, or an address (as a number) that is or was a root.
@@ -42,7 +43,7 @@ interface IAccounts {
     /// @notice `requireSigned` over `consentDigest(msg.sender, what)`: the account consents to
     ///         `what` for the calling contract.
     /// @param accountId The account.
-    /// @param what The consent subject (for a federated work, `Core.federatedConsent`).
+    /// @param what The consent subject (for an Independent Stream work, `Core.independentConsent`).
     /// @param proof The wallet and its signature.
     /// @return wallet The signing wallet.
     function requireConsent(uint256 accountId, bytes32 what, bytes calldata proof)

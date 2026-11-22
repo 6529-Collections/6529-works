@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
-import { Directory } from "src/core/Directory.sol";
+import { StreamDirectory6529 } from "src/core/StreamDirectory6529.sol";
 import { RevenueEscrow } from "src/economics/RevenueEscrow.sol";
 import { SplitLedger } from "src/economics/SplitLedger.sol";
 import { IArtistPayoutResolver } from "src/economics/interfaces/IArtistPayoutResolver.sol";
@@ -11,18 +11,19 @@ import { IDirectory } from "src/interfaces/core/IDirectory.sol";
 import { MockAccounts } from "../mocks/core/CoreMocks.sol";
 import { EconomicsBase } from "./EconomicsBase.sol";
 
-/// @notice The escrow's unclaimed period is the network's setting in `Directory`
+/// @notice The escrow's unclaimed period is the network's setting in `StreamDirectory6529`
 ///         (`IDirectory.unclaimedPeriod`), read through its split factory's resolver whenever it
-///         ages a credit. The escrow here sits on a ledger deployed with the real `Directory`.
+///         ages a credit. The escrow here sits on a ledger deployed with the real
+///         `StreamDirectory6529`.
 /// @dev Each test fails against the escrow with a compiled 180 days: a period other than 180
 ///      days, zero, or a change after the credit would decide the expiry differently.
 contract RevenueEscrowUnclaimedPeriodTest is EconomicsBase {
-    Directory internal directory;
+    StreamDirectory6529 internal directory;
 
     function setUp() public override {
         super.setUp();
         MockAccounts accounts = new MockAccounts();
-        directory = new Directory(
+        directory = new StreamDirectory6529(
             address(manager),
             address(accounts),
             address(accounts),
@@ -117,7 +118,7 @@ contract RevenueEscrowUnclaimedPeriodTest is EconomicsBase {
         assertEq(escrow.owed(alice, ETH), 4 ether, "the open window stays");
     }
 
-    /// @dev Only the network sets the period, in `Directory`.
+    /// @dev Only the network sets the period, in `StreamDirectory6529`.
     function testFuzz_OnlyTheNetworkSetsThePeriod(address stranger, uint48 next) public {
         vm.assume(stranger != address(this));
         vm.prank(stranger);

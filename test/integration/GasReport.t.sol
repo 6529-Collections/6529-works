@@ -1132,7 +1132,7 @@ contract IntegrationGasReport is GasBase {
     uint256[2] internal identitySizes = [uint256(32_768), 65_536];
 
     /// @dev The `tokenURI` gas matrix: one work per row, sold, opened, attested and marked
-    ///      on-chain complete, then `Stream.tokenURI` measured from a cold start through the
+    ///      on-chain complete, then `Stream6529.tokenURI` measured from a cold start through the
     ///      whole path (Stream, WorkFacts, the renderer, the content store, the statement log,
     ///      the accounts module). Rows: 32, 64, 128 and 256 KiB of base64-stored media, and 32
     ///      and 64 KiB of identity media. Each row fits 8M Prague gas (with the cold-account

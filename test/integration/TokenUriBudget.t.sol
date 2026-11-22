@@ -15,9 +15,9 @@ import { StateGrowth } from "../helpers/StateGrowth.sol";
 import { GasBase } from "./GasBase.sol";
 
 /// @notice The `tokenURI` budget proof on the deployed stack (ADR 0004: at most 8M Prague gas):
-///         every cap the protocol allows at once, measured cold through `Stream.tokenURI` (and
-///         `Editions.uri`) with the real WorkFacts, content store, statement log, accounts
-///         module, delivery module and renderer.
+///         every cap the protocol allows at once, measured cold through `Stream6529.tokenURI` (and
+///         `StreamEditions6529.uri`) with the real WorkFacts, content store, statement log,
+///         accounts module, delivery module and renderer.
 ///         - **The record**: the dearest rows of the renderer's record matrix: 32 attributes at
 ///           the member cap with white space before each or after every token in all the room
 ///           there is, 512 `%`, the rest of the 1,024 units as top-level members or an array of
@@ -401,7 +401,8 @@ contract TokenUriBudgetTest is GasBase {
         assertLt(used, TOKEN_URI_BUDGET);
     }
 
-    /// @dev An edition renders its master: `Editions.uri` adds the master link and one trait.
+    /// @dev An edition renders its master: `StreamEditions6529.uri` adds the master link and one
+    ///      trait.
     function test_Budget_Edition_SpacedBefore_Zeros() public {
         Built memory b = _build(_worstRecord(BEFORE, ZEROS), false, true);
         string memory uri = editions.uri(b.tokenId);
@@ -491,9 +492,9 @@ contract TokenUriBudgetTest is GasBase {
 
     // ------------------------------------------------------------------ the preview
 
-    /// @dev `WorkFacts.open` holds no renderer budget: a PREVIEW of any size and encoding opens,
-    ///      and the renderer decides what it inlines (its preview bound keeps `tokenURI` within
-    ///      8M).
+    /// @dev `StreamWorkFacts6529.open` holds no renderer budget: a PREVIEW of any size and encoding
+    ///      opens, and the renderer decides what it inlines (its preview bound keeps `tokenURI`
+    ///      within 8M).
     function test_PreviewCap_OpenAcceptsAnyPreview() public {
         uint256 cap = Limits.MAX_PREVIEW_BYTES;
         _expectPreview(_bytes(cap / 4 + 1, 1), IContentStore.Encoding.Identity);

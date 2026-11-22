@@ -29,14 +29,14 @@ REPO = Path(__file__).resolve().parents[2]
 # (created by the configurator), then `DeployCore.order` with the entropy module (a VRF
 # coordinator is set for every Sepolia round).
 CONTRACTS = [
-    "CoreFactory", "WorksAccessManager", "GovernanceConfigurator", "ContentStore", "WorkFacts", "Directory",
-    "FeeRecipientVault", "MuseumVault", "SplitFactory", "ClaimRouter", "RevenueEscrow", "Stream",
-    "Editions", "ConsolidationAdapter", "Accounts", "AssetAllowlist", "EconomicsResolver",
+    "CoreFactory", "WorksAccessManager", "GovernanceConfigurator", "ContentStore", "StreamWorkFacts6529", "StreamDirectory6529",
+    "FeeRecipientVault", "MuseumVault", "SplitFactory", "ClaimRouter", "RevenueEscrow", "Stream6529",
+    "StreamEditions6529", "ConsolidationAdapter", "Accounts", "AssetAllowlist", "EconomicsResolver",
     "CurationVerifier", "PackageRegistry", "EntropyModule", "StatementLog", "DependencyRegistry",
     "Renderer", "WorkRules", "WorkDelivery", "StreamTerms", "EnglishAuction",
-    "UniformEditionAuctionLens", "UniformEditionAuction", "FederationRegistry",
-    "FederatedStreamDeployer", "FederatedEditionsDeployer", "FederatedEditionAuctionLens",
-    "FederatedEditionAuction", "SaleStarter",
+    "UniformEditionAuctionLens", "UniformEditionAuction", "IndependentStreamRegistry",
+    "IndependentStream721Deployer", "IndependentStreamEditionsDeployer", "IndependentEditionAuctionLens",
+    "IndependentEditionAuction", "SaleStarter",
 ]
 POLICY = "config/genesis.core.example.json"
 

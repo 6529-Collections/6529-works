@@ -1,0 +1,202 @@
+{
+  "structs": {
+    "struct IIndependentStreamRegistry.Item": [
+      {
+        "label": "approved",
+        "offset": 0,
+        "slot": 0,
+        "type": "bool"
+      },
+      {
+        "label": "used",
+        "offset": 1,
+        "slot": 0,
+        "type": "bool"
+      },
+      {
+        "label": "royaltyRate",
+        "offset": 2,
+        "slot": 0,
+        "type": "uint24"
+      }
+    ],
+    "struct IIndependentStreamRegistry.Listing": [
+      {
+        "label": "artistId",
+        "offset": 0,
+        "slot": 0,
+        "type": "uint160"
+      },
+      {
+        "label": "status",
+        "offset": 20,
+        "slot": 0,
+        "type": "enum IIndependentStreamRegistry.Status"
+      },
+      {
+        "label": "form",
+        "offset": 21,
+        "slot": 0,
+        "type": "enum IIndependentStreamRegistry.Form"
+      },
+      {
+        "label": "feeShare",
+        "offset": 22,
+        "slot": 0,
+        "type": "uint32"
+      },
+      {
+        "label": "deployer",
+        "offset": 0,
+        "slot": 1,
+        "type": "address"
+      },
+      {
+        "label": "partner",
+        "offset": 0,
+        "slot": 2,
+        "type": "address"
+      }
+    ],
+    "struct IIndependentStreamRegistry.Release": [
+      {
+        "label": "tokenId",
+        "offset": 0,
+        "slot": 0,
+        "type": "uint256"
+      },
+      {
+        "label": "beneficiary",
+        "offset": 0,
+        "slot": 1,
+        "type": "uint256"
+      }
+    ],
+    "struct IIndependentStreamRegistry.SaleContract": [
+      {
+        "label": "addedAt",
+        "offset": 0,
+        "slot": 0,
+        "type": "uint48"
+      },
+      {
+        "label": "removedAt",
+        "offset": 6,
+        "slot": 0,
+        "type": "uint48"
+      },
+      {
+        "label": "form",
+        "offset": 12,
+        "slot": 0,
+        "type": "enum IIndependentStreamRegistry.Form"
+      }
+    ],
+    "struct IIndependentStreamRegistry.Template": [
+      {
+        "label": "version",
+        "offset": 0,
+        "slot": 0,
+        "type": "uint32"
+      },
+      {
+        "label": "form",
+        "offset": 4,
+        "slot": 0,
+        "type": "enum IIndependentStreamRegistry.Form"
+      },
+      {
+        "label": "status",
+        "offset": 5,
+        "slot": 0,
+        "type": "enum IIndependentStreamRegistry.TemplateStatus"
+      }
+    ],
+    "struct IndependentStreamRegistry.Delisting": [
+      {
+        "label": "recorded",
+        "offset": 0,
+        "slot": 0,
+        "type": "bool"
+      },
+      {
+        "label": "delisted",
+        "offset": 1,
+        "slot": 0,
+        "type": "bool"
+      }
+    ]
+  },
+  "variables": [
+    {
+      "contract": "IndependentStreamRegistry",
+      "label": "_authority",
+      "offset": 0,
+      "slot": 0,
+      "type": "address"
+    },
+    {
+      "contract": "IndependentStreamRegistry",
+      "label": "_consumingSchedule",
+      "offset": 20,
+      "slot": 0,
+      "type": "bool"
+    },
+    {
+      "contract": "IndependentStreamRegistry",
+      "label": "entropyModule",
+      "offset": 0,
+      "slot": 1,
+      "type": "address"
+    },
+    {
+      "contract": "IndependentStreamRegistry",
+      "label": "isBarred",
+      "offset": 0,
+      "slot": 2,
+      "type": "mapping(bytes32 => bool)"
+    },
+    {
+      "contract": "IndependentStreamRegistry",
+      "label": "_templates",
+      "offset": 0,
+      "slot": 3,
+      "type": "mapping(address => struct IIndependentStreamRegistry.Template)"
+    },
+    {
+      "contract": "IndependentStreamRegistry",
+      "label": "_listings",
+      "offset": 0,
+      "slot": 4,
+      "type": "mapping(address => struct IIndependentStreamRegistry.Listing)"
+    },
+    {
+      "contract": "IndependentStreamRegistry",
+      "label": "_delistings",
+      "offset": 0,
+      "slot": 5,
+      "type": "mapping(uint256 => struct IndependentStreamRegistry.Delisting)"
+    },
+    {
+      "contract": "IndependentStreamRegistry",
+      "label": "_saleContracts",
+      "offset": 0,
+      "slot": 6,
+      "type": "mapping(address => struct IIndependentStreamRegistry.SaleContract)"
+    },
+    {
+      "contract": "IndependentStreamRegistry",
+      "label": "_items",
+      "offset": 0,
+      "slot": 7,
+      "type": "mapping(address => mapping(bytes32 => struct IIndependentStreamRegistry.Item))"
+    },
+    {
+      "contract": "IndependentStreamRegistry",
+      "label": "_releases",
+      "offset": 0,
+      "slot": 8,
+      "type": "mapping(address => mapping(bytes32 => struct IIndependentStreamRegistry.Release))"
+    }
+  ]
+}

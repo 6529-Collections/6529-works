@@ -22,17 +22,19 @@ deploy script refuses every other chain. 6529 Works is pre-audit and not deploye
   on `DEPLOY_NAMESPACE` and the deployer. The factory creates every contract in one call that
   only the deployer may make: a one-use proxy at a CREATE2 address that depends only on the
   factory and the contract's name creates the contract in the same call. All addresses are known
-  before anything is deployed, so the tokens and `Directory` take their genesis modules and
-  minters as constructor arguments, and nobody else can put code at any of them. An address does
+  before anything is deployed, so the tokens and `StreamDirectory6529` take their genesis modules
+  and minters as constructor arguments, and nobody else can put code at any of them. An address does
   not commit to code: `VerifyCore.s.sol` compares every contract's runtime code with a fresh
   deployment of the same build and reads the wiring back.
-- **Order.** Governance, `ContentStore` (and the CC0 text), `WorkFacts`, `Directory`, the two
-  governed vaults, `SplitLedger`, `ClaimRouter`, `RevenueEscrow`, `Stream`, `Editions` (the
-  permanent part), then the replaceable modules, `SaleStarter` last.
+- **Order.** Governance, `ContentStore` (and the CC0 text), `StreamWorkFacts6529`,
+  `StreamDirectory6529`, the two governed vaults, `SplitLedger`, `ClaimRouter`, `RevenueEscrow`,
+  `Stream6529`, `StreamEditions6529` (the permanent part), then the replaceable modules,
+  `SaleStarter` last.
 - **Genesis.** One `configure` call installs every role, holder and governed selector of the
   genesis file and runs the genesis wiring (the package registry's Stream bind and entropy
-  module, the edition auction's target, the ETH opening bid, the federation module's adapters,
-  templates and entropy module, the epoch-0 manifest). The configurator then holds nothing.
+  module, the edition auction's target, the ETH opening bid, the Independent Stream module's
+  adapters, templates and entropy module, the epoch-0 manifest). The configurator then holds
+  nothing.
 - **The network** is one address (a 2-of-n Safe today) that holds every network role once it
   calls `acceptNetwork()` on the manager.
 
@@ -151,10 +153,10 @@ rules are in the [governance spec](../docs/spec/governance.md); who may call wha
 
 ### Modules and minters
 
-`Stream`, `Editions`, `Directory` and every federated token hold their rules in replaceable
-modules, in named slots: `RENDERER`, `TERMS` and `RECORDS` on the tokens; `ACCOUNTS`,
-`FEDERATION`, `FEDERATED_TERMS` and `FEDERATED_RECORDS` on `Directory`. Sale contracts are
-minters.
+`Stream6529`, `StreamEditions6529`, `StreamDirectory6529` and every Independent Stream token hold
+their rules in replaceable modules, in named slots: `RENDERER`, `TERMS` and `RECORDS` on the tokens;
+`ACCOUNTS`, `INDEPENDENT_STREAM`, `INDEPENDENT_TERMS` and `INDEPENDENT_RECORDS` on
+`StreamDirectory6529`. Sale contracts are minters.
 
 | Step | Call | Who | When |
 | --- | --- | --- | --- |
@@ -164,11 +166,11 @@ minters.
 | Remove a module | `removeModule(slot)` | The network | At once; it also clears a pending proposal |
 | Add a minter | `addMinter(minter)` | The network | Active `moduleDelay` later |
 | Remove a minter | `removeMinter(minter)` | The network | At once. It still finishes the sales it started |
-| Rescue a token | `Stream.rescue(tokenId, to)` | The network | `rescueDelay` after its minter was removed, for a token with no outcome |
-| Rebind an edition | `Editions.rebind(editionId, minter)` | The network | `rebindDelay` after its minter was removed, for an edition with no copies and no seal |
+| Rescue a token | `Stream6529.rescue(tokenId, to)` | The network | `rescueDelay` after its minter was removed, for a token with no outcome |
+| Rebind an edition | `StreamEditions6529.rebind(editionId, minter)` | The network | `rebindDelay` after its minter was removed, for an edition with no copies and no seal |
 
-A federated token's own `RENDERER` slot is its artist's. A finalized work keeps the renderer it
-pinned whatever the slot holds later.
+An Independent Stream token's own `RENDERER` slot is its artist's. A finalized work keeps the
+renderer it pinned whatever the slot holds later.
 
 ### The four settings
 
@@ -178,30 +180,31 @@ keeps the ready time it was given.
 
 | Setting | Contract | Setter | Launch value |
 | --- | --- | --- | --- |
-| `moduleDelay` | `Stream`, `Editions`, `Directory` (each its own) | `setModuleDelay` | 604,800 s (7 days) |
-| `rescueDelay` | `Stream` | `setRescueDelay` | 1,209,600 s (14 days) |
-| `rebindDelay` | `Editions` | `setRebindDelay` | 1,209,600 s (14 days) |
-| `unclaimedPeriod` | `Directory` (read by the escrow, the split ledger and both auctions) | `setUnclaimedPeriod` | 15,552,000 s (180 days) |
+| `moduleDelay` | `Stream6529`, `StreamEditions6529`, `StreamDirectory6529` (each its own) | `setModuleDelay` | 604,800 s (7 days) |
+| `rescueDelay` | `Stream6529` | `setRescueDelay` | 1,209,600 s (14 days) |
+| `rebindDelay` | `StreamEditions6529` | `setRebindDelay` | 1,209,600 s (14 days) |
+| `unclaimedPeriod` | `StreamDirectory6529` (read by the escrow, the split ledger and both auctions) | `setUnclaimedPeriod` | 15,552,000 s (180 days) |
 
 The launch values are in `config/genesis.core.example.json` (`settings`) and read back by
 `VerifyCore`. On Sepolia every network call goes through the Safe (`flows.ps1 -Step safeCall`).
 
 ### Points of care
 
-- **Federated tokens.** Their `rescue`, `setRescueDelay`, `rebind` and `setRebindDelay` pass only
-  for a role member calling directly with no delay (the token asks the manager whether the caller
-  may call the matching `Directory` function immediately). Keep those `Directory` roles at no
-  delay: adding one would lock these functions, scheduled calls included.
+- **Independent Stream tokens.** Their `rescue`, `setRescueDelay`, `rebind` and `setRebindDelay`
+  pass only for a role member calling directly with no delay (the token asks the manager whether the
+  caller may call the matching `StreamDirectory6529` function immediately). Keep those
+  `StreamDirectory6529` roles at no delay: adding one would lock these functions, scheduled calls
+  included.
 - **Editions.** A sale contract can close a work's edition for good by sealing it at zero
-  (`Editions.seal(editionId, 0)` with no copies minted). Add only sale contracts that seal at the
-  count sold.
+  (`StreamEditions6529.seal(editionId, 0)` with no copies minted). Add only sale contracts that seal
+  at the count sold.
 - **Replacing modules.** A replacement accounts module must carry the existing artists over
   (IDs, wallets, payout addresses). A replacement mint policy starts with no content releases
   and no barred items: a burned work's content stays unmintable until the network releases it
   again there. A new instance needs its role-map entries. The checklist is in
   [Replacing a module](../docs/operations/replacing-modules.md).
-- **Media locations.** A finalized work's content hashes are permanent in `WorkFacts`; where its
-  off-chain copies are served from comes from the replaceable delivery module
+- **Media locations.** A finalized work's content hashes are permanent in `StreamWorkFacts6529`;
+  where its off-chain copies are served from comes from the replaceable delivery module
   (`WorkRules.setDelivery`).
 - **Unclaimed shares.** An artist payee who cannot release (a frozen account, or one whose payout
   address does not resolve) can still be marked, and the share forfeited to the network after

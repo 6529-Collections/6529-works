@@ -8,10 +8,11 @@ import { MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { License, PackageItem } from "src/interfaces/types/PackageTypes.sol";
 import { ReplayIndexer } from "./ReplayIndexer.sol";
 
-/// @notice Rebuilds every `WorkFacts` record from the contract's logs alone, for every token
-///         contract it serves (6529 Stream and each federated token): opens, record and license
-///         changes, finalize, repins, locks and on-chain completion. `assertMatches` compares
-///         `factsOf` of every work a log named, and of the token after each, with the contract.
+/// @notice Rebuilds every `StreamWorkFacts6529` record from the contract's logs alone, for every
+///         token contract it serves (6529 Stream and each Independent Stream token): opens, record
+///         and license changes, finalize, repins, locks and on-chain completion. `assertMatches`
+///         compares `factsOf` of every work a log named, and of the token after each, with the
+///         contract.
 contract WorkFactsIndexer is ReplayIndexer {
     struct Key {
         address token;

@@ -28,8 +28,8 @@ uploader and byte verifier).
 1. **One permanent contract per product.** Every Stream work is a token of one ERC-721; every
    edition is a token of one ERC-1155 with its master's token ID. Ownership and transfers never
    depend on any other contract.
-2. **Facts are plain views.** `workOf` on the token and `factsOf` on `WorkFacts` give everything
-   fixed about a work. `royaltyInfo` is two storage reads.
+2. **Facts are plain views.** `workOf` on the token and `factsOf` on `StreamWorkFacts6529` give
+   everything fixed about a work. `royaltyInfo` is two storage reads.
 3. **Metadata is on-chain JSON**, built by a renderer. A finalized work's renderer is pinned.
    Call `tokenURI` with a generous gas allowance.
 4. **Most actions are permissionless**: start, bid, settle, open a record, upload content, flush

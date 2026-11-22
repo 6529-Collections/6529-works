@@ -279,13 +279,13 @@ jobs:
           - name: economics invariants, releases
             filter: --match-test ^invariant_(Recipients|Released|Wallet) --match-contract ^EconomicsInvariant
           - name: core, vault and signer invariants
-            filter: --match-test ^invariant --match-contract ^(StreamCore|FederatedStream|GovernedVault|CurationSigner)Invariant
+            filter: --match-test ^invariant --match-contract ^(StreamCore|IndependentStream|GovernedVault|CurationSigner)Invariant
           - name: auction invariants
             filter: --match-test ^invariant --match-contract ^(Auction|EditionAuction)
           - name: lifecycle invariants
             filter: --match-test ^invariant --match-contract ^(StreamLifecycle|StreamStates)Invariant
           - name: other invariants
-            filter: --match-test ^invariant --no-match-contract ^((Economics|StreamCore|FederatedStream|GovernedVault|CurationSigner|StreamLifecycle|StreamStates)Invariant|Auction|EditionAuction)
+            filter: --match-test ^invariant --no-match-contract ^((Economics|StreamCore|IndependentStream|GovernedVault|CurationSigner|StreamLifecycle|StreamStates)Invariant|Auction|EditionAuction)
 
     steps:
       - name: Checkout
@@ -426,8 +426,8 @@ jobs:
 
       - name: Walkthrough
         # script/local/walkthrough.sh: deploys on a fresh Anvil node with its test accounts,
-        # accepts the network, runs VerifyCore, sells one work and an edition end to end, sells a
-        # federated work and swaps a module; any failure fails it.
+        # accepts the network, runs VerifyCore, sells one work and an edition end to end, sells an
+        # Independent Stream work and swaps a module; any failure fails it.
         run: bash script/local/walkthrough.sh
 
   contracts:

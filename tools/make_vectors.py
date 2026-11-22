@@ -73,15 +73,15 @@ RECORD_MIME = "application/json"
 # The permanent contracts (ADR 0010), whose logs alone rebuild their state: (name, artifact path
 # under out/).
 CONTRACTS = [
-    ("Stream", "Stream.sol/Stream.json"),
-    ("Editions", "Editions.sol/Editions.json"),
-    ("WorkFacts", "WorkFacts.sol/WorkFacts.json"),
-    ("Directory", "Directory.sol/Directory.json"),
+    ("Stream6529", "Stream6529.sol/Stream6529.json"),
+    ("StreamEditions6529", "StreamEditions6529.sol/StreamEditions6529.json"),
+    ("StreamWorkFacts6529", "StreamWorkFacts6529.sol/StreamWorkFacts6529.json"),
+    ("StreamDirectory6529", "StreamDirectory6529.sol/StreamDirectory6529.json"),
     ("ContentStore", "ContentStore.sol/ContentStore.json"),
     ("SplitLedger", "SplitLedger.sol/SplitLedger.json"),
     ("RevenueEscrow", "RevenueEscrow.sol/RevenueEscrow.json"),
-    ("FederatedStream", "FederatedStream.sol/FederatedStream.json"),
-    ("FederatedEditions", "FederatedEditions.sol/FederatedEditions.json"),
+    ("IndependentStream6529", "IndependentStream6529.sol/IndependentStream6529.json"),
+    ("IndependentStreamEditions6529", "IndependentStreamEditions6529.sol/IndependentStreamEditions6529.json"),
 ]
 
 HASHREF_TYPEHASH = keccak256(b"HashRef(uint16 algorithm,bytes32 digest)")

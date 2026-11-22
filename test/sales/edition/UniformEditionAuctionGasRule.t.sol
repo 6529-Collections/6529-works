@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { Editions } from "src/core/Editions.sol";
+import { StreamEditions6529 } from "src/core/StreamEditions6529.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
 import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
@@ -22,14 +22,14 @@ contract UniformEditionAuctionGasRuleTest is EditionAuctionBase, GasRuleAssertio
     Burner internal streamBurner;
     UniformEditionAuction internal wrapped;
     /// @dev 6529 Stream Editions over the wrapped master.
-    Editions internal wEditions;
+    StreamEditions6529 internal wEditions;
     address internal alice = makeAddr("alice");
 
     function setUp() public override {
         super.setUp();
         clockBurner = new Burner(address(english), BASE);
         streamBurner = new Burner(address(stream), BASE);
-        wEditions = new Editions(
+        wEditions = new StreamEditions6529(
             address(manager), address(streamBurner), address(this), address(0), new address[](0)
         );
         address l = address(

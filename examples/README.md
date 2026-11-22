@@ -22,14 +22,14 @@ exactly what a transaction does.
 
 | Example | What it shows |
 | --- | --- |
-| [`ReadAWork.t.sol`](ReadAWork.t.sol) | Everything a marketplace or wallet shows for one work: owner, what Stream stores (`workOf`, one plain struct), its collection, how the first sale ended (and the price, from the `PrimarySale` log), the permanent record in `WorkFacts` (media, record file, license, pinned renderer), `tokenURI` and `royaltyInfo`; and the network's settings and the modules in force |
+| [`ReadAWork.t.sol`](ReadAWork.t.sol) | Everything a marketplace or wallet shows for one work: owner, what Stream stores (`workOf`, one plain struct), its collection, how the first sale ended (and the price, from the `PrimarySale` log), the permanent record in `StreamWorkFacts6529` (media, record file, license, pinned renderer), `tokenURI` and `royaltyInfo`; and the network's settings and the modules in force |
 | [`StartASale.t.sol`](StartASale.t.sol) | Starting a sale from the artist's signed move, with the proof `abi.encodePacked(wallet, signature)`: a preview first, then `SaleStarter` (vaults and record in the same transaction), and what to do when someone started it directly |
 | [`BidInEth.t.sol`](BidInEth.t.sol) | Watching a 1/1 sale and bidding in ETH: the opening bid, the increment, the anti-snipe extension, being outbid (a credit, never pushed back), when a credit can expire, and claiming it |
 | [`SettleASale.t.sol`](SettleASale.t.sol) | Settling a 1/1 and what each party receives: the winner the token, the seller split wallet the price less the fee, the network's fee recipient the fee; `SaleSettled` decoded; with no bid, the work going to the museum |
 | [`EditionSale.t.sol`](EditionSale.t.sol) | An edition sale beside an EDITION_MASTER's 1/1: opening it (which creates the edition), steps and escrow, `quote`, `clearing` and `bidOutcome`, the close following the 1/1, settlement, claiming copies and the refund, and pushing a claim for a bidder |
 | [`ReleaseFromASplit.t.sol`](ReleaseFromASplit.t.sol) | Releasing from split wallets: the artist pulls sale proceeds; a royalty release that pays the network its share in the same call; a ClaimRouter batch that leaves the network's own index out |
-| [`IndexFromEvents.t.sol`](IndexFromEvents.t.sol) | Rebuilding Stream's state (owners, the facts of each work, outcomes and prices, the content index, the supply) and each work's record in `WorkFacts` from logs alone, then checking it against the views |
-| [`FederationDirectory.t.sol`](FederationDirectory.t.sol) | An artist's federated pair deployed from the approved templates and joined; discovering federated contracts from `Registered` events and reading each entry; selling one federated work through the same English auction |
+| [`IndexFromEvents.t.sol`](IndexFromEvents.t.sol) | Rebuilding Stream's state (owners, the facts of each work, outcomes and prices, the content index, the supply) and each work's record in `StreamWorkFacts6529` from logs alone, then checking it against the views |
+| [`IndependentStreamDirectory.t.sol`](IndependentStreamDirectory.t.sol) | An artist's Independent Stream pair deployed from the approved templates and joined; discovering Independent Stream contracts from `Registered` events and reading each entry; selling one Independent Stream work through the same English auction |
 | [`ModuleSwap.t.sol`](ModuleSwap.t.sol) | What a module swap looks like to an integrator: the network proposes a renderer (`ModuleProposed`), it waits `moduleDelay`, anyone activates it (`ModuleSet`); open records draw with the new renderer while finalized ones keep their pinned one; a minter added after the wait and removed at once |
 
 The base's helpers do what off-chain tools do (uploading files, building a package, the curation
@@ -41,7 +41,8 @@ contract addresses in [Addresses](../docs/integrators/addresses.md).
 ## The same reads with `cast`
 
 With `RPC_URL` and the addresses from a deployment record (`STREAM`, `FACTS` for WorkFacts,
-`AUCTION`, `EDITION_AUCTION`, `EDITIONS`, `LEDGER` for SplitLedger, `DIRECTORY`, `FEDERATION`):
+`AUCTION`, `EDITION_AUCTION`, `EDITIONS`, `LEDGER` for SplitLedger, `DIRECTORY`,
+`INDEPENDENT_STREAM`):
 
 ```bash
 # A work: owner, metadata, royalty, what Stream stores, and its record in WorkFacts
@@ -80,8 +81,8 @@ cast call "$LEDGER" "releasable((uint256,address,uint32)[],bytes32,address,uint2
   0x0000000000000000000000000000000000000000000000000000000000000000 \
   0x0000000000000000000000000000000000000000 0 --rpc-url "$RPC_URL"
 
-# The federation entry of a federated contract
-cast call "$FEDERATION" "entry(address)((uint8,address,uint256,uint32,bytes32,uint32,uint8))" "$TOKEN" --rpc-url "$RPC_URL"
+# The Independent Stream entry of an Independent Stream contract
+cast call "$INDEPENDENT_STREAM" "entry(address)((uint8,address,uint256,uint32,bytes32,uint32,uint8))" "$TOKEN" --rpc-url "$RPC_URL"
 ```
 
 `cast call` prints large numbers with a scientific-notation suffix (`1234 [1.234e3]`); `cut -d' '

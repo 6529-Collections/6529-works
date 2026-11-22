@@ -5,11 +5,12 @@ import { IModuleSlots } from "./IModules.sol";
 
 /// @title IDirectory
 /// @notice The one permanent address that answers where the network's shared modules are: the
-///         accounts module (`ACCOUNTS`), the federation module (`FEDERATION`) and the TERMS and
-///         RECORDS modules of every federated token (`FEDERATED_TERMS`, `FEDERATED_RECORDS`).
-///         The split ledger asks it for artists' payout addresses; federated tokens ask it for
-///         their gate. It also holds the one waiting period the money contracts share
-///         (`unclaimedPeriod`), so the unowned split ledger needs no governance of its own. Slots change after the network's waiting period (`IModuleSlots`).
+///         accounts module (`ACCOUNTS`), the Independent Stream module (`INDEPENDENT_STREAM`) and
+///         the TERMS and RECORDS modules of every Independent Stream token (`INDEPENDENT_TERMS`,
+///         `INDEPENDENT_RECORDS`). The split ledger asks it for artists' payout addresses;
+///         Independent Stream tokens ask it for their gate. It also holds the one waiting period
+///         the money contracts share (`unclaimedPeriod`), so the unowned split ledger needs no
+///         governance of its own. Slots change after the network's waiting period (`IModuleSlots`).
 interface IDirectory is IModuleSlots {
     /// @notice The unclaimed period was set: by the network, or at deployment with its launch
     ///         value (`previous` zero).

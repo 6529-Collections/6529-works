@@ -18,7 +18,7 @@ contract Erc165PeerPortedMock is IERC165 {
 ///         one-shot `bindStream` and an edition auction's `setTarget` (each checking its peer's
 ///         ERC-165), a genesis selector that reverts with a reason (`setEntropyModule`), one
 ///         that reverts without data (`setOpeningBid`), and a 7-day setter wiring must not reach.
-///         It declares `IPackageRegistry` and `ISaleAdapter`, not `IFederationRegistry`.
+///         It declares `IPackageRegistry` and `ISaleAdapter`, not `IIndependentStreamRegistry`.
 contract WiringTargetPortedMock is AccessManaged {
     address public stream;
     address public verifier;

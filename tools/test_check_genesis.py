@@ -392,16 +392,16 @@ class CheckGenesisTest(unittest.TestCase):
         sig = "approveTemplate(bytes32,address,uint32,uint8)"
         self.repo.config["wiring"].append(
             {"contract": "Foo", "signature": sig,
-             "args": ["FederatedStreamDeployer", "FederatedStream", 1, 0],
+             "args": ["IndependentStream721Deployer", "IndependentStream6529", 1, 0],
              "calldata": "0x62c03b8e" + "00" * 128}
         )
         self.assertProblem(
-            "argument 0 names FederatedStreamDeployer, a address, for a bytes32 parameter"
+            "argument 0 names IndependentStream721Deployer, a address, for a bytes32 parameter"
         )
-        self.assertProblem("argument 1 names FederatedStream, a bytes32, for a address parameter")
-        self.repo.config["wiring"][-1]["args"] = ["FederatedStream", "FederatedStreamDeployer", 1, 0]
+        self.assertProblem("argument 1 names IndependentStream6529, a bytes32, for a address parameter")
+        self.repo.config["wiring"][-1]["args"] = ["IndependentStream6529", "IndependentStream721Deployer", 1, 0]
         problems = self.repo.problems()
-        self.assertFalse([p for p in problems if "names Federated" in p], problems)
+        self.assertFalse([p for p in problems if "names Independent" in p], problems)
         # A contract's name in an address parameter is accepted.
         self.repo.config["wiring"][0]["args"] = ["Foo"]
         self.assertFalse([p for p in self.repo.problems() if "names Foo" in p])

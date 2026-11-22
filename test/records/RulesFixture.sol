@@ -3,10 +3,10 @@ pragma solidity ^0.8.24;
 
 import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
 import { ContentStore } from "src/content/ContentStore.sol";
-import { Directory } from "src/core/Directory.sol";
-import { Editions } from "src/core/Editions.sol";
-import { Stream } from "src/core/Stream.sol";
-import { WorkFacts } from "src/core/WorkFacts.sol";
+import { StreamDirectory6529 } from "src/core/StreamDirectory6529.sol";
+import { StreamEditions6529 } from "src/core/StreamEditions6529.sol";
+import { Stream6529 } from "src/core/Stream6529.sol";
+import { StreamWorkFacts6529 } from "src/core/StreamWorkFacts6529.sol";
 import { IArtistPayoutResolver } from "src/economics/interfaces/IArtistPayoutResolver.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { SplitLedger } from "src/economics/SplitLedger.sol";
@@ -28,7 +28,7 @@ import { StreamTerms } from "src/terms/StreamTerms.sol";
 import { CoreFixture } from "../mocks/core/CoreFixture.sol";
 import {
     MockAccounts,
-    MockFederationGate,
+    MockIndependentStreamGate,
     MockRecords,
     MockRenderer,
     MockSale,
@@ -39,9 +39,9 @@ import { SigningAccounts } from "../mocks/records/RulesMocks.sol";
 /// @notice The permanent core with the real record and royalty modules: `stream` uses
 ///         `WorkRules` (RECORDS) and `StreamTerms` (TERMS), `editions` uses `StreamTerms`, and
 ///         the directory's accounts module checks real signatures. `bare` is a second token on
-///         the same `WorkFacts` whose RECORDS and TERMS modules pass calls straight through,
-///         for tests of `WorkFacts` alone. The content store is real and the CC0 text is a real
-///         stored file. The test contract is the network.
+///         the same `StreamWorkFacts6529` whose RECORDS and TERMS modules pass calls straight
+///         through, for tests of `StreamWorkFacts6529` alone. The content store is real and the CC0
+///         text is a real stored file. The test contract is the network.
 abstract contract RulesFixture is CoreFixture {
     bytes32 internal constant EIP712_DOMAIN_TYPEHASH = keccak256(
         "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
@@ -58,7 +58,7 @@ abstract contract RulesFixture is CoreFixture {
     StreamTerms internal streamTerms;
     WorkDelivery internal delivery;
     SplitLedger internal ledger;
-    Stream internal bare;
+    Stream6529 internal bare;
 
     bytes32 internal cc0Text;
     bytes32 internal mitText;
@@ -71,23 +71,23 @@ abstract contract RulesFixture is CoreFixture {
         store = new ContentStore();
         cc0Text = _text("CC0 1.0 Universal");
         mitText = _text("MIT License");
-        facts = new WorkFacts(address(store), cc0Text);
+        facts = new StreamWorkFacts6529(address(store), cc0Text);
         renderer = new MockRenderer();
         terms = new MockTerms();
         records = new MockRecords(facts);
         sale = new MockSale();
         accounts = new MockAccounts();
-        gate = new MockFederationGate();
+        gate = new MockIndependentStreamGate();
         signers = new SigningAccounts();
         signers.setWallet(uint160(artist), artist, true);
         signers.setWallet(uint160(collaborator), collaborator, true);
-        directory = new Directory(
+        directory = new StreamDirectory6529(
             address(manager), address(signers), address(gate), address(terms), address(records)
         );
         rules = new WorkRules(address(manager), address(facts), address(directory), address(0));
         address[] memory minters = new address[](1);
         minters[0] = address(sale);
-        stream = new Stream(
+        stream = new Stream6529(
             address(manager),
             address(facts),
             marketOwner,
@@ -96,8 +96,9 @@ abstract contract RulesFixture is CoreFixture {
             address(rules),
             minters
         );
-        editions =
-            new Editions(address(manager), address(stream), marketOwner, address(terms), minters);
+        editions = new StreamEditions6529(
+            address(manager), address(stream), marketOwner, address(terms), minters
+        );
         ledger = new SplitLedger(IArtistPayoutResolver(address(directory)), address(manager));
         streamTerms = new StreamTerms(
             address(manager),
@@ -111,7 +112,7 @@ abstract contract RulesFixture is CoreFixture {
         delivery =
             new WorkDelivery(address(manager), address(rules), address(facts), address(directory));
         rules.setDelivery(address(0), address(delivery));
-        bare = new Stream(
+        bare = new Stream6529(
             address(manager),
             address(facts),
             marketOwner,
@@ -126,10 +127,10 @@ abstract contract RulesFixture is CoreFixture {
 
     /// @dev Installs a module at once (the network sets the wait to zero, then back).
     function _install(address token, bytes32 slot, address module) internal {
-        Stream(token).setModuleDelay(0);
-        Stream(token).proposeModule(slot, module);
-        Stream(token).activateModule(slot);
-        Stream(token).setModuleDelay(7 days);
+        Stream6529(token).setModuleDelay(0);
+        Stream6529(token).proposeModule(slot, module);
+        Stream6529(token).activateModule(slot);
+        Stream6529(token).setModuleDelay(7 days);
     }
 
     // ---------------------------------------------------------------------------------- files
@@ -202,7 +203,7 @@ abstract contract RulesFixture is CoreFixture {
     }
 
     /// @dev Mints `item` into the sale contract's custody on `token`.
-    function _mintItem(Stream token, PackageItem memory item) internal returns (uint256) {
+    function _mintItem(Stream6529 token, PackageItem memory item) internal returns (uint256) {
         MintFacts memory f;
         f.itemHash = WorksHashing.itemHash(item);
         f.contentHash = item.contentHash;
@@ -217,7 +218,7 @@ abstract contract RulesFixture is CoreFixture {
     }
 
     /// @dev Mints a single-file work on `token` and opens its record.
-    function _work(Stream token, uint256 salt)
+    function _work(Stream6529 token, uint256 salt)
         internal
         returns (uint256 tokenId, PackageItem memory item, MediaFile[] memory media)
     {

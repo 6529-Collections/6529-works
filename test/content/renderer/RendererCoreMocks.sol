@@ -173,7 +173,8 @@ contract RendererRecordsMock {
         raws[fileId] = answer;
     }
 
-    /// @dev `IWorkFacts.factsOf`: an empty record until it is open, as `WorkFacts` answers.
+    /// @dev `IWorkFacts.factsOf`: an empty record until it is open, as `StreamWorkFacts6529`
+    ///      answers.
     function factsOf(address, uint256 id) external view returns (Facts memory f) {
         _gate(msg.sig);
         if (!opened[id]) return f;

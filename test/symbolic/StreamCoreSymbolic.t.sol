@@ -3,18 +3,18 @@ pragma solidity ^0.8.24;
 
 import { Test } from "forge-std/Test.sol";
 import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
-import { Stream } from "src/core/Stream.sol";
+import { Stream6529 } from "src/core/Stream6529.sol";
 import { Core, MintFacts, Outcome, Work } from "src/interfaces/core/CoreTypes.sol";
 import { IStream } from "src/interfaces/core/IStream.sol";
 import { MockRenderer, MockSale, MockTerms } from "../mocks/core/CoreMocks.sol";
 import { MockPinnedFacts } from "../mocks/core/StreamCoreMocks.sol";
 
-/// @notice Halmos proofs on the permanent ERC-721 (`src/core/Stream.sol`): what `mint` accepts,
+/// @notice Halmos proofs on the permanent ERC-721 (`src/core/Stream6529.sol`): what `mint` accepts,
 ///         the royalty rules, and the rescue predicate. Run with
 ///         `FOUNDRY_PROFILE=symbolic halmos --contract StreamCoreSymbolicTest`.
 contract StreamCoreSymbolicTest is Test {
     AccessManager internal manager;
-    Stream internal stream;
+    Stream6529 internal stream;
     MockSale internal sale;
     MockTerms internal terms;
     MockPinnedFacts internal facts;
@@ -30,7 +30,7 @@ contract StreamCoreSymbolicTest is Test {
         MockRenderer renderer = new MockRenderer();
         address[] memory minters = new address[](1);
         minters[0] = address(sale);
-        stream = new Stream(
+        stream = new Stream6529(
             address(manager),
             address(facts),
             address(0xA),

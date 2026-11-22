@@ -14,12 +14,12 @@ import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { WorkRules } from "src/records/WorkRules.sol";
 import { RulesFixture } from "../records/RulesFixture.sol";
 
-/// @notice `WorkFacts` behaviour carried over from the `WorkRecords` suites that the first port
-///         left out: refusals on either side of each compared value, store failures passed on
-///         as they are, files of other digest kinds, item values today's enums do not name,
-///         previews of any size, the 16-chunk license text bound and the views of a work
-///         whose record is not open. Driven through `bare` (a pass-through RECORDS module)
-///         unless the test is about `WorkRules`.
+/// @notice `StreamWorkFacts6529` behaviour carried over from the `WorkRecords` suites that the
+///         first port left out: refusals on either side of each compared value, store failures
+///         passed on as they are, files of other digest kinds, item values today's enums do not
+///         name, previews of any size, the 16-chunk license text bound and the views of a work
+///         whose record is not open. Driven through `bare` (a pass-through RECORDS module) unless
+///         the test is about `WorkRules`.
 contract WorkFactsPortedTest is RulesFixture {
     error Broken();
 
@@ -192,8 +192,8 @@ contract WorkFactsPortedTest is RulesFixture {
         }
     }
 
-    /// @dev `WorkFacts` holds no renderer budget: a preview of any size or encoding opens; an
-    ///      unregistered one reverts with the store's own error.
+    /// @dev `StreamWorkFacts6529` holds no renderer budget: a preview of any size or encoding
+    ///      opens; an unregistered one reverts with the store's own error.
     function test_Open_APreviewOfAnySizeOrEncodingOpens() public {
         uint256[3] memory lengths = [Limits.MAX_PREVIEW_BYTES + 1, 16_384, 4_096];
         IContentStore.Encoding[3] memory encodings = [

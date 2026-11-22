@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
 import { Slots } from "src/interfaces/core/CoreTypes.sol";
 import { ArtistIdentity } from "src/interfaces/types/IdentityTypes.sol";
-import { FederationRegistryStub } from "../mocks/identity/IdentityWorksMocks.sol";
+import { IndependentStreamRegistryStub } from "../mocks/identity/IdentityWorksMocks.sol";
 import { PreApprovedWallet } from "../mocks/identity/PermanenceMocks.sol";
 import { SignatureReverts } from "test/helpers/SignatureReverts.sol";
 import { AccountsFixture } from "./AccountsFixture.sol";
@@ -86,16 +86,16 @@ contract SignatureAgilityTest is AccountsFixture {
         assertEq(registry.changeNonce(id), 2);
     }
 
-    /// @dev Consent to an identity created by the federation registry works the same way.
-    function test_7702Account_ConsentsToAFederatedIdentityByPreApproval() public {
-        address federation = address(new FederationRegistryStub());
-        directory.setModule(Slots.FEDERATION, federation);
+    /// @dev Consent to an identity created by the Independent Stream registry works the same way.
+    function test_7702Account_ConsentsToAIndependentIdentityByPreApproval() public {
+        address independentStream = address(new IndependentStreamRegistryStub());
+        directory.setModule(Slots.INDEPENDENT_STREAM, independentStream);
         uint64 deadline = uint64(block.timestamp + 1 days);
         bytes32 digest = registry.registrationDigest(eoa, PROFILE, PROFILE_DOC, deadline);
         vm.prank(eoa);
         PreApprovedWallet(eoa).approve(digest);
-        vm.prank(federation);
-        registry.registerFederated(eoa, PROFILE, PROFILE_DOC, deadline, "");
+        vm.prank(independentStream);
+        registry.registerIndependent(eoa, PROFILE, PROFILE_DOC, deadline, "");
         assertEq(registry.authorityOf(uint160(eoa)), eoa);
     }
 }

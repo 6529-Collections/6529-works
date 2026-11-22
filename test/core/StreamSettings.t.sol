@@ -7,10 +7,10 @@ import { IModuleSlots, IModules } from "src/interfaces/core/IModules.sol";
 import { CoreFixture } from "../mocks/core/CoreFixture.sol";
 import { MockRenderer, MockSale } from "../mocks/core/CoreMocks.sol";
 
-/// @notice The network's waiting-period setting `moduleDelay`, through the real `Stream` and the
-///         real `Directory` (not a harness): only the network sets it, the event carries old and
-///         new, an addition is refused before the period in force when it was made has elapsed,
-///         zero works, and an addition already made keeps the time it was given.
+/// @notice The network's waiting-period setting `moduleDelay`, through the real `Stream6529` and
+///         the real `StreamDirectory6529` (not a harness): only the network sets it, the event
+///         carries old and new, an addition is refused before the period in force when it was made
+///         has elapsed, zero works, and an addition already made keeps the time it was given.
 contract StreamSettingsTest is CoreFixture {
     function _unauthorized(address caller) internal pure returns (bytes memory) {
         return abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, caller);
@@ -91,7 +91,7 @@ contract StreamSettingsTest is CoreFixture {
         later = uint48(bound(later, 0, 3650 days));
         MockRenderer next = new MockRenderer();
         IModuleSlots[2] memory t = _targets();
-        bytes32[2] memory slot = [Slots.TERMS, Slots.FEDERATION];
+        bytes32[2] memory slot = [Slots.TERMS, Slots.INDEPENDENT_STREAM];
         for (uint256 i; i < 2; ++i) {
             t[i].proposeModule(slot[i], address(next));
             t[i].setModuleDelay(later);
@@ -148,7 +148,7 @@ contract StreamSettingsTest is CoreFixture {
     function test_RemoveModule_AtOnceAndCancelsAnAnnouncement() public {
         MockRenderer next = new MockRenderer();
         IModuleSlots[2] memory t = _targets();
-        bytes32[2] memory slot = [Slots.RECORDS, Slots.FEDERATED_RECORDS];
+        bytes32[2] memory slot = [Slots.RECORDS, Slots.INDEPENDENT_RECORDS];
         for (uint256 i; i < 2; ++i) {
             address before = t[i].moduleOf(slot[i]);
             t[i].proposeModule(slot[i], address(next));

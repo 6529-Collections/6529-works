@@ -6,14 +6,14 @@ import { IStream } from "src/interfaces/core/IStream.sol";
 import { IWorkFacts } from "src/interfaces/core/IWorkFacts.sol";
 import { License, MoveAuthorization, PackageItem } from "src/interfaces/types/PackageTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
-import { Directory } from "src/core/Directory.sol";
+import { StreamDirectory6529 } from "src/core/StreamDirectory6529.sol";
 import { Slots } from "src/interfaces/core/CoreTypes.sol";
 import { CurationArtistRegistryMock } from "../mocks/curation/CurationArtistRegistryMock.sol";
 import { CurationBase } from "./CurationBase.sol";
 
 /// @notice The 6529 Stream mint policy refuses a CC0 item whose text is not the deployment's CC0
-///         text, the rule `WorkFacts.open` enforces (review B, B-2): no item mints a token whose
-///         record could never open.
+///         text, the rule `StreamWorkFacts6529.open` enforces (review B, B-2): no item mints a
+///         token whose record could never open.
 contract PackageRegistryFixesTest is CurationBase {
     function _readyWith(bytes32 sha, License memory license)
         internal
@@ -71,7 +71,7 @@ contract PackageRegistryFixesTest is CurationBase {
     function _swapAccounts() internal returns (CurationArtistRegistryMock next) {
         next = new CurationArtistRegistryMock();
         next.bindPackageRegistry(address(registry));
-        Directory dir = Directory(registry.directory());
+        StreamDirectory6529 dir = StreamDirectory6529(registry.directory());
         vm.startPrank(admin);
         dir.setModuleDelay(0);
         dir.proposeModule(Slots.ACCOUNTS, address(next));

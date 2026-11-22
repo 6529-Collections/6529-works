@@ -5,7 +5,7 @@ import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol
 import { StreamBase } from "src/core/StreamBase.sol";
 import { MintFacts, MintTerms, Slots } from "src/interfaces/core/CoreTypes.sol";
 import { IDirectory } from "src/interfaces/core/IDirectory.sol";
-import { IFederationGate } from "src/interfaces/core/IFederationGate.sol";
+import { IIndependentStreamGate } from "src/interfaces/core/IIndependentStreamGate.sol";
 import { IMintPolicy } from "src/interfaces/core/IMintPolicy.sol";
 import { IModules } from "src/interfaces/core/IModules.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
@@ -91,14 +91,14 @@ contract MockMintPolicy is IERC165 {
     }
 }
 
-/// @notice The federation module the directory names: a mint policy for federated tokens and
-///         their gate, whose answers the test sets.
-contract MockFederationPolicy is MockMintPolicy, IFederationGate {
+/// @notice The Independent Stream module the directory names: a mint policy for Independent Stream
+///         tokens and their gate, whose answers the test sets.
+contract MockIndependentStreamPolicy is MockMintPolicy, IIndependentStreamGate {
     mapping(address => mapping(address => bool)) public canMint;
     mapping(address => bool) public wasMinter;
     mapping(address => uint256) public minterRemovedAt;
-    /// @dev Whether the token is served (`IFederationRegistry.isActive`), which the English
-    ///      auction asks to decide whether a federated sale goes on.
+    /// @dev Whether the token is served (`IIndependentStreamRegistry.isActive`), which the English
+    ///      auction asks to decide whether an Independent Stream sale goes on.
     mapping(address => bool) public isActive;
 
     constructor(address seller, address feeRecipient, uint32 feeShare)
@@ -130,14 +130,15 @@ contract MockFederationPolicy is MockMintPolicy, IFederationGate {
     }
 }
 
-/// @notice A federated token: the plain `StreamBase` with its minters answered by the
-///         directory's federation module. One collection; the test is its admin and network.
-contract MockFederatedToken is StreamBase {
+/// @notice An Independent Stream token: the plain `StreamBase` with its minters answered by the
+///         directory's Independent Stream module. One collection; the test is its admin and
+///         network.
+contract MockIndependentToken is StreamBase {
     IDirectory public immutable directory;
     address public immutable admin;
 
     constructor(address facts_, IDirectory directory_)
-        StreamBase("Federated", "FED", facts_, msg.sender)
+        StreamBase("Independent", "IND", facts_, msg.sender)
     {
         directory = directory_;
         admin = msg.sender;
@@ -148,8 +149,8 @@ contract MockFederatedToken is StreamBase {
         return _isMinter(account);
     }
 
-    function _gate() private view returns (IFederationGate) {
-        return IFederationGate(directory.moduleOf(Slots.FEDERATION));
+    function _gate() private view returns (IIndependentStreamGate) {
+        return IIndependentStreamGate(directory.moduleOf(Slots.INDEPENDENT_STREAM));
     }
 
     function _moduleOf(bytes32) internal pure override returns (address) {
@@ -161,7 +162,7 @@ contract MockFederatedToken is StreamBase {
     }
 
     function _wasMinter(address account) internal view override returns (bool) {
-        return MockFederationPolicy(address(_gate())).wasMinter(account);
+        return MockIndependentStreamPolicy(address(_gate())).wasMinter(account);
     }
 
     function _minterRemovedAt(address account) internal view override returns (uint256) {

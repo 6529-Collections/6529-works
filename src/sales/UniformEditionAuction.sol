@@ -30,9 +30,9 @@ import { UniformClearing } from "./UniformClearing.sol";
 /// @title UniformEditionAuctionBase
 /// @notice The uniform-price edition auction (ADR 0005; D138-D141), shared by its two
 ///         deployments: {UniformEditionAuction}, the one sale of 6529 Stream Editions, and
-///         {FederatedEditionAuction}, the sale of federated pairs' editions (ADR 0008). See
-///         {IUniformEditionAuction} for the rules; this contract adds the storage layout and the
-///         bounds. Every view, of a sale or of the adapter's own settings, lives on its lens
+///         {IndependentEditionAuction}, the sale of Independent Stream pairs' editions (ADR 0008).
+///         See {IUniformEditionAuction} for the rules; this contract adds the storage layout and
+///         the bounds. Every view, of a sale or of the adapter's own settings, lives on its lens
 ///         ({UniformEditionAuctionLensBase}), deployed on its own and pinned by the constructor.
 /// @dev Storage (`IUniformEditionAuctionStorage.Space` documents every word). Per sale: a state word
 ///      written at open and updated by every bid and raise (`SaleWord`), a payout word written
@@ -82,9 +82,9 @@ import { UniformClearing } from "./UniformClearing.sol";
 ///
 ///      Which edition contract a sale sells, and whose 1/1 anchors it, are the deployment's
 ///      (`_checkTarget`, `_editionsOf`, `_masterOf`): one immutable pair for 6529 Stream
-///      Editions, a per-sale record for federated pairs. Every entry point that moves value is
-///      non-reentrant; claims delete the bid before they mint (an ERC-1155 acceptance call) or
-///      send ETH.
+///      Editions, a per-sale record for Independent Stream pairs. Every entry point that moves
+///      value is non-reentrant; claims delete the bid before they mint (an ERC-1155 acceptance
+///      call) or send ETH.
 abstract contract UniformEditionAuctionBase is
     IUniformEditionAuctionStorage,
     AccessManaged,
@@ -141,9 +141,9 @@ abstract contract UniformEditionAuctionBase is
     uint256 private constant _SWEEP_CHUNK = 96;
 
     /// @dev The current parameters' ID, the interning counter, the open pause (when it began,
-    ///      zero while not paused), whether 6529 Stream Editions is listed (unused by a federated
-    ///      deployment), and the governed payout gas: read once per open (`Space.SETTINGS`
-    ///      documents the packing).
+    ///      zero while not paused), whether 6529 Stream Editions is listed (unused by an
+    ///      Independent Stream deployment), and the governed payout gas: read once per open
+    ///      (`Space.SETTINGS` documents the packing).
     struct Settings {
         uint24 termsId;
         uint24 termsCount;
@@ -236,7 +236,8 @@ abstract contract UniformEditionAuctionBase is
     /// @param token The edition contract (`_checkTarget`).
     /// @param id The edition ID, the master's 6529 Stream token ID.
     /// @param data The deployment's open data: for 6529 Stream Editions `abi.encode(PackageItem,
-    ///        bytes32 packageRoot, bytes32[] proof)`, for a federated pair `abi.encode(PackageItem)`.
+    ///        bytes32 packageRoot, bytes32[]
+    ///        proof)`, for an Independent Stream pair `abi.encode(PackageItem)`.
     /// @return saleId `saleIdOf(token, id)`.
     function open(address token, uint256 id, bytes calldata data)
         external
@@ -625,7 +626,7 @@ abstract contract UniformEditionAuctionBase is
     ///         `departures`, `settlementOrder`, `abandonable`, `config`, `limits`, `saleIdOf`,
     ///         `creditExpiresAt`, `creditOf`, `feeRecipient`, `directory`, `economics`,
     ///         `englishAuction`, `escrow`, `saleKind`, `paused`, `isTarget`, `claimable`,
-    ///         `federationRegistry`, `supportsInterface`): it sends this call's calldata
+    ///         `independentStreamRegistry`, `supportsInterface`): it sends this call's calldata
     ///         unchanged to the lens, which declares each with the same signature, and returns or
     ///         reverts with its answer. Any other call reverts there. ETH is refused.
     /// @dev A read-only `staticcall` to the fixed, stateless lens this contract pinned; no
@@ -1446,8 +1447,9 @@ contract UniformEditionAuction is UniformEditionAuctionBase {
 
     /// @notice Lists or unlists `token` (`ISaleAdapter.setTarget`); SUCCESSOR_SETTER.
     /// @dev Only `_editions` can be listed. Unlisting stops new opens; running sales finish.
-    ///      This deployment serves no federated token, so it keeps no federation registry: the
-    ///      lens answers `federationRegistry` with zero and refuses `setFederationRegistry`.
+    ///      This deployment serves no Independent Stream token, so it keeps no Independent Stream
+    ///      registry: the lens answers `independentStreamRegistry` with zero and refuses
+    ///      `setIndependentStreamRegistry`.
     /// @param token The token: 6529 Stream Editions.
     /// @param listed Whether it is served.
     function setTarget(address token, bool listed) external restricted {

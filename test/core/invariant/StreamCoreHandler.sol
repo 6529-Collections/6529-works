@@ -5,19 +5,19 @@ import { CommonBase } from "forge-std/Base.sol";
 import { StdCheats } from "forge-std/StdCheats.sol";
 import { StdUtils } from "forge-std/StdUtils.sol";
 import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
-import { Stream } from "src/core/Stream.sol";
+import { Stream6529 } from "src/core/Stream6529.sol";
 import { Core, Minter, MintFacts, Outcome, Work } from "src/interfaces/core/CoreTypes.sol";
 import { IStream } from "src/interfaces/core/IStream.sol";
 import { MockSale, MockTerms } from "../../mocks/core/CoreMocks.sol";
 
-/// @notice Drives the real `Stream` through minters, the TERMS module, collectors and the
+/// @notice Drives the real `Stream6529` through minters, the TERMS module, collectors and the
 ///         network, keeping a model (ghost state) of what each call must do. A call the model
 ///         says succeeds is made directly, so a refusal fails the campaign (`fail_on_revert`); a
 ///         call the model says fails is made low-level, and a success is recorded as a violation.
 contract StreamCoreHandler is CommonBase, StdCheats, StdUtils {
     uint256 internal constant CONTENTS = 6;
 
-    Stream public immutable stream;
+    Stream6529 public immutable stream;
     MockTerms public immutable terms;
     MockSale[3] public sales;
     address[3] public collectors;
@@ -39,7 +39,7 @@ contract StreamCoreHandler is CommonBase, StdCheats, StdUtils {
     mapping(uint256 id => uint24) public lockedRate;
     mapping(bytes4 action => uint256) public calls;
 
-    constructor(Stream stream_, MockTerms terms_, MockSale[3] memory sales_) {
+    constructor(Stream6529 stream_, MockTerms terms_, MockSale[3] memory sales_) {
         stream = stream_;
         terms = terms_;
         sales = sales_;

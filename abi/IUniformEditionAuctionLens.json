@@ -651,19 +651,6 @@
     "type": "function"
   },
   {
-    "inputs": [],
-    "name": "federationRegistry",
-    "outputs": [
-      {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
     "inputs": [
       {
         "internalType": "address",
@@ -677,6 +664,19 @@
       }
     ],
     "name": "feeRecipient",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "independentStreamRegistry",
     "outputs": [
       {
         "internalType": "address",
@@ -1026,7 +1026,7 @@
         "type": "address"
       }
     ],
-    "name": "setFederationRegistry",
+    "name": "setIndependentStreamRegistry",
     "outputs": [],
     "stateMutability": "pure",
     "type": "function"

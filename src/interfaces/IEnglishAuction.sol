@@ -5,13 +5,13 @@ import { IEconomicsResolver } from "./IEconomicsResolver.sol";
 
 /// @title IEnglishAuction
 /// @notice The network's English auction for 1/1 works: 6529 Stream's primary sale, and the sale
-///         of federated artists' works. ETH only.
+///         of Independent Stream artists' works. ETH only.
 /// @dev Starting is permissionless: the start asks the token's mint policy to admit the item
 ///      (`IMintPolicy.authorize`), mints the work into this auction's custody (`IStream.mint`)
 ///      and starts the clock. The policy is the package registry for 6529 Stream (governed,
-///      `streamPolicy`) and the federation module of the directory for any other token. A sale
-///      keeps the seller and the network's fee share the policy answered at its start. Sale IDs
-///      are derived: `saleIdOf(token, tokenId)`.
+///      `streamPolicy`) and the Independent Stream module of the directory for any other token. A
+///      sale keeps the seller and the network's fee share the policy answered at its start. Sale
+///      IDs are derived: `saleIdOf(token, tokenId)`.
 ///
 ///      Bidding: the first bid must reach the opening bid (`AssetAllowlist.openingBid(ETH)`,
 ///      read when the bid is placed), a withdrawn bid's reserve, and 1 wei; later bids must
@@ -24,14 +24,14 @@ import { IEconomicsResolver } from "./IEconomicsResolver.sol";
 ///      refuses is paid through the revenue escrow), and the work is delivered; a recipient that
 ///      cannot take it leaves a pending delivery (`claimDelivery`). An unsold 6529 Stream work is
 ///      recorded UNSOLD and sent to the 6529 Network Museum (`IEconomicsResolver.museum()`, read
-///      then). An unsold federated work stays in this auction's custody with no outcome, and
-///      anyone may offer it again here (`restart`); its artist cannot take it out without a sale.
-///      A federated sale is closed with refunds only when its token is no longer served by the
-///      federation module (delisted, or its version revoked); removing this auction as a sale
-///      contract or suspending a version lets running sales finish and unsold works be offered
-///      again here, since the token lets the account that minted a work record its sale for good.
-///      A work the network rescued (`IStream.rescue`, outcome RESCUED) closes its sale with the
-///      standing bid credited back.
+///      then). An unsold Independent Stream work stays in this auction's custody with no outcome,
+///      and anyone may offer it again here (`restart`); its artist cannot take it out without a
+///      sale. An Independent Stream sale is closed with refunds only when its token is no longer
+///      served by the Independent Stream module (delisted, or its version revoked); removing this
+///      auction as a sale contract or suspending a version lets running sales finish and unsold
+///      works be offered again here, since the token lets the account that minted a work record its
+///      sale for good. A work the network rescued (`IStream.rescue`, outcome RESCUED) closes its
+///      sale with the standing bid credited back.
 ///
 ///      Disputes: the network may pause a live auction once, for at most 3 days (`MAX_PAUSE`);
 ///      the high bidder may withdraw while it is paused; the network may cancel it (an upheld
@@ -39,11 +39,11 @@ import { IEconomicsResolver } from "./IEconomicsResolver.sol";
 ///      within the 3 days it resumes by itself.
 ///
 ///      Money: the seller receives `floor(price * (100,000 - feeShare) / 100,000)` and the
-///      network the rest, paid to the 6529 Stream (or federated) fee recipient the economics
-///      resolver names at settlement. Credits age: a credit's money that has itself waited the
-///      directory's `unclaimedPeriod` may be sent to the network's fee recipient by anyone
-///      (`expireCredit`); money credited later starts its own wait, and nobody can shorten or
-///      postpone a clock.
+///      network the rest, paid to the 6529 Stream (or Independent Stream) fee recipient the
+///      economics resolver names at settlement. Credits age: a credit's money that has itself
+///      waited the directory's `unclaimedPeriod` may be sent to the network's fee recipient by
+///      anyone (`expireCredit`); money credited later starts its own wait, and nobody can shorten
+///      or postpone a clock.
 interface IEnglishAuction {
     /// @notice An auction's lifecycle. ENDED is derived: ACTIVE with the end passed. PAUSED is
     ///         derived while a dispute pause is live.
@@ -60,9 +60,9 @@ interface IEnglishAuction {
     /// @param duration Seconds from start to end.
     /// @param extensionWindow The anti-snipe window and extension, in seconds.
     /// @param incrementShare The minimum relative increment, out of 100,000.
-    /// @param refusalGas The gas a federated settlement attempt is given, and must be given in
-    ///        full, for its failure to count as the token's refusal: raise-only, at most doubled
-    ///        per step.
+    /// @param refusalGas The gas an Independent Stream settlement attempt is given, and must be
+    ///        given in full, for its failure to count as the token's refusal: raise-only, at most
+    ///        doubled per step.
     struct AuctionConfig {
         uint32 duration;
         uint32 extensionWindow;
@@ -95,7 +95,7 @@ interface IEnglishAuction {
         AuctionState state;
     }
 
-    /// @notice A sale started (also when an unsold federated work is offered again).
+    /// @notice A sale started (also when an unsold Independent Stream work is offered again).
     /// @param saleId The sale ID.
     /// @param token The token contract.
     /// @param tokenId The token.
@@ -120,7 +120,7 @@ interface IEnglishAuction {
     /// @param tokenId The token.
     /// @param buyer The winning bidder, or zero when no bid won.
     /// @param recipient Who receives the work: the winner's recipient, the museum for an
-    ///        unsold 6529 Stream work, or this auction for an unsold federated work.
+    ///        unsold 6529 Stream work, or this auction for an unsold Independent Stream work.
     /// @param quantity Always 1.
     /// @param currency Always zero (ETH).
     /// @param price The price, `sellerProceeds + fee`.
@@ -276,12 +276,12 @@ interface IEnglishAuction {
         payable
         returns (uint256 saleId);
 
-    /// @notice Offers an unsold federated work in this auction's custody again, with the seller
-    ///         its first start locked and the network's share in force now for the token
-    ///         (`IFederationGate.feeShareOf`). Permissionless, while starts are not paused and the
-    ///         federation module still serves the token, whether or not this auction may still
-    ///         mint new works.
-    /// @param saleId A settled sale of a federated work still in custody with no outcome.
+    /// @notice Offers an unsold Independent Stream work in this auction's custody again, with the
+    ///         seller its first start locked and the network's share in force now for the token
+    ///         (`IIndependentStreamGate.feeShareOf`). Permissionless, while starts are not paused
+    ///         and the Independent Stream module still serves the token, whether or not this
+    ///         auction may still mint new works.
+    /// @param saleId A settled sale of an Independent Stream work still in custody with no outcome.
     function restart(uint256 saleId) external;
 
     /// @notice Bids `msg.value` for `recipient` (the caller when zero).
@@ -365,7 +365,7 @@ interface IEnglishAuction {
     function economics() external view returns (IEconomicsResolver);
 
     /// @notice The mint policy a token's works are admitted by here: `streamPolicy` for 6529
-    ///         Stream, the directory's federation module for any other token.
+    ///         Stream, the directory's Independent Stream module for any other token.
     /// @param token The token contract.
     /// @return The policy, or zero.
     function policyOf(address token) external view returns (address);

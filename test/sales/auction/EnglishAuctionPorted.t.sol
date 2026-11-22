@@ -23,9 +23,9 @@ contract EnglishAuctionPortedTest is AuctionFixture {
         _bid(carol, saleId, auction.minimumBid(saleId));
     }
 
-    /// @dev A federated sale with alice's standing bid, ended and past the refusal delay.
+    /// @dev An Independent Stream sale with alice's standing bid, ended and past the refusal delay.
     function _refusableSale() internal returns (uint256 saleId) {
-        saleId = _startFed(1);
+        saleId = _startInd(1);
         _bid(alice, saleId, 1 ether);
         _end(saleId);
         vm.warp(auction.refusableAt(saleId));
@@ -93,7 +93,7 @@ contract EnglishAuctionPortedTest is AuctionFixture {
     ///      error before any attempt: nothing settles, nothing is credited back.
     function test_SettleOrRefund_RefusedWhileTheEscrowIsLocked() public {
         uint256 saleId = _refusableSale();
-        federation.forget(address(auction)); // an attempt now would fail and refund
+        independentStream.forget(address(auction)); // an attempt now would fail and refund
         vm.mockCall(address(escrow), abi.encodeCall(IRevenueEscrow.locked, ()), abi.encode(true));
         vm.expectRevert(ReentrancyGuardTransient.ReentrancyGuardReentrantCall.selector);
         auction.settleOrRefund(saleId);
@@ -112,7 +112,7 @@ contract EnglishAuctionPortedTest is AuctionFixture {
     ///      escrow's guard held) calls `settleOrRefund`; it is refused, and the sale is untouched.
     function test_SettleOrRefund_RefusedFromInsideAnEscrowFlush() public {
         uint256 saleId = _refusableSale();
-        federation.forget(address(auction));
+        independentStream.forget(address(auction));
         ReentrantRecipient inside = new ReentrantRecipient();
         inside.configure(
             address(auction), abi.encodeCall(IEnglishAuctionRefusal.settleOrRefund, (saleId))

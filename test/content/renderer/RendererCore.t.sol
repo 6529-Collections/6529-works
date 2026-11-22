@@ -32,10 +32,10 @@ contract RecordsWithDelivery {
     }
 }
 
-/// @notice The renderer against the real permanent core (`CoreFixture`: the real `Stream`,
-///         `Editions`, `WorkFacts` and `ContentStore`), installed as the Stream's RENDERER
-///         module and pinned at finalize: what it reads through the plain views, the locator
-///         check against a finalized work, and the cost of `tokenURI`.
+/// @notice The renderer against the real permanent core (`CoreFixture`: the real `Stream6529`,
+///         `StreamEditions6529`, `StreamWorkFacts6529` and `ContentStore`), installed as the
+///         Stream's RENDERER module and pinned at finalize: what it reads through the plain views,
+///         the locator check against a finalized work, and the cost of `tokenURI`.
 contract RendererCoreTest is CoreFixture {
     uint256 internal constant BUDGET = 8_000_000;
     bytes internal constant PNG = hex"89504e470d0a1a0a0000000d49484452";

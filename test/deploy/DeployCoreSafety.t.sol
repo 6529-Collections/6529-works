@@ -156,7 +156,9 @@ contract DeployCoreSafetyTest is Test {
         DeployCore.Deployment memory ref = DeployCore.deploy(p, address(this));
         bytes32[] memory expected = VerifyCore.codeHashes(p, ref);
         vm.expectRevert(
-            abi.encodeWithSelector(VerifyCore.CodeMismatch.selector, "Stream", address(d.stream))
+            abi.encodeWithSelector(
+                VerifyCore.CodeMismatch.selector, "Stream6529", address(d.stream)
+            )
         );
         this.checkCodeExternal(p, d, actual, ref, expected);
     }
@@ -198,7 +200,7 @@ contract DeployCoreSafetyTest is Test {
         d.stream.activateModule(Slots.RENDERER);
         vm.expectRevert(
             abi.encodeWithSelector(
-                VerifyCore.Mismatch.selector, "Stream.RENDERER", address(d.stream)
+                VerifyCore.Mismatch.selector, "Stream6529.RENDERER", address(d.stream)
             )
         );
         this.verifyExternal(p, d, cfg);

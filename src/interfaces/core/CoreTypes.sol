@@ -178,12 +178,12 @@ library Slots {
     bytes32 internal constant RECORDS = "RECORDS";
     /// @dev Directory: the accounts module (`IAccounts`).
     bytes32 internal constant ACCOUNTS = "ACCOUNTS";
-    /// @dev Directory: the federation module (`IFederationGate`).
-    bytes32 internal constant FEDERATION = "FEDERATION";
-    /// @dev Directory: the TERMS module of every federated token.
-    bytes32 internal constant FEDERATED_TERMS = "FEDERATED_TERMS";
-    /// @dev Directory: the RECORDS module of every federated token.
-    bytes32 internal constant FEDERATED_RECORDS = "FEDERATED_RECORDS";
+    /// @dev Directory: the Independent Stream module (`IIndependentStreamGate`).
+    bytes32 internal constant INDEPENDENT_STREAM = "INDEPENDENT_STREAM";
+    /// @dev Directory: the TERMS module of every Independent Stream token.
+    bytes32 internal constant INDEPENDENT_TERMS = "INDEPENDENT_TERMS";
+    /// @dev Directory: the RECORDS module of every Independent Stream token.
+    bytes32 internal constant INDEPENDENT_RECORDS = "INDEPENDENT_RECORDS";
 }
 
 /// @notice Shared numbers and hashes of the permanent core.
@@ -191,16 +191,16 @@ library Core {
     /// @dev Rates and shares are out of this.
     uint256 internal constant DENOMINATOR = 100_000;
 
-    /// @notice What a collaborator of a federated work consents to: the item and the royalty
-    ///         rate (ADR 0010). Passed as `what` to `IAccounts.requireConsent`.
+    /// @notice What a collaborator of an Independent Stream work consents to: the item and the
+    ///         royalty rate (ADR 0010). Passed as `what` to `IAccounts.requireConsent`.
     /// @param itemHash The item hash.
     /// @param royaltyRate The royalty rate, out of 100,000.
     /// @return The consent subject.
-    function federatedConsent(bytes32 itemHash, uint24 royaltyRate)
+    function independentConsent(bytes32 itemHash, uint24 royaltyRate)
         internal
         pure
         returns (bytes32)
     {
-        return keccak256(abi.encode("6529WORKS_FEDERATED_CONSENT_V1", itemHash, royaltyRate));
+        return keccak256(abi.encode("6529WORKS_INDEPENDENT_CONSENT_V1", itemHash, royaltyRate));
     }
 }

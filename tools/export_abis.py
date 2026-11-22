@@ -51,11 +51,11 @@ INTERFACE_DIRS = ("src/interfaces/", "src/economics/interfaces/")
 EXCLUDED_DIRS = ("src/interfaces/external/",)
 # The deployed contract, and the ABI of what it forwards with a read-only call (its lens or
 # extension). Only the edition auctions have one: they forward every call they do not declare to
-# their lens (the federated edition auction shares the edition auction's fallback). Keyed by
+# their lens (the Independent Stream edition auction shares the edition auction's fallback). Keyed by
 # source path.
 FORWARDED = {
     "src/sales/UniformEditionAuction.sol": "UniformEditionAuctionLens",
-    "src/federated/FederatedEditionAuction.sol": "FederatedEditionAuctionLens",
+    "src/independent/IndependentEditionAuction.sol": "IndependentEditionAuctionLens",
 }
 # Sources of the plain permanent core; a name declared both here and elsewhere is exported
 # under core/.

@@ -7,11 +7,11 @@ import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessMa
 import { Multicall } from "@openzeppelin/contracts/utils/Multicall.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
-import { FederationRegistry } from "src/federated/FederationRegistry.sol";
+import { IndependentStreamRegistry } from "src/independent/IndependentStreamRegistry.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { GovernanceConfigurator } from "src/governance/GovernanceConfigurator.sol";
 import { Roles } from "src/governance/Roles.sol";
-import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
+import { IIndependentStreamRegistry } from "src/interfaces/IIndependentStreamRegistry.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IStatementLog, Statement } from "src/interfaces/IStatementLog.sol";
@@ -29,9 +29,9 @@ import {
 /// @notice Re-ported from the retired `GenesisWiring` suite onto today's allow-list: the genesis
 ///         wiring (the package registry's Stream bind and entropy module, an edition auction's
 ///         sale target, the asset allowlist's first default currency and ETH opening bid, the
-///         federation module's adapters, templates and entropy module, and the epoch-0 manifest)
-///         runs as the zero-delay installer inside the configuring transaction, and nothing else
-///         does.
+///         Independent Stream module's adapters, templates and entropy module, and the epoch-0
+///         manifest) runs as the zero-delay installer inside the configuring transaction, and
+///         nothing else does.
 contract GenesisWiringPortedTest is GovernanceFixture {
     WiringTargetPortedMock internal wired;
     Erc165PeerPortedMock internal peerA;
@@ -116,9 +116,9 @@ contract GenesisWiringPortedTest is GovernanceFixture {
             IPackageRegistry.setEntropyModule.selector,
             ISaleAdapter.setTarget.selector,
             IAssetAllowlist.setOpeningBid.selector,
-            FederationRegistry.setAdapter.selector,
-            FederationRegistry.approveTemplate.selector,
-            FederationRegistry.setEntropyModule.selector,
+            IndependentStreamRegistry.setAdapter.selector,
+            IndependentStreamRegistry.approveTemplate.selector,
+            IndependentStreamRegistry.setEntropyModule.selector,
             IStatementLog.appendGovernanceManifest.selector
         ];
         bytes4[8] memory scope = [
@@ -126,9 +126,9 @@ contract GenesisWiringPortedTest is GovernanceFixture {
             type(IPackageRegistry).interfaceId,
             type(ISaleAdapter).interfaceId,
             GovernanceConfig.ANY_TARGET,
-            type(IFederationRegistry).interfaceId,
-            type(IFederationRegistry).interfaceId,
-            type(IFederationRegistry).interfaceId,
+            type(IIndependentStreamRegistry).interfaceId,
+            type(IIndependentStreamRegistry).interfaceId,
+            type(IIndependentStreamRegistry).interfaceId,
             GovernanceConfig.ANY_TARGET
         ];
         for (uint256 i; i < allowed.length; ++i) {
@@ -137,8 +137,12 @@ contract GenesisWiringPortedTest is GovernanceFixture {
         }
         // Later changes of the same contracts wait their class.
         assertFalse(GovernanceConfig.isGenesisSelector(IPackageRegistry.setVerifier.selector));
-        assertFalse(GovernanceConfig.isGenesisSelector(FederationRegistry.revokeTemplate.selector));
-        assertFalse(GovernanceConfig.isGenesisSelector(FederationRegistry.lowerFeeShare.selector));
+        assertFalse(
+            GovernanceConfig.isGenesisSelector(IndependentStreamRegistry.revokeTemplate.selector)
+        );
+        assertFalse(
+            GovernanceConfig.isGenesisSelector(IndependentStreamRegistry.lowerFeeShare.selector)
+        );
         assertFalse(GovernanceConfig.isGenesisSelector(ISaleAdapter.unpause.selector));
         assertFalse(GovernanceConfig.isGenesisSelector(bytes4(0)));
         assertFalse(GovernanceConfig.isGenesisSelector(0xffffffff));
@@ -148,17 +152,17 @@ contract GenesisWiringPortedTest is GovernanceFixture {
         _expectValidation(selector);
     }
 
-    /// @dev The federation module's genesis selectors reach only a target declaring
-    ///      `IFederationRegistry`: the wiring mock does not, so all three are refused there;
+    /// @dev The Independent Stream module's genesis selectors reach only a target declaring
+    ///      `IIndependentStreamRegistry`: the wiring mock does not, so all three are refused there;
     ///      the package registry's and the sale adapter's pass (explicit, so coverage does not
     ///      rest on the fuzzer).
-    function test_FederationRegistrySelectorsNeedTheirInterface() public {
+    function test_IndependentStreamRegistrySelectorsNeedTheirInterface() public {
         assertFalse(
-            IERC165(address(wired)).supportsInterface(type(IFederationRegistry).interfaceId)
+            IERC165(address(wired)).supportsInterface(type(IIndependentStreamRegistry).interfaceId)
         );
-        _expectValidation(FederationRegistry.approveTemplate.selector);
-        _expectValidation(FederationRegistry.setAdapter.selector);
-        _expectValidation(FederationRegistry.setEntropyModule.selector);
+        _expectValidation(IndependentStreamRegistry.approveTemplate.selector);
+        _expectValidation(IndependentStreamRegistry.setAdapter.selector);
+        _expectValidation(IndependentStreamRegistry.setEntropyModule.selector);
         _expectValidation(IPackageRegistry.bindStream.selector);
         _expectValidation(ISaleAdapter.setTarget.selector);
         _expectValidation(IAssetAllowlist.setOpeningBid.selector);
@@ -379,9 +383,9 @@ contract GenesisWiringPortedTest is GovernanceFixture {
             ISaleAdapter.setTarget.selector,
             IPackageRegistry.bindStream.selector,
             IPackageRegistry.setEntropyModule.selector,
-            FederationRegistry.setAdapter.selector,
-            FederationRegistry.approveTemplate.selector,
-            FederationRegistry.setEntropyModule.selector
+            IndependentStreamRegistry.setAdapter.selector,
+            IndependentStreamRegistry.approveTemplate.selector,
+            IndependentStreamRegistry.setEntropyModule.selector
         ];
         for (uint256 i; i < scoped.length; ++i) {
             _expectWiringRevert(

@@ -4,7 +4,7 @@ Status: Accepted by owner instruction, 16 November 2026. Recorded by the deliver
 (Claude Code, acting for the repository owner). Amends [ADR 0001](0001-v1-scope.md) (§7, §11,
 §13, §16), [ADR 0002](0002-access-manager-hardening.md),
 [ADR 0005](0005-stream-editions-auction.md), [ADR 0006](0006-work-powers-and-conventions.md),
-[ADR 0007](0007-permanence.md) and [ADR 0008](0008-federation.md); each carries a dated
+[ADR 0007](0007-permanence.md) and [ADR 0008](0008-independent-stream.md); each carries a dated
 amendment note pointing here.
 
 The behaviour is specified in the spec pages ([index](../spec/README.md)); this record is how it
@@ -13,7 +13,7 @@ was decided. Pre-audit: nothing here claims an audit, production readiness or co
 ## Context
 
 The first permanence build (ADR 0007, ADR 0008) leaned many open choices towards artists,
-collectors and federated contracts and away from the network. On 16 November 2026 the owner
+collectors and Independent Stream contracts and away from the network. On 16 November 2026 the owner
 reviewed a 61-item list of those choices item by item and gave four general directions:
 
 - **The authority is TDH.** In effect a multisig of thousands of holders on 6529chain, bridged
@@ -84,8 +84,8 @@ reviewed a 61-item list of those choices item by item and gave four general dire
 18. An edition sale may be abandoned 21 days after its close; if the master's sale settled, the
     call creates the edition (R16).
 19. A dispute pause on a live 1/1 lasts at most a fixed 3 days; the network can cancel or resume
-    at any moment of it (C30). The federated refusal exit opens 2 days after the sale's end; the
-    currency-freeze exit and the delivery redirect wait 14 days each.
+    at any moment of it (C30). The Independent Stream refusal exit opens 2 days after the sale's
+    end; the currency-freeze exit and the delivery redirect wait 14 days each.
 20. EIP-2612 permit payments are removed; payments are direct or Permit2.
 21. The network's keeper starts sales only through `SaleStarter`, which also deploys the payout
     vaults and opens the record in one transaction. This is the keeper's rule; `start` stays
@@ -93,17 +93,17 @@ reviewed a 61-item list of those choices item by item and gave four general dire
 22. Cancelling an approval stops any edition whose sale has not opened (C23); disabling a signer
     kills its unminted approvals (C32).
 
-### Federation
+### Independent Stream
 
-23. Leaving the federation is removed entirely (R1 to R5, C4). Delisting is per account, a
+23. Leaving Independent Stream is removed entirely (R1 to R5, C4). Delisting is per account, a
     network decision at the 24-hour class, and blocks new contracts from that account (C5,
     C25); a delisted contract cannot mint or sell through network adapters (C1).
 24. A replacement registry inherits existing listings without artist signatures (C3). The
     network can reverse a template revocation; a suspension also stops new sales (C26).
-25. Federated templates take collaborators and VRF. Federated VRF is paid by the requester to
-    the provider with the call (price read from the provider); the network does not pay. It is
-    off until the network sets a wrapper. Overpayment goes to the provider.
-26. Federated royalties may be 0% and the artist may lower them alone (R6, R7).
+25. Independent Stream templates take collaborators and VRF. Independent Stream VRF is paid by the
+    requester to the provider with the call (price read from the provider); the network does not
+    pay. It is off until the network sets a wrapper. Overpayment goes to the provider.
+26. Independent Stream royalties may be 0% and the artist may lower them alone (R6, R7).
 
 ### Documents and tools
 
@@ -125,7 +125,7 @@ reviewed a 61-item list of those choices item by item and gave four general dire
 | Rescue wait after an adapter is removed | 14 days |
 | Anyone may finalize | 14 days after a recorded notice |
 | Dispute pause on a live 1/1 | 3 days |
-| Federated refusal exit | 2 days after the end |
+| Independent Stream refusal exit | 2 days after the end |
 | Currency-freeze exit; delivery redirect | 14 days each |
 | Edition close | 15 minutes after its 1/1 |
 | Edition abandon | 21 days after its close |
@@ -163,7 +163,7 @@ Whole files: `test/governance/BoundedVeto.t.sol`, `ContractSeat.t.sol`, `DeadAdm
 `test/sales/edition/UniformEditionAuctionFixA.t.sol`; `test/mocks/governance/SuccessionMocks.sol`,
 `test/mocks/identity/RepricedDelegationMock.sol`; `tools/conventions/grade.py`, `test_grade.py`.
 
-Tests removed inside kept files, as the lanes reported them: the federated exit tests
+Tests removed inside kept files, as the lanes reported them: the Independent Stream exit tests
 (`test_Exit_*` and the leave parts of the pair, permanence, provenance and governance tests);
 the rescue-delay setter tests (`setRescueDelay`, lane 4); the guardian-rationale tests of the
 currency freeze (RFX-SAL-2, L-4); the edition withdrawal tests (R21); the PERMIT payment tests,
@@ -185,10 +185,10 @@ An independent review of the pass led to these changes before release:
   `disableSigner` and `killSignerApprovals` in one batch.
 - On a curated work the lead artist's account is never a fixed payee, so a freeze holds its
   payout.
-- `FederatedEditions.createEdition` needs a SOLD master or a bound edition sale; an editions
-  contract mints only while its partner's template is approved.
+- `IndependentStreamEditions6529.createEdition` needs a SOLD master or a bound edition sale; an
+  editions contract mints only while its partner's template is approved.
 - `propagateRevocation` is removed: a revocation acts through `isActive` and `canMint`.
-- Curated and federated VRF draws have separate seed maps and tenures.
+- Curated and Independent Stream VRF draws have separate seed maps and tenures.
 - Deploy and Verify refuse a brake in the genesis file off anvil; `SaleStarter` refuses itself
   as payer; the deployment record no longer has `pendingLanes`.
 - Documented, not built: a wallet of a frozen or delisted account can open a new account
@@ -204,7 +204,8 @@ consent has no expiry (LIM-ID-24); declarations carry no intended renunciations.
 - Keeping guardians as a brake with seats: rejected by the owner ("once we go to network TDH
   guardians go away"); one optional brake that can delay once replaces them.
 - Governed ranges for each timer: rejected for compiled values.
-- Network-paid federated VRF: rejected; permissionless artists could spend the network's balance.
+- Network-paid Independent Stream VRF: rejected; permissionless artists could spend the network's
+  balance.
 
 ## Open items
 

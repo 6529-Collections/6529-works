@@ -30,5 +30,5 @@ pages describe.
 - **Governance.** The genesis policy each instance installed is committed under `config/`. The
   [role matrix](../audit/roles.md) is generated from `main`'s genesis policy.
 - **Settings.** Read `moduleDelay()`, `rescueDelay()`, `rebindDelay()` and
-  `Directory.unclaimedPeriod()` directly; they are the network's settings and may differ from
-  their launch values (7, 14, 14 and 180 days).
+  `StreamDirectory6529.unclaimedPeriod()` directly; they are the network's settings and may differ
+  from their launch values (7, 14, 14 and 180 days).

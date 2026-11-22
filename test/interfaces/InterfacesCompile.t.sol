@@ -20,7 +20,7 @@ import { IEnglishAuction } from "../../src/interfaces/IEnglishAuction.sol";
 import { IEnglishAuctionClock } from "../../src/interfaces/IEnglishAuctionClock.sol";
 import { IEnglishAuctionRefusal } from "../../src/interfaces/IEnglishAuctionRefusal.sol";
 import { IEntropyModule } from "../../src/interfaces/IEntropyModule.sol";
-import { IFederationRegistry } from "../../src/interfaces/IFederationRegistry.sol";
+import { IIndependentStreamRegistry } from "../../src/interfaces/IIndependentStreamRegistry.sol";
 import { IPackageRegistry } from "../../src/interfaces/IPackageRegistry.sol";
 import { IRenderer } from "../../src/interfaces/IRenderer.sol";
 import { ISaleAdapter } from "../../src/interfaces/ISaleAdapter.sol";
@@ -40,7 +40,7 @@ contract InterfacesCompileTest is Test {
         assertEq(type(IStream).interfaceId, bytes4(0xe38078e5), "IStream");
         assertEq(type(IWorkPowers).interfaceId, bytes4(0xf2f560e3), "IWorkPowers");
         assertEq(type(IEditions).interfaceId, bytes4(0xb4dad938), "IEditions");
-        assertEq(type(ISaleAdapter).interfaceId, bytes4(0x312dc1e1), "ISaleAdapter");
+        assertEq(type(ISaleAdapter).interfaceId, bytes4(0xd15ddb3f), "ISaleAdapter");
         assertEq(type(IEnglishAuction).interfaceId, bytes4(0x54df3713), "IEnglishAuction");
         // An integration view, never reported through ERC-165.
         assertEq(type(IEnglishAuctionClock).interfaceId, bytes4(0x968c7b07), "IEnglishAuctionClock");
@@ -66,12 +66,16 @@ contract InterfacesCompileTest is Test {
         assertEq(
             type(IArtistPayoutResolver).interfaceId, bytes4(0x9b2c1793), "IArtistPayoutResolver"
         );
-        assertEq(type(IArtistRegistry).interfaceId, bytes4(0xb06572e4), "IArtistRegistry");
+        assertEq(type(IArtistRegistry).interfaceId, bytes4(0x1bec3945), "IArtistRegistry");
         assertEq(type(IAccounts).interfaceId, bytes4(0xc27b4543), "IAccounts");
         assertEq(type(IItemApprovals).interfaceId, bytes4(0x881b19aa), "IItemApprovals");
         assertEq(type(IConsolidationSource).interfaceId, bytes4(0x42129132), "IConsolidationSource");
-        assertEq(type(IEntropyModule).interfaceId, bytes4(0xa8a2a007), "IEntropyModule");
-        assertEq(type(IFederationRegistry).interfaceId, bytes4(0x74a7e21a), "IFederationRegistry");
+        assertEq(type(IEntropyModule).interfaceId, bytes4(0x549d75c9), "IEntropyModule");
+        assertEq(
+            type(IIndependentStreamRegistry).interfaceId,
+            bytes4(0x74a7e21a),
+            "IIndependentStreamRegistry"
+        );
     }
 
     /// @dev Decision D8: every interface a contract installs as a dependency extends IERC165, so
@@ -86,7 +90,7 @@ contract InterfacesCompileTest is Test {
             IERC165(IEconomicsResolver(a)),
             IERC165(IPackageRegistry(a)),
             IERC165(ISaleAdapter(a)),
-            IERC165(IFederationRegistry(a)),
+            IERC165(IIndependentStreamRegistry(a)),
             IERC165(IArtistRoleResolver(a))
         ];
         for (uint256 i; i < installable.length; ++i) {

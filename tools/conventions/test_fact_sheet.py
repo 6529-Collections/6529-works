@@ -72,11 +72,11 @@ class ExampleSheetTest(unittest.TestCase):
     def test_burned_token_has_no_sheet(self) -> None:
         """DCL-28: a burned token has no fact sheet."""
         with self.assertRaises(NoFactSheet):
-            build(lambda i: reads(i)["Stream"].update(ownerOf=None))
+            build(lambda i: reads(i)["Stream6529"].update(ownerOf=None))
 
     def test_missing_read_is_an_error_not_a_default(self) -> None:
         """DCL-26: every read is made; a missing one is refused, never defaulted."""
-        for path in (["Stream", "primarySale"], ["StatementLog", "chainOf"], ["ArtistRegistry", "pendingChange"],
+        for path in (["Stream6529", "primarySale"], ["StatementLog", "chainOf"], ["ArtistRegistry", "pendingChange"],
                      ["WorkRecords", "licenseOf"], ["WorkMinted"]):  # fmt: skip
             def drop(i: dict, path: list = path) -> None:
                 node = reads(i)
@@ -123,7 +123,7 @@ class ExampleSheetTest(unittest.TestCase):
     def test_owner_read_must_be_present(self) -> None:
         """DCL-28: ownerOf is null when it reverted (burned); an absent read is not a burn."""
         with self.assertRaises(ToolError) as caught:
-            build(lambda i: reads(i)["Stream"].pop("ownerOf"))
+            build(lambda i: reads(i)["Stream6529"].pop("ownerOf"))
         self.assertNotIsInstance(caught.exception, NoFactSheet)
 
     def test_renounced_mask_must_be_hex(self) -> None:
@@ -179,7 +179,7 @@ class RecordStatesTest(unittest.TestCase):
         self.assertIn("license", [r["what"] for r in c["changeable"]])
 
     def test_burn_row_kept_before_settlement(self) -> None:
-        c = build(lambda i: reads(i)["Stream"]["primarySale"].update(outcome="NONE", currency=ZERO, price="0"))
+        c = build(lambda i: reads(i)["Stream6529"]["primarySale"].update(outcome="NONE", currency=ZERO, price="0"))
         row = next(r for r in c["changeable"] if r["what"] == "burn_and_release")
         self.assertEqual(row["until"], "settlement")
 
@@ -189,7 +189,7 @@ class SaleAndDisputeTest(unittest.TestCase):
         """DCL-28: NONE, SOLD, UNBID, FROZEN_OUT or RESCUED; only SOLD carries currency and price."""
         for outcome in ("NONE", "SOLD", "UNBID", "FROZEN_OUT", "RESCUED"):
             with self.subTest(outcome):
-                c = build(lambda i, o=outcome: reads(i)["Stream"]["primarySale"].update(outcome=o))
+                c = build(lambda i, o=outcome: reads(i)["Stream6529"]["primarySale"].update(outcome=o))
                 self.assertEqual(c["sale"]["outcome"], outcome)
                 self.assertEqual("price" in c["sale"], outcome == "SOLD")
 
@@ -213,8 +213,8 @@ class SaleAndDisputeTest(unittest.TestCase):
 
         def master(i: dict, disputed: bool) -> None:
             r = reads(i)
-            r["Stream"]["coreOf"]["kind"] = "EDITION_MASTER"
-            r["Stream"]["editionOf"] = {"editionsContract": editions, "editionId": "42"}
+            r["Stream6529"]["coreOf"]["kind"] = "EDITION_MASTER"
+            r["Stream6529"]["editionOf"] = {"editionsContract": editions, "editionId": "42"}
             r["UniformEditionAuction"] = {"clearing": {"count": "25", "price": "100000000000000000"}}
             if disputed:
                 r["StatementLog"].update(latestDisputeOutcome=ENTRY, disputeOutcomeOf={"entryHash": ENTRY, "index": 0})
@@ -367,7 +367,7 @@ class DeclarationsTest(unittest.TestCase):
         still image's generative fact is not_applicable (DCL-5)."""
         def drop(i: dict) -> None:
             reads(i)["WorkRecords"]["mediaOf"].pop()
-            i["floor"] = {"v": 1, "itemHash": reads(i)["Stream"]["coreOf"]["itemHash"], "declarationsFileId": None,
+            i["floor"] = {"v": 1, "itemHash": reads(i)["Stream6529"]["coreOf"]["itemHash"], "declarationsFileId": None,
                           "facts": {"storage": "unmet", "format": "unmet", "license": "unmet",
                                     "generative": "not_applicable", "display": "unmet"}}  # fmt: skip
         c = build(drop)

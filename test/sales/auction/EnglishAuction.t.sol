@@ -21,7 +21,7 @@ import { AuctionFixture } from "./AuctionFixture.sol";
 import { BidderContract, RefusingWallet } from "./AuctionMocks.sol";
 
 /// @notice The English auction's start, bidding, settlement, delivery, claims and governance,
-///         against the real `src/core/Stream.sol`.
+///         against the real `src/core/Stream6529.sol`.
 contract EnglishAuctionTest is AuctionFixture {
     // ------------------------------------------------------------------------------ start
 
@@ -622,16 +622,16 @@ contract EnglishAuctionTest is AuctionFixture {
         vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, alice));
         auction.setStreamPolicy(address(policy), alice);
         vm.expectEmit(address(auction));
-        emit IEnglishAuction.StreamPolicySet(address(policy), address(federation));
-        auction.setStreamPolicy(address(policy), address(federation));
-        assertEq(auction.streamPolicy(), address(federation));
-        assertEq(auction.policyOf(address(stream)), address(federation));
+        emit IEnglishAuction.StreamPolicySet(address(policy), address(independentStream));
+        auction.setStreamPolicy(address(policy), address(independentStream));
+        assertEq(auction.streamPolicy(), address(independentStream));
+        assertEq(auction.policyOf(address(stream)), address(independentStream));
     }
 
-    function test_PolicyOf_StreamOrTheFederationModule() public view {
+    function test_PolicyOf_StreamOrTheIndependentStreamModule() public view {
         assertEq(auction.policyOf(address(stream)), address(policy));
-        assertEq(auction.policyOf(address(fed)), address(federation));
-        assertEq(auction.policyOf(alice), address(federation));
+        assertEq(auction.policyOf(address(ind)), address(independentStream));
+        assertEq(auction.policyOf(alice), address(independentStream));
     }
 
     function test_Constructor_ChecksItsDependencies() public {

@@ -73,8 +73,8 @@ def fn(signature: str, role: str, note: str | None = None, via: str | None = Non
     return row
 
 
-FED_STREAM = "src/federated/FederatedStream.sol:FederatedStream"
-FED_EDITIONS = "src/federated/FederatedEditions.sol:FederatedEditions"
+IND_STREAM = "src/independent/IndependentStream6529.sol:IndependentStream6529"
+IND_EDITIONS = "src/independent/IndependentStreamEditions6529.sol:IndependentStreamEditions6529"
 
 # The module and minter functions every token contract and the Directory share.
 SLOTS = [
@@ -110,8 +110,8 @@ def contract(name, address, artifact, implementation, functions, note=None):
 
 CONTRACTS = [
     contract(
-        "Stream", "0x000000000000000000000000000000000000a001",
-        "src/core/Stream.sol:Stream", "src/core/Stream.sol:Stream",
+        "Stream6529", "0x000000000000000000000000000000000000a001",
+        "src/core/Stream6529.sol:Stream6529", "src/core/Stream6529.sol:Stream6529",
         [
             fn("createCollection(string,bytes32)", "PLATFORM"),
             fn("setContractURI(string)", "PARAMETER_SETTER"),
@@ -123,8 +123,8 @@ CONTRACTS = [
         ],
     ),
     contract(
-        "Editions", "0x000000000000000000000000000000000000a003",
-        "src/core/Editions.sol:Editions", "src/core/Editions.sol:Editions",
+        "StreamEditions6529", "0x000000000000000000000000000000000000a003",
+        "src/core/StreamEditions6529.sol:StreamEditions6529", "src/core/StreamEditions6529.sol:StreamEditions6529",
         [
             fn("setContractURI(string)", "PARAMETER_SETTER"),
             fn("setOwner(address)", "FUNDS_SETTER", "the marketplace owner; no protocol power"),
@@ -135,15 +135,15 @@ CONTRACTS = [
         ],
     ),
     contract(
-        "Directory", "0x000000000000000000000000000000000000a017",
-        "src/core/Directory.sol:Directory", "src/core/Directory.sol:Directory",
+        "StreamDirectory6529", "0x000000000000000000000000000000000000a017",
+        "src/core/StreamDirectory6529.sol:StreamDirectory6529", "src/core/StreamDirectory6529.sol:StreamDirectory6529",
         [
             *SLOTS,
             fn("setUnclaimedPeriod(uint48)", "NETWORK", "the network's setting, 180 days at launch; read by SplitLedger and RevenueEscrow; zero allowed"),
-            fn("setRescueDelay(uint48)", "NETWORK", "asked by every federated token for its own setting", FED_STREAM),
-            fn("rescue(uint256,address)", "NETWORK", "asked by every federated token", FED_STREAM),
-            fn("setRebindDelay(uint48)", "NETWORK", "asked by every federated editions token for its own setting", FED_EDITIONS),
-            fn("rebind(uint256,address)", "NETWORK", "asked by every federated editions token", FED_EDITIONS),
+            fn("setRescueDelay(uint48)", "NETWORK", "asked by every Independent Stream token for its own setting", IND_STREAM),
+            fn("rescue(uint256,address)", "NETWORK", "asked by every Independent Stream token", IND_STREAM),
+            fn("setRebindDelay(uint48)", "NETWORK", "asked by every Independent Stream Editions token for its own setting", IND_EDITIONS),
+            fn("rebind(uint256,address)", "NETWORK", "asked by every Independent Stream Editions token", IND_EDITIONS),
         ],
     ),
     contract(
@@ -159,7 +159,7 @@ CONTRACTS = [
             fn("retireStore(uint256)", "PARAMETER_SETTER"),
             fn("setFileStore(address,uint256,bytes32,uint256)", "STORAGE_OPERATOR", "or a wallet of the lead artist's account"),
         ],
-        "RECORDS module of Stream and, through Directory, of federated tokens",
+        "RECORDS module of Stream and, through Directory, of Independent Stream tokens",
     ),
     contract(
         "WorkDelivery", "0x000000000000000000000000000000000000a011",
@@ -180,7 +180,7 @@ CONTRACTS = [
             fn("lowerFeeShare(address,uint256,address,address,uint32,uint32)", "PARAMETER_SETTER", "lower only"),
             fn("setEditions(address,address)", "SUCCESSOR_SETTER", "pairs a token with its editions contract"),
         ],
-        "TERMS module of Stream, Editions and federated tokens",
+        "TERMS module of Stream, Editions and Independent Stream tokens",
     ),
     contract(
         "PackageRegistry", "0x000000000000000000000000000000000000a004",
@@ -302,8 +302,8 @@ CONTRACTS = [
         ],
     ),
     contract(
-        "FederationRegistry", "0x000000000000000000000000000000000000a015",
-        "src/federated/FederationRegistry.sol:FederationRegistry", None,
+        "IndependentStreamRegistry", "0x000000000000000000000000000000000000a015",
+        "src/independent/IndependentStreamRegistry.sol:IndependentStreamRegistry", None,
         [
             fn("approveTemplate(address,uint32,uint8)", "PARAMETER_SETTER"),
             fn("revokeTemplate(address)", "PARAMETER_SETTER"),
@@ -317,11 +317,11 @@ CONTRACTS = [
             fn("releaseContent(address,uint256,bytes32,uint256)", "PARAMETER_SETTER"),
             fn("setEntropyModule(address)", "SUCCESSOR_SETTER", "also set once at genesis"),
         ],
-        "The FEDERATION module behind Directory",
+        "The INDEPENDENT_STREAM module behind Directory",
     ),
     contract(
-        "FederatedEditionAuction", "0x000000000000000000000000000000000000a016",
-        "src/federated/FederatedEditionAuction.sol:FederatedEditionAuction", None,
+        "IndependentEditionAuction", "0x000000000000000000000000000000000000a016",
+        "src/independent/IndependentEditionAuction.sol:IndependentEditionAuction", None,
         [
             fn("pause()", "PAUSER"),
             fn("unpause()", "NETWORK"),
@@ -339,20 +339,20 @@ for _c in CONTRACTS:
         _c["genesisOnly"] = [{"signature": "bindStream(address)", "selector": selector("bindStream(address)")}]
 
 WIRING = [
-    ("PackageRegistry", "bindStream(address)", ["Stream"], "the one Stream the package registry admits for"),
+    ("PackageRegistry", "bindStream(address)", ["Stream6529"], "the one Stream the package registry admits for"),
     ("PackageRegistry", "setEntropyModule(address,address)", ["0x0000000000000000000000000000000000000000", "EntropyModule"], "left out when there is no entropy module"),
-    ("UniformEditionAuction", "setTarget(address,bool)", ["Editions", True], None),
+    ("UniformEditionAuction", "setTarget(address,bool)", ["StreamEditions6529", True], None),
     (
         "AssetAllowlist",
         "setOpeningBid(address,uint64,uint256)",
         ["0x0000000000000000000000000000000000000000", 1, 50000000000000000],
         "ETH opening bid 0.05 ETH: a 1-wei self-bid cannot keep an unsold work from the museum",
     ),
-    ("FederationRegistry", "setAdapter(address,uint8,bool)", ["EnglishAuction", 0, True], None),
-    ("FederationRegistry", "setAdapter(address,uint8,bool)", ["FederatedEditionAuction", 1, True], None),
-    ("FederationRegistry", "approveTemplate(address,uint32,uint8)", ["FederatedStreamDeployer", 1, 0], None),
-    ("FederationRegistry", "approveTemplate(address,uint32,uint8)", ["FederatedEditionsDeployer", 1, 1], None),
-    ("FederationRegistry", "setEntropyModule(address)", ["EntropyModule"], "left out when there is no entropy module"),
+    ("IndependentStreamRegistry", "setAdapter(address,uint8,bool)", ["EnglishAuction", 0, True], None),
+    ("IndependentStreamRegistry", "setAdapter(address,uint8,bool)", ["IndependentEditionAuction", 1, True], None),
+    ("IndependentStreamRegistry", "approveTemplate(address,uint32,uint8)", ["IndependentStream721Deployer", 1, 0], None),
+    ("IndependentStreamRegistry", "approveTemplate(address,uint32,uint8)", ["IndependentStreamEditionsDeployer", 1, 1], None),
+    ("IndependentStreamRegistry", "setEntropyModule(address)", ["EntropyModule"], "left out when there is no entropy module"),
     ("StatementLog", f"appendGovernanceManifest({STATEMENT})", [], None),
 ]
 
@@ -387,23 +387,23 @@ def build() -> dict:
         "holders": old["holders"],
         "peers": [
             {"name": "SplitFactory", "address": "0x000000000000000000000000000000000000a010", "note": "the split ledger; unowned; its payout resolver is Directory"},
-            {"name": "WorkFacts", "address": "0x000000000000000000000000000000000000a019", "note": "the permanent record of every work; unowned"},
+            {"name": "StreamWorkFacts6529", "address": "0x000000000000000000000000000000000000a019", "note": "the permanent record of every work; unowned"},
             {"name": "WorksAccessManager", "address": "0x000000000000000000000000000000000000a0ff", "note": "configurator.worksManager(); the subject of the epoch-0 manifest"},
         ],
         "manager": old["manager"],
         "contracts": CONTRACTS,
         "wiring": wiring,
         "settings": [
-            {"contract": "Stream", "getter": "moduleDelay()", "launch": 604800},
-            {"contract": "Stream", "getter": "rescueDelay()", "launch": 1209600},
-            {"contract": "Editions", "getter": "moduleDelay()", "launch": 604800},
-            {"contract": "Editions", "getter": "rebindDelay()", "launch": 1209600},
-            {"contract": "Directory", "getter": "moduleDelay()", "launch": 604800},
-            {"contract": "Directory", "getter": "unclaimedPeriod()", "launch": 15552000},
+            {"contract": "Stream6529", "getter": "moduleDelay()", "launch": 604800},
+            {"contract": "Stream6529", "getter": "rescueDelay()", "launch": 1209600},
+            {"contract": "StreamEditions6529", "getter": "moduleDelay()", "launch": 604800},
+            {"contract": "StreamEditions6529", "getter": "rebindDelay()", "launch": 1209600},
+            {"contract": "StreamDirectory6529", "getter": "moduleDelay()", "launch": 604800},
+            {"contract": "StreamDirectory6529", "getter": "unclaimedPeriod()", "launch": 15552000},
         ],
         "initialInstalls": {
             "constructor": "Genesis modules and minters of Stream, Editions and Directory (their addresses are predicted before deployment); every immutable dependency and every dependency pinned by code hash.",
-            "wiring": "The package registry's Stream bind and entropy module, the edition auction's sale target, the ETH opening bid, the federation module's adapters, templates and entropy module, and the epoch-0 governance manifest.",
+            "wiring": "The package registry's Stream bind and entropy module, the edition auction's sale target, the ETH opening bid, the Independent Stream module's adapters, templates and entropy module, and the epoch-0 governance manifest.",
             "grants": "Curation signers are active once granted CURATION_SIGNER in holders.",
         },
         "unusedRoles": [

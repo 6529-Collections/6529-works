@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
+import { IIndependentStreamRegistry } from "src/interfaces/IIndependentStreamRegistry.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { Splits } from "src/economics/Splits.sol";
-import { FederatedStream } from "src/federated/FederatedStream.sol";
+import { IndependentStream6529 } from "src/independent/IndependentStream6529.sol";
 import { PackageRegistry } from "src/curation/PackageRegistry.sol";
 import { Accounts } from "src/identity/Accounts.sol";
 import { WorkRules } from "src/records/WorkRules.sol";
@@ -12,23 +12,23 @@ import { EnglishAuction } from "src/sales/EnglishAuction.sol";
 import { StreamTerms } from "src/terms/StreamTerms.sol";
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
-import { IFederatedMembership } from "src/interfaces/IFederatedMembership.sol";
+import { IIndependentStreamMembership } from "src/interfaces/IIndependentStreamMembership.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { Outcome, Slots } from "src/interfaces/core/CoreTypes.sol";
 import { IMintPolicy } from "src/interfaces/core/IMintPolicy.sol";
 import { IModules, IModuleSlots } from "src/interfaces/core/IModules.sol";
 import { IWorkFacts } from "src/interfaces/core/IWorkFacts.sol";
-import { FederatedIntegrationBase } from "./FederatedIntegrationBase.sol";
+import { IndependentIntegrationBase } from "./IndependentIntegrationBase.sol";
 
 /// @notice Replacing modules mid-life on the real deployed stack: WorkRules, StreamTerms,
 ///         Accounts, 6529 Stream's mint policy (a new PackageRegistry through `setStreamPolicy`)
 ///         and the English auction (a new one added as minter and sale contract) are replaced,
 ///         each a new instance built with its real constructor, while works exist in every state
 ///         (sold and finalized, sold and open, unsold at the museum, in a running sale with an
-///         outbid credit, federated sold, federated unsold in custody). Tokens (owner, Work
-///         facts, royalty), finalized facts and owed money (auction credits, escrow, split vault
-///         balances) are unaffected; new behaviour comes only from the new module.
-contract ModuleSwapTest is FederatedIntegrationBase {
+///         outbid credit, Independent Stream sold, Independent Stream unsold in custody). Tokens
+///         (owner, Work facts, royalty), finalized facts and owed money (auction credits, escrow,
+///         split vault balances) are unaffected; new behaviour comes only from the new module.
+contract ModuleSwapTest is IndependentIntegrationBase {
     /// @dev A token's permanent state, read back before and after a replacement.
     struct TokenState {
         address owner;
@@ -47,7 +47,7 @@ contract ModuleSwapTest is FederatedIntegrationBase {
         uint256 escrowed;
         uint256 sellerVault;
         uint256 royaltyVault;
-        uint256 fedSellerVault;
+        uint256 indSellerVault;
         uint256 auctionBalance;
         uint256 escrowBalance;
     }
@@ -55,11 +55,11 @@ contract ModuleSwapTest is FederatedIntegrationBase {
     uint256 internal constant STREAM_SHARE = 25_000;
 
     address internal artistA;
-    address internal fedArtist;
+    address internal indArtist;
     address internal collector = makeAddr("swapCollector");
     address internal bidderA = makeAddr("swapBidderA");
     address internal bidderB = makeAddr("swapBidderB");
-    FederatedStream internal fStream;
+    IndependentStream6529 internal fStream;
 
     bytes32 internal rootA;
     uint256 internal a1; // sold, finalized
@@ -67,18 +67,18 @@ contract ModuleSwapTest is FederatedIntegrationBase {
     uint256 internal a3; // unsold, at the museum
     uint256 internal a4; // in a running sale, an outbid credit
     uint256 internal sale4;
-    uint256 internal f1; // federated, sold
-    uint256 internal f2; // federated, unsold in the auction's custody
-    uint256 internal fedSale2;
+    uint256 internal f1; // Independent Stream, sold
+    uint256 internal f2; // Independent Stream, unsold in the auction's custody
+    uint256 internal indSale2;
     address internal sellerA;
     address internal royaltyA;
-    address internal fedSeller;
+    address internal indSeller;
     ISplitWallet.Payee[] internal payeesA;
 
     function setUp() public override {
         super.setUp();
         artistA = _actor("swapArtist");
-        fedArtist = _actor("swapFedArtist");
+        indArtist = _actor("swapIndArtist");
         _populate();
     }
 
@@ -90,7 +90,7 @@ contract ModuleSwapTest is FederatedIntegrationBase {
         address next = _newStreamTerms();
         _install(address(stream), Slots.TERMS, next);
         _install(address(editions), Slots.TERMS, next);
-        _install(address(directory), Slots.FEDERATED_TERMS, next);
+        _install(address(directory), Slots.INDEPENDENT_TERMS, next);
         _assertUnchanged(before, owed);
 
         // The old module no longer reaches a token; the new one does.
@@ -107,15 +107,15 @@ contract ModuleSwapTest is FederatedIntegrationBase {
         (receiver,) = stream.royaltyInfo(a2, 1 ether);
         assertEq(receiver, before[1].royaltyReceiver, "only the work it was asked about");
 
-        bytes memory lowerFed = abi.encodeCall(
-            StreamTerms.lowerFeeShare, (address(fStream), f1, fedSeller, networkFee, FED_SHARE, 0)
+        bytes memory lowerInd = abi.encodeCall(
+            StreamTerms.lowerFeeShare, (address(fStream), f1, indSeller, networkFee, IND_SHARE, 0)
         );
         _governExpectRevert(
-            old, lowerFed, abi.encodeWithSelector(IModuleSlots.NotModule.selector, Slots.TERMS, old)
+            old, lowerInd, abi.encodeWithSelector(IModuleSlots.NotModule.selector, Slots.TERMS, old)
         );
-        _asNetwork(next, lowerFed);
+        _asNetwork(next, lowerInd);
         (receiver,) = fStream.royaltyInfo(f1, 1 ether);
-        assertEq(receiver, fedSeller, "a zero share pays the seller vault");
+        assertEq(receiver, indSeller, "a zero share pays the seller vault");
     }
 
     function test_ModuleSwap_RulesComeOnlyFromTheNewModule() public {
@@ -128,7 +128,7 @@ contract ModuleSwapTest is FederatedIntegrationBase {
             )
         );
         _install(address(stream), Slots.RECORDS, address(next));
-        _install(address(directory), Slots.FEDERATED_RECORDS, address(next));
+        _install(address(directory), Slots.INDEPENDENT_RECORDS, address(next));
         _assertUnchanged(before, owed);
         assertEq(fStream.moduleOf(Slots.RECORDS), address(next));
 
@@ -156,9 +156,11 @@ contract ModuleSwapTest is FederatedIntegrationBase {
         (TokenState[6] memory before, Owed memory owed) = _snapshot();
         Accounts old = accounts;
         Accounts next = _newAccounts(address(registry));
-        _asNetwork(address(old), abi.encodeCall(Accounts.freeze, (uint256(uint160(fedArtist)))));
-        vm.prank(fedArtist);
-        vm.expectRevert(abi.encodeWithSelector(IFederatedMembership.NotArtist.selector, fedArtist));
+        _asNetwork(address(old), abi.encodeCall(Accounts.freeze, (uint256(uint160(indArtist)))));
+        vm.prank(indArtist);
+        vm.expectRevert(
+            abi.encodeWithSelector(IIndependentStreamMembership.NotArtist.selector, indArtist)
+        );
         fStream.setContractURI("ar://frozen");
         _install(address(directory), Slots.ACCOUNTS, address(next));
         _assertUnchanged(before, owed);
@@ -176,15 +178,15 @@ contract ModuleSwapTest is FederatedIntegrationBase {
         // Artist powers are the new module's too: a freeze recorded by the old module no longer
         // reaches the token, and the new module, which has no record of the account, answers
         // for its root address alone (and cannot freeze an account it does not know).
-        vm.prank(fedArtist);
+        vm.prank(indArtist);
         fStream.setContractURI("ar://unfrozen under the new module");
         assertEq(fStream.contractURI(), "ar://unfrozen under the new module");
-        bytes memory freeze = abi.encodeCall(Accounts.freeze, (uint256(uint160(fedArtist))));
+        bytes memory freeze = abi.encodeCall(Accounts.freeze, (uint256(uint160(indArtist))));
         _governExpectRevert(
             address(next),
             freeze,
             abi.encodeWithSelector(
-                IArtistRegistry.UnknownArtist.selector, uint256(uint160(fedArtist))
+                IArtistRegistry.UnknownArtist.selector, uint256(uint160(indArtist))
             )
         );
     }
@@ -229,9 +231,9 @@ contract ModuleSwapTest is FederatedIntegrationBase {
         vm.prank(bidderA);
         old.claim(bidderA);
         assertEq(bidderA.balance, owed.credit, "the outbid credit is paid by the old auction");
-        // Its unsold federated work can still be offered again there, in the auction that
+        // Its unsold Independent Stream work can still be offered again there, in the auction that
         // minted it, for as long as the token is served.
-        old.restart(fedSale2);
+        old.restart(indSale2);
 
         // New sales run through the new auction only.
         auction = next;
@@ -239,10 +241,10 @@ contract ModuleSwapTest is FederatedIntegrationBase {
         bytes32 root = _publish(works);
         uint256 tokenId = _sell(root, works, 0, collector, 1 ether);
         assertEq(stream.ownerOf(tokenId), collector);
-        (,, uint256 fedToken) = _fedApproveAndStart(address(fStream), fedArtist);
-        assertEq(fStream.ownerOf(fedToken), address(next));
-        Work memory w = _fedWork(fedArtist);
-        _approveFed(address(fStream), fedArtist, w, FED_RATE);
+        (,, uint256 indToken) = _fedApproveAndStart(address(fStream), indArtist);
+        assertEq(fStream.ownerOf(indToken), address(next));
+        Work memory w = _fedWork(indArtist);
+        _approveInd(address(fStream), indArtist, w, IND_RATE);
         vm.expectRevert(
             abi.encodeWithSelector(IMintPolicy.NotSaleContract.selector, address(fStream), old)
         );
@@ -266,11 +268,11 @@ contract ModuleSwapTest is FederatedIntegrationBase {
         );
         _asNetwork(
             address(directory),
-            abi.encodeCall(IModuleSlots.proposeModule, (Slots.FEDERATED_TERMS, nextTerms))
+            abi.encodeCall(IModuleSlots.proposeModule, (Slots.INDEPENDENT_TERMS, nextTerms))
         );
         _asNetwork(
             address(directory),
-            abi.encodeCall(IModuleSlots.proposeModule, (Slots.FEDERATED_RECORDS, nextRules))
+            abi.encodeCall(IModuleSlots.proposeModule, (Slots.INDEPENDENT_RECORDS, nextRules))
         );
         _asNetwork(
             address(stream), abi.encodeCall(IModuleSlots.proposeModule, (Slots.TERMS, nextTerms))
@@ -283,8 +285,8 @@ contract ModuleSwapTest is FederatedIntegrationBase {
         );
         vm.warp(block.timestamp + stream.moduleDelay());
         directory.activateModule(Slots.ACCOUNTS);
-        directory.activateModule(Slots.FEDERATED_TERMS);
-        directory.activateModule(Slots.FEDERATED_RECORDS);
+        directory.activateModule(Slots.INDEPENDENT_TERMS);
+        directory.activateModule(Slots.INDEPENDENT_RECORDS);
         stream.activateModule(Slots.TERMS);
         stream.activateModule(Slots.RECORDS);
         editions.activateModule(Slots.TERMS);
@@ -361,15 +363,15 @@ contract ModuleSwapTest is FederatedIntegrationBase {
         escrow.depositETH{ value: 0.3 ether }(sellerA);
         vm.deal(royaltyA, 0.2 ether); // a marketplace paid royalties
 
-        (fStream,) = _listPair(fedArtist);
+        (fStream,) = _listPair(indArtist);
         Work memory fw;
-        uint256 fedSale1;
-        (fw, fedSale1, f1) = _fedApproveAndStart(address(fStream), fedArtist);
-        _ethBid(fedSale1, collector, 1 ether);
-        _settleAtEnd(fedSale1);
-        fedSeller = ledger.walletFor(fw.item.payees, bytes32(0));
-        (, fedSale2, f2) = _fedApproveAndStart(address(fStream), fedArtist);
-        _settleAtEnd(fedSale2);
+        uint256 indSale1;
+        (fw, indSale1, f1) = _fedApproveAndStart(address(fStream), indArtist);
+        _ethBid(indSale1, collector, 1 ether);
+        _settleAtEnd(indSale1);
+        indSeller = ledger.walletFor(fw.item.payees, bytes32(0));
+        (, indSale2, f2) = _fedApproveAndStart(address(fStream), indArtist);
+        _settleAtEnd(indSale2);
 
         assertEq(stream.ownerOf(a3), museum);
         assertEq(fStream.ownerOf(f2), address(auction));
@@ -377,7 +379,7 @@ contract ModuleSwapTest is FederatedIntegrationBase {
     }
 
     function _tokenState(address token, uint256 id) internal view returns (TokenState memory s) {
-        FederatedStream t = FederatedStream(token);
+        IndependentStream6529 t = IndependentStream6529(token);
         s.owner = t.ownerOf(id);
         s.itemHash = t.workOf(id).itemHash;
         s.artistId = t.workOf(id).artistId;
@@ -398,12 +400,12 @@ contract ModuleSwapTest is FederatedIntegrationBase {
         o.escrowed = escrow.owed(sellerA, address(0));
         o.sellerVault = sellerA.balance;
         o.royaltyVault = royaltyA.balance;
-        o.fedSellerVault = fedSeller.balance;
+        o.indSellerVault = indSeller.balance;
         o.auctionBalance = address(auction).balance;
         o.escrowBalance = address(escrow).balance;
         assertEq(o.credit, 1 ether);
         assertGt(o.sellerVault, 0);
-        assertGt(o.fedSellerVault, 0);
+        assertGt(o.indSellerVault, 0);
         assertEq(o.escrowed, 0.3 ether);
     }
 
@@ -485,20 +487,24 @@ contract ModuleSwapTest is FederatedIntegrationBase {
     }
 
     /// @dev A new EnglishAuction (genesis constructor arguments, `policy` for 6529 Stream) added
-    ///      as Stream's minter and the federation's sale contract; the old one removed from both.
+    ///      as Stream's minter and Independent Stream's sale contract; the old one removed from
+    ///      both.
     function _installAuction(address policy) internal returns (address next) {
         next = _newEnglishAuction(policy);
         _asNetwork(address(stream), abi.encodeCall(IModules.addMinter, (next)));
         _asNetwork(
-            address(federation),
-            abi.encodeCall(federation.setAdapter, (next, IFederationRegistry.Form.ERC721, true))
+            address(independentStream),
+            abi.encodeCall(
+                independentStream.setAdapter, (next, IIndependentStreamRegistry.Form.ERC721, true)
+            )
         );
         vm.warp(stream.minterOf(next).activeFrom);
         _asNetwork(address(stream), abi.encodeCall(IModules.removeMinter, (address(auction))));
         _asNetwork(
-            address(federation),
+            address(independentStream),
             abi.encodeCall(
-                federation.setAdapter, (address(auction), IFederationRegistry.Form.ERC721, false)
+                independentStream.setAdapter,
+                (address(auction), IIndependentStreamRegistry.Form.ERC721, false)
             )
         );
         assertTrue(stream.isMinter(next));

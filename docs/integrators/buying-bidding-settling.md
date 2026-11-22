@@ -20,8 +20,8 @@ keeps.
 | `EnglishAuction` | start, bid, settle, claim credits, claim a pending delivery |
 | `UniformEditionAuction` | open an edition's sale, bid, raise, settle, abandon, claim |
 | `SaleStarter` | start a 1/1 with its payout vaults and record in one transaction (the network's keeper uses it) |
-| `Stream` ([`IStream`](../../src/interfaces/core/IStream.sol)) | read works (`workOf`, `ownerOf`), `royaltyInfo`, check minters (`isMinter`) |
-| `Editions` ([`IEditions`](../../src/interfaces/core/IEditions.sol)) | read editions (`editionOf`), `royaltyInfo` |
+| `Stream6529` ([`IStream`](../../src/interfaces/core/IStream.sol)) | read works (`workOf`, `ownerOf`), `royaltyInfo`, check minters (`isMinter`) |
+| `StreamEditions6529` ([`IEditions`](../../src/interfaces/core/IEditions.sol)) | read editions (`editionOf`), `royaltyInfo` |
 | `PackageRegistry` ([`IMintPolicy`](../../src/interfaces/core/IMintPolicy.sol)) | check approvals, acceptances and move nonces; `preview` a start; get the move digest |
 | `VrfEntropyModule` | request a VRF seed |
 | `RevenueEscrow` | flush refused payouts |
@@ -48,7 +48,7 @@ function saleIdOf(address token, uint256 tokenId) external pure returns (uint256
 - `startWithBid` also places the first bid; `msg.value` is the bid.
 
 **Check before you submit:** the root is `APPROVED`; every party accepted the root; the move is
-unexpired and its nonce unused; no live token holds the content (`Stream.tokenOfContent`), or
+unexpired and its nonce unused; no live token holds the content (`Stream6529.tokenOfContent`), or
 the content was released for this artist; for a VRF item, the seed is delivered; the lead
 artist's account is not frozen or changing; the auction is not paused. `PackageRegistry.preview`
 answers the mint facts and terms a start would get.
@@ -71,7 +71,7 @@ account revokes an unused nonce.
 Anyone settles after the end. With a bid, the work goes to the winner (or waits as a pending
 delivery the winner claims with `claimDelivery`), and the seller and the network are paid; a
 refused payment goes to the escrow. With no bid, a 6529 Stream work goes to the museum; an
-unsold federated work stays in the auction and can be started again. Forward the gas
+unsold Independent Stream work stays in the auction and can be started again. Forward the gas
 `eth_estimateGas` reports: a settler that starves the delivery or payouts is refused.
 
 ### Gas the caller must forward
@@ -79,8 +79,8 @@ unsold federated work stays in the auction and can be started again. Forward the
 Take the limit from `eth_estimateGas`; the auction refuses a settler that does not forward the
 delivery gas (300,000) and the payout gas (100,000 per wallet).
 
-A federated token that refuses to settle can be closed with `settleOrRefund(saleId)` from 2 days
-after the end: the bid is credited back.
+An Independent Stream token that refuses to settle can be closed with `settleOrRefund(saleId)` from
+2 days after the end: the bid is credited back.
 
 **Keeper checklist:** settle every ended sale; flush escrow credits to their wallets; deploy
 vaults before they are named (the policy does this at start); expire only credits that have

@@ -13,7 +13,7 @@ import { ContentAddresses as CA } from "../helpers/ContentAddresses.sol";
 import { RulesFixture } from "../records/RulesFixture.sol";
 
 /// @notice `WorkDelivery`, keyed by token: locators, quotas, preferences and dead marks, with
-///         every fact read from `WorkFacts`.
+///         every fact read from `StreamWorkFacts6529`.
 contract WorkDeliveryTest is RulesFixture {
     uint256 internal constant NONE = type(uint256).max;
     address internal s;

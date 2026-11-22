@@ -5,8 +5,8 @@ import { Vm } from "forge-std/Vm.sol";
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { IERC4906 } from "@openzeppelin/contracts/interfaces/IERC4906.sol";
 import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
-import { Directory } from "src/core/Directory.sol";
-import { Stream } from "src/core/Stream.sol";
+import { StreamDirectory6529 } from "src/core/StreamDirectory6529.sol";
+import { Stream6529 } from "src/core/Stream6529.sol";
 import {
     Collection,
     Minter,
@@ -21,7 +21,7 @@ import { IModuleSlots, IModules } from "src/interfaces/core/IModules.sol";
 import { IStream } from "src/interfaces/core/IStream.sol";
 import { ReplayIndexer } from "./ReplayIndexer.sol";
 
-/// @notice Rebuilds every getter of the permanent ERC-721 (`src/core/Stream.sol`) from its own
+/// @notice Rebuilds every getter of the permanent ERC-721 (`src/core/Stream6529.sol`) from its own
 ///         logs alone: owners, balances and approvals, each work, each collection,
 ///         `tokenOfContent`, the counters, the minters, the module slots and announcements, the
 ///         marketplace owner and the two waiting-period settings. It never calls the contract
@@ -167,7 +167,7 @@ contract StreamCoreIndexer is ReplayIndexer {
     }
 
     function assertMatches() external view override {
-        Stream s = Stream(target);
+        Stream6529 s = Stream6529(target);
         assertEq(s.totalMinted(), totalMinted, "totalMinted");
         assertEq(s.totalBurned(), totalBurned, "totalBurned");
         assertEq(s.totalSupply(), totalMinted - totalBurned, "totalSupply");
@@ -242,8 +242,8 @@ contract StreamCoreIndexer is ReplayIndexer {
     }
 }
 
-/// @notice Rebuilds every getter of the permanent `Directory` from its own logs alone: the four
-///         module slots, their announcements, `moduleDelay` and `unclaimedPeriod`.
+/// @notice Rebuilds every getter of the permanent `StreamDirectory6529` from its own logs alone:
+///         the four module slots, their announcements, `moduleDelay` and `unclaimedPeriod`.
 contract CoreDirectoryIndexer is ReplayIndexer {
     mapping(bytes32 slot => address) public moduleOf;
     mapping(bytes32 slot => PendingModule) internal _pending;
@@ -274,12 +274,16 @@ contract CoreDirectoryIndexer is ReplayIndexer {
     }
 
     function assertMatches() external view override {
-        Directory d = Directory(target);
+        StreamDirectory6529 d = StreamDirectory6529(target);
         assertEq(d.moduleDelay(), moduleDelay, "moduleDelay");
         assertEq(d.unclaimedPeriod(), unclaimedPeriod, "unclaimedPeriod");
         assertEq(d.authority(), authority, "authority");
-        bytes32[4] memory slots =
-            [Slots.ACCOUNTS, Slots.FEDERATION, Slots.FEDERATED_TERMS, Slots.FEDERATED_RECORDS];
+        bytes32[4] memory slots = [
+            Slots.ACCOUNTS,
+            Slots.INDEPENDENT_STREAM,
+            Slots.INDEPENDENT_TERMS,
+            Slots.INDEPENDENT_RECORDS
+        ];
         for (uint256 i; i < 4; ++i) {
             assertEq(d.moduleOf(slots[i]), moduleOf[slots[i]], "moduleOf");
             PendingModule memory a = d.pendingModule(slots[i]);

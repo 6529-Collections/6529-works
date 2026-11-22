@@ -1,12 +1,18 @@
 # Sepolia (chain 11155111)
 
 Deployment records for 6529 Works on Sepolia. Each record is written by
-[`script/Deploy.s.sol`](https://github.com/6529-Collections/6529-works/blob/581cfb6f/script/Deploy.s.sol) and confirmed by
-[`script/Verify.s.sol`](https://github.com/6529-Collections/6529-works/blob/581cfb6f/script/Verify.s.sol); the runbook is
-[`script/README.md`](../../script/README.md).
+[`script/Deploy.s.sol`](https://github.com/6529-Collections/6529-works/blob/581cfb6f/script/Deploy.s.sol)
+and confirmed by
+[`script/Verify.s.sol`](https://github.com/6529-Collections/6529-works/blob/581cfb6f/script/Verify.s.sol);
+the runbook is [`script/README.md`](../../script/README.md).
 
 These are testnet rehearsals with throwaway signers. The code is pre-audit and nothing
 here is a mainnet deployment.
+
+Naming note (22 November 2026): these records use the current names. On Sepolia, the contracts
+of r5 and earlier are verified under the names they had when deployed: the Independent Stream
+contracts were formerly called federated (`Federation…`, `Federated…`), and their role
+signatures and product ID were computed from those names.
 
 Flow gas under Glamsterdam: [flows.md](flows.md). r5's flows: [flows.md](flows.md#r5-the-current-main-22-november-2026).
 
@@ -18,7 +24,7 @@ adapters (decision 8).
 ## sepolia-r5: 22 November 2026 (current)
 
 r5 is the first rehearsal of the current `main`: commit `ca02473` (after the second permanence
-pass, federation, the single network address and `SaleStarter`). Its `src/` is exactly that
+pass, Independent Stream, the single network address and `SaleStarter`). Its `src/` is exactly that
 commit's; the branch that records it changes only `script/sepolia/`, `config/sepolia-r5/` and
 documentation. Every signer is a new throwaway testnet key made for r5 on 22 November 2026, and
 the network is a new 2-of-3 Safe. It is a rehearsal: pre-audit code, testnet only.
@@ -140,14 +146,17 @@ headers, read on 22 November 2026):
 | EnglishAuction | [`0x73527a07c7F19B153EE32F14bE16e96c4219c67f`](https://sepolia.etherscan.io/address/0x73527a07c7F19B153EE32F14bE16e96c4219c67f) | [Sourcify](https://repo.sourcify.dev/11155111/0x73527a07c7F19B153EE32F14bE16e96c4219c67f) |
 | UniformEditionAuctionLens | [`0x3C2CCe1E80C8d0310D7246a603811dC187527B3B`](https://sepolia.etherscan.io/address/0x3C2CCe1E80C8d0310D7246a603811dC187527B3B) | [Sourcify](https://repo.sourcify.dev/11155111/0x3C2CCe1E80C8d0310D7246a603811dC187527B3B) |
 | UniformEditionAuction | [`0xFAb695D537d2C441D8Be6a8184c7cbE8646912a2`](https://sepolia.etherscan.io/address/0xFAb695D537d2C441D8Be6a8184c7cbE8646912a2) | [Sourcify](https://repo.sourcify.dev/11155111/0xFAb695D537d2C441D8Be6a8184c7cbE8646912a2) |
-| FederationRegistry | [`0xD674C284C89d1B63d7d82ac051a6daB5be4e1Fc4`](https://sepolia.etherscan.io/address/0xD674C284C89d1B63d7d82ac051a6daB5be4e1Fc4) | [Sourcify](https://repo.sourcify.dev/11155111/0xD674C284C89d1B63d7d82ac051a6daB5be4e1Fc4) |
-| FederatedEditionAuctionLens | [`0x7401C865A9cA473C3EFfCcd709311C8aF207De31`](https://sepolia.etherscan.io/address/0x7401C865A9cA473C3EFfCcd709311C8aF207De31) | [Sourcify](https://repo.sourcify.dev/11155111/0x7401C865A9cA473C3EFfCcd709311C8aF207De31) |
-| FederatedEditionAuction | [`0x896180534Fc8508894c40634776e914798F7CeDD`](https://sepolia.etherscan.io/address/0x896180534Fc8508894c40634776e914798F7CeDD) | [Sourcify](https://repo.sourcify.dev/11155111/0x896180534Fc8508894c40634776e914798F7CeDD) |
-| FederatedStreamDeployer | [`0xb7dA4f98894356c710030A02809BCA98a301ACeD`](https://sepolia.etherscan.io/address/0xb7dA4f98894356c710030A02809BCA98a301ACeD) | [Sourcify](https://repo.sourcify.dev/11155111/0xb7dA4f98894356c710030A02809BCA98a301ACeD) |
-| FederatedEditionsDeployer | [`0x58082Ff7cbC34EC300ee8FE9F9dF835977a2F71B`](https://sepolia.etherscan.io/address/0x58082Ff7cbC34EC300ee8FE9F9dF835977a2F71B) | [Sourcify](https://repo.sourcify.dev/11155111/0x58082Ff7cbC34EC300ee8FE9F9dF835977a2F71B) |
+| IndependentStreamRegistry | [`0xD674C284C89d1B63d7d82ac051a6daB5be4e1Fc4`](https://sepolia.etherscan.io/address/0xD674C284C89d1B63d7d82ac051a6daB5be4e1Fc4) | [Sourcify](https://repo.sourcify.dev/11155111/0xD674C284C89d1B63d7d82ac051a6daB5be4e1Fc4) |
+| IndependentEditionAuctionLens | [`0x7401C865A9cA473C3EFfCcd709311C8aF207De31`](https://sepolia.etherscan.io/address/0x7401C865A9cA473C3EFfCcd709311C8aF207De31) | [Sourcify](https://repo.sourcify.dev/11155111/0x7401C865A9cA473C3EFfCcd709311C8aF207De31) |
+| IndependentEditionAuction | [`0x896180534Fc8508894c40634776e914798F7CeDD`](https://sepolia.etherscan.io/address/0x896180534Fc8508894c40634776e914798F7CeDD) | [Sourcify](https://repo.sourcify.dev/11155111/0x896180534Fc8508894c40634776e914798F7CeDD) |
+| IndependentStream721Deployer | [`0xb7dA4f98894356c710030A02809BCA98a301ACeD`](https://sepolia.etherscan.io/address/0xb7dA4f98894356c710030A02809BCA98a301ACeD) | [Sourcify](https://repo.sourcify.dev/11155111/0xb7dA4f98894356c710030A02809BCA98a301ACeD) |
+| IndependentStreamEditionsDeployer | [`0x58082Ff7cbC34EC300ee8FE9F9dF835977a2F71B`](https://sepolia.etherscan.io/address/0x58082Ff7cbC34EC300ee8FE9F9dF835977a2F71B) | [Sourcify](https://repo.sourcify.dev/11155111/0x58082Ff7cbC34EC300ee8FE9F9dF835977a2F71B) |
 | SaleStarter | [`0x7A1091b86f8FBCa97126EE75bb6805EFd80C446D`](https://sepolia.etherscan.io/address/0x7A1091b86f8FBCa97126EE75bb6805EFd80C446D) | [Sourcify](https://repo.sourcify.dev/11155111/0x7A1091b86f8FBCa97126EE75bb6805EFd80C446D) |
 
-`SplitFactory` is `SplitLedger`, both vaults are `GovernedVault`, both federated deployers are `FederatedDeployer`, `CurationVerifier` is `Eip712CurationVerifier` and `EntropyModule` is `VrfEntropyModule`. The manager is created by the configurator's constructor and WorkDelivery by WorkRecords'; Sourcify matched each inside that transaction.
+`SplitFactory` is `SplitLedger`, both vaults are `GovernedVault`, both Independent Stream deployers
+are `IndependentStreamDeployer`, `CurationVerifier` is `Eip712CurationVerifier` and `EntropyModule`
+is `VrfEntropyModule`. The manager is created by the configurator's constructor and WorkDelivery by
+WorkRecords'; Sourcify matched each inside that transaction.
 
 <details>
 <summary>r5 gas per transaction</summary>
@@ -182,11 +191,11 @@ Gas limits for transactions 0 to 19 came from the node's `eth_estimateGas` (`--s
 | 23 | [EnglishAuction creation](https://sepolia.etherscan.io/tx/0xfd0563561d22847f8e21de7dd714a1bf519db932676d0c9d18f2c7e8c9e3a1c0) | 5,669,694 | 37,330,557 | 6.58 |
 | 24 | [UniformEditionAuctionLens creation](https://sepolia.etherscan.io/tx/0x3dc59a725d2568c08ffb080388155005a265febd336c9e889f16350734f8f2e6) | 5,352,957 | 35,793,982 | 6.69 |
 | 25 | [UniformEditionAuction creation](https://sepolia.etherscan.io/tx/0x8034b5dc6a642f40eeefc62df3e767e05548c23b9eee44e9f07f41d006d0500c) | 5,255,574 | 34,321,689 | 6.53 |
-| 26 | [FederationRegistry creation](https://sepolia.etherscan.io/tx/0x71ba97b88b7eddf244b5e38972fe88dfdc2bfe27b84ecf1beabb59c66a39bf1e) | 2,684,404 | 16,648,417 | 6.20 |
-| 27 | [FederatedDeployer creation](https://sepolia.etherscan.io/tx/0x0d1fe6188985dbd96c64512dd95fce20a2bdb84c2528c44800d307a54f48ce41) | 6,668,748 | 43,830,745 | 6.57 |
-| 28 | [FederatedDeployer creation](https://sepolia.etherscan.io/tx/0xe3a1bb8af95ec0e114cc88f27afd4a734da881cedba5dd91809ee2f1f9d07b84) | 4,888,694 | 30,286,936 | 6.20 |
-| 29 | [FederatedEditionAuctionLens creation](https://sepolia.etherscan.io/tx/0x4fe916959d9a1556f64704a3a63487e6fe67e312cd8bf9518ba0cffe757038f3) | 5,516,107 | 36,874,677 | 6.68 |
-| 30 | [FederatedEditionAuction creation](https://sepolia.etherscan.io/tx/0x5b6f3bd0c25383778700db7a121d2473a385e0ca9006398d84689b728385e9ef) | 5,668,904 | 35,118,088 | 6.19 |
+| 26 | [IndependentStreamRegistry creation](https://sepolia.etherscan.io/tx/0x71ba97b88b7eddf244b5e38972fe88dfdc2bfe27b84ecf1beabb59c66a39bf1e) | 2,684,404 | 16,648,417 | 6.20 |
+| 27 | [IndependentStreamDeployer creation](https://sepolia.etherscan.io/tx/0x0d1fe6188985dbd96c64512dd95fce20a2bdb84c2528c44800d307a54f48ce41) | 6,668,748 | 43,830,745 | 6.57 |
+| 28 | [IndependentStreamDeployer creation](https://sepolia.etherscan.io/tx/0xe3a1bb8af95ec0e114cc88f27afd4a734da881cedba5dd91809ee2f1f9d07b84) | 4,888,694 | 30,286,936 | 6.20 |
+| 29 | [IndependentEditionAuctionLens creation](https://sepolia.etherscan.io/tx/0x4fe916959d9a1556f64704a3a63487e6fe67e312cd8bf9518ba0cffe757038f3) | 5,516,107 | 36,874,677 | 6.68 |
+| 30 | [IndependentEditionAuction creation](https://sepolia.etherscan.io/tx/0x5b6f3bd0c25383778700db7a121d2473a385e0ca9006398d84689b728385e9ef) | 5,668,904 | 35,118,088 | 6.19 |
 | 31 | [SaleStarter creation](https://sepolia.etherscan.io/tx/0xa9bc5ddc09a4c5ce851953aad953bda438d388e0718cfd8b19a257b9afc8dab3) | 1,428,132 | 9,424,328 | 6.60 |
 | 32 | [GovernanceConfigurator `configure`](https://sepolia.etherscan.io/tx/0x63627678dbb4e6130c6bc2c4cc0c457ca72e780b424fe26d2e033fafe9bf6a6b) | 5,539,492 | 17,378,098 | 3.14 |
 | | **Total** | **115,161,883** | **724,791,013** | **6.29** |

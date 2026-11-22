@@ -1,5 +1,5 @@
 {
-  "Stream": {
+  "Stream6529": {
     "signatures": [
       "Approval(address,address,uint256)",
       "ApprovalForAll(address,address,bool)",
@@ -49,7 +49,7 @@
       "0x77ac3c6455fa9305b1c12dc5c6cefeb7417b9d5ed5009a19a6bb464e41428ea8"
     ]
   },
-  "Editions": {
+  "StreamEditions6529": {
     "signatures": [
       "ApprovalForAll(address,address,bool)",
       "AuthorityUpdated(address)",
@@ -99,7 +99,7 @@
       "0x6bb7ff708619ba0610cba295a58592e0451dee2622938c8755667688daf3529b"
     ]
   },
-  "WorkFacts": {
+  "StreamWorkFacts6529": {
     "signatures": [
       "Finalized(address,uint256,address,bytes32)",
       "LicenseSet(address,uint256,(string,bytes32))",
@@ -119,7 +119,7 @@
       "0xe1aba5ab1fdafb57d79519ce3d65820f89a34f37b223b28536d2c2653bff5c83"
     ]
   },
-  "Directory": {
+  "StreamDirectory6529": {
     "signatures": [
       "AuthorityUpdated(address)",
       "ModuleCancelled(bytes32,address)",
@@ -195,7 +195,7 @@
       "0x4d47077de11627502b9cf0f9e550c82b6776030b1e996a5688440f97717726b7"
     ]
   },
-  "FederatedStream": {
+  "IndependentStream6529": {
     "signatures": [
       "Approval(address,address,uint256)",
       "ApprovalForAll(address,address,bool)",
@@ -239,7 +239,7 @@
       "0x77ac3c6455fa9305b1c12dc5c6cefeb7417b9d5ed5009a19a6bb464e41428ea8"
     ]
   },
-  "FederatedEditions": {
+  "IndependentStreamEditions6529": {
     "signatures": [
       "ApprovalForAll(address,address,bool)",
       "BatchMetadataUpdate(uint256,uint256)",

@@ -188,8 +188,8 @@ contract RendererTest is RendererBase {
         assertEq(_attr(_out(), "Seed"), vm.toString(bytes32(uint256(0xfeed))));
     }
 
-    /// @dev Until the record is opened in `WorkFacts` (`Facts.opened` false), the renderer
-    ///      answers from the token alone, without a revert.
+    /// @dev Until the record is opened in `StreamWorkFacts6529` (`Facts.opened` false), the
+    ///      renderer answers from the token alone, without a revert.
     function test_CoreOnly_UntilTheRecordIsOpen() public {
         bytes32 file = _file(png, IDENTITY, "image/png");
         _install(file);

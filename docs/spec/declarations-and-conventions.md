@@ -18,11 +18,11 @@ citations and custody attestations, an off-chain control proof, and a fact sheet
 | --- | --- |
 | [`StatementLog`](../../src/records/StatementLog.sol) | Every convention statement (`append`, `appendSigned`, `appendPlatform`); `chainOf`, `latestDisputeOutcome`, `artistResolver` |
 | [`StatementKinds`](../../src/interfaces/types/StatementKinds.sol) | The convention kind labels ([registry](disputes-and-statements.md#statement-kind-registry)) |
-| [`WorkFacts`](../../src/core/WorkFacts.sol) | `factsOf` (media, record, license, finalized, on-chain complete, pinned renderer, locks); `RecordOpened` |
+| [`StreamWorkFacts6529`](../../src/core/StreamWorkFacts6529.sol) | `factsOf` (media, record, license, finalized, on-chain complete, pinned renderer, locks); `RecordOpened` |
 | [`WorkRules`](../../src/records/WorkRules.sol), [`WorkDelivery`](../../src/stream/WorkDelivery.sol) | `renouncedPowers` (`IWorkPowers`, DCL-8); the delivery module's locators for each file |
 | [`ContentStore`](../../src/content/ContentStore.sol) | `fileInfo`, `read`, `isComplete`, `sha256Of` |
 | [`DependencyRegistry`](../../src/content/DependencyRegistry.sol) | `resolve` (a declared dependency's file, and whether it is deprecated) |
-| [`Stream`](../../src/core/Stream.sol) | `ownerOf`, `workOf`, `rendererOf`, `tokenOfContent`; `WorkMinted` (content hash, package root) and `PrimarySale` (price) |
+| [`Stream6529`](../../src/core/Stream6529.sol) | `ownerOf`, `workOf`, `rendererOf`, `tokenOfContent`; `WorkMinted` (content hash, package root) and `PrimarySale` (price) |
 | `Accounts` ([`IArtistRegistry`](../../src/interfaces/IArtistRegistry.sol)), [`ConsolidationAdapter`](../../src/identity/ConsolidationAdapter.sol) | The profile document hash, the account's root, pending changes, the consolidation source |
 | [`EnglishAuction`](../../src/sales/EnglishAuction.sol), [`UniformEditionAuction`](../../src/sales/UniformEditionAuction.sol) | `pendingDelivery`; `saleIdOf`, `clearing` (primary prices) |
 
@@ -44,8 +44,8 @@ copy or test against; this page is the authority where the two differ.
 - The renderer uses only the PRIMARY file, the first PREVIEW image and the license text; no other
   AUXILIARY file reaches `tokenURI`.
 - The media list (file ID, SHA-256, role per entry) is committed by the item's media hash, which
-  the signer attests; `WorkFacts.open` opens only that list and nothing changes it afterwards.
-  The declared SHA-256 is never recomputed on chain, so the signer checks it.
+  the signer attests; `StreamWorkFacts6529.open` opens only that list and nothing changes it
+  afterwards. The declared SHA-256 is never recomputed on chain, so the signer checks it.
 
 ## Document format
 
@@ -134,7 +134,7 @@ token's media, content hash and `tokenURI` never change.
 - **DCL-13.** An acceptance survives a transfer, labelled by who accepted it.
 - **DCL-14.** A burned token has no display; a dispute outcome is always shown.
 - **DCL-15.** Editions never take a content change (every holder passes the OWNER check); a
-  proposal whose bytes were minted as another work (`Stream.tokenOfContent`) is flagged.
+  proposal whose bytes were minted as another work (`Stream6529.tokenOfContent`) is flagged.
 
 ## Catalogue and citations
 
@@ -211,10 +211,10 @@ from reads at one block, with no warnings or scores
 
 ## Primary price history
 
-**DCL-32.** A 1/1's price is only in the log (`Stream.PrimarySale`, `EnglishAuction.SaleSettled`;
-[AUC-8](stream-and-auctions.md#rules-and-invariants)); an edition's is
-`UniformEditionAuction.clearing(saleIdOf(editions, editionId))` and `AuctionCleared`. An
-edition's ID is its master's token ID. Secondary sales are not recorded.
+**DCL-32.** A 1/1's price is only in the log (`Stream6529.PrimarySale`,
+`EnglishAuction.SaleSettled`; [AUC-8](stream-and-auctions.md#rules-and-invariants)); an edition's is
+`UniformEditionAuction.clearing(saleIdOf(editions, editionId))` and `AuctionCleared`. An edition's
+ID is its master's token ID. Secondary sales are not recorded.
 
 ## Rules and invariants
 

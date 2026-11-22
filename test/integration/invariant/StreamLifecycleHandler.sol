@@ -39,9 +39,9 @@ import { IntegrationBase } from "../IntegrationBase.sol";
 import { LifecycleHostileActor } from "./StreamLifecycleHostile.sol";
 
 /// @notice The handler of the Stream lifecycle invariant suite: one actor set driving 6529
-///         Stream, the package registry (the mint policy), `WorkFacts` and its RECORDS module
-///         `WorkRules`, the delivery contract, the English auction and the accounts module on
-///         the plain-core stack deployed by `DeployCore` with the committed genesis
+///         Stream, the package registry (the mint policy), `StreamWorkFacts6529` and its RECORDS
+///         module `WorkRules`, the delivery contract, the English auction and the accounts module
+///         on the plain-core stack deployed by `DeployCore` with the committed genesis
 ///         (`IntegrationBase`).
 /// @dev The invariant test targets itself (it inherits this contract), so every action runs with
 ///      the integration helpers. Every action is bounded and never reverts (`fail_on_revert`):

@@ -9,7 +9,7 @@ import { VerifyCore } from "script/VerifyCore.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { WorksAccessManager } from "src/governance/WorksAccessManager.sol";
-import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
+import { IIndependentStreamRegistry } from "src/interfaces/IIndependentStreamRegistry.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
 import { IUniformEditionAuctionLens } from "src/interfaces/IUniformEditionAuctionLens.sol";
@@ -73,22 +73,26 @@ contract GenesisPortedTest is GenesisJsonPorted {
         assertTrue(lens.isTarget(address(editions)), "the edition auction sells editions");
         assertFalse(lens.isTarget(address(stream)), "and nothing else");
         assertEq(allowlist.openingBid(address(0)), OPENING_BID, "the ETH opening bid");
-        assertGt(federation.saleContractOf(address(auction)).addedAt, 0, "EnglishAuction admitted");
         assertGt(
-            federation.saleContractOf(deployment.federatedEditionAuction).addedAt,
-            0,
-            "FederatedEditionAuction admitted"
+            independentStream.saleContractOf(address(auction)).addedAt, 0, "EnglishAuction admitted"
         );
-        IFederationRegistry.Template memory s =
-            federation.templateOf(deployment.federatedStreamDeployer);
-        assertEq(uint8(s.status), uint8(IFederationRegistry.TemplateStatus.APPROVED));
-        assertEq(uint8(s.form), uint8(IFederationRegistry.Form.ERC721));
+        assertGt(
+            independentStream.saleContractOf(deployment.independentEditionAuction).addedAt,
+            0,
+            "IndependentEditionAuction admitted"
+        );
+        IIndependentStreamRegistry.Template memory s =
+            independentStream.templateOf(deployment.independentStream721Deployer);
+        assertEq(uint8(s.status), uint8(IIndependentStreamRegistry.TemplateStatus.APPROVED));
+        assertEq(uint8(s.form), uint8(IIndependentStreamRegistry.Form.ERC721));
         assertEq(s.version, 1);
-        IFederationRegistry.Template memory e =
-            federation.templateOf(deployment.federatedEditionsDeployer);
-        assertEq(uint8(e.status), uint8(IFederationRegistry.TemplateStatus.APPROVED));
-        assertEq(uint8(e.form), uint8(IFederationRegistry.Form.ERC1155));
-        assertEq(federation.entropyModule(), address(entropy), "federation -> entropy");
+        IIndependentStreamRegistry.Template memory e =
+            independentStream.templateOf(deployment.independentStreamEditionsDeployer);
+        assertEq(uint8(e.status), uint8(IIndependentStreamRegistry.TemplateStatus.APPROVED));
+        assertEq(uint8(e.form), uint8(IIndependentStreamRegistry.Form.ERC1155));
+        assertEq(
+            independentStream.entropyModule(), address(entropy), "Independent Stream -> entropy"
+        );
         (uint64 count,) = statements.chainOf(address(manager), 0);
         assertEq(count, 1, "the epoch-0 manifest is the manager's first statement");
 
@@ -258,9 +262,9 @@ contract GenesisPortedTest is GenesisJsonPorted {
             IAccessManager.setTargetFunctionRole, (address(stream), one, Roles.PUBLIC)
         );
         bytes memory lowerShare =
-            abi.encodeCall(federation.lowerFeeShare, (address(stream), uint32(0)));
+            abi.encodeCall(independentStream.lowerFeeShare, (address(stream), uint32(0)));
         bytes[3] memory ops = [takeStream, mapCollections, lowerShare];
-        address[3] memory targets = [address(manager), address(manager), address(federation)];
+        address[3] memory targets = [address(manager), address(manager), address(independentStream)];
         for (uint256 i; i < 3; ++i) {
             vm.prank(network);
             manager.schedule(targets[i], ops[i], 0);
@@ -384,7 +388,9 @@ contract GenesisPortedTest is GenesisJsonPorted {
         this.verifyExternal(params);
         _asNetwork(address(stream), abi.encodeCall(stream.setRescueDelay, (1 days)));
         vm.expectRevert(
-            abi.encodeWithSelector(VerifyCore.Mismatch.selector, "Stream.rescueDelay", address(0))
+            abi.encodeWithSelector(
+                VerifyCore.Mismatch.selector, "Stream6529.rescueDelay", address(0)
+            )
         );
         this.verifyExternal(params);
     }
@@ -429,11 +435,11 @@ contract GenesisWithoutVrfPortedTest is GenesisJsonPorted {
         for (uint256 i; i < calls.length; ++i) {
             assertTrue(
                 bytes4(calls[i].data) != IPackageRegistry.setEntropyModule.selector
-                    && bytes4(calls[i].data) != federation.setEntropyModule.selector
+                    && bytes4(calls[i].data) != independentStream.setEntropyModule.selector
             );
         }
         assertEq(registry.entropyModule(), address(0));
-        assertEq(federation.entropyModule(), address(0));
+        assertEq(independentStream.entropyModule(), address(0));
     }
 }
 

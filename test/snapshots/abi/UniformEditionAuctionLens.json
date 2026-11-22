@@ -947,21 +947,6 @@
     "type": "function"
   },
   {
-    "id": "0xadb08ded",
-    "inputs": [],
-    "name": "federationRegistry",
-    "outputs": [
-      {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
-      }
-    ],
-    "signature": "federationRegistry()",
-    "stateMutability": "pure",
-    "type": "function"
-  },
-  {
     "id": "0x7af6bd79",
     "inputs": [
       {
@@ -985,6 +970,21 @@
     ],
     "signature": "feeRecipient(address,uint256)",
     "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xf10a2534",
+    "inputs": [],
+    "name": "independentStreamRegistry",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "independentStreamRegistry()",
+    "stateMutability": "pure",
     "type": "function"
   },
   {
@@ -1347,7 +1347,7 @@
     "type": "function"
   },
   {
-    "id": "0x747e3199",
+    "id": "0xc8b4839e",
     "inputs": [
       {
         "internalType": "address",
@@ -1360,9 +1360,9 @@
         "type": "address"
       }
     ],
-    "name": "setFederationRegistry",
+    "name": "setIndependentStreamRegistry",
     "outputs": [],
-    "signature": "setFederationRegistry(address,address)",
+    "signature": "setIndependentStreamRegistry(address,address)",
     "stateMutability": "pure",
     "type": "function"
   },

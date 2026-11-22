@@ -3,8 +3,9 @@
 Artists act through accounts. An account is a consolidated identity: one artist ID and any
 number of wallets, all equal. The accounts module `Accounts` (today's artist registry) answers
 who an artist is, which wallets act for it and where it is paid. It is a **replaceable module**
-behind the permanent [`Directory`](../../src/core/Directory.sol) (slot `ACCOUNTS`); the network
-can replace it after `moduleDelay` (7 days at launch). Tokens keep only an artist ID.
+behind the permanent [`StreamDirectory6529`](../../src/core/StreamDirectory6529.sol) (slot
+`ACCOUNTS`); the network can replace it after `moduleDelay` (7 days at launch). Tokens keep only an
+artist ID.
 
 > Pre-audit. See the [project status](../../README.md#status).
 
@@ -12,9 +13,9 @@ can replace it after `moduleDelay` (7 days at launch). Tokens keep only an artis
 
 | Contract | Kind | What it does |
 | --- | --- | --- |
-| `Accounts` ([`IAccounts`](../../src/interfaces/core/IAccounts.sol), [`IArtistRegistry`](../../src/interfaces/IArtistRegistry.sol)) | module (`Directory.ACCOUNTS`) | Accounts, wallets, signatures and consent, own changes, replacements, contests, freezes, payout addresses. |
+| `Accounts` ([`IAccounts`](../../src/interfaces/core/IAccounts.sol), [`IArtistRegistry`](../../src/interfaces/IArtistRegistry.sol)) | module (`StreamDirectory6529.ACCOUNTS`) | Accounts, wallets, signatures and consent, own changes, replacements, contests, freezes, payout addresses. |
 | [`ConsolidationAdapter`](../../src/identity/ConsolidationAdapter.sol) | module | Answers whether two wallets are consolidated (two-way delegation registrations). |
-| [`Directory`](../../src/core/Directory.sol) | permanent | `payoutAddress(artistId)` forwards to the ACCOUNTS module. The split ledger asks it when it releases an artist's share. |
+| [`StreamDirectory6529`](../../src/core/StreamDirectory6529.sol) | permanent | `payoutAddress(artistId)` forwards to the ACCOUNTS module. The split ledger asks it when it releases an artist's share. |
 
 ## How accounts work
 
@@ -32,7 +33,7 @@ can replace it after `moduleDelay` (7 days at launch). Tokens keep only an artis
   zero while the account is frozen or a pending change would move it; the money then stays in
   the vault. A payout that cannot pull is refused when set.
 - **Which works are the artist's.** `isArtist(token, id, account)` reads
-  `IStream(token).workOf(id).artistId`, for 6529 Stream and federated tokens alike.
+  `IStream(token).workOf(id).artistId`, for 6529 Stream and Independent Stream tokens alike.
 
 ### The consolidation adapter
 
@@ -62,7 +63,7 @@ promises of a permanent contract.
 
 | ID | Rule | Tests |
 | --- | --- | --- |
-| ID-1 | An artist ID is the `uint160` of its first root, created by the mint policy or, with the wallet's own signature, by the federation module. | `test_Register_*`, `test_RegisterFederated_*` |
+| ID-1 | An artist ID is the `uint160` of its first root, created by the mint policy or, with the wallet's own signature, by the Independent Stream module. | `test_Register_*`, `test_RegisterIndependent_*` |
 | ID-2 | A wallet acts for an account exactly when it is the root or consolidated with it; never while frozen or a replacement is pending. | `test_IsWallet_*`, `invariant_RequireSignedPassesExactlyForTheAccountsWallets` |
 | ID-3 | `requireSigned` passes only for a wallet of the account that signed; `requireConsent` only for the asking contract. | `test_RequireSigned_*`, `test_RequireConsent_BindsTheCaller` |
 | ID-4 | The root never depends on the consolidation source; a failing source is "no" for every other wallet. | `test_Accounts_RootNeverDependsOnTheSource` |
@@ -75,9 +76,10 @@ promises of a permanent contract.
 | ID-11 | `isArtist` is true only for a wallet of the work's lead account. | |
 | ID-15 | The network swaps the consolidation source, compare-and-set, to a checked target. | `test_SetConsolidationSource_SwapsTheSourceWithItsPin` |
 | ID-16 | A wallet can be any account `SignatureVerifier` verifies, including ERC-1271 and EIP-7702 accounts. | `test_ContractRoot_StagesByPreApproval`, `test_7702Account_PreApprovalAndECDSABothWork` |
-| ID-17 | `Directory.payoutAddress` forwards to the ACCOUNTS module; a missing, reverting or gas-burning module reverts and never answers a default. | |
+| ID-17 | `StreamDirectory6529.payoutAddress` forwards to the ACCOUNTS module; a missing, reverting or gas-burning module reverts and never answers a default. | |
 
-The federation directory rules (ID-12 to ID-14) are on the [federation page](federation.md).
+The Independent Stream directory rules (ID-12 to ID-14) are on the
+[Independent Stream page](independent-stream.md).
 
 ## Failure modes and recovery
 
@@ -85,4 +87,4 @@ The federation directory rules (ID-12 to ID-14) are on the [federation page](fed
 | --- | --- | --- |
 | A root key is stolen | The network freezes the account at once, then replaces the root | Any wallet can cancel the thief's own change meanwhile. |
 | The consolidation source fails | Only roots act | The network replaces the source. |
-| The accounts module is missing or fails | Vault releases to artists revert; the money stays in the vaults | The network installs a module in `Directory` (after `moduleDelay`). |
+| The accounts module is missing or fails | Vault releases to artists revert; the money stays in the vaults | The network installs a module in `StreamDirectory6529` (after `moduleDelay`). |

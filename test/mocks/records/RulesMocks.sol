@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import { IWorkFacts } from "src/interfaces/core/IWorkFacts.sol";
-import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
+import { IIndependentStreamRegistry } from "src/interfaces/IIndependentStreamRegistry.sol";
 
 /// @notice An accounts module whose wallets the test sets and whose `requireSigned` checks a
 ///         real ECDSA signature: a proof is `abi.encodePacked(wallet, r, s, v)`.
@@ -45,9 +45,9 @@ contract RulesChunkStore {
     }
 }
 
-/// @notice A token contract that answers `WorkFacts` what the test sets, and calls back into
-///         `WorkFacts` from its metadata hook (the one call `WorkFacts` makes that is not static)
-///         to try to open twice or change what was just written.
+/// @notice A token contract that answers `StreamWorkFacts6529` what the test sets, and calls back
+///         into `StreamWorkFacts6529` from its metadata hook (the one call `StreamWorkFacts6529`
+///         makes that is not static) to try to open twice or change what was just written.
 contract ReenteringToken {
     IWorkFacts public facts;
     bytes32 public itemHash;
@@ -107,7 +107,7 @@ contract CodeRenderer {
     }
 }
 
-/// @notice A federation module whose fee share per token the test sets.
+/// @notice An Independent Stream module whose fee share per token the test sets.
 contract FeeGate {
     mapping(address => uint32) public feeShareOf;
 
@@ -119,8 +119,8 @@ contract FeeGate {
         return false;
     }
 
-    /// @dev No federated listing (StreamTerms reads a federated pair from it).
-    function entry(address) external pure returns (IFederationRegistry.Entry memory e) { }
+    /// @dev No Independent Stream listing (StreamTerms reads an Independent Stream pair from it).
+    function entry(address) external pure returns (IIndependentStreamRegistry.Entry memory e) { }
 
     function wasMinter(address) external pure returns (bool) {
         return false;

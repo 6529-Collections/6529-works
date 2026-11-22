@@ -1,9 +1,10 @@
 # Rendering and tokenURI
 
-How a work and an edition get their token metadata. `Stream.tokenURI` and `Editions.uri` ask a
-renderer, which reads the work through plain views and builds a `data:` URI. The renderer is a
-replaceable module until the work is finalized; finalize pins it in `WorkFacts`. Integrators who
-only read metadata should start with [Reading a work](../integrators/reading-a-work.md).
+How a work and an edition get their token metadata. `Stream6529.tokenURI` and
+`StreamEditions6529.uri` ask a renderer, which reads the work through plain views and builds a
+`data:` URI. The renderer is a replaceable module until the work is finalized; finalize pins it in
+`StreamWorkFacts6529`. Integrators who only read metadata should start with
+[Reading a work](../integrators/reading-a-work.md).
 
 > Pre-audit. See the [project status](../../README.md#status).
 
@@ -13,12 +14,12 @@ only read metadata should start with [Reading a work](../integrators/reading-a-w
 | --- | --- | --- |
 | [`Renderer`](../../src/content/Renderer.sol) ([`IRenderer`](../../src/interfaces/IRenderer.sol)) | module (RENDERER), pinned at finalize | Builds `tokenURI` and `fullTokenURI` for works and editions. Stateless; reads only. |
 | [`JsonScan`](../../src/content/JsonScan.sol), [`DataUri`](../../src/content/DataUri.sol), [`HtmlScript`](../../src/content/HtmlScript.sol), [`JsonEscape`](../../src/libraries/JsonEscape.sol), [`Utf8`](../../src/libraries/Utf8.sol), [`BoundedCall`](../../src/libraries/BoundedCall.sol) | libraries | Strict JSON scanning, escaping, script neutralizing, UTF-8 checks, bounded reads. |
-| `Stream`, `Editions` | permanent | Choose the renderer and forward `tokenURI` / `uri`; emit ERC-4906. |
-| `WorkFacts` | permanent | The record, media, license and the pinned renderer. |
+| `Stream6529`, `StreamEditions6529` | permanent | Choose the renderer and forward `tokenURI` / `uri`; emit ERC-4906. |
+| `StreamWorkFacts6529` | permanent | The record, media, license and the pinned renderer. |
 
 ## Renderer selection
 
-- A **finalized** work is drawn by the renderer pinned in `WorkFacts`
+- A **finalized** work is drawn by the renderer pinned in `StreamWorkFacts6529`
   (`IWorkFacts.rendererOf`). If its code is no longer the code that was pinned, the call reverts.
 - An **unfinalized** work is drawn by the token's RENDERER module. If no module is installed, or
   it reverts or runs out of gas, `tokenURI` reverts.
@@ -79,13 +80,13 @@ The renderer writes these traits, in this order, each as `{"trait_type":...,"val
 | `Seed` | the work is seeded and its seed is readable | `0x` and 64 hex digits |
 | `Dispute statement` | the renderer has a statement log and `latestDisputeOutcome` is nonzero | The entry hash, `0x` and 64 hex digits |
 
-The seed is `Work.seed`, stored in the token at mint, and is shown from mint. The fallback name `6529 Works #<id>` exists for a
-token without a collection, which Stream never mints.
+The seed is `Work.seed`, stored in the token at mint, and is shown from mint. The fallback name
+`6529 Works #<id>` exists for a token without a collection, which Stream never mints.
 
 ### Media selection
 
-The primary file is the first entry of the work's media in `WorkFacts`, which must have role `PRIMARY`. The preview
-is the first `PREVIEW` entry, used only if its MIME type is `image/*`.
+The primary file is the first entry of the work's media in `StreamWorkFacts6529`, which must have
+role `PRIMARY`. The preview is the first `PREVIEW` entry, used only if its MIME type is `image/*`.
 
 The primary is **inlined** when the work is on-chain complete, the file is complete, its
 cost-weighted size is at most the limit (`inlineThreshold()` for `tokenURI`, 1 MiB for
@@ -102,8 +103,8 @@ cost-weighted size is at most the limit (`inlineThreshold()` for `tokenURI`, 1 M
 A preview is inlined by the same encoding rules when it is complete in the store and its
 cost-weighted size is at most `PREVIEW_LIMIT` (`Limits.MAX_PREVIEW_BYTES`, 16,384; an `Identity`
 file weighs eight times its length, so at most 2,048 `Identity` bytes or 16,384 attested `Base64`
-characters), without the work being on-chain complete. `WorkFacts` holds no preview bound (a
-preview of any size opens); a larger preview is served by locator, which keeps the 8M budget.
+characters), without the work being on-chain complete. `StreamWorkFacts6529` holds no preview bound
+(a preview of any size opens); a larger preview is served by locator, which keeps the 8M budget.
 
 The three media members are then:
 
@@ -146,8 +147,9 @@ A JavaScript primary is wrapped in a fixed page:
 `Renderer.fullTokenURI(token, id)` is the same render with the limit raised to
 `MAX_INLINE_BYTES` (1,048,576 cost-weighted: a `Base64` file up to 1 MiB, an `Identity` file
 up to 128 KiB) and no fallback: it reverts with `RendererNotInlineable` for a core-only work or a
-primary it cannot inline under those limits. Call it on `Stream.rendererOf(id)`, with `eth_call`. It has no 8M promise: 1 MiB of `Base64`
-costs about 30M gas, 512 KiB about 8.4M (`test_FullForm_1MiB` and `test_FullForm_512KiB` in
+primary it cannot inline under those limits. Call it on `Stream6529.rendererOf(id)`, with
+`eth_call`. It has no 8M promise: 1 MiB of `Base64` costs about 30M gas, 512 KiB about 8.4M
+(`test_FullForm_1MiB` and `test_FullForm_512KiB` in
 [`RendererGas.t.sol`](../../test/content/renderer/RendererGas.t.sol)).
 
 ### License fields
@@ -186,7 +188,7 @@ costs about 30M gas, 512 KiB about 8.4M (`test_FullForm_1MiB` and `test_FullForm
 | RND-19 | A script is wrapped only if small, UTF-8 and without dependencies; `</script` and `<!--` are neutralized. | `test_Script_IsWrappedInAPageThatSetsWindowWorks` |
 | RND-20 | The preferred locator is served only if it passes the renderer's locator check; a failing or malformed delivery answer is "no locator". | `test_Locator_AnOnChainPreferenceGivesNoUrl` |
 | RND-21 | `fullTokenURI` inlines up to 1 MiB and reverts instead of falling back. | `test_Full_RevertsWhenThePrimaryCannotBeInlined` |
-| RND-22 | A work's facts are read through plain views of the token (`workOf`, `collectionOf`) and `WorkFacts.factsOf`. | `test_Edition_RendersTheMastersWorkAsAnEdition` |
+| RND-22 | A work's facts are read through plain views of the token (`workOf`, `collectionOf`) and `StreamWorkFacts6529.factsOf`. | `test_Edition_RendersTheMastersWorkAsAnEdition` |
 | RND-23 | The dispute status is the statement log's latest outcome; a broken log reverts. | `test_Dispute_ShownWhenTheLogHasAnOutcome`, `test_Dispute_ABrokenLogFailsClosed` |
 | RND-24 | `license_url` is the SPDX page only for an SPDX identifier that is not `LicenseRef-`. | `test_License_UrlIsTheSpdxPageInTheOriginalCase` |
 | RND-25 | The inline threshold is between 1 and 1,048,576. | `test_Constructor_RejectsBadThresholds` |
