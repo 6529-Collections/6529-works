@@ -60,15 +60,12 @@ CLASS_DELAY = {"immediate": 0, "24h": 86_400, "3d": 259_200, "7d": 604_800}
 # The roles `network()` holds (`Roles.isNetworkRole`); nobody else can be granted them.
 NETWORK_ROLES = frozenset({"ADMIN", "NETWORK", "PARAMETER_SETTER", "FUNDS_SETTER", "SUCCESSOR_SETTER"})
 ADDRESS = re.compile(r"^0x[0-9a-fA-F]{40}$")
-# Functions `GovernanceConfig.isGenesisSelector` admits (one-shot binds, admitted minters,
-# sale targets, first default currencies, the English auction's ETH opening bid, the
-# federation's first registry, adapters and template versions, the epoch-0 manifest). The
-# Solidity tests pin the selectors themselves.
+# Functions `GovernanceConfig.isGenesisSelector` admits (the package registry's Stream bind
+# and entropy module, sale targets, first default currencies, the ETH opening bid, the
+# federation module's adapters, template versions and entropy module, the epoch-0 manifest).
 GENESIS_FUNCTIONS = frozenset({
-    "bindWorkRecords", "bindEditions", "bindStream", "bindPackageRegistry", "bindSplitFactory",
-    "bindStatementLog", "bindFederationRegistry", "setAdmittedMinter", "setTarget",
-    "setDefaultCurrency", "setOpeningBid", "setFederationRegistry", "setAdapter",
-    "approveTemplate", "appendGovernanceManifest",
+    "bindStream", "setTarget", "setDefaultCurrency", "setOpeningBid", "setAdapter",
+    "approveTemplate", "setEntropyModule", "appendGovernanceManifest",
 })
 
 # Wiring arguments that name a federated template: `DeployV1.templateCodeHash` computes the
@@ -385,11 +382,16 @@ def check(
                 listed.add(sig)
                 if not here:
                     continue
-                if sig not in methods:
-                    problems.append(f"{name}: {group} {sig} is not a method of {c['artifact']}")
-                elif methods[sig] != _selector(e):
+                # A `via` entry is a selector of another contract that asks the manager about
+                # this target (each federated token asks `canCall(caller, Directory, selector)`
+                # for its network functions), so it is checked against that contract's ABI.
+                where = ids(e["via"]) if e.get("via") else methods
+                if sig not in where:
+                    art = e.get("via") or c["artifact"]
+                    problems.append(f"{name}: {group} {sig} is not a method of {art}")
+                elif where[sig] != _selector(e):
                     problems.append(
-                        f"{name}: {group} {sig} selector 0x{_selector(e)} != compiled 0x{methods[sig]}"
+                        f"{name}: {group} {sig} selector 0x{_selector(e)} != compiled 0x{where[sig]}"
                     )
         for e in groups["functions"]:
             role = roles.get(e.get("role"))

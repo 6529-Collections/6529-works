@@ -79,7 +79,8 @@ The auction is replaceable; its numbers below are compiled or governed values of
   1/1 is settled or cancelled; it refunds every bid and seals the edition at zero.
 - **Credits.** A refund that cannot be pushed is a credit. Only money that has itself waited the
   unclaimed period in force (180 days at launch) may go to the network; a third party's
-  `claimBidFor` never puts a fresh refund on an old clock.
+  `claimBidFor` never puts a fresh refund on an old clock. The rule is the one both auctions share
+  ([Unclaimed credits](stream-and-auctions.md#unclaimed-credits-one-rule-for-both-auctions)).
 
 | Auction value | Launch value | Kind |
 | --- | --- | --- |

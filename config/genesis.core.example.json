@@ -437,6 +437,42 @@
           "class": "immediate",
           "delay": 0,
           "note": "the network's setting, 180 days at launch; read by SplitLedger and RevenueEscrow; zero allowed"
+        },
+        {
+          "signature": "setRescueDelay(uint48)",
+          "selector": "0x1d2c9862",
+          "role": "NETWORK",
+          "class": "immediate",
+          "delay": 0,
+          "note": "asked by every federated token for its own setting",
+          "via": "src/federated/FederatedStream.sol:FederatedStream"
+        },
+        {
+          "signature": "rescue(uint256,address)",
+          "selector": "0xa923625c",
+          "role": "NETWORK",
+          "class": "immediate",
+          "delay": 0,
+          "note": "asked by every federated token",
+          "via": "src/federated/FederatedStream.sol:FederatedStream"
+        },
+        {
+          "signature": "setRebindDelay(uint48)",
+          "selector": "0xf39ce910",
+          "role": "NETWORK",
+          "class": "immediate",
+          "delay": 0,
+          "note": "asked by every federated editions token for its own setting",
+          "via": "src/federated/FederatedEditions.sol:FederatedEditions"
+        },
+        {
+          "signature": "rebind(uint256,address)",
+          "selector": "0x89e09f12",
+          "role": "NETWORK",
+          "class": "immediate",
+          "delay": 0,
+          "note": "asked by every federated editions token",
+          "via": "src/federated/FederatedEditions.sol:FederatedEditions"
         }
       ],
       "genesisOnly": [],
@@ -445,27 +481,27 @@
     {
       "name": "WorkRules",
       "artifact": "src/records/WorkRules.sol:WorkRules",
-      "implementation": null,
+      "implementation": "src/records/WorkRules.sol:WorkRules",
       "address": "0x000000000000000000000000000000000000a002",
-      "status": "pending: lane 3 (RECORDS module of Stream and, through Directory, of federated tokens)",
+      "status": "implemented",
       "functions": [
         {
-          "signature": "relicense(address,uint256,(string,bytes32),bytes32,uint64,bytes[])",
-          "selector": "0xdce52987",
+          "signature": "relicense(address,uint256,(string,bytes32),(uint8,uint256,bytes32,bytes32,bytes32,(address,uint8)[],(uint256,address,uint32)[],(string,bytes32),uint8,bytes32,(bytes32,address,bytes),(uint32,address,bytes32,bytes)),bytes32,uint64,bytes[])",
+          "selector": "0x830b57ca",
           "role": "FUNDS_SETTER",
           "class": "3d",
           "delay": 259200
         },
         {
-          "signature": "setRoyaltyRate(address,uint256,uint24,bytes32,uint64,bytes[])",
-          "selector": "0xfd4f08d6",
+          "signature": "setRoyaltyRate(address,uint256,uint24,(uint8,uint256,bytes32,bytes32,bytes32,(address,uint8)[],(uint256,address,uint32)[],(string,bytes32),uint8,bytes32,(bytes32,address,bytes),(uint32,address,bytes32,bytes)),bytes32,uint64,bytes[])",
+          "selector": "0xbea2c915",
           "role": "FUNDS_SETTER",
           "class": "3d",
           "delay": 259200
         },
         {
-          "signature": "repinRenderer(address,uint256,address)",
-          "selector": "0x5d86e019",
+          "signature": "repinRenderer(address,uint256,address,bytes32)",
+          "selector": "0x7b3d605d",
           "role": "SUCCESSOR_SETTER",
           "class": "7d",
           "delay": 604800
@@ -505,13 +541,13 @@
     {
       "name": "WorkDelivery",
       "artifact": "src/stream/WorkDelivery.sol:WorkDelivery",
-      "implementation": null,
+      "implementation": "src/stream/WorkDelivery.sol:WorkDelivery",
       "address": "0x000000000000000000000000000000000000a011",
-      "status": "pending: lane 3 (keyed by token)",
+      "status": "implemented",
       "functions": [
         {
-          "signature": "setPreferredKind(uint8)",
-          "selector": "0x40ff5d7f",
+          "signature": "setPreferredKind(address,uint8)",
+          "selector": "0x0562c61f",
           "role": "STORAGE_OPERATOR",
           "class": "immediate",
           "delay": 0
@@ -551,9 +587,9 @@
     {
       "name": "StreamTerms",
       "artifact": "src/terms/StreamTerms.sol:StreamTerms",
-      "implementation": null,
+      "implementation": "src/terms/StreamTerms.sol:StreamTerms",
       "address": "0x000000000000000000000000000000000000a018",
-      "status": "pending: lane 3 (TERMS module of Stream, Editions and federated tokens)",
+      "status": "implemented",
       "functions": [
         {
           "signature": "lowerFeeShare(address,uint256,address,address,uint32,uint32)",
@@ -562,6 +598,14 @@
           "class": "24h",
           "delay": 86400,
           "note": "lower only"
+        },
+        {
+          "signature": "setEditions(address,address)",
+          "selector": "0xf6bf7f67",
+          "role": "SUCCESSOR_SETTER",
+          "class": "7d",
+          "delay": 604800,
+          "note": "pairs a token with its editions contract"
         }
       ],
       "genesisOnly": [],
@@ -570,9 +614,9 @@
     {
       "name": "PackageRegistry",
       "artifact": "src/curation/PackageRegistry.sol:PackageRegistry",
-      "implementation": null,
+      "implementation": "src/curation/PackageRegistry.sol:PackageRegistry",
       "address": "0x000000000000000000000000000000000000a004",
-      "status": "pending: lane 4 (the mint policy; content release moved in from Stream)",
+      "status": "implemented",
       "functions": [
         {
           "signature": "revokePackage(bytes32,bytes32)",
@@ -601,17 +645,30 @@
           "role": "PARAMETER_SETTER",
           "class": "24h",
           "delay": 86400
+        },
+        {
+          "signature": "setEntropyModule(address,address)",
+          "selector": "0x0efb8808",
+          "role": "SUCCESSOR_SETTER",
+          "class": "7d",
+          "delay": 604800,
+          "note": "also set once at genesis"
         }
       ],
-      "genesisOnly": [],
+      "genesisOnly": [
+        {
+          "signature": "bindStream(address)",
+          "selector": "0x7d4b8f67"
+        }
+      ],
       "deferred": []
     },
     {
       "name": "CurationVerifier",
       "artifact": "src/curation/Eip712CurationVerifier.sol:Eip712CurationVerifier",
-      "implementation": null,
+      "implementation": "src/curation/Eip712CurationVerifier.sol:Eip712CurationVerifier",
       "address": "0x000000000000000000000000000000000000a005",
-      "status": "pending: lane 4",
+      "status": "implemented",
       "functions": [
         {
           "signature": "disableSigner(address)",
@@ -634,9 +691,9 @@
     {
       "name": "Accounts",
       "artifact": "src/identity/Accounts.sol:Accounts",
-      "implementation": null,
+      "implementation": "src/identity/Accounts.sol:Accounts",
       "address": "0x000000000000000000000000000000000000a006",
-      "status": "pending: lane 5 (the ACCOUNTS module behind Directory)",
+      "status": "implemented",
       "functions": [
         {
           "signature": "setConsolidationSource(address,address,bytes32)",
@@ -686,6 +743,13 @@
           "role": "PARAMETER_SETTER",
           "class": "24h",
           "delay": 86400
+        },
+        {
+          "signature": "setPackageRegistry(address,address)",
+          "selector": "0x00752cf1",
+          "role": "SUCCESSOR_SETTER",
+          "class": "7d",
+          "delay": 604800
         }
       ],
       "genesisOnly": [],
@@ -733,9 +797,9 @@
     {
       "name": "EnglishAuction",
       "artifact": "src/sales/EnglishAuction.sol:EnglishAuction",
-      "implementation": null,
+      "implementation": "src/sales/EnglishAuction.sol:EnglishAuction",
       "address": "0x000000000000000000000000000000000000a008",
-      "status": "pending: lane 4 (ETH only; the minter of Stream)",
+      "status": "implemented",
       "functions": [
         {
           "signature": "pause()",
@@ -780,11 +844,12 @@
           "delay": 86400
         },
         {
-          "signature": "setTarget(address,bool)",
-          "selector": "0x80ffe77f",
+          "signature": "setStreamPolicy(address,address)",
+          "selector": "0x878bd297",
           "role": "SUCCESSOR_SETTER",
           "class": "7d",
-          "delay": 604800
+          "delay": 604800,
+          "note": "the mint policy for 6529 Stream"
         }
       ],
       "genesisOnly": [],
@@ -793,9 +858,9 @@
     {
       "name": "UniformEditionAuction",
       "artifact": "src/sales/UniformEditionAuction.sol:UniformEditionAuction",
-      "implementation": null,
+      "implementation": "src/sales/UniformEditionAuction.sol:UniformEditionAuction",
       "address": "0x000000000000000000000000000000000000a009",
-      "status": "pending: lane 2 (the minter of Editions)",
+      "status": "implemented",
       "functions": [
         {
           "signature": "pause()",
@@ -831,6 +896,14 @@
           "role": "PARAMETER_SETTER",
           "class": "24h",
           "delay": 86400
+        },
+        {
+          "signature": "adopt(address,uint256,bytes)",
+          "selector": "0x701ad8f1",
+          "role": "NETWORK",
+          "class": "immediate",
+          "delay": 0,
+          "note": "opens the sale of an edition the network rebound to this auction"
         }
       ],
       "genesisOnly": [],
@@ -839,9 +912,9 @@
     {
       "name": "EconomicsResolver",
       "artifact": "src/economics/EconomicsResolver.sol:EconomicsResolver",
-      "implementation": null,
+      "implementation": "src/economics/EconomicsResolver.sol:EconomicsResolver",
       "address": "0x000000000000000000000000000000000000a00b",
-      "status": "pending: lane 4",
+      "status": "implemented",
       "functions": [
         {
           "signature": "setFeeTerms(bytes32,uint64,address,uint32)",
@@ -878,9 +951,9 @@
     {
       "name": "AssetAllowlist",
       "artifact": "src/economics/AssetAllowlist.sol:AssetAllowlist",
-      "implementation": null,
+      "implementation": "src/economics/AssetAllowlist.sol:AssetAllowlist",
       "address": "0x000000000000000000000000000000000000a00c",
-      "status": "pending: lane 4 (ETH only: opening bid and increment floor)",
+      "status": "implemented",
       "functions": [
         {
           "signature": "setIncrementFloor(address,uint64,uint256)",
@@ -895,6 +968,21 @@
           "role": "PARAMETER_SETTER",
           "class": "24h",
           "delay": 86400
+        },
+        {
+          "signature": "setDefaultCurrency(bytes32,uint64,address)",
+          "selector": "0xbc27c0e9",
+          "role": "PARAMETER_SETTER",
+          "class": "24h",
+          "delay": 86400
+        },
+        {
+          "signature": "deprecateAsset(address)",
+          "selector": "0x41003c89",
+          "role": "PARAMETER_SETTER",
+          "class": "24h",
+          "delay": 86400,
+          "note": "never ETH"
         }
       ],
       "genesisOnly": [],
@@ -1028,20 +1116,20 @@
     {
       "name": "FederationRegistry",
       "artifact": "src/federated/FederationRegistry.sol:FederationRegistry",
-      "implementation": null,
+      "implementation": "src/federated/FederationRegistry.sol:FederationRegistry",
       "address": "0x000000000000000000000000000000000000a015",
-      "status": "pending: lane 5 (the FEDERATION module behind Directory)",
+      "status": "implemented",
       "functions": [
         {
-          "signature": "approveTemplate(bytes32,address,uint32,uint8)",
-          "selector": "0x62c03b8e",
+          "signature": "approveTemplate(address,uint32,uint8)",
+          "selector": "0xae5b7639",
           "role": "PARAMETER_SETTER",
           "class": "24h",
           "delay": 86400
         },
         {
-          "signature": "revokeTemplate(bytes32)",
-          "selector": "0x3d4e7cc8",
+          "signature": "revokeTemplate(address)",
+          "selector": "0xdb80bb9a",
           "role": "PARAMETER_SETTER",
           "class": "24h",
           "delay": 86400
@@ -1054,15 +1142,15 @@
           "delay": 604800
         },
         {
-          "signature": "suspendTemplate(bytes32)",
-          "selector": "0xbb294eed",
+          "signature": "suspendTemplate(address)",
+          "selector": "0xab4312a9",
           "role": "PARAMETER_SETTER",
           "class": "24h",
           "delay": 86400
         },
         {
-          "signature": "resumeTemplate(bytes32)",
-          "selector": "0x8a16038f",
+          "signature": "resumeTemplate(address)",
+          "selector": "0x57ffef55",
           "role": "PARAMETER_SETTER",
           "class": "24h",
           "delay": 86400
@@ -1075,27 +1163,41 @@
           "delay": 86400
         },
         {
-          "signature": "reinstateTemplate(bytes32)",
-          "selector": "0x8a9e9fbe",
+          "signature": "reinstateTemplate(address)",
+          "selector": "0x2ee4469d",
           "role": "PARAMETER_SETTER",
           "class": "24h",
           "delay": 86400
         },
         {
-          "signature": "setFederationDelisted(uint256,bool,bytes32)",
-          "selector": "0x2a973e93",
+          "signature": "setAccountDelisted(uint256,bool,bytes32)",
+          "selector": "0xe86d1238",
           "role": "PARAMETER_SETTER",
           "class": "24h",
-          "delay": 86400,
-          "note": "moved from the artist registry"
+          "delay": 86400
         },
         {
-          "signature": "lowerFederatedFeeShare(address,uint32)",
-          "selector": "0xa8bf8adc",
+          "signature": "lowerFeeShare(address,uint32)",
+          "selector": "0x11c13b07",
           "role": "PARAMETER_SETTER",
           "class": "24h",
           "delay": 86400,
-          "note": "moved from the artist registry; lower only"
+          "note": "lower only"
+        },
+        {
+          "signature": "releaseContent(address,uint256,bytes32,uint256)",
+          "selector": "0x98764eda",
+          "role": "PARAMETER_SETTER",
+          "class": "24h",
+          "delay": 86400
+        },
+        {
+          "signature": "setEntropyModule(address)",
+          "selector": "0x795390b0",
+          "role": "SUCCESSOR_SETTER",
+          "class": "7d",
+          "delay": 604800,
+          "note": "also set once at genesis"
         }
       ],
       "genesisOnly": [],
@@ -1104,9 +1206,9 @@
     {
       "name": "FederatedEditionAuction",
       "artifact": "src/federated/FederatedEditionAuction.sol:FederatedEditionAuction",
-      "implementation": null,
+      "implementation": "src/federated/FederatedEditionAuction.sol:FederatedEditionAuction",
       "address": "0x000000000000000000000000000000000000a016",
-      "status": "pending: lane 2",
+      "status": "implemented",
       "functions": [
         {
           "signature": "pause()",
@@ -1135,6 +1237,14 @@
           "role": "PARAMETER_SETTER",
           "class": "24h",
           "delay": 86400
+        },
+        {
+          "signature": "adopt(address,uint256,bytes)",
+          "selector": "0x701ad8f1",
+          "role": "NETWORK",
+          "class": "immediate",
+          "delay": 0,
+          "note": "opens the sale of an edition the network rebound to this auction"
         }
       ],
       "genesisOnly": [],

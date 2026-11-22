@@ -57,7 +57,7 @@ def selector(signature: str) -> str:
     return "0x" + KECCAK(signature.encode("ascii"))[:4].hex()
 
 
-def fn(signature: str, role: str, note: str | None = None) -> dict:
+def fn(signature: str, role: str, note: str | None = None, via: str | None = None) -> dict:
     cls, delay = CLASS[role]
     row = {
         "signature": signature,
@@ -68,8 +68,13 @@ def fn(signature: str, role: str, note: str | None = None) -> dict:
     }
     if note:
         row["note"] = note
+    if via:
+        row["via"] = via
     return row
 
+
+FED_STREAM = "src/federated/FederatedStream.sol:FederatedStream"
+FED_EDITIONS = "src/federated/FederatedEditions.sol:FederatedEditions"
 
 # The module and minter functions every token contract and the Directory share.
 SLOTS = [
@@ -88,12 +93,13 @@ VRF_CONFIG = "(uint256,bytes32,uint32,uint16,bool)"
 
 
 def contract(name, address, artifact, implementation, functions, note=None):
+    implementation = implementation or artifact
     row = {
         "name": name,
         "artifact": artifact,
         "implementation": implementation,
         "address": address,
-        "status": "implemented" if implementation else "pending: " + note,
+        "status": "implemented",
         "functions": functions,
         "genesisOnly": [],
         "deferred": [],
@@ -133,15 +139,19 @@ CONTRACTS = [
         [
             *SLOTS,
             fn("setUnclaimedPeriod(uint48)", "NETWORK", "the network's setting, 180 days at launch; read by SplitLedger and RevenueEscrow; zero allowed"),
+            fn("setRescueDelay(uint48)", "NETWORK", "asked by every federated token for its own setting", FED_STREAM),
+            fn("rescue(uint256,address)", "NETWORK", "asked by every federated token", FED_STREAM),
+            fn("setRebindDelay(uint48)", "NETWORK", "asked by every federated editions token for its own setting", FED_EDITIONS),
+            fn("rebind(uint256,address)", "NETWORK", "asked by every federated editions token", FED_EDITIONS),
         ],
     ),
     contract(
         "WorkRules", "0x000000000000000000000000000000000000a002",
         "src/records/WorkRules.sol:WorkRules", None,
         [
-            fn("relicense(address,uint256,(string,bytes32),bytes32,uint64,bytes[])", "FUNDS_SETTER"),
-            fn("setRoyaltyRate(address,uint256,uint24,bytes32,uint64,bytes[])", "FUNDS_SETTER"),
-            fn("repinRenderer(address,uint256,address)", "SUCCESSOR_SETTER"),
+            fn("relicense(address,uint256,(string,bytes32),(uint8,uint256,bytes32,bytes32,bytes32,(address,uint8)[],(uint256,address,uint32)[],(string,bytes32),uint8,bytes32,(bytes32,address,bytes),(uint32,address,bytes32,bytes)),bytes32,uint64,bytes[])", "FUNDS_SETTER"),
+            fn("setRoyaltyRate(address,uint256,uint24,(uint8,uint256,bytes32,bytes32,bytes32,(address,uint8)[],(uint256,address,uint32)[],(string,bytes32),uint8,bytes32,(bytes32,address,bytes),(uint32,address,bytes32,bytes)),bytes32,uint64,bytes[])", "FUNDS_SETTER"),
+            fn("repinRenderer(address,uint256,address,bytes32)", "SUCCESSOR_SETTER"),
             fn("renounce(address,uint256,uint16,bytes32,uint64,bytes)", "PARAMETER_SETTER"),
             fn("setDelivery(address,address)", "SUCCESSOR_SETTER"),
             fn("addStore(address,bytes32)", "SUCCESSOR_SETTER"),
@@ -153,7 +163,7 @@ CONTRACTS = [
         "WorkDelivery", "0x000000000000000000000000000000000000a011",
         "src/stream/WorkDelivery.sol:WorkDelivery", None,
         [
-            fn("setPreferredKind(uint8)", "STORAGE_OPERATOR"),
+            fn("setPreferredKind(address,uint8)", "STORAGE_OPERATOR"),
             fn("setCollectionPreferredKind(address,uint256,uint8)", "STORAGE_OPERATOR"),
             fn("setFilePreference(address,uint256,bytes32,uint256)", "STORAGE_OPERATOR"),
             fn("addLocator(address,uint256,bytes32,(uint8,string))", "PLATFORM"),
@@ -164,7 +174,10 @@ CONTRACTS = [
     contract(
         "StreamTerms", "0x000000000000000000000000000000000000a018",
         "src/terms/StreamTerms.sol:StreamTerms", None,
-        [fn("lowerFeeShare(address,uint256,address,address,uint32,uint32)", "PARAMETER_SETTER", "lower only")],
+        [
+            fn("lowerFeeShare(address,uint256,address,address,uint32,uint32)", "PARAMETER_SETTER", "lower only"),
+            fn("setEditions(address,address)", "SUCCESSOR_SETTER", "pairs a token with its editions contract"),
+        ],
         "lane 3 (TERMS module of Stream, Editions and federated tokens)",
     ),
     contract(
@@ -175,6 +188,7 @@ CONTRACTS = [
             fn("setVerifier(address,address,bytes32)", "SUCCESSOR_SETTER"),
             fn("killSignerApprovals(address)", "NETWORK"),
             fn("releaseContent(address,uint256,bytes32,uint256)", "PARAMETER_SETTER"),
+            fn("setEntropyModule(address,address)", "SUCCESSOR_SETTER", "also set once at genesis"),
         ],
         "lane 4 (the mint policy; content release moved in from Stream)",
     ),
@@ -195,6 +209,7 @@ CONTRACTS = [
             fn("cancelReplacement(uint256)", "NETWORK"),
             fn("cancelOwnChange(uint256)", "NETWORK"),
             fn("stageReplacement(uint256,(address,address,bytes32,bytes32),bytes32,uint64,bytes)", "PARAMETER_SETTER"),
+            fn("setPackageRegistry(address,address)", "SUCCESSOR_SETTER"),
         ],
         "lane 5 (the ACCOUNTS module behind Directory)",
     ),
@@ -218,7 +233,7 @@ CONTRACTS = [
             fn("resume(uint256)", "NETWORK"),
             fn("cancel(uint256,bytes32)", "NETWORK"),
             fn(f"setConfig({AUCTION_CONFIG},{AUCTION_CONFIG})", "PARAMETER_SETTER"),
-            fn("setTarget(address,bool)", "SUCCESSOR_SETTER"),
+            fn("setStreamPolicy(address,address)", "SUCCESSOR_SETTER", "the mint policy for 6529 Stream"),
         ],
         "lane 4 (ETH only; the minter of Stream)",
     ),
@@ -231,6 +246,7 @@ CONTRACTS = [
             fn(f"setConfig({EDITION_CONFIG},{EDITION_CONFIG})", "PARAMETER_SETTER"),
             fn("setTarget(address,bool)", "SUCCESSOR_SETTER"),
             fn("setLimits(uint256,uint256)", "PARAMETER_SETTER"),
+            fn("adopt(address,uint256,bytes)", "NETWORK", "opens the sale of an edition the network rebound to this auction"),
         ],
         "lane 2 (the minter of Editions)",
     ),
@@ -251,6 +267,8 @@ CONTRACTS = [
         [
             fn("setIncrementFloor(address,uint64,uint256)", "PARAMETER_SETTER"),
             fn("setOpeningBid(address,uint64,uint256)", "PARAMETER_SETTER"),
+            fn("setDefaultCurrency(bytes32,uint64,address)", "PARAMETER_SETTER"),
+            fn("deprecateAsset(address)", "PARAMETER_SETTER", "never ETH"),
         ],
         "lane 4 (ETH only: opening bid and increment floor)",
     ),
@@ -288,15 +306,17 @@ CONTRACTS = [
         "FederationRegistry", "0x000000000000000000000000000000000000a015",
         "src/federated/FederationRegistry.sol:FederationRegistry", None,
         [
-            fn("approveTemplate(bytes32,address,uint32,uint8)", "PARAMETER_SETTER"),
-            fn("revokeTemplate(bytes32)", "PARAMETER_SETTER"),
+            fn("approveTemplate(address,uint32,uint8)", "PARAMETER_SETTER"),
+            fn("revokeTemplate(address)", "PARAMETER_SETTER"),
             fn("setAdapter(address,bool)", "SUCCESSOR_SETTER"),
-            fn("suspendTemplate(bytes32)", "PARAMETER_SETTER"),
-            fn("resumeTemplate(bytes32)", "PARAMETER_SETTER"),
+            fn("suspendTemplate(address)", "PARAMETER_SETTER"),
+            fn("resumeTemplate(address)", "PARAMETER_SETTER"),
             fn("setStatus(address[],uint8,bytes32)", "PARAMETER_SETTER"),
-            fn("reinstateTemplate(bytes32)", "PARAMETER_SETTER"),
-            fn("setFederationDelisted(uint256,bool,bytes32)", "PARAMETER_SETTER", "moved from the artist registry"),
-            fn("lowerFederatedFeeShare(address,uint32)", "PARAMETER_SETTER", "moved from the artist registry; lower only"),
+            fn("reinstateTemplate(address)", "PARAMETER_SETTER"),
+            fn("setAccountDelisted(uint256,bool,bytes32)", "PARAMETER_SETTER"),
+            fn("lowerFeeShare(address,uint32)", "PARAMETER_SETTER", "lower only"),
+            fn("releaseContent(address,uint256,bytes32,uint256)", "PARAMETER_SETTER"),
+            fn("setEntropyModule(address)", "SUCCESSOR_SETTER", "also set once at genesis"),
         ],
         "lane 5 (the FEDERATION module behind Directory)",
     ),
@@ -308,10 +328,16 @@ CONTRACTS = [
             fn("unpause()", "NETWORK"),
             fn(f"setConfig({EDITION_CONFIG},{EDITION_CONFIG})", "PARAMETER_SETTER"),
             fn("setLimits(uint256,uint256)", "PARAMETER_SETTER"),
+            fn("adopt(address,uint256,bytes)", "NETWORK", "opens the sale of an edition the network rebound to this auction"),
         ],
         "lane 2",
     ),
 ]
+
+# PackageRegistry.bindStream runs once, at genesis, and is mapped to no role afterwards.
+for _c in CONTRACTS:
+    if _c["name"] == "PackageRegistry":
+        _c["genesisOnly"] = [{"signature": "bindStream(address)", "selector": selector("bindStream(address)")}]
 
 WIRING = [
     ("PackageRegistry", "bindStream(address)", ["Stream"], "the one Stream the package registry admits for"),

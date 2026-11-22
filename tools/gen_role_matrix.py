@@ -76,11 +76,11 @@ NOTES: dict[tuple[str, str], str] = {
     ("*", "setOwner(address)"): "The marketplace `owner()`.",
     ("*", "setContractURI(string)"): "Contract-level metadata (ERC-7572).",
     # The modules: replaceable; their compiled numbers are theirs.
-    ("WorkRules", "relicense(address,uint256,(string,bytes32),bytes32,uint64,bytes[])"):
+    ("WorkRules", "relicense(address,uint256,(string,bytes32),(uint8,uint256,bytes32,bytes32,bytes32,(address,uint8)[],(uint256,address,uint32)[],(string,bytes32),uint8,bytes32,(bytes32,address,bytes),(uint32,address,bytes32,bytes)),bytes32,uint64,bytes[])"):
         "Also needs every party's signed consent. `WorkFacts` refuses to leave CC0 or pass a lock.",
-    ("WorkRules", "setRoyaltyRate(address,uint256,uint24,bytes32,uint64,bytes[])"):
+    ("WorkRules", "setRoyaltyRate(address,uint256,uint24,(uint8,uint256,bytes32,bytes32,bytes32,(address,uint8)[],(uint256,address,uint32)[],(string,bytes32),uint8,bytes32,(bytes32,address,bytes),(uint32,address,bytes32,bytes)),bytes32,uint64,bytes[])"):
         "Also needs every party's signed consent; refused once the rate is locked in the token.",
-    ("WorkRules", "repinRenderer(address,uint256,address)"):
+    ("WorkRules", "repinRenderer(address,uint256,address,bytes32)"):
         "Refused for good once the lead artist renounced the repin power (a lock in `WorkFacts`).",
     ("WorkRules", "renounce(address,uint256,uint16,bytes32,uint64,bytes)"):
         "Relays the artist's signature; the royalty and license powers also need this role.",
@@ -121,10 +121,10 @@ NOTES: dict[tuple[str, str], str] = {
         "Code hash re-checked at every use.",
     ("Accounts", "resolveContested(uint256,bool,bytes32)"):
         "Must cite the DISPUTE_OUTCOME statement recorded after the contest.",
-    ("FederationRegistry", "setFederationDelisted(uint256,bool,bytes32)"):
+    ("FederationRegistry", "setAccountDelisted(uint256,bool,bytes32)"):
         "Delisting stops new mints for the account's federated contracts at once.",
-    ("FederationRegistry", "lowerFederatedFeeShare(address,uint32)"): "Lower only.",
-    ("FederationRegistry", "reinstateTemplate(bytes32)"):
+    ("FederationRegistry", "lowerFeeShare(address,uint32)"): "Lower only.",
+    ("FederationRegistry", "reinstateTemplate(address)"):
         "Moves a revoked template version back to approved.",
     ("StatementLog", "appendCurator((address,uint256,bytes32,bytes32,(uint16,bytes32),string,"
      "bytes32,bytes32))"): "Keep the grant zero-delay: a relayed `appendSigned` refuses a "

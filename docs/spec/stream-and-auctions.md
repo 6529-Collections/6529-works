@@ -78,6 +78,27 @@ contract, not promises of the token:
 
 Stream stores only the outcome. The price is in the `PrimarySale` log.
 
+### Unclaimed credits: one rule for both auctions
+
+The English auction and both edition auctions keep credits by one shared rule,
+[`AgedCredits`](../../src/libraries/AgedCredits.sol). Each account has a total, a waiting part
+and the time that part started waiting. A credit to an account with nothing starts a wait for
+that amount; a credit while a wait runs joins the total only. Once the unclaimed period in force
+(`Directory.unclaimedPeriod()`, read when the expiry is attempted) has passed since the wait
+started, anyone may send the waiting part, and nothing else, to the network; the rest starts a
+new wait at that moment. The account's own claim takes everything. So no money goes to the
+network before it has itself waited the period, and no deposit or call by anyone else can
+shorten or postpone a running wait. The revenue escrow's rule
+([Economics and payouts](economics-and-payouts.md)) gives the same guarantee differently: it
+groups credits in windows that stay open for one period and expire a period after their last
+credit, so an amount waits at least one period and, while the period stays the same, less
+than two; its due time can be
+computed without anyone calling `expire`. The auctions use the simpler rule because their
+credits are short-lived refunds that their owners usually claim at once, so a batch that waits
+longer until someone calls `expireCredit` costs nobody anything, and one storage word with
+three fields is easier to prove than four words of windows. The escrow, which is permanent and
+was reviewed on its own, is left as it is.
+
 ### A token that will not settle
 
 A federated token may fail a call `settle` makes into it. From 2 days after the sale's end

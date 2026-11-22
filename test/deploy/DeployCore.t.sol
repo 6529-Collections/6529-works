@@ -5,6 +5,7 @@ import { DeployCore } from "script/DeployCore.sol";
 import { VerifyCore } from "script/VerifyCore.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { Slots } from "src/interfaces/core/CoreTypes.sol";
+import { DelegationManagementMock } from "../mocks/identity/DelegationManagementMock.sol";
 import { CoreDeployFixture } from "./CoreDeployFixture.sol";
 
 /// @notice The plain-core deploy library: predicted addresses, the permanent contracts' wiring,
@@ -17,18 +18,6 @@ contract DeployCoreTest is CoreDeployFixture {
 
     function verifyExternal(DeployCore.Deployment memory x) external view {
         VerifyCore.verifyPermanent(p, x);
-    }
-
-    function verifyAllExternal(DeployCore.Params memory q, DeployCore.Deployment memory x)
-        external
-        view
-    {
-        GovernanceConfig.Config memory none;
-        VerifyCore.verify(q, x, none, false);
-    }
-
-    function probeArtifact(string memory artifact) external view returns (uint256) {
-        return vm.getCode(artifact).length;
     }
 
     function test_EveryPermanentContractIsAtItsPredictedAddress() public view {
@@ -127,28 +116,43 @@ contract DeployCoreTest is CoreDeployFixture {
         assertEq(cfg.targets.length, 6);
     }
 
-    /// @dev The whole stack, modules included. Runs once every lane's module exists (at
-    ///      integration); skipped while one of them is missing from the build.
-    function test_TheWholeStackDeploysAndReadsBack() public {
-        string[6] memory pending = [
-            "Accounts.sol:Accounts",
-            "WorkRules.sol:WorkRules",
-            "StreamTerms.sol:StreamTerms",
-            "FederationRegistry.sol:FederationRegistry",
-            "EnglishAuction.sol:EnglishAuction",
-            "UniformEditionAuction.sol:UniformEditionAuction"
-        ];
-        for (uint256 i; i < pending.length; ++i) {
-            try this.probeArtifact(pending[i]) { }
-            catch {
-                vm.skip(true, string.concat("integration pending: ", pending[i]));
-            }
-        }
-        // INTEGRATION: the modules' constructor arguments follow the lanes' briefs; this test
-        // turns green when `DeployCore._moduleCode` matches the finished constructors.
+    function verifyAllExternal(
+        DeployCore.Params memory q,
+        DeployCore.Deployment memory x,
+        GovernanceConfig.Config memory cfg
+    ) external view {
+        VerifyCore.verify(q, x, cfg, true);
+    }
+
+    /// @dev The whole stack, modules included: deployed with the real constructors, the
+    ///      committed genesis policy installed with its wiring, the network accepted, and every
+    ///      contract read back.
+    function test_TheWholeStackDeploysInstallsAndReadsBack() public {
         DeployCore.Params memory q = _params();
         q.namespace = keccak256("whole stack");
+        q.delegation = address(new DelegationManagementMock());
+        q.auctionConfig = DeployCore.auctionConfig();
+        q.editionAuctionConfig = DeployCore.editionAuctionConfig();
         DeployCore.Deployment memory all = DeployCore.deploy(q, address(this));
-        this.verifyAllExternal(q, all);
+        string memory json = vm.readFile(GENESIS);
+        DeployCore.Manifest memory manifest =
+            DeployCore.Manifest(keccak256("whole stack manifest"), "ar://whole-stack");
+        GovernanceConfig.Config memory cfg = DeployCore.config(all, json);
+        cfg.network = network;
+        GovernanceConfig.Call[] memory calls = DeployCore.wiring(all, json, manifest);
+        assertEq(calls.length, 8, "every wiring call but the two entropy ones applies");
+        vm.prank(deployer);
+        DeployCore.install(all, cfg, manifest, calls);
+        vm.prank(network);
+        all.manager.acceptNetwork();
+        this.verifyAllExternal(q, all, cfg);
+        assertEq(IPackageRegistryStream(all.packageRegistry).stream(), address(all.stream));
+        assertTrue(all.stream.isMinter(all.englishAuction), "the English auction mints Stream");
+        assertTrue(all.editions.isMinter(all.editionAuction), "the edition auction mints Editions");
     }
+}
+
+/// @dev The package registry's bound Stream.
+interface IPackageRegistryStream {
+    function stream() external view returns (address);
 }

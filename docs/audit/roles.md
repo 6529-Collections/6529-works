@@ -62,16 +62,16 @@ assume the number.
 | Role | ID | Execution delay | Held by | Holders at genesis | Mapped selectors |
 | --- | ---: | --- | --- | --- | ---: |
 | `ADMIN` | 0 | 7 days | `network()` only | the network | 0 |
-| `NETWORK` | 1 | immediate | `network()` only | the network | 31 |
+| `NETWORK` | 1 | immediate | `network()` only | the network | 37 |
 | `PAUSER` | 2 | immediate | operational keys | Pauser key 1, Pauser key 2, Pauser key 3 | 4 |
 | `CURATION_SIGNER` | 4 | immediate | operational keys | Curation signer key 1, Curation signer key 2 | 0 |
 | `STORAGE_OPERATOR` | 5 | immediate | operational keys | Storage operator key | 4 |
 | `MINTER` | 6 | immediate | operational keys | none (unused in v1) | 0 |
 | `KEEPER` | 7 | immediate | operational keys | none (unused in v1) | 0 |
 | `PLATFORM` | 8 | immediate | operational keys | Platform key | 3 |
-| `PARAMETER_SETTER` | 9 | 24 hours | `network()` only | the network | 27 |
+| `PARAMETER_SETTER` | 9 | 24 hours | `network()` only | the network | 30 |
 | `FUNDS_SETTER` | 10 | 3 days | `network()` only | the network | 9 |
-| `SUCCESSOR_SETTER` | 11 | 7 days | `network()` only | the network | 15 |
+| `SUCCESSOR_SETTER` | 11 | 7 days | `network()` only | the network | 19 |
 | `CURATOR` | 12 | immediate | operational keys | Curator key | 1 |
 
 Every operational role's admin is NETWORK, so the network grants and revokes those keys at
@@ -85,11 +85,11 @@ once; the network roles answer for `network()` only ([`Roles.sol`](../../src/gov
 
 | Class | Delay | Mapped selectors |
 | --- | --- | ---: |
-| No delay | immediate | 43 |
-| 24 hours | 24 hours | 27 |
+| No delay | immediate | 49 |
+| 24 hours | 24 hours | 30 |
 | 3 days | 3 days | 9 |
-| 7 days | 7 days | 15 |
-| **Total** | | **94** |
+| 7 days | 7 days | 19 |
+| **Total** | | **107** |
 
 ## Matrix by contract
 
@@ -136,6 +136,10 @@ Source: [`src/core/Directory.sol`](../../src/core/Directory.sol).
 | `removeModule(bytes32)` | `0x4114509b` | `NETWORK` | No delay | immediate | No: executes at once | At once. |
 | `setModuleDelay(uint48)` | `0x6cb67613` | `NETWORK` | No delay | immediate | No: executes at once | A setting of the network: at once, no floor, zero allowed; `ModuleDelaySet` logs the old and the new value. |
 | `setUnclaimedPeriod(uint48)` | `0x6491f888` | `NETWORK` | No delay | immediate | No: executes at once | A setting of the network, at once, zero allowed. The split ledger and the escrow read it when a forfeit or an expiry is attempted, so a change applies to marks and credits already running. |
+| `setRescueDelay(uint48)` | `0x1d2c9862` | `NETWORK` | No delay | immediate | No: executes at once |  |
+| `rescue(uint256,address)` | `0xa923625c` | `NETWORK` | No delay | immediate | No: executes at once |  |
+| `setRebindDelay(uint48)` | `0xf39ce910` | `NETWORK` | No delay | immediate | No: executes at once |  |
+| `rebind(uint256,address)` | `0x89e09f12` | `NETWORK` | No delay | immediate | No: executes at once |  |
 
 ### WorkRules
 
@@ -143,9 +147,9 @@ Source: [`src/records/WorkRules.sol`](../../src/records/WorkRules.sol).
 
 | Function | Selector | Role | Class | Delay | Cancel | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| `relicense(address,uint256,(string,bytes32),bytes32,uint64,bytes[])` | `0xdce52987` | `FUNDS_SETTER` | 3 days | 3 days | The network or the scheduler, during the delay; the brake may delay it once | Also needs every party's signed consent. `WorkFacts` refuses to leave CC0 or pass a lock. |
-| `setRoyaltyRate(address,uint256,uint24,bytes32,uint64,bytes[])` | `0xfd4f08d6` | `FUNDS_SETTER` | 3 days | 3 days | The network or the scheduler, during the delay; the brake may delay it once | Also needs every party's signed consent; refused once the rate is locked in the token. |
-| `repinRenderer(address,uint256,address)` | `0x5d86e019` | `SUCCESSOR_SETTER` | 7 days | 7 days | The network or the scheduler, during the delay; the brake may delay it once | Refused for good once the lead artist renounced the repin power (a lock in `WorkFacts`). |
+| `relicense(address,uint256,(string,bytes32),(…),bytes32,uint64,bytes[])` | `0x830b57ca` | `FUNDS_SETTER` | 3 days | 3 days | The network or the scheduler, during the delay; the brake may delay it once | Also needs every party's signed consent. `WorkFacts` refuses to leave CC0 or pass a lock. |
+| `setRoyaltyRate(address,uint256,uint24,(…),bytes32,uint64,bytes[])` | `0xbea2c915` | `FUNDS_SETTER` | 3 days | 3 days | The network or the scheduler, during the delay; the brake may delay it once | Also needs every party's signed consent; refused once the rate is locked in the token. |
+| `repinRenderer(address,uint256,address,bytes32)` | `0x7b3d605d` | `SUCCESSOR_SETTER` | 7 days | 7 days | The network or the scheduler, during the delay; the brake may delay it once | Refused for good once the lead artist renounced the repin power (a lock in `WorkFacts`). |
 | `renounce(address,uint256,uint16,bytes32,uint64,bytes)` | `0x12af57c4` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once | Relays the artist's signature; the royalty and license powers also need this role. |
 | `setDelivery(address,address)` | `0x118e803d` | `SUCCESSOR_SETTER` | 7 days | 7 days | The network or the scheduler, during the delay; the brake may delay it once | Replaces the delivery contract (locators and preferences). No fact of any work changes. |
 | `addStore(address,bytes32)` | `0xce8238dd` | `SUCCESSOR_SETTER` | 7 days | 7 days | The network or the scheduler, during the delay; the brake may delay it once | Adds a store media may be found complete in, for good; code-hash pinned. |
@@ -157,7 +161,7 @@ Source: [`src/stream/WorkDelivery.sol`](../../src/stream/WorkDelivery.sol).
 
 | Function | Selector | Role | Class | Delay | Cancel | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| `setPreferredKind(uint8)` | `0x40ff5d7f` | `STORAGE_OPERATOR` | No delay | immediate | No: executes at once |  |
+| `setPreferredKind(address,uint8)` | `0x0562c61f` | `STORAGE_OPERATOR` | No delay | immediate | No: executes at once |  |
 | `setCollectionPreferredKind(address,uint256,uint8)` | `0x8217261f` | `STORAGE_OPERATOR` | No delay | immediate | No: executes at once |  |
 | `setFilePreference(address,uint256,bytes32,uint256)` | `0xd5af7764` | `STORAGE_OPERATOR` | No delay | immediate | No: executes at once |  |
 | `addLocator(address,uint256,bytes32,(uint8,string))` | `0xfc16e246` | `PLATFORM` | No delay | immediate | No: executes at once | The work's artist may also call it directly before finalize. |
@@ -170,6 +174,7 @@ Source: [`src/terms/StreamTerms.sol`](../../src/terms/StreamTerms.sol).
 | Function | Selector | Role | Class | Delay | Cancel | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
 | `lowerFeeShare(address,uint256,address,address,uint32,uint32)` | `0xeb3dbf88` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once | Lower only; deploys the new royalty vault before it points the token at it, and applies to the edition too. |
+| `setEditions(address,address)` | `0xf6bf7f67` | `SUCCESSOR_SETTER` | 7 days | 7 days | The network or the scheduler, during the delay; the brake may delay it once |  |
 
 ### PackageRegistry
 
@@ -181,6 +186,7 @@ Source: [`src/curation/PackageRegistry.sol`](../../src/curation/PackageRegistry.
 | `setVerifier(address,address,bytes32)` | `0xef65fbd2` | `SUCCESSOR_SETTER` | 7 days | 7 days | The network or the scheduler, during the delay; the brake may delay it once | Never back to a retired verifier. |
 | `killSignerApprovals(address)` | `0x532178aa` | `NETWORK` | No delay | immediate | No: executes at once | Every unminted approval the signer gave stops counting. |
 | `releaseContent(address,uint256,bytes32,uint256)` | `0x98764eda` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once | After an upheld dispute, a burned token's content may be minted again for the artist. |
+| `setEntropyModule(address,address)` | `0x0efb8808` | `SUCCESSOR_SETTER` | 7 days | 7 days | The network or the scheduler, during the delay; the brake may delay it once |  |
 
 ### CurationVerifier
 
@@ -204,6 +210,7 @@ Source: [`src/identity/Accounts.sol`](../../src/identity/Accounts.sol).
 | `cancelReplacement(uint256)` | `0x0c3f8b2a` | `NETWORK` | No delay | immediate | No: executes at once | Withdraws the network's own pending replacement. |
 | `cancelOwnChange(uint256)` | `0x6196ae79` | `NETWORK` | No delay | immediate | No: executes at once | Cancels an account's own pending change; the account may stage a new one. |
 | `stageReplacement(uint256,(…),bytes32,uint64,bytes)` | `0x2eff6829` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once | Needs the new root's acceptance; 14 days' notice (compiled in this module); any wallet of the account may contest during it unless the account is frozen. |
+| `setPackageRegistry(address,address)` | `0x00752cf1` | `SUCCESSOR_SETTER` | 7 days | 7 days | The network or the scheduler, during the delay; the brake may delay it once |  |
 
 ### StatementLog
 
@@ -228,7 +235,7 @@ Source: [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol).
 | `resume(uint256)` | `0x414000b5` | `NETWORK` | No delay | immediate | No: executes at once | At any moment of the pause. |
 | `cancel(uint256,bytes32)` | `0xeafb64d5` | `NETWORK` | No delay | immediate | No: executes at once | Upheld dispute, at any moment of the pause, citing the token's DISPUTE_OUTCOME; burns the token and refunds the bid. |
 | `setConfig((…),(…))` | `0xf9f86bee` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once |  |
-| `setTarget(address,bool)` | `0x80ffe77f` | `SUCCESSOR_SETTER` | 7 days | 7 days | The network or the scheduler, during the delay; the brake may delay it once | Also a genesis wiring call. |
+| `setStreamPolicy(address,address)` | `0x878bd297` | `SUCCESSOR_SETTER` | 7 days | 7 days | The network or the scheduler, during the delay; the brake may delay it once |  |
 
 ### UniformEditionAuction
 
@@ -241,6 +248,7 @@ Source: [`src/sales/UniformEditionAuction.sol`](../../src/sales/UniformEditionAu
 | `setConfig((…),(…))` | `0x0b8c383f` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once |  |
 | `setTarget(address,bool)` | `0x80ffe77f` | `SUCCESSOR_SETTER` | 7 days | 7 days | The network or the scheduler, during the delay; the brake may delay it once | Also a genesis wiring call. |
 | `setLimits(uint256,uint256)` | `0xc4590d3f` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once |  |
+| `adopt(address,uint256,bytes)` | `0x701ad8f1` | `NETWORK` | No delay | immediate | No: executes at once |  |
 
 ### EconomicsResolver
 
@@ -261,6 +269,8 @@ Source: [`src/economics/AssetAllowlist.sol`](../../src/economics/AssetAllowlist.
 | --- | --- | --- | --- | --- | --- | --- |
 | `setIncrementFloor(address,uint64,uint256)` | `0xad176f96` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once |  |
 | `setOpeningBid(address,uint64,uint256)` | `0x373577fc` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once | The English auction's least first bid in ETH; also a genesis wiring call. |
+| `setDefaultCurrency(bytes32,uint64,address)` | `0xbc27c0e9` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once |  |
+| `deprecateAsset(address)` | `0x41003c89` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once |  |
 
 ### RevenueEscrow
 
@@ -313,15 +323,17 @@ Source: [`src/federated/FederationRegistry.sol`](../../src/federated/FederationR
 
 | Function | Selector | Role | Class | Delay | Cancel | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| `approveTemplate(bytes32,address,uint32,uint8)` | `0x62c03b8e` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once |  |
-| `revokeTemplate(bytes32)` | `0x3d4e7cc8` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once |  |
+| `approveTemplate(address,uint32,uint8)` | `0xae5b7639` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once |  |
+| `revokeTemplate(address)` | `0xdb80bb9a` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once |  |
 | `setAdapter(address,bool)` | `0x332f6465` | `SUCCESSOR_SETTER` | 7 days | 7 days | The network or the scheduler, during the delay; the brake may delay it once |  |
-| `suspendTemplate(bytes32)` | `0xbb294eed` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once |  |
-| `resumeTemplate(bytes32)` | `0x8a16038f` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once |  |
+| `suspendTemplate(address)` | `0xab4312a9` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once |  |
+| `resumeTemplate(address)` | `0x57ffef55` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once |  |
 | `setStatus(address[],uint8,bytes32)` | `0x565f9c3d` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once |  |
-| `reinstateTemplate(bytes32)` | `0x8a9e9fbe` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once | Moves a revoked template version back to approved. |
-| `setFederationDelisted(uint256,bool,bytes32)` | `0x2a973e93` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once | Delisting stops new mints for the account's federated contracts at once. |
-| `lowerFederatedFeeShare(address,uint32)` | `0xa8bf8adc` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once | Lower only. |
+| `reinstateTemplate(address)` | `0x2ee4469d` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once | Moves a revoked template version back to approved. |
+| `setAccountDelisted(uint256,bool,bytes32)` | `0xe86d1238` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once | Delisting stops new mints for the account's federated contracts at once. |
+| `lowerFeeShare(address,uint32)` | `0x11c13b07` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once | Lower only. |
+| `releaseContent(address,uint256,bytes32,uint256)` | `0x98764eda` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once |  |
+| `setEntropyModule(address)` | `0x795390b0` | `SUCCESSOR_SETTER` | 7 days | 7 days | The network or the scheduler, during the delay; the brake may delay it once |  |
 
 ### FederatedEditionAuction
 
@@ -333,12 +345,17 @@ Source: [`src/federated/FederatedEditionAuction.sol`](../../src/federated/Federa
 | `unpause()` | `0x3f4ba83a` | `NETWORK` | No delay | immediate | No: executes at once | No wait of its own: the network lifts the pause at once. |
 | `setConfig((…),(…))` | `0x0b8c383f` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once |  |
 | `setLimits(uint256,uint256)` | `0xc4590d3f` | `PARAMETER_SETTER` | 24 hours | 24 hours | The network or the scheduler, during the delay; the brake may delay it once |  |
+| `adopt(address,uint256,bytes)` | `0x701ad8f1` | `NETWORK` | No delay | immediate | No: executes at once |  |
 
 ## Genesis-only bindings
 
-None. The genesis modules and minters of Stream, Editions and Directory are constructor
-arguments (their addresses are predicted before deployment); every later addition waits
-`moduleDelay()`.
+One-shot bindings between protocol contracts. The configurator executes them at
+genesis as zero-delay ADMIN, before it maps any selector; each target refuses a second
+call. They stay unmapped, so any later call resolves to ADMIN (7 days).
+
+| Contract | Function | Selector |
+| --- | --- | --- |
+| PackageRegistry | `bindStream(address)` | `0x7d4b8f67` |
 
 ## Genesis wiring
 
@@ -348,14 +365,16 @@ and renounces its installer record; it then proposes the network, which accepts.
 
 | # | Contract | Call | Arguments |
 | ---: | --- | --- | --- |
-| 0 | EnglishAuction | `setTarget(address,bool)` | Stream, `true` (pending lane 4: kept only if the auction keeps a target list) |
-| 1 | UniformEditionAuction | `setTarget(address,bool)` | Editions, `true` (pending lane 2) |
-| 2 | AssetAllowlist | `setOpeningBid(address,uint64,uint256)` | `address(0)` (ETH), 1, 50000000000000000 (ETH opening bid 0.05 ETH: a 1-wei self-bid cannot keep an unsold work from the museum) |
-| 3 | FederationRegistry | `setAdapter(address,bool)` | EnglishAuction, `true` (pending lane 5) |
-| 4 | FederationRegistry | `setAdapter(address,bool)` | FederatedEditionAuction, `true` (pending lane 5) |
-| 5 | FederationRegistry | `approveTemplate(bytes32,address,uint32,uint8)` | FederatedStream, FederatedStreamDeployer, 1, 0 (pending lane 5) |
-| 6 | FederationRegistry | `approveTemplate(bytes32,address,uint32,uint8)` | FederatedEditions, FederatedEditionsDeployer, 1, 1 (pending lane 5) |
-| 7 | StatementLog | `appendGovernanceManifest((…))` |  |
+| 0 | PackageRegistry | `bindStream(address)` | Stream (the one Stream the package registry admits for) |
+| 1 | PackageRegistry | `setEntropyModule(address,address)` | `address(0)` (ETH), EntropyModule (left out when there is no entropy module) |
+| 2 | UniformEditionAuction | `setTarget(address,bool)` | Editions, `true` |
+| 3 | AssetAllowlist | `setOpeningBid(address,uint64,uint256)` | `address(0)` (ETH), 1, 50000000000000000 (ETH opening bid 0.05 ETH: a 1-wei self-bid cannot keep an unsold work from the museum) |
+| 4 | FederationRegistry | `setAdapter(address,bool)` | EnglishAuction, `true` |
+| 5 | FederationRegistry | `setAdapter(address,bool)` | FederatedEditionAuction, `true` |
+| 6 | FederationRegistry | `approveTemplate(address,uint32,uint8)` | FederatedStreamDeployer, 1, 0 |
+| 7 | FederationRegistry | `approveTemplate(address,uint32,uint8)` | FederatedEditionsDeployer, 1, 1 |
+| 8 | FederationRegistry | `setEntropyModule(address)` | EntropyModule (left out when there is no entropy module) |
+| 9 | StatementLog | `appendGovernanceManifest((…))` |  |
 
 ## The AccessManager's own functions
 
@@ -389,6 +408,8 @@ for the call they carry.
 
 | Selector | Signature |
 | --- | --- |
+| `0x830b57ca` | `relicense(address,uint256,(string,bytes32),(uint8,uint256,bytes32,bytes32,bytes32,(address,uint8)[],(uint256,address,uint32)[],(string,bytes32),uint8,bytes32,(bytes32,address,bytes),(uint32,address,bytes32,bytes)),bytes32,uint64,bytes[])` |
+| `0xbea2c915` | `setRoyaltyRate(address,uint256,uint24,(uint8,uint256,bytes32,bytes32,bytes32,(address,uint8)[],(uint256,address,uint32)[],(string,bytes32),uint8,bytes32,(bytes32,address,bytes),(uint32,address,bytes32,bytes)),bytes32,uint64,bytes[])` |
 | `0x2eff6829` | `stageReplacement(uint256,(address,address,bytes32,bytes32),bytes32,uint64,bytes)` |
 | `0xa054305a` | `appendCurator((address,uint256,bytes32,bytes32,(uint16,bytes32),string,bytes32,bytes32))` |
 | `0x8479b292` | `appendPlatform((address,uint256,bytes32,bytes32,(uint16,bytes32),string,bytes32,bytes32))` |

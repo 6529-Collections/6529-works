@@ -428,7 +428,7 @@ python tools/mutation.py report mutation --markdown mutation/report.md
   one wrote the whole statement's text into the comparison's place, so many of its mutants
   did not compile) and skips Yul comparisons; LIR gives `bool` the values `false` and `true`.
 
-**Status.** The first full baseline is in mutation-baseline.md: 11,735
+**Status.** The first full baseline is in [mutation-baseline.md](mutation-baseline.md): 11,735
 mutants of 054442d's code in 50 contracts, 88.2% killed by the campaign and 90.6% by the final
 suite, 98.9% once the 992 equivalent mutants are left out. Every survivor is triaged there, and
 `tools/mutation-floors.json` holds a floor for each contract the baseline measured. 289 of the
@@ -450,7 +450,7 @@ eac9dd2e measured 19 files (two with nothing to mutate) in about 153 hours of sh
 checkouts: 5,093 mutants, 4,518 killed by the campaign (88.7%) and 4,819 by the final suite
 (94.6%), every remaining survivor argued equivalent, gas-only or defensive. It set or raised
 their floors; its tables and the triage of every survivor are in
-mutation-baseline.md. It wrote
+[mutation-baseline.md](mutation-baseline.md). It wrote
 107 new tests, and extended about 26, for its gaps, each run against the mutant it kills. None
 of its survivors was a defect in a contract; three were access checks no test pinned
 (`ArtistRegistry.resolveContested`, `FederationRegistry.setStatus`, and `FederatedStream`'s
