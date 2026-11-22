@@ -102,8 +102,8 @@ section below says which.
 | Nightly (`.github/workflows/nightly.yml`) | every day at 03:30 UTC, and on demand | the invariant suites under the `deep` profile (2,000 runs of depth 256) in five jobs of up to 3 hours (the economics invariants in two, the four new campaigns, the auctions, the others); every fuzz test at 10,000 runs (`deep`); one 30-minute Medusa campaign per harness (45-minute job, the release checked against a pinned SHA-256, the corpus cached); the fork tests in `test/fork` (the Safe suites included) against public mainnet and Sepolia endpoints | locally: deep fuzz 10.5 min on 48 threads (5.9 CPU hours, so roughly 1.5 hours on a 4-core runner); the four new campaigns under `deep` about 68 min; the fork suites 6 s from the RPC cache. The deep fuzz, the new deep partition and the Medusa jobs have not run on a runner | no (scheduled) |
 | Mutation (`.github/workflows/mutation.yml`) | weekly, Sunday 02:00 UTC, and on demand; one small shard when a push to `main` changes the workflow or the tool | every shard of `tools/mutation.py`, eight jobs at a time, each stopped at a 335-minute budget; the merged report in the run summary, with a row for every planned file; fails, naming the shard or contract, when a planned shard left no results or ran out of its budget, a contract has no floor, or a contract's kill rate drops below its floor | several hours | no (scheduled) |
 
-`forge test` runs in six parts whose filters together select every test exactly once (3,304
-tests on 22 November 2026: 3,205, 6, 4, 16, 25 and 48; the 12 examples and the keeper fixture fall
+`forge test` runs in six parts whose filters together select every test exactly once (3,306
+tests on 22 November 2026: 3,207, 6, 4, 16, 25 and 48; the 12 examples and the keeper fixture fall
 in the first), so the parts run on separate runners. Each
 part restores the latest compiler output and compiles only what changed. The 15-minute CI
 budget applies to each job. The fourth part holds the four campaigns of this build, which
@@ -460,17 +460,18 @@ of its shards ran longer than the weekly job allows (now split in parts): see
 
 **Third batch (22 November 2026).** The files the second campaign did not reach ran as the tool's
 own shards on two rented 96-core machines: 14 files, 5,917 mutants once `GovernanceConfig`'s
-earlier groups are added, 5,476 killed (92.5%) and 5,548 by the final suite (93.8%). 45 new tests,
+earlier groups are added, 5,476 killed (92.5%) and 5,553 by the final suite (93.8%). 47 new tests,
 each run against the mutant it kills, pin among others the content store's checks on an added
 source's answer, `StatementLog`'s relay delay, a fee share at and above the denominator, the
 auction's re-entry guard on `expireCredit` and the governance readback. Midway the owner decided
 to restructure `Stream`, `WorkRecords`, `Editions` and the English and edition auctions with their
 lenses; for those seven only rule-level tests were kept (access, who may act, who is paid), their
-other 232 survivors are listed as deferred with a category, and their floors are unchanged.
+other survivors (227) are listed as deferred with a category, and their floors are unchanged.
 `ContentStore`, `StatementLog`, `EditionRules`, `WorksAccessManager`, `Roles`, `GovernanceConfig`
 and `GovernanceConfigurator` were triaged in full and their floors set or raised. No survivor was
-a defect. `UniformEditionAuction` now measures 88.6%, below its floor of 91, until the restructure
-or a reset. Tables and triage:
+a defect. `UniformEditionAuction` keeps its floor of 91 through two tests that pin current
+internals (`_MAX_REVERT`, the payout-gas limit bounds), to be replaced in the restructure. Tables
+and triage:
 [third batch](mutation-baseline.md#third-batch-22-november-2026).
 
 ## Symbolic proofs (Halmos)
@@ -711,7 +712,6 @@ survivors, and only a lying mock of a trusted contract the defensive ones.
   `UniformClearing` keep floors measured before later rewrites. `Stream`, `WorkRecords`,
   `Editions`, `EnglishAuction`, `UniformEditionAuction` and both lenses were measured by the
   [third batch](mutation-baseline.md#third-batch-22-november-2026) but keep their earlier floors
-  while they are restructured; 232 of their survivors are deferred untested, and
-  `UniformEditionAuction` measures below its floor. Since 21
+  while they are restructured; 227 of their survivors are deferred untested. Since 21
   November 2026 every src/ file with executable code has its own coverage floor
   ([coverage](#coverage)).

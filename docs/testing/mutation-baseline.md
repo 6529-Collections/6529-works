@@ -2250,7 +2250,9 @@ restructure `Stream`, `WorkRecords`, `Editions`, the English auction and the edi
 both lenses): their logic moves into replaceable modules. For those seven files the triage
 pins only the rules a rewrite keeps (access checks, checks on who may do what, and comparisons
 that decide who is paid or who owns a token) and lists every other survivor as **deferred: the
-contract is being restructured**, with a category and no test. Their floors are unchanged.
+contract is being restructured**, with a category and no test. Their floors are unchanged. The
+one exception is `UniformEditionAuction`, whose five survivors are killed by two tests of current
+internals so that it holds its floor ([below](#kill-rate-per-contract-2)).
 `StatementLog`, `ContentStore`, `EditionRules`, `WorksAccessManager`, `Roles`,
 `GovernanceConfig` and `GovernanceConfigurator` stay as they are and were triaged in full.
 
@@ -2292,9 +2294,9 @@ contract is being restructured**, with a category and no test. Their floors are 
 | `src/editions/Editions.sol` | 752 | 706 | 93.9% | 712 | 94.7% | | | 40 | 93, unchanged |
 | `src/sales/EnglishAuction.sol` | 972 | 913 | 93.9% | 932 | 95.9% | | | 40 | 90, unchanged |
 | `src/sales/EnglishAuctionLens.sol` | 405 | 378 | 93.3% | 378 | 93.3% | | | 27 | 93, unchanged |
-| `src/sales/UniformEditionAuction.sol` | 44 | 39 | 88.6% | 39 | 88.6% | | | 5 | 91, unchanged |
+| `src/sales/UniformEditionAuction.sol` | 44 | 39 | 88.6% | 44 | 100.0% | | | 0 | 91, unchanged |
 | `src/sales/UniformEditionAuctionLens.sol` | 55 | 54 | 98.2% | 54 | 98.2% | | | 1 | 87, unchanged |
-| **Total** | **5917** | **5476** | **92.5%** | **5548** | **93.8%** | | | **232** | |
+| **Total** | **5917** | **5476** | **92.5%** | **5553** | **93.8%** | | | **227** | |
 
 "Batch" counts what the module tests and the whole-suite re-check killed (for `EnglishAuction`,
 with the five the late re-check killed); "final" adds the survivors the new tests kill. The
@@ -2304,15 +2306,16 @@ equivalent and defensive counts include that campaign's 16 and 1. Floors are the
 minus two points, rounded down. The seven deferred files keep their floors; their equivalent,
 gas and defensive survivors are counted under "Deferred" and listed with their reasons below.
 
-`UniformEditionAuction` measures 88.6% here, below its floor of 91, which was set on rc.2's 1,142
-mutants before the file shrank: the weekly run will report it until the restructure lands or its
-floor is reset. Two tests written in this triage, against `_MAX_REVERT` and the payout-gas limit
-bounds, killed all five survivors; they were not kept, because they pin constants the rewrite
-replaces.
+`UniformEditionAuction`'s batch rate, 88.6%, is below its floor of 91, which was set on rc.2's
+1,142 mutants before the file shrank to 44. The floor stays: two tests kill all five survivors,
+`test_Abandon_ARefusalOfExactly1024BytesIsPassedOn` (`_MAX_REVERT`) and
+`test_SetLimits_TheBoundsAreExact` (the payout-gas limit bounds). Unlike the other tests kept in
+the deferred files, these two pin current internals (constants), and will be replaced when the
+auction is restructured.
 
 ### What the new tests pin
 
-45 new test functions in 17 test files, with five new mock files under `test/mocks/`
+47 new test functions in 19 test files, with five new mock files under `test/mocks/`
 (`ChunkSourceMocks`, `RecordsMutationMocks`, `StreamMutationMocks`, `EditionsMutationMocks`,
 `AuctionSettlementMocks`):
 
@@ -2552,10 +2555,12 @@ No survivor.
   ROR (NONE is the first value), L441 MIA (malformed either way), L457 ROR (nothing exceeds the
   maximum), L527 MIA (`pausedAt` is written only with its flag).
 
-#### `src/sales/UniformEditionAuction.sol`, `src/sales/UniformEditionAuctionLens.sol` (deferred)
+#### `src/sales/UniformEditionAuction.sol`, `src/sales/UniformEditionAuctionLens.sol` (being restructured)
 
-`UniformEditionAuction`: 5 survivors, 5 deferred: bounds on encoded data (L93 CONST, two:
-`_MAX_REVERT`) and other (L107 CONST (two) and L108 CONST: the payout-gas limit bounds).
+`UniformEditionAuction`: 5 survivors, 5 killed by new tests that pin current internals (kept so
+the file holds its floor of 91; to be replaced in the restructure). L93 CONST (two, `_MAX_REVERT`
+1,024 one up and one down): `test_Abandon_ARefusalOfExactly1024BytesIsPassedOn`. L107 CONST (two,
+`_MIN_PAYOUT_GAS`) and L108 CONST (`_MAX_PAYOUT_GAS`): `test_SetLimits_TheBoundsAreExact`.
 `UniformEditionAuctionLens`: 1 survivor, deferred and argued equivalent (L1153 CR, the default
 return).
 
