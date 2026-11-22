@@ -22,7 +22,6 @@ import { IStream } from "src/interfaces/core/IStream.sol";
 import { BoundedCall } from "src/libraries/BoundedCall.sol";
 import { ReturnDataMock } from "../mocks/libraries/AdversarialTargets.sol";
 import { EvilResolverMock, ForwardingResolverMock } from "../mocks/records/RecordsResolvers.sol";
-import { RawRevertStreamCore } from "../mocks/records/RecordsMutationMocks.sol";
 
 /// @notice The policy the review asked for: the ARTIST trust boundary and resolver binding, no
 ///         attribution to the AccessManager, reserved kinds, the dispute pointer, the relayed-nonce
@@ -802,12 +801,12 @@ contract StatementLogPolicyTest is StatementLogFixture {
         assertEq(latest, outcome);
     }
 
-    /// @dev Only `UnknownWork` with its one word (36 bytes) reads as no work: the selector alone,
-    ///      the selector with two words, and the selectors either side of it in 36 bytes are
-    ///      failed reads (`BoundedCallFailed`).
-    function test_LatestDisputeOutcome_OnlyAnExactUnknownWorkReadsZero() public {
-        RawRevertStreamCore token = new RawRevertStreamCore();
-        bytes4 unknown = IStream.UnknownWork.selector;
+    /// @dev Only `ERC721NonexistentToken` with its one word (36 bytes) reads as no work: the
+    ///      selector alone, the selector with two words, and the selectors either side of it in
+    ///      36 bytes are failed reads (`BoundedCallFailed`).
+    function test_LatestDisputeOutcome_OnlyAnExactNonexistentTokenReadsZero() public {
+        RawRevertCoreStream token = new RawRevertCoreStream();
+        bytes4 unknown = IERC721Errors.ERC721NonexistentToken.selector;
         token.setReason(abi.encodeWithSelector(unknown, uint256(1)));
         assertEq(stmtLog.latestDisputeOutcome(address(token), 1), bytes32(0));
         bytes[4] memory failed = [
@@ -906,5 +905,26 @@ contract StreamCoreMock {
             }
         }
         return item;
+    }
+}
+
+/// @dev A token that declares the core `IStream` and reverts `itemHashOf` with the bytes the test
+///      sets.
+contract RawRevertCoreStream {
+    bytes internal _reason;
+
+    function setReason(bytes calldata reason) external {
+        _reason = reason;
+    }
+
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return interfaceId == 0x01ffc9a7 || interfaceId == type(IStream).interfaceId;
+    }
+
+    function itemHashOf(uint256) external view returns (bytes32) {
+        bytes memory reason = _reason;
+        assembly ("memory-safe") {
+            revert(add(reason, 0x20), mload(reason))
+        }
     }
 }

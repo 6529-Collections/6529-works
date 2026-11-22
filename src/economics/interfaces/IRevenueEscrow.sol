@@ -10,10 +10,13 @@ import { ISplitFactory } from "./ISplitFactory.sol";
 ///         split wallet's credit only to an equivalent replacement wallet (same factory,
 ///         identical payees), its own credits (the fee and museum vaults') anywhere, and any
 ///         other account's credit only to the replacement that account itself named (its
-///         consent). Every amount credited stays its account's for at least 180 days from its
-///         block and may move to the network fee vault less than 360 days after it ({expire}); no
-///         deposit, by anyone, makes an amount expire sooner, or moves the time from which an
-///         amount already 180 days old may expire (see `RevenueEscrow`).
+///         consent). Every amount credited stays its account's at least for the unclaimed period
+///         from its block and may move to the network fee vault less than twice that after it
+///         ({expire}); no deposit, by anyone, makes an amount expire sooner, or moves the time
+///         from which an amount already a period old may expire (see `RevenueEscrow`). The
+///         period is the network's setting (`IDirectory.unclaimedPeriod`, 180 days at launch),
+///         read whenever the escrow ages a credit, so a change applies to every amount not yet
+///         aged; it is not a fixed promise.
 /// @dev Declares itself through ERC-165, so the artist registry and the economics resolver can
 ///      refuse the escrow as a payout or fee recipient (`ProtocolContracts`).
 interface IRevenueEscrow is IERC165 {
@@ -64,8 +67,9 @@ interface IRevenueEscrow is IERC165 {
     /// @param amount The amount swept: the whole excess.
     event ExcessSwept(address indexed asset, address indexed recipient, uint256 amount);
 
-    /// @notice `amount` of `asset` owed to `wallet`, every unit of it credited at least 180 days
-    ///         ago, moved to the network fee vault `network`, which is now owed `owed`.
+    /// @notice `amount` of `asset` owed to `wallet`, every unit of it credited at least the
+    ///         unclaimed period ago, moved to the network fee vault `network`, which is now owed
+    ///         `owed`.
     /// @param wallet The account whose credit moved.
     /// @param asset The asset of the credit (ETH is `address(0)`).
     /// @param network The network fee vault credited.
@@ -132,14 +136,16 @@ interface IRevenueEscrow is IERC165 {
     /// @notice `wallet`'s credit in `asset` as stored at its last change, in three parts that age
     ///         oldest first; they sum to {owed}. A deposit or a recovery to the wallet joins the
     ///         open window, or opens one at its block when there is none or it has closed.
-    /// @dev The stored parts are not aged to now: {expirableAt} does that. A window closes 180
-    ///      days after `openedAt`; its credits then mature 180 days after `lastAt`.
+    /// @dev The stored parts are not aged to now: {expirableAt} does that. A window closes one
+    ///      unclaimed period after `openedAt`; its credits then mature one period after its
+    ///      last credit, under the period in force when the escrow looks.
     /// @param wallet The credited account.
     /// @param asset The asset to look up (ETH is `address(0)`).
     /// @return aged The part that may move to the network.
-    /// @return maturing The last closed window's credits, which may move from `maturesAt`.
+    /// @return maturing The last closed window's credits, which may move one period after
+    ///         `maturingLastAt`.
     /// @return recent The open window's credits.
-    /// @return maturesAt When `maturing` may move: 180 days after its window's last credit.
+    /// @return maturingLastAt When the last closed window took its last credit.
     /// @return openedAt When the open window opened (its first credit).
     /// @return lastAt When the open window took its last credit.
     function credits(address wallet, address asset)
@@ -149,7 +155,7 @@ interface IRevenueEscrow is IERC165 {
             uint256 aged,
             uint256 maturing,
             uint256 recent,
-            uint48 maturesAt,
+            uint48 maturingLastAt,
             uint48 openedAt,
             uint48 lastAt
         );
@@ -171,8 +177,8 @@ interface IRevenueEscrow is IERC165 {
     function locked() external view returns (bool);
 
     /// @notice Moves the part of `wallet`'s credit in `asset` that may expire (every unit of it
-    ///         credited at least 180 days ago, see `RevenueEscrow`) to the network fee vault
-    ///         (`factory().network()`) as a credit; the rest stays. Anyone may call; anyone may
+    ///         credited at least the unclaimed period in force ago, see `RevenueEscrow`) to the
+    ///         network fee vault (`factory().network()`) as a credit; the rest stays. Anyone may call; anyone may
     ///         then {flush} it to the vault.
     /// @dev Reverts with {CreditNotExpired} when no part may move yet, {NothingOwed} when nothing
     ///      is owed and {InvalidWallet} for the network itself.

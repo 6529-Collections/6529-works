@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import { Vm } from "forge-std/Vm.sol";
 import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
 import { GovernedVault } from "src/economics/GovernedVault.sol";
+import { IDirectory } from "src/interfaces/core/IDirectory.sol";
 import { SplitLedger } from "src/economics/SplitLedger.sol";
 import { IClaimRouter } from "src/economics/interfaces/IClaimRouter.sol";
 import { IReleaseVerifier } from "src/economics/interfaces/IReleaseVerifier.sol";
@@ -570,7 +571,11 @@ contract NetworkShareTest is EconomicsBase, GasRuleAssertions {
     function test_TheLedgerNamesTheNetwork() public view {
         assertEq(ledger.network(), address(feeVault));
         assertEq(resolver.unclaimedPeriod(), PERIOD, "the ledger reads the resolver's period");
-        assertEq(escrow.UNCLAIMED_PERIOD(), PERIOD);
+        assertEq(
+            IDirectory(address(ledger.resolver())).unclaimedPeriod(),
+            PERIOD,
+            "the escrow reads it too"
+        );
     }
 
     function _bal(address asset, address account) internal view returns (uint256) {

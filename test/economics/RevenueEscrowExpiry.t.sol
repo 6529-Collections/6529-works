@@ -72,8 +72,8 @@ contract RevenueEscrowExpiryTest is EconomicsBase {
         assertEq(aged, 0);
         assertEq(maturing, 3 ether, "the first window, due on day 280");
         assertEq(recent, 4 ether);
-        (,,, uint48 maturesAt, uint48 openedAt, uint48 lastAt) = escrow.credits(alice, ETH);
-        assertEq(maturesAt, start + 280 days);
+        (,,, uint48 maturingLastAt, uint48 openedAt, uint48 lastAt) = escrow.credits(alice, ETH);
+        assertEq(maturingLastAt, start + 100 days, "the closed window's last credit");
         assertEq(openedAt, start + 200 days);
         assertEq(lastAt, start + 200 days);
 
@@ -165,8 +165,8 @@ contract RevenueEscrowExpiryTest is EconomicsBase {
         assertEq(alice.balance, before + 7);
         (uint256 aged, uint256 maturing, uint256 recent) = _parts(alice);
         assertEq(aged + maturing + recent, 0);
-        (,,, uint48 maturesAt, uint48 openedAt, uint48 lastAt) = escrow.credits(alice, ETH);
-        assertEq(uint256(maturesAt) + openedAt + lastAt, 0, "the record is cleared");
+        (,,, uint48 maturingLastAt, uint48 openedAt, uint48 lastAt) = escrow.credits(alice, ETH);
+        assertEq(uint256(maturingLastAt) + openedAt + lastAt, 0, "the record is cleared");
         assertEq(escrow.totalOwed(ETH), 0);
     }
 

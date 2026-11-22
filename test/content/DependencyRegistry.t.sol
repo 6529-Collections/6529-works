@@ -134,6 +134,32 @@ contract DependencyRegistryTest is ContentBase {
         registry.register(THREE, R170, id);
     }
 
+    /// @dev The registrant attests a large library first (`attestComplete`); `register`'s
+    ///      completeness check is then one read: registering an attested twelve-chunk library
+    ///      costs no more than registering a one-chunk one, and less than an unattested one.
+    function test_Register_AnAttestedLibraryIsOneRead() public {
+        bytes32 big = _publish(_data(12 * CHUNK, 7), uint8(IContentStore.Encoding.Gzip), JS);
+        bytes32 bare = _publish(_data(12 * CHUNK, 9), uint8(IContentStore.Encoding.Gzip), JS);
+        bytes32 small = _publish(_data(100, 8), uint8(IContentStore.Encoding.Gzip), JS);
+        vm.prank(stranger);
+        assertTrue(store.attestComplete(big, 12));
+        assertEq(store.completeThrough(big), 12);
+        // Warm the registry and the store, so each measured call pays only for its own file.
+        vm.prank(registrar);
+        registry.register(THREE, "warm", fileId);
+        uint256[3] memory cost;
+        bytes32[3] memory files = [big, small, bare];
+        bytes32[3] memory versions = [R170, R171, bytes32("r172")];
+        for (uint256 i; i < 3; ++i) {
+            vm.prank(registrar);
+            uint256 before = gasleft();
+            registry.register(THREE, versions[i], files[i]);
+            cost[i] = before - gasleft();
+        }
+        assertLe(cost[0], cost[1], "attested: no dearer than one chunk");
+        assertLt(cost[0], cost[2], "attested: cheaper than walking twelve chunks");
+    }
+
     function test_Register_UnknownFileReverts() public {
         bytes32 id = keccak256("not a file");
         vm.expectRevert(abi.encodeWithSelector(IContentStore.ContentFileUnknown.selector, id));

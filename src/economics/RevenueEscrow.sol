@@ -7,6 +7,7 @@ import {
     ReentrancyGuardTransient
 } from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import { IDirectory } from "../interfaces/core/IDirectory.sol";
 import { BoundedCall } from "../libraries/BoundedCall.sol";
 import { Dependency } from "../libraries/Dependency.sol";
 import { IRevenueEscrow } from "./interfaces/IRevenueEscrow.sol";
@@ -28,17 +29,25 @@ import { TokenTransfer } from "./TokenTransfer.sol";
 ///      only to the replacement that account named itself with {consentToRecovery}, each consent
 ///      covering one recovery.
 ///
-///      Expiry (R12, ECO-45). Every amount credited to an account stays that account's for at least
-///      {UNCLAIMED_PERIOD} (180 days) from the block it was credited in, and may move to the
-///      network ({expire}) less than twice that (360 days) after it. Credits are grouped in
-///      windows: a credit to an account and asset with no open window opens one; the window takes
-///      every credit for the next 180 days, and all of its credits may move once 180 days have
-///      passed since its last one. Guarantees, whoever deposits and whenever:
-///      - no amount can move sooner than 180 days after it was credited;
-///      - a credit made when an amount is already 180 days old never joins that amount's window,
-///        so nothing anyone does moves the time from which such an amount may expire;
-///      - a credit into an open window (all of whose credits are younger than 180 days) delays
-///        that window's credits by at most the rest of the window, never past 360 days from each.
+///      Expiry (R12, ECO-45). The wait is the unclaimed period, the network's setting
+///      (`IDirectory.unclaimedPeriod`, 180 days at launch), read from the split factory's resolver
+///      (the `Directory`) whenever the escrow ages a credit: at every deposit, recovery and
+///      expiry, and in {expirableAt}. If that read fails, the call reverts and the money stays.
+///      Every amount credited to an account stays that account's at least for the period in
+///      force from the block it was credited in, and may move to the network ({expire}) less
+///      than twice that after it. Credits are grouped in windows: a credit to an account and
+///      asset with no open window opens one; the window takes every credit for one period, and
+///      all of its credits may move once a period has passed since its last one. Guarantees,
+///      whoever deposits and whenever (P is the period in force when the escrow looks):
+///      - no amount can move sooner than P after it was credited;
+///      - a credit made when an amount is already P old never joins that amount's window, so
+///        nothing anyone does moves the time from which such an amount may expire;
+///      - a credit into an open window (all of whose credits are younger than P) delays that
+///        window's credits by at most the rest of the window, never past 2P from each.
+///      A change of the period applies to every amount not yet aged, including windows already
+///      open or closed (their due time is computed from their last credit when the escrow
+///      looks); an amount the escrow already aged under the period then in force stays aged.
+///      The amounts a window holds never change with the period: never money credited later.
 ///      A recovery counts as a new credit to its replacement. The network's own credits never
 ///      expire. Storage: four words per account and asset ({credits}); every change follows from
 ///      the logged deposits, flushes, recoveries and expiries and their block times.
@@ -47,22 +56,17 @@ import { TokenTransfer } from "./TokenTransfer.sol";
 ///      asset it names. That bound is per token address: for a token with two addresses over one
 ///      balance, or one that rebases, see {IRevenueEscrow.sweepExcess}.
 contract RevenueEscrow is IRevenueEscrow, AccessManaged, ReentrancyGuardTransient {
-    /// @notice How long every credited amount stays its account's: 180 days from the block it
-    ///         was credited in; also how long a window of credits stays open. The number is the
-    ///         guarantee, so it is compiled in and nothing changes it.
-    uint256 public constant UNCLAIMED_PERIOD = 180 days;
-
     /// @dev An account's credit in one asset, in three parts that age oldest first. `aged` may
     ///      move to the network. `maturing` holds the credits of the last closed window and may
-    ///      move from `maturesAt`, 180 days after that window's last credit. `recent` holds the
-    ///      open window's credits; the window opened at `openedAt`, closes 180 days later, and
+    ///      move one period after `maturingLastAt`, that window's last credit. `recent` holds the
+    ///      open window's credits; the window opened at `openedAt`, closes one period later, and
     ///      last took a credit at `lastAt`. The stored parts are as of the last write; {_rolled}
-    ///      ages them to any later time.
+    ///      ages them to any later time under the period in force.
     struct Credit {
         uint256 aged;
         uint256 maturing;
         uint256 recent;
-        uint48 maturesAt;
+        uint48 maturingLastAt;
         uint48 openedAt;
         uint48 lastAt;
     }
@@ -157,13 +161,14 @@ contract RevenueEscrow is IRevenueEscrow, AccessManaged, ReentrancyGuardTransien
     function expire(address wallet, address asset) external nonReentrant returns (uint256 amount) {
         address network = factory.network();
         if (wallet == network) revert InvalidWallet(wallet);
-        Credit memory c = _rolled(wallet, asset, block.timestamp);
+        uint256 period = _period();
+        Credit memory c = _rolled(wallet, asset, block.timestamp, period);
         amount = c.aged;
         if (amount == 0) {
             if (c.maturing == 0 && c.recent == 0) revert NothingOwed(wallet, asset);
             // `maturing` matures first: its window closed before the open one opened.
             revert CreditNotExpired(
-                wallet, asset, c.maturing != 0 ? c.maturesAt : uint256(c.lastAt) + UNCLAIMED_PERIOD
+                wallet, asset, (c.maturing != 0 ? c.maturingLastAt : c.lastAt) + period
             );
         }
         c.aged = 0;
@@ -212,7 +217,7 @@ contract RevenueEscrow is IRevenueEscrow, AccessManaged, ReentrancyGuardTransien
         if (wallet == factory.network()) return 0;
         // forge-lint: disable-next-line(block-timestamp)
         if (time < block.timestamp) time = block.timestamp;
-        return _rolled(wallet, asset, time).aged;
+        return _rolled(wallet, asset, time, _period()).aged;
     }
 
     /// @inheritdoc IRevenueEscrow
@@ -234,9 +239,9 @@ contract RevenueEscrow is IRevenueEscrow, AccessManaged, ReentrancyGuardTransien
 
     /// @dev Adds `amount` to `wallet`'s credit in `asset` as of this block and returns the whole
     ///      credit. The amount joins the open window, or opens one when there is none (none was
-    ///      opened, or it has closed), so it never joins credits that are 180 days old.
+    ///      opened, or it has closed), so it never joins credits a period old.
     function _add(address wallet, address asset, uint256 amount) private returns (uint256 balance) {
-        Credit memory c = _rolled(wallet, asset, block.timestamp);
+        Credit memory c = _rolled(wallet, asset, block.timestamp, _period());
         // Safe: a block time fits 48 bits for millions of years.
         // forge-lint: disable-next-line(unsafe-typecast)
         uint48 nowAt = uint48(block.timestamp);
@@ -254,34 +259,40 @@ contract RevenueEscrow is IRevenueEscrow, AccessManaged, ReentrancyGuardTransien
         delete credits[wallet][asset];
     }
 
-    /// @dev `wallet`'s credit in `asset` aged to `time`, which is no earlier than its last write.
-    ///      A closed window's credits join `aged` at `maturesAt`. The open window closes 180 days
-    ///      after it opened; its credits become `maturing`, due 180 days after its last credit,
-    ///      which may already have passed. When the open window closes, `maturing` is already
-    ///      empty: it holds the window before, whose last credit came no later than the open
-    ///      window opened, so it matured no later than the open one closed. The addition keeps
-    ///      every unit regardless.
-    function _rolled(address wallet, address asset, uint256 time)
+    /// @dev `wallet`'s credit in `asset` aged to `time`, which is no earlier than its last write,
+    ///      under the unclaimed period `period`. A closed window's credits join `aged` one period
+    ///      after its last credit (`maturingLastAt`). The open window closes one period after it
+    ///      opened; its credits become `maturing`, due one period after its last credit, which
+    ///      may already have passed. Under one period, when the open window closes `maturing` is
+    ///      already empty: it holds the window before, whose last credit came no later than the
+    ///      open window opened, so it matured no later than the open one closed. If the period
+    ///      grew in between, the two windows are joined under the later last credit: the older
+    ///      credits wait longer, never less. The addition keeps every unit regardless.
+    function _rolled(address wallet, address asset, uint256 time, uint256 period)
         private
         view
         returns (Credit memory c)
     {
         c = credits[wallet][asset];
-        if (c.maturing != 0 && time >= c.maturesAt) {
+        if (c.maturing != 0 && time >= c.maturingLastAt + period) {
             c.aged += c.maturing;
             c.maturing = 0;
         }
-        if (c.recent != 0 && time >= uint256(c.openedAt) + UNCLAIMED_PERIOD) {
+        if (c.recent != 0 && time >= c.openedAt + period) {
             c.maturing += c.recent;
             c.recent = 0;
-            // Safe: a block time plus 180 days fits 48 bits for millions of years.
-            // forge-lint: disable-next-line(unsafe-typecast)
-            c.maturesAt = uint48(uint256(c.lastAt) + UNCLAIMED_PERIOD);
-            if (time >= c.maturesAt) {
+            c.maturingLastAt = c.lastAt;
+            if (time >= c.maturingLastAt + period) {
                 c.aged += c.maturing;
                 c.maturing = 0;
             }
         }
+    }
+
+    /// @dev The unclaimed period in force: a plain read of the split factory's resolver (the
+    ///      `Directory`). If it fails, the calling deposit, recovery or expiry reverts.
+    function _period() private view returns (uint256) {
+        return IDirectory(address(factory.resolver())).unclaimedPeriod();
     }
 
     /// @dev Whether `account` is the network's own: a contract whose `authority()` is this
