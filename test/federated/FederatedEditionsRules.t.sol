@@ -11,6 +11,7 @@ import { IEditions } from "src/interfaces/IEditions.sol";
 import { IFederatedEditions } from "src/interfaces/IFederatedEditions.sol";
 import { IFederatedToken } from "src/interfaces/IFederatedToken.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
+import { WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
 import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
 import { PrimaryTerms, SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
@@ -134,6 +135,13 @@ contract FederatedEditionsRulesTest is FederationBase {
 
     function test_Create_LogsAndKeepsTheMastersMaximum() public {
         (Work memory w, uint256 tokenId) = _soldMaster(5);
+        WorkTerms memory q = pairEditions.previewTerms(w.item.payees);
+        assertGt(q.feeShare, 0);
+        assertTrue(q.royaltyReceiver != q.seller);
+        vm.expectEmit(address(pairEditions));
+        emit IFederatedEditions.EditionTermsLocked(
+            tokenId, q.seller, q.royaltyReceiver, q.feeRecipient, q.feeShare
+        );
         vm.expectEmit(address(pairEditions));
         emit IFederatedEditions.EditionCreated(tokenId, w.item.contentHash, w.item.edition);
         vm.expectEmit(address(pairEditions));
@@ -145,6 +153,7 @@ contract FederatedEditionsRulesTest is FederationBase {
         assertEq(e.contentHash, w.item.contentHash);
         assertEq(e.terms.maxCount, 5);
         assertEq(e.terms.saleKind, SaleKind.UNIFORM_AUCTION);
+        assertGt(q.royaltyReceiver.code.length, 0, "the royalty vault is deployed at the lock");
     }
 
     /// @dev At a network share of zero the royalty receiver is the seller vault itself, as the
