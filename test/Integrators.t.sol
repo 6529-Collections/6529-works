@@ -7,7 +7,10 @@ pragma solidity 0.8.37;
 //     forge test --match-path "examples/*"
 import { ExampleBidInEth } from "../examples/BidInEth.t.sol";
 import { ExampleEditionSale } from "../examples/EditionSale.t.sol";
+import { ExampleFederationDirectory } from "../examples/FederationDirectory.t.sol";
 import { ExampleIndexFromEvents } from "../examples/IndexFromEvents.t.sol";
+import { ExampleModuleSwap } from "../examples/ModuleSwap.t.sol";
 import { ExampleReadAWork } from "../examples/ReadAWork.t.sol";
+import { ExampleReleaseFromASplit } from "../examples/ReleaseFromASplit.t.sol";
 import { ExampleSettleASale } from "../examples/SettleASale.t.sol";
 import { ExampleStartASale } from "../examples/StartASale.t.sol";
