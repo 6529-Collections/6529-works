@@ -14,10 +14,42 @@ import { Burner, GasRuleAssertions } from "../helpers/GasRule.sol";
 import {
     BlocklistToken,
     FeeOnTransferToken,
+    MockERC20,
     RefusesButMovesToken
 } from "../mocks/economics/EconomicsMocks.sol";
 import { TokenTransfer } from "src/economics/TokenTransfer.sol";
 import { EconomicsBase } from "./EconomicsBase.sol";
+
+/// @dev Reports a transfer to `liar` as refused and, instead of moving anything, credits the
+///      sender one unit: a refusal after which the sender's balance is not what it was.
+contract RefusesAndCreditsToken is MockERC20("Credit", "CRD") {
+    address public liar;
+
+    function setLiar(address account) external {
+        liar = account;
+    }
+
+    function transfer(address to, uint256 amount) public override returns (bool) {
+        if (to == liar) {
+            mint(msg.sender, 1);
+            return false;
+        }
+        _balances[msg.sender] -= amount;
+        _balances[to] += amount;
+        return true;
+    }
+}
+
+/// @dev Debits the sender the amount and credits the recipient one unit more: the sender's
+///      delta is right, the recipient's is not.
+contract OverCreditToken is MockERC20("Over", "OVR") {
+    function transfer(address to, uint256 amount) public override returns (bool) {
+        _balances[msg.sender] -= amount;
+        _balances[to] += amount + 1;
+        totalSupply += 1;
+        return true;
+    }
+}
 
 /// @dev Calls a release and returns what it released and what `watched` holds afterwards, so a
 ///      release that skipped the network's push reads as a different answer. Bubbles reverts.
@@ -223,6 +255,35 @@ contract NetworkShareTest is EconomicsBase, GasRuleAssertions {
         _release(wallet, address(liar), artistIndex);
         assertEq(liar.balanceOf(wallet), 1_000, "nothing moved");
         assertEq(liar.balanceOf(artistPayout), 0);
+    }
+
+    /// @dev A push the token refuses but after which the wallet's balance changed (here, grew)
+    ///      cannot be accounted either: the whole release reverts.
+    function test_APushRefusedThatChangedTheWalletBalanceRevertsTheRelease() public {
+        RefusesAndCreditsToken token_ = new RefusesAndCreditsToken();
+        token_.setLiar(address(feeVault));
+        address wallet = _mixed();
+        token_.mint(wallet, 1_000);
+        uint256 artistIndex = _artistIndex(wallet, ARTIST);
+        vm.prank(artistPayout);
+        vm.expectRevert(
+            abi.encodeWithSelector(TokenTransfer.TokenBalanceMismatch.selector, address(token_))
+        );
+        _release(wallet, address(token_), artistIndex);
+        assertEq(token_.balanceOf(wallet), 1_000, "nothing moved");
+    }
+
+    /// @dev A release is checked on the recipient's side too (ECO-23): a token that credits the
+    ///      recipient more than the amount fails the release.
+    function test_AReleaseThatCreditsTheRecipientMoreReverts() public {
+        OverCreditToken over = new OverCreditToken();
+        address wallet = _wallet(_list(_fixed(bob, 50_000), _fixed(alice, 50_000)));
+        over.mint(wallet, 1_000);
+        vm.expectRevert(
+            abi.encodeWithSelector(TokenTransfer.TokenBalanceMismatch.selector, address(over))
+        );
+        _release(wallet, address(over), _indexOf(wallet, bob));
+        assertEq(over.balanceOf(bob), 0);
     }
 
     /// @dev Gas rule (R11's push): the network vault costing 1x to 100x more is paid the same,
