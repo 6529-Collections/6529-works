@@ -5,6 +5,7 @@ import { IERC2981 } from "@openzeppelin/contracts/interfaces/IERC2981.sol";
 import { ERC721 } from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
+import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import { IRenderer } from "../interfaces/IRenderer.sol";
 import {
     Collection,
@@ -14,19 +15,27 @@ import {
     Slots,
     Work
 } from "../interfaces/core/CoreTypes.sol";
-import { IModules } from "../interfaces/core/IModules.sol";
+import { IModuleSlots, IModules } from "../interfaces/core/IModules.sol";
 import { IStream } from "../interfaces/core/IStream.sol";
 import { IWorkFacts } from "../interfaces/core/IWorkFacts.sol";
 
 /// @title StreamBase
-/// @notice The plain permanent ERC-721 of works (ADR 0010): ownership, the facts fixed at mint,
-///         the first sale's outcome. Shared by 6529 Stream (`Stream`) and each federated
-///         artist's token (`FederatedStream`), which differ only in the six hooks at the end:
-///         who the minters are, where the modules are, and who the admin is.
-/// @dev lane 1 completes this (tests, NatSpec, review). The hooks' signatures are frozen: lane
-///      5 builds `FederatedStream` on them and must not edit this file.
-///      Plain rules: no assembly, no hand-packed words, no gas numbers, no try/catch. Transfers
-///      and `ownerOf` are OpenZeppelin's, untouched, and call nothing outside this contract.
+/// @notice The plain permanent ERC-721 of works (ADR 0010): who owns each token, the facts fixed
+///         at mint, and how the first sale ended. Shared by 6529 Stream (`Stream`) and each
+///         federated artist's token (`FederatedStream`), which differ only in the six hooks at
+///         the end: who the minters are, where the modules are, and who the admin is.
+/// @dev What a module or minter can do here, and nothing more:
+///      - an active minter mints, stating the work's facts; the contract checks them;
+///      - a minter (active or removed) that holds a token with no outcome recorded records the
+///        outcome once, or burns the token;
+///      - the TERMS module sets a live token's royalty receiver and rate, and locks the rate;
+///      - the RENDERER module draws a work that is not finalized (`rendererOf`);
+///      - `facts()`, the RECORDS module and the TERMS module emit ERC-4906 updates.
+///      The network alone may `rescue` a token that a removed minter still holds unsold, once
+///      `rescueDelay` (the network's setting) has passed since the removal. Transfers,
+///      approvals and `ownerOf` are OpenZeppelin's, untouched, and call nothing outside this
+///      contract; `mint`, `burn` and `rescue` move tokens without a receiver callback.
+///      No assembly, no hand-packed words, no gas numbers, no `try`/`catch`.
 abstract contract StreamBase is ERC721, IStream {
     /// @inheritdoc IStream
     uint48 public rescueDelay = 14 days;
@@ -64,6 +73,9 @@ abstract contract StreamBase is ERC721, IStream {
     // ------------------------------------------------------------------------------ minters
 
     /// @inheritdoc IStream
+    /// @dev Writes five new storage slots (the owner, three work slots, the content's token),
+    ///      six with a seed. Mints without a receiver callback: nothing outside this contract
+    ///      runs during a mint except the `_isMinter` hook.
     function mint(address to, MintFacts calldata f) external returns (uint256 tokenId) {
         if (!_isMinter(msg.sender)) revert IModules.NotMinter(msg.sender);
         if (
@@ -82,7 +94,8 @@ abstract contract StreamBase is ERC721, IStream {
         tokenOfContent[f.contentHash] = tokenId;
         Work storage w = _works[tokenId];
         w.itemHash = f.itemHash;
-        // Checked above: at most 160 bits. The collection exists, so its ID fits 32 bits.
+        // Checked above: at most 160 bits. An existing collection's ID fits 32 bits
+        // (`_createCollection`).
         // forge-lint: disable-next-line(unsafe-typecast)
         w.artistId = uint160(f.artistId);
         // forge-lint: disable-next-line(unsafe-typecast)
@@ -98,14 +111,22 @@ abstract contract StreamBase is ERC721, IStream {
     }
 
     /// @inheritdoc IStream
+    /// @dev For UNSOLD the log carries a zero buyer and a zero price whatever the minter states,
+    ///      as the event promises. The price is not stored.
     function recordPrimarySale(uint256 tokenId, bool sold, address buyer, uint256 price) external {
         Work storage w = _inPrimarySale(tokenId);
-        Outcome outcome = sold ? Outcome.SOLD : Outcome.UNSOLD;
-        w.outcome = outcome;
-        emit PrimarySale(tokenId, outcome, buyer, price);
+        if (sold) {
+            w.outcome = Outcome.SOLD;
+            emit PrimarySale(tokenId, Outcome.SOLD, buyer, price);
+        } else {
+            w.outcome = Outcome.UNSOLD;
+            emit PrimarySale(tokenId, Outcome.UNSOLD, address(0), 0);
+        }
     }
 
     /// @inheritdoc IStream
+    /// @dev The token's record (`workOf`) stays and its ID is never reused. `tokenOfContent`
+    ///      keeps naming the burned token, and `mint` accepts the content again.
     function burn(uint256 tokenId) external {
         _inPrimarySale(tokenId);
         ++totalBurned;
@@ -115,6 +136,10 @@ abstract contract StreamBase is ERC721, IStream {
     // ------------------------------------------------------------------------------ network
 
     /// @inheritdoc IStream
+    /// @dev Rescuable exactly when the token is live, its holder is reported removed by the
+    ///      hooks (`_minterRemovedAt` nonzero), no outcome is recorded, and `rescueDelay` as it
+    ///      stands now has passed since that removal. A minter added again is no longer removed.
+    ///      Records RESCUED, then moves the token without a receiver callback.
     function rescue(uint256 tokenId, address to) external {
         _checkNetwork();
         address holder = _requireOwned(tokenId);
@@ -162,6 +187,7 @@ abstract contract StreamBase is ERC721, IStream {
     // -------------------------------------------------------------------------- terms module
 
     /// @inheritdoc IStream
+    /// @dev Any other caller reverts with `IModuleSlots.NotModule`.
     function setRoyalty(uint256 tokenId, address receiver, uint24 rate) external {
         _onlyTerms();
         _requireOwned(tokenId);
@@ -175,6 +201,8 @@ abstract contract StreamBase is ERC721, IStream {
     }
 
     /// @inheritdoc IStream
+    /// @dev Any other caller reverts with `IModuleSlots.NotModule`. Locking again changes
+    ///      nothing.
     function lockRoyaltyRate(uint256 tokenId) external {
         _onlyTerms();
         _requireOwned(tokenId);
@@ -217,7 +245,9 @@ abstract contract StreamBase is ERC721, IStream {
 
     /// @inheritdoc IERC2981
     /// @dev This contract's storage only: no module is asked, so marketplaces always get an
-    ///      answer. An unminted ID answers the zero address and zero.
+    ///      answer. Exact for any price: `salePrice * rate / 100,000` rounded down, computed
+    ///      without overflow. An unminted ID answers the zero address and zero; a burned token
+    ///      answers its last values.
     function royaltyInfo(uint256 tokenId, uint256 salePrice)
         external
         view
@@ -228,6 +258,8 @@ abstract contract StreamBase is ERC721, IStream {
     }
 
     /// @inheritdoc IStream
+    /// @dev Zero when the work is not finalized and no RENDERER module is installed; `tokenURI`
+    ///      then reverts.
     function rendererOf(uint256 tokenId) public view returns (address renderer) {
         _requireOwned(tokenId);
         renderer = IWorkFacts(facts).rendererOf(address(this), tokenId);
@@ -235,6 +267,8 @@ abstract contract StreamBase is ERC721, IStream {
     }
 
     /// @notice The token's metadata, built by `rendererOf(tokenId)`.
+    /// @dev Reverts if the renderer is missing, reverts, runs out of gas, or (pinned) changed
+    ///      its code. Never falls back to another renderer.
     /// @param tokenId A live token.
     /// @return The metadata URI.
     function tokenURI(uint256 tokenId) public view override returns (string memory) {
@@ -242,6 +276,7 @@ abstract contract StreamBase is ERC721, IStream {
     }
 
     /// @inheritdoc IERC165
+    /// @dev ERC-165, ERC-721, ERC-721 metadata, ERC-2981, ERC-4906 (`0x49064906`) and `IStream`.
     function supportsInterface(bytes4 interfaceId)
         public
         view
@@ -255,12 +290,13 @@ abstract contract StreamBase is ERC721, IStream {
 
     // ------------------------------------------------------------------------------ internal
 
-    /// @dev Creates a collection (also used by a federated token's constructor).
+    /// @dev Creates a collection (also used by a federated token's constructor). IDs run from 1
+    ///      and fit 32 bits, the width a work stores.
     function _createCollection(string memory name_, bytes32 metadataHash)
         internal
         returns (uint256 collectionId)
     {
-        collectionId = ++collectionCount;
+        collectionId = SafeCast.toUint32(++collectionCount);
         Collection storage c = _collections[collectionId];
         c.exists = true;
         c.metadataHash = metadataHash;
@@ -277,9 +313,11 @@ abstract contract StreamBase is ERC721, IStream {
         }
     }
 
+    /// @dev Reverts unless the caller is the TERMS module. The caller is never the zero address,
+    ///      so an empty slot admits nobody.
     function _onlyTerms() private view {
-        if (msg.sender != _moduleOf(Slots.TERMS) || msg.sender == address(0)) {
-            revert InvalidRoyalty();
+        if (msg.sender != _moduleOf(Slots.TERMS)) {
+            revert IModuleSlots.NotModule(Slots.TERMS, msg.sender);
         }
     }
 
