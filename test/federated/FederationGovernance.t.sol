@@ -18,6 +18,7 @@ import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import { Payment, PaymentMethod, PrimaryOutcome } from "src/interfaces/types/SaleTypes.sol";
 import { NonDeliveringAdapter } from "../mocks/federated/FederatedMocks.sol";
+import { FaultyFederatedStream } from "./FederatedRefusal.t.sol";
 import { FederationBase } from "./FederationBase.sol";
 
 /// @notice The federation registry's governed paths and their exact effects: template approval,
@@ -206,6 +207,41 @@ contract FederationGovernanceTest is FederationBase {
         vm.expectRevert(abi.encodeWithSelector(IFederatedStream.WorkNotRestartable.selector, 1));
         fed.reclaim(tokenId);
         assertEq(fed.ownerOf(tokenId), address(adapter));
+    }
+
+    /// @dev Only a copy of an APPROVED template, deployed with the economics' fee terms, is
+    ///      listed: a suspended template, a template never approved, and a fee share above the
+    ///      product's are each refused.
+    function test_Register_OnlyAnApprovedTemplateOnTheProductsTerms() public {
+        FederatedStream suspended = _deployStream(fedArtist);
+        _govern(
+            hotAdmin,
+            address(fedRegistry),
+            abi.encodeCall(fedRegistry.suspendTemplate, (streamHash))
+        );
+        _join(
+            address(suspended),
+            fedArtist,
+            abi.encodeWithSelector(IFederationRegistry.NotListable.selector, address(suspended))
+        );
+        _govern(
+            hotAdmin, address(fedRegistry), abi.encodeCall(fedRegistry.resumeTemplate, (streamHash))
+        );
+        FaultyFederatedStream unapproved = new FaultyFederatedStream(_streamConfig(fedArtist));
+        _join(
+            address(unapproved),
+            fedArtist,
+            abi.encodeWithSelector(IFederationRegistry.NotListable.selector, address(unapproved))
+        );
+        IFederatedStream.Config memory c = _streamConfig(fedArtist);
+        c.feeShare += 1;
+        FederatedStream higher = _deployStream(c);
+        _join(
+            address(higher),
+            fedArtist,
+            abi.encodeWithSelector(IFederationRegistry.NotListable.selector, address(higher))
+        );
+        _join(address(suspended), fedArtist);
     }
 
     /// @dev Only the network sets listings: a stranger's delisting is refused.
