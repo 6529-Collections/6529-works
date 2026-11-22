@@ -11,7 +11,7 @@ import { IEntropyModule } from "../interfaces/IEntropyModule.sol";
 import { IRenderer } from "../interfaces/IRenderer.sol";
 import { IStream } from "../interfaces/IStream.sol";
 import { IWorkDelivery } from "../interfaces/IWorkDelivery.sol";
-import { IWorkPowers, WorkPowers } from "../interfaces/IWorkPowers.sol";
+import { WorkPowers } from "../interfaces/IWorkPowers.sol";
 import { IWorkRecords } from "../interfaces/IWorkRecords.sol";
 import { Limits } from "../interfaces/types/Limits.sol";
 import { MediaFile } from "../interfaces/types/ContentTypes.sol";
@@ -47,7 +47,22 @@ import { WorkDelivery } from "./WorkDelivery.sol";
 ///      wallet of the party's 6529 account (checked by the artist registry, `IAccounts`) and
 ///      bound to the work's state hash; every applied change bumps the version, so a consent
 ///      can never apply twice or to a state its signers did not see.
-contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers {
+contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
+    /// @notice The lead artist renounced powers over a work for good (the old `IWorkPowers`).
+    /// @param tokenId The work.
+    /// @param powers The bits signed for.
+    /// @param renounced Every bit renounced after the call.
+    /// @param stateHash The state hash after the call.
+    event PowersRenounced(
+        uint256 indexed tokenId, uint16 powers, uint16 renounced, bytes32 stateHash
+    );
+    /// @notice A bit names no renounceable power.
+    error UnknownPower(uint16 powers);
+    /// @notice The power was renounced.
+    error PowerRenounced(uint256 tokenId, uint16 power);
+    /// @dev The old `IWorkPowers` interface ID, kept for this contract until it is deleted.
+    bytes4 private constant WORK_POWERS_ID = 0xbd18229c;
+
     uint256 private constant NONE = type(uint256).max;
     bytes32 private constant STATE_DOMAIN = keccak256("6529WORKS_WORK_STATE_V1");
     /// @dev `RecordData.flags` bits.
@@ -185,7 +200,8 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
         _requireLicenseText(cc0.textFileId, false);
         cc0TextFileId = cc0.textFileId;
         _cc0SpdxId = cc0.spdxId;
-        address first = address(new WorkDelivery(authority_, address(this), stream_, address(0)));
+        address first =
+            address(new WorkDelivery(authority_, address(this), stream_, address(0), address(0)));
         delivery = first;
         emit DeliverySet(address(0), first);
     }
@@ -596,7 +612,12 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
 
     // -------------------------------------------------------------------------------- powers
 
-    /// @inheritdoc IWorkPowers
+    /// @notice Renounces powers over one work for good.
+    /// @param tokenId The work.
+    /// @param powers The bits.
+    /// @param expectedStateHash The state the artist saw.
+    /// @param deadline The signature's deadline.
+    /// @param artistSignature The artist's proof.
     /// @dev Signed by any wallet of the lead artist's account (`IAccounts.requireSigned`);
     ///      anyone relays it. Collaborators do not sign. Renouncing ROYALTY_RATE or RELICENSE
     ///      also needs the network's action (C7): the call must pass the role mapped to this
@@ -642,7 +663,9 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
         emit PowersRenounced(tokenId, powers, renounced, workStateHash(tokenId));
     }
 
-    /// @inheritdoc IWorkPowers
+    /// @notice The powers renounced over a work.
+    /// @param tokenId The work.
+    /// @return The renounced bits.
     function renouncedPowers(uint256 tokenId) external view returns (uint16) {
         return _open(tokenId).renounced;
     }
@@ -676,7 +699,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
         _mediaIndex(tokenId, fileId);
         (bool ok, bytes memory data) = BoundedCall.tryReadAll(
             delivery,
-            abi.encodeCall(IWorkDelivery.preferredLocator, (tokenId, fileId)),
+            abi.encodeWithSignature("preferredLocator(uint256,bytes32)", tokenId, fileId),
             LOCATION_RETURN
         );
         if (ok && _isLocation(data, onChain)) {
@@ -736,8 +759,8 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords, IWorkPowers
     /// @param interfaceId The interface ID to test.
     /// @return True for the `IWorkRecords`, `IWorkPowers` and `IERC165` interface IDs.
     function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
-        return interfaceId == type(IWorkRecords).interfaceId
-            || interfaceId == type(IWorkPowers).interfaceId || super.supportsInterface(interfaceId);
+        return interfaceId == type(IWorkRecords).interfaceId || interfaceId == WORK_POWERS_ID
+            || super.supportsInterface(interfaceId);
     }
 
     // -------------------------------------------------------------------------------- internal
