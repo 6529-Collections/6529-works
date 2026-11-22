@@ -7,7 +7,7 @@
   "signatures": "Unsigned: testnet rehearsal. A mainnet manifest is signed by the network Safe's signers.",
   "source": {
     "repository": "https://github.com/6529-Collections/6529-works",
-    "commit": "85cd40a1a1e4aa0420f4b6112217becc214bd85b",
+    "commit": "6346fb1070729ce51519904c8481ea8a300a8671",
     "compiler": "solc 0.8.37, evm prague, optimizer 200 runs, via-ir off"
   },
   "deployer": "0x26A3f4505145b5E6164260cc868e50ddd9863697",
@@ -17,11 +17,11 @@
   },
   "genesis": {
     "path": "config/sepolia-r6/genesis.json",
-    "sha256": "f55ed2af880dd54ad074be2517d40f360953885356f56980908d6758349a62c1"
+    "sha256": "c3998c5f4da1d7276ce0d9aeb6117cb0e55c6434ea4267270b32374018754010"
   },
   "policy": {
     "path": "config/genesis.core.example.json",
-    "sha256": "00bc32eb8af3307cbcfc934a90d8112c54eec2f5b8c02647bfe4b9cd4e13ebe1"
+    "sha256": "ac3f6bb2e6f930eaa8cc8e08d3383a60402c7cd3a357f0036091f7b502063fa3"
   },
   "safes": {
     "network": {
@@ -80,40 +80,41 @@
     "textPath": "test/fixtures/cc0-legalcode.txt"
   },
   "contracts": {
-    "WorksAccessManager": "0xd94858c4a3445b839410Bc8c1C73C2304D63590B",
-    "GovernanceConfigurator": "0x0c21956e13c43b2fCAb10B0387E56E60186bcd11",
-    "ContentStore": "0xB43Be7a198859a98972E3B2BEA28aa28FBAecd23",
-    "WorkFacts": "0x5073eaBEDdA5066370D1B61F5DA4Ef04F403a1F8",
-    "Directory": "0x0A9B5ac841C116e78434918864A2de33FeA083ee",
-    "FeeRecipientVault": "0x8271357513B0839dEC058b588f68220eBaFAB2A2",
-    "MuseumVault": "0xBB060b20f3857813B76cf2eb505210fAaa158dc3",
-    "SplitFactory": "0xfd0E33C898bAd75Fb9951a67d30c7A27f82372d0",
-    "ClaimRouter": "0xaBe352f13c5E98D4EBB527C600a82A8c6549Bd8C",
-    "RevenueEscrow": "0xd168615634e020a7b17744FCAfa6326FFAC260b2",
-    "Stream": "0xBAb26a50dDbA61057aeBfd2F962518254A610F97",
-    "Editions": "0x60986ABcaB9dD58508A268F2b1FACB04Fc27BD14",
-    "ConsolidationAdapter": "0x64F9c86d1B7DfeE90E212a645fea063F1b05efaA",
-    "Accounts": "0x73c77115bE76ED3F228653FF3679f610C55C92A0",
-    "AssetAllowlist": "0x78780B4baF30904F6e1B74fCAF7087a73DD8c16D",
-    "EconomicsResolver": "0x5322dbdD0F948f2F55B7C4cd4105214e7dCF82AB",
-    "CurationVerifier": "0xe9A2EFe22eB9f11d6B1af5345c8802123725d141",
-    "PackageRegistry": "0x4a05e9318B579Ab92ac070A3f0561C89CFF9ea95",
-    "EntropyModule": "0x7f2c11cB9492454fd5D11Ba2399D90bC1c6343F3",
-    "StatementLog": "0xc12da5fFF9661FFef015f2353dC78f36EEe6cf2B",
-    "DependencyRegistry": "0x35DF9b0C09f1c632A2000cfbf90691817CD6676c",
-    "Renderer": "0xaa83F36D211DbC90C5C432098f9fD2009F5617e9",
-    "WorkRules": "0xF3138DD7b3FEB4bb3459dbaEbC53e59e6e813a1A",
-    "WorkDelivery": "0x3Fad738417CF27E2B9Beec668DC4df8a1ed2Bb54",
-    "StreamTerms": "0x0D6e5D99da91421565c1fFE252914DDEa21C53B1",
-    "EnglishAuction": "0x3dd06E7Bd8cf988BA91ba73013Fbb3B99D3C29f1",
-    "UniformEditionAuctionLens": "0xBA0d42f53FB6A77391eb97F09efEA6D53AC5d0f3",
-    "UniformEditionAuction": "0x94eF1F1Cbe35e7919445d73d0E7D0d539D2a8C28",
-    "FederationRegistry": "0x8eCa285920771F290C89ba514eA5954c68570449",
-    "FederatedStreamDeployer": "0xB6c2722B3D9587239D3B21c6099642C4f3e50817",
-    "FederatedEditionsDeployer": "0x83d0428E694bc0F86180BEB9b5141d9550EAeefe",
-    "FederatedEditionAuctionLens": "0x119FCB6F5C85bb347f7244FDcd1e0Cd4F3093972",
-    "FederatedEditionAuction": "0x6A5D0C4A9d0FCfe0e82a9DED24a2ADC5b263625f",
-    "SaleStarter": "0x22F3592669Aa6F96F7E54D545Ef20225B048e132"
+    "CoreFactory": "0x7d81B467e4C7837AD7820A1D1237C0D58ea737D6",
+    "WorksAccessManager": "0xE5D3c6a04E5bbCB6Af31bA28b0FCffA90C738De2",
+    "GovernanceConfigurator": "0xc719b427207bF418755281E6961F401b75Ffb651",
+    "ContentStore": "0xb58aEd6F77Cb38728B582D8095B4Bb5E79Ecb201",
+    "WorkFacts": "0xC384A8Acf4f4511C44D85A25eB1B904a28cfd819",
+    "Directory": "0xf17EBF39F26F1bf07998F976f6de89EedFacDF31",
+    "FeeRecipientVault": "0x3754e1236c6D1Ba697ae3dEC4cE21dd7a0bcFFA7",
+    "MuseumVault": "0x22A4533f567B7Db3CBF89bA184fc1DE1b0D8F067",
+    "SplitFactory": "0xAB9F808F80e645820C3E99243134f4186B1B1986",
+    "ClaimRouter": "0xF6454B9e58F1d26D914f85F5c59D74Fdc073f813",
+    "RevenueEscrow": "0x34ECd6C38B0A2A41D2597CFD207180b2622007d8",
+    "Stream": "0x3A30E31eDcC8dC8969Dd174737EEB2113E3E26Af",
+    "Editions": "0x2b9961F6806E8643429404c62Bb5FFC62e27D1f4",
+    "ConsolidationAdapter": "0x81dcE369E2699dC307591BF713be2E0b92236a7d",
+    "Accounts": "0x9E368A7962D60bCBfa5C8F139C5545C24bdFC9d8",
+    "AssetAllowlist": "0xb989E423f34A697B42f27022035F31c7AB8dfB13",
+    "EconomicsResolver": "0x7fd915D0eb177D9CE6D675B535B2BA27b0187069",
+    "CurationVerifier": "0xF73a610808Cea46da6E0f815831832F9f7CcDae6",
+    "PackageRegistry": "0x4B33eF34E25D9E8aD01DBb68338D40f6DAdbBBB5",
+    "EntropyModule": "0x5622aD8683b608f9D5ea704e6909AB9B2a7bC10F",
+    "StatementLog": "0xe7f7a9F3fBE7a06710AD0aDD664BaE676655c51A",
+    "DependencyRegistry": "0xd9257df65F4c7cD6A2CaCdA8102d9F78Dd52D54b",
+    "Renderer": "0xA544a7b5E980de3B3be2cb281F058E73659a5713",
+    "WorkRules": "0x5BB3592305fFf911F3C88D548e156eAb6f367A58",
+    "WorkDelivery": "0x6369C7EF0FA1f0a37D65b1B9611290714d30B9FF",
+    "StreamTerms": "0x85456f26a19272eBF37A2abf5Ca44cbAc6155C5D",
+    "EnglishAuction": "0xC602e1617DBFaEA956684d85db35c8cD7fE39352",
+    "UniformEditionAuctionLens": "0x4C043cB17E1dB1BC82156e76a2fbe4F00aF067BA",
+    "UniformEditionAuction": "0x4B78493941A59BC6c9a11212DFD40A41451F52C7",
+    "FederationRegistry": "0xEe2EFef88Bcb10d5BFB68e29B80eB00B6FB1D669",
+    "FederatedStreamDeployer": "0x08bC732398D894542252D23CDE5dF1116C3b0ec8",
+    "FederatedEditionsDeployer": "0x66ab80d99B3340005B127F2a1D7bf1f4C98fC75a",
+    "FederatedEditionAuctionLens": "0xad18512cad10c8CB2DF91492d316BFe421FaB3B7",
+    "FederatedEditionAuction": "0x8483b007f6C1de1104fB44D6fC71EC0015ee8dEa",
+    "SaleStarter": "0x3fBd0532dB08B80946Afb8621F782B2Af6b88Bf3"
   },
   "settings": [
     {

@@ -34,8 +34,8 @@ param(
     # Overrides the env file's SEPOLIA_RPC_URL. Up to r5, WorkRecords' creation needed about
     # 51.2M gas under Glamsterdam, above the 50M eth_estimateGas cap of most public RPCs. In r6's
     # simulation (22 November 2026) the largest creation publicnode could estimate on its own was
-    # the Renderer's, 37,690,858 gas; FederationRegistry, the largest in forge's Prague
-    # simulation (7,606,183), and the others whose constructors read contracts of the same
+    # the Renderer's, 38,217,377 gas through the deployer's factory (37,690,858 created directly);
+    # FederationRegistry and the others whose constructors read contracts of the same
     # deployment cannot be estimated before those exist.
     [string] $Rpc = ''
 )

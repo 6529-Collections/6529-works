@@ -103,14 +103,15 @@ input to any address).
 
 `deploy.ps1` without `-Broadcast` simulates: it runs every check of `DeployGuards` (the
 network is a bare Safe, every holder reachable and none a contract of the deployment, the
-policy is the committed one, no brake) and prints every address. r6's simulation needed 69
-transactions and forge estimated 146,994,557 gas in total (Prague pricing, with forge's 1.3
-multiplier).
+policy is the committed one, no brake) and prints every address. r6's simulation needed 37
+transactions (the factory, one per contract, the install) and forge estimated 143,847,103 gas in
+total (Prague pricing, with forge's 1.3 multiplier).
 
 Sepolia reprices state creation, which forge cannot simulate: the broadcast skips forge's
 replay and takes each limit from the node's `eth_estimateGas` (`--skip-simulation --slow`).
-The largest creation measured on Sepolia was the Renderer's, 37,690,858 gas by publicnode's
-`eth_estimateGas`; several creations cannot be estimated before the contracts they read exist,
+The largest creation measured on Sepolia was the Renderer's, 38,217,377 gas by publicnode's
+`eth_estimateGas` (with the deployer's factory supplied as a state override, since it does not
+exist before the broadcast); several creations cannot be estimated before the contracts they read exist,
 so broadcast through an endpoint with a higher estimate cap:
 
 ```powershell
