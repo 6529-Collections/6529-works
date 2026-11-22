@@ -30,7 +30,7 @@ contract SigningAccounts {
 }
 
 /// @notice A chunk store serving whatever bytes the test gives it, by chunk hash.
-contract MockChunkStore {
+contract RulesChunkStore {
     mapping(bytes32 => bytes) internal _data;
 
     function put(bytes calldata data) external {

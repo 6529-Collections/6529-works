@@ -17,7 +17,7 @@ import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { SignatureVerifier } from "src/libraries/SignatureVerifier.sol";
 import { WorkRules } from "src/records/WorkRules.sol";
 import { WorkDelivery } from "src/stream/WorkDelivery.sol";
-import { CodeRenderer, MockChunkStore, SigningAccounts } from "../mocks/records/RulesMocks.sol";
+import { CodeRenderer, RulesChunkStore, SigningAccounts } from "../mocks/records/RulesMocks.sol";
 import { RulesFixture } from "./RulesFixture.sol";
 
 /// @notice `WorkRules`, the RECORDS module of 6529 Stream: who may change a work's record, and
@@ -700,7 +700,7 @@ contract WorkRulesTest is RulesFixture {
     // --------------------------------------------------------------------- stores
 
     function test_Stores_TheNetworkAddsAndRetires() public {
-        MockChunkStore cs = new MockChunkStore();
+        RulesChunkStore cs = new RulesChunkStore();
         vm.prank(stranger);
         vm.expectRevert(
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, stranger)
@@ -736,7 +736,7 @@ contract WorkRulesTest is RulesFixture {
         PackageItem memory item = _item(1, media);
         uint256 id = _mintItem(stream, item);
         facts.open(s, id, item, media);
-        MockChunkStore cs = new MockChunkStore();
+        RulesChunkStore cs = new RulesChunkStore();
         rules.addStore(address(cs), address(cs).codehash);
         bytes32 file = media[1].fileId;
         vm.prank(artist);
