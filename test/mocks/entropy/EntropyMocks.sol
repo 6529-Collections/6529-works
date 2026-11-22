@@ -5,6 +5,7 @@ import { IVRFCoordinatorV2Plus } from "src/entropy/IVRFCoordinatorV2Plus.sol";
 import { IVRFV2PlusWrapper } from "src/entropy/IVRFV2PlusWrapper.sol";
 import { VrfEntropyModule } from "src/entropy/VrfEntropyModule.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import { IIndependentStreamRegistry } from "src/interfaces/IIndependentStreamRegistry.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
 
@@ -254,5 +255,73 @@ contract MockVrfWrapper is IVRFV2PlusWrapper {
         uint256[] memory words = new uint256[](1);
         words[0] = word;
         VrfEntropyModule(consumerOf[requestId]).rawFulfillRandomWords(requestId, words);
+    }
+}
+
+/// @dev A wrapper that, while the module is inside a request, first delivers an earlier request
+///      (the oracle's late delivery landing inside the repeat), then issues the new ID.
+contract RedeliveringVrfWrapper is IVRFV2PlusWrapper {
+    uint256 public price = 0.003 ether;
+    uint256 public nextId = 9001;
+    uint256 public earlierId;
+    uint256 public earlierWord;
+
+    /// @dev The next request delivers `word` for `requestId` before it returns.
+    function deliverDuringNextRequest(uint256 requestId, uint256 word) external {
+        earlierId = requestId;
+        earlierWord = word;
+    }
+
+    function calculateRequestPriceNative(uint32, uint32) external view returns (uint256) {
+        return price;
+    }
+
+    function requestRandomWordsInNative(uint32, uint16, uint32, bytes calldata)
+        external
+        payable
+        returns (uint256 requestId)
+    {
+        if (earlierId != 0) {
+            uint256[] memory words = new uint256[](1);
+            words[0] = earlierWord;
+            uint256 id = earlierId;
+            earlierId = 0;
+            VrfEntropyModule(msg.sender).rawFulfillRandomWords(id, words);
+        }
+        requestId = nextId++;
+    }
+}
+
+/// @dev The directory read of an Independent Stream request: one settable module per slot.
+contract EntropyDirectoryMock {
+    mapping(bytes32 slot => address module) public moduleOf;
+
+    function setModule(bytes32 slot, address module) external {
+        moduleOf[slot] = module;
+    }
+}
+
+/// @dev The two Independent Stream registry reads that gate a paid request: whether the token is
+///      served, and its listed artist.
+contract EntropyIndependentRegistryMock {
+    mapping(address token => bool) public isActive;
+    mapping(address token => uint256 artistId) public artistOf;
+
+    function list(address token, uint256 artistId, bool active) external {
+        artistOf[token] = artistId;
+        isActive[token] = active;
+    }
+
+    function entry(address token) external view returns (IIndependentStreamRegistry.Entry memory e) {
+        e.artistId = artistOf[token];
+    }
+}
+
+/// @dev The accounts read that gates a paid request: whether an address is a wallet of an artist.
+contract EntropyAccountsMock {
+    mapping(uint256 artistId => mapping(address wallet => bool)) public isWallet;
+
+    function setWallet(uint256 artistId, address wallet, bool value) external {
+        isWallet[artistId][wallet] = value;
     }
 }
