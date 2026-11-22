@@ -169,7 +169,7 @@ contract LogReplayFederationTest is FederationFixture {
         l[2] = "StatusSet(address,uint8,uint8,bytes32)";
         l[3] = "AccountDelistedSet(uint256,bool,bytes32)";
         l[4] = "FeeShareLowered(address,uint32,uint32)";
-        l[5] = "SaleContractSet(address,uint48,uint48)";
+        l[5] = "SaleContractSet(address,uint8,uint48,uint48)";
         l[6] = "ItemApproval(address,bytes32,uint24,bool)";
         l[7] = "ItemMinted(address,bytes32,address,address,address)";
         l[8] = "ItemBarred(bytes32)";
