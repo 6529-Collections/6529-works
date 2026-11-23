@@ -39,6 +39,10 @@
     ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step release -Index 5
     ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step pause -TokenId 1
     ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step editionState -TokenId 2 -Label before-antisnipe
+    ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step independentDeploy
+    ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step independentList -Token <token>
+    ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step independentStart -Token <token> -Bidder bidder2 -Amount 20000000000000000
+    ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step settle -Token <token> -TokenId 1
     ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step prague
 
     The prague step replays each recorded transaction with
@@ -54,7 +58,8 @@ param(
         'editionBid', 'editionRaise', 'editionSettle', 'claimBid', 'claimBidFor',
         'claimCredits', 'release', 'forward', 'editionState', 'englishState', 'pause',
         'englishWithdraw', 'outcome', 'cancel', 'send', 'safeCall', 'record', 'prague',
-        'report')] [string] $Step,
+        'report', 'independentContent', 'independentDeploy', 'independentList',
+        'independentStart', 'independentOpenRecord')] [string] $Step,
     [string] $Rpc = 'https://ethereum-sepolia-rpc.publicnode.com',
     # The deployment record, relative to the repository root (script/DeployCore.s.sol writes
     # deployments/11155111/core-<timestamp>.json).
@@ -82,6 +87,14 @@ param(
     [ValidateSet('english', 'edition')] [string] $Adapter = 'english',
     # The account that pauses (a pauser key) or the Safe that cancels (the network).
     [string] $Safe = '',
+    # An artist's Independent Stream 1/1 contract. The independent* steps need it (after
+    # independentDeploy, which prints and notes it); bid, settle, finalize, sync and englishState
+    # act on it instead of Stream6529 when it is given.
+    [string] $Token = '',
+    # independentDeploy: the artist's salt (any text); independentList: the royalty rate the
+    # artist approves the work with, out of 100,000.
+    [string] $Salt = 'flows-independent-1',
+    [int] $RoyaltyRate = 5000,
     [switch] $ExpectRevert,
     [string] $GasLimit = '500000'
 )
@@ -93,6 +106,7 @@ $State = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath
 $Repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $Script = 'script/sepolia/Flows.s.sol:Flows'
 $env:FLOWS_RECORD = $Record
+if ($Token) { $env:FLOWS_TOKEN = $Token } else { Remove-Item Env:FLOWS_TOKEN -ErrorAction SilentlyContinue }
 $Contracts = Get-Content -Raw -Encoding UTF8 (Join-Path $Repo $Record) | ConvertFrom-Json
 # 0.05 gwei and 0.2 gwei by default (cast's own max fee can fall below the priority fee);
 # FLOWS_PRIORITY_FEE and FLOWS_MAX_FEE (wei) override them when Sepolia's base fee is near zero.
@@ -451,7 +465,8 @@ switch ($Step) {
     }
     'sync' {
         # Records in WorkFacts that every media file of the work is complete in the content store.
-        $data = (Invoke-Cli 'cast' @('calldata', 'markOnChainComplete(address,uint256)', $Contracts.Stream6529, "$TokenId")).Trim()
+        $work = if ($Token) { $Token } else { $Contracts.Stream6529 }
+        $data = (Invoke-Cli 'cast' @('calldata', 'markOnChainComplete(address,uint256)', $work, "$TokenId")).Trim()
         Send-Planned "markOnChainComplete-$TokenId" 'any' $Contracts.StreamWorkFacts6529 '0' $data | Out-Null
     }
     'finalize' {
@@ -524,6 +539,33 @@ switch ($Step) {
         }
         if (-not $SafeSigners[$network.ToLower()]) { throw "no signers configured for network Safe $network" }
         Send-Items (Invoke-Plan 'cancelTx(uint256,address)' @("$TokenId", $network))
+    }
+    'independentContent' {
+        Send-Items (Invoke-Plan 'independentContent()' @())
+    }
+    'independentDeploy' {
+        # The artist deploys its own 1/1 contract from the approved template; the address is
+        # kept in the state file (notes.independentToken) for the steps that take -Token.
+        $salt = (Invoke-Cli 'cast' @('keccak', "6529-works/sepolia/flows/independent/$Salt")).Trim()
+        $plan = Invoke-Plan 'independentDeployTx(bytes32)' @($salt)
+        $token = Get-Info $plan 'token'
+        Send-Items $plan
+        Set-Note 'independentToken' $token
+        Write-Host "Independent Stream token: $token"
+    }
+    'independentList' {
+        if (-not $Token) { throw 'independentList needs -Token' }
+        $deadline = (Get-Timestamp) + 86400
+        $consent = New-Signature (Get-Sign (Invoke-Plan 'independentConsent(address,uint64)' @($Token, "$deadline")) 'consent')
+        Send-Items (Invoke-Plan 'independentListTx(address,uint64,bytes,uint24)' @($Token, "$deadline", $consent, "$RoyaltyRate"))
+    }
+    'independentStart' {
+        if (-not $Token) { throw 'independentStart needs -Token' }
+        Send-Items (Invoke-Plan 'independentStartTx(address,address,uint256)' @($Token, (Get-Address $Bidder), $Amount))
+    }
+    'independentOpenRecord' {
+        if (-not $Token) { throw 'independentOpenRecord needs -Token' }
+        Send-Items (Invoke-Plan 'independentOpenRecordTx(address,uint256)' @($Token, "$TokenId"))
     }
     'record' {
         # Records a transaction sent outside this driver (for example by the Chainlink node).

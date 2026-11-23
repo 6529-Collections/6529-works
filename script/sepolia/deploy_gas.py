@@ -13,9 +13,13 @@ the deployer's `CoreFactory` (`create`); the deployment record (`<name>: <addres
 contract each transaction created.
 """
 import json
+import re
 import sys
 import urllib.request
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from make_record import created_by  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[2]
 B = REPO / "broadcast/DeployCore.s.sol/11155111"
@@ -32,9 +36,15 @@ def rpc(url, method, params):
 
 
 def label(t, names):
-    """The contract a transaction created (through the factory), else forge's contract name."""
+    """The contract a transaction created (through the factory), else forge's contract name.
+    A broadcast with --skip-simulation records no created contracts for a call, so a factory
+    `create(salt, code)` is named by the address the factory creates for that salt."""
     for c in t.get("additionalContracts") or []:
         name = names.get(c["address"].lower())
+        if name:
+            return name
+    if t.get("transactionType") == "CALL" and t.get("function") == "create(bytes32,bytes)":
+        name = names.get(created_by(t["contractAddress"], t["arguments"][0]).lower())
         if name:
             return name
     return t.get("contractName") or names.get((t.get("contractAddress") or "").lower()) or "?"
@@ -44,7 +54,8 @@ def main(out, record, url="https://ethereum-sepolia-rpc.publicnode.com"):
     rec = json.loads(Path(record).read_text(encoding="utf-8"))
     # The record also holds the deployer, the delegation contract and the fork block.
     skip = ("deployer", "delegation", "forkBlock")
-    names = {a.lower(): n for n, a in rec.items() if n not in skip and isinstance(a, str)}
+    names = {a.lower(): n for n, a in rec.items()
+             if n not in skip and isinstance(a, str) and re.fullmatch(r"0x[0-9a-fA-F]{40}", a)}
     run = json.loads((B / "run-latest.json").read_text(encoding="utf-8"))
     dry = json.loads((B / "dry-run/run-latest.json").read_text(encoding="utf-8"))
     assert len(run["transactions"]) == len(dry["transactions"]) == len(run["receipts"])
