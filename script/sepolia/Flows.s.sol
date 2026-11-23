@@ -13,6 +13,7 @@ import { IWorkFacts } from "src/interfaces/core/IWorkFacts.sol";
 import { IWorkRules } from "src/interfaces/core/IWorkRules.sol";
 import { IGovernedVault } from "src/economics/interfaces/IGovernedVault.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
+import { IEnglishAuctionClock } from "src/interfaces/IEnglishAuctionClock.sol";
 import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IEntropyModule } from "src/interfaces/IEntropyModule.sol";
 import { IIndependentStream } from "src/interfaces/IIndependentStream.sol";
@@ -83,7 +84,8 @@ interface IEditionsStream {
 ///         releases to the artist and the network, and an artist's own Independent Stream 1/1
 ///         contract (deployed from the approved template, listed, one work approved and sold by
 ///         the shared English auction; its editions contract, listed as its partner, and an edition
-///         master whose edition the Independent Stream edition auction sells).
+///         master whose edition the Independent Stream edition auction sells; a start with no
+///         bid and `restart`, for an unsold work offered again).
 /// @dev It holds no key. Only `broadcastB64Chunk` broadcasts, from the script's sender; every
 ///      other entry point reads the live chain (run it with `--rpc-url`) and prints lines for a
 ///      driver to act on:
@@ -1231,22 +1233,33 @@ contract Flows is Script {
     // ------------------------------------------------------------------ 8. Independent Stream
 
     /// @dev Which Independent Stream work the `independent*` entry points act on
-    ///      (`FLOWS_INDEPENDENT_WORK`): 0, an original (the default), or 1, an edition master whose
-    ///      edition the Independent Stream edition auction sells.
+    ///      (`FLOWS_INDEPENDENT_WORK`): 0, an original (the default), or 1 to 4, an edition master
+    ///      whose edition the Independent Stream edition auction sells. Masters 2 to 4 differ from
+    ///      master 1 in their media and record only (a token mints a content hash once), so one
+    ///      pair of contracts can run several edition sales.
     function _independentVariant() internal view returns (uint256 variant) {
         variant = vm.envOr("FLOWS_INDEPENDENT_WORK", uint256(0));
-        require(variant < 2, "FLOWS_INDEPENDENT_WORK is 0 or 1");
+        require(variant < 5, "FLOWS_INDEPENDENT_WORK is 0 to 4");
     }
 
-    /// @dev A label suffix that keeps the two works' transactions apart.
+    /// @dev A label suffix that keeps the works' transactions apart.
     function _independentSuffix() internal view returns (string memory) {
-        return _independentVariant() == 0 ? "" : "-master";
+        uint256 variant = _independentVariant();
+        if (variant == 0) return "";
+        return variant == 1 ? "-master" : string.concat("-master-", variant.toString());
+    }
+
+    /// @dev The fill colour of masters 2 to 4's media.
+    function _independentFill(uint256 variant) internal pure returns (string memory) {
+        if (variant == 2) return "#2f855a";
+        return variant == 3 ? "#6b46c1" : "#b7791f";
     }
 
     /// @dev The Independent Stream work's two files, both stored whole in the content store: a
     ///      small SVG and its JSON record.
     function _independentFiles() internal view returns (File memory media, File memory rec) {
-        bool master = _independentVariant() == 1;
+        uint256 variant = _independentVariant();
+        bool master = variant != 0;
         media.stored = master
             ? bytes(
                 "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'>"
@@ -1268,21 +1281,40 @@ contract Flows is Script {
                 '{"name":"Flows Independent #1","description":"An Independent Stream work of a Sepolia '
                 'rehearsal.","artists":["r1 Flows Artist"],"year":2026}'
             );
+        if (variant > 1) {
+            media.stored = bytes(
+                string.concat(
+                    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'>"
+                    "<rect x='1' y='1' width='8' height='8' fill='",
+                    _independentFill(variant),
+                    "'/></svg>"
+                )
+            );
+            media.sha = sha256(media.stored);
+            rec.stored = bytes(
+                string.concat(
+                    '{"name":"Flows Independent #',
+                    (variant + 1).toString(),
+                    '","description":"An Independent Stream edition master '
+                    'of a Sepolia rehearsal.","artists":["r1 Flows Artist"],"year":2026}'
+                )
+            );
+        }
         rec.encoding = IContentStore.Encoding.Identity;
         rec.mime = "application/json";
         rec.sha = sha256(rec.stored);
     }
 
     /// @dev The Independent Stream work, in collection 1 of the artist's own 1/1 contract (its
-    ///      constructor creates that collection): an original with no edition, or (work 1) an
-    ///      edition master with an uncapped uniform-price edition in ETH.
+    ///      constructor creates that collection): an original with no edition, or (works 1 to 4)
+    ///      an edition master with an uncapped uniform-price edition in ETH.
     function _independentWork(Addrs memory a) internal view returns (Work memory w) {
         (File memory media, File memory rec) = _independentFiles();
         address lead = _artist();
         w.media = new MediaFile[](1);
         w.media[0] = MediaFile(_fileId(a, media), media.sha, uint8(FileRole.PRIMARY));
         PackageItem memory item;
-        bool master = _independentVariant() == 1;
+        bool master = _independentVariant() != 0;
         item.kind = master ? uint8(ItemKind.EDITION_MASTER) : uint8(ItemKind.ORIGINAL);
         item.collectionId = 1;
         item.contentHash = media.sha;
@@ -1448,10 +1480,11 @@ contract Flows is Script {
 
     /// @notice `open` of the Independent Stream edition auction beside master `tokenId` of the
     ///         1/1 contract that `editionsToken` partners (anyone). It creates the edition and
-    ///         deploys the seller and royalty vaults. Run with `FLOWS_INDEPENDENT_WORK=1`.
+    ///         deploys the seller and royalty vaults. Run with `FLOWS_INDEPENDENT_WORK` naming
+    ///         the master (1 to 4).
     function independentOpenEditionTx(address editionsToken, uint256 tokenId) external view {
         Addrs memory a = _addrs();
-        require(_independentVariant() == 1, "the edition master is work 1");
+        require(_independentVariant() != 0, "the edition masters are works 1 to 4");
         address adapter = vm.parseJsonAddress(_record(), ".IndependentEditionAuction");
         _info("saleId", uint256(keccak256(abi.encode(editionsToken, tokenId))).toString());
         _tx(
@@ -1543,6 +1576,55 @@ contract Flows is Script {
                 )
             )
         );
+    }
+
+    /// @notice `start` of the Independent Stream work on `token` with no bid (anyone): a sale that
+    ///         ends unsold unless someone bids, for the restart flows.
+    function independentStartNoBidTx(address token) external view {
+        Addrs memory a = _addrs();
+        Work memory w = _independentWork(a);
+        _tx(
+            string.concat("independentStart", _independentSuffix()),
+            "any",
+            a.auction,
+            0,
+            abi.encodeCall(
+                IEnglishAuction.start,
+                (
+                    token,
+                    abi.encode(IIndependentStream.IndependentMint(w.item, w.media, new bytes[](0)))
+                )
+            )
+        );
+    }
+
+    /// @notice `restart` of work `tokenId`'s settled, unsold 1/1 sale (anyone, from 15 minutes
+    ///         after the sale's end). `FLOWS_TOKEN` names the artist's 1/1 contract; without it
+    ///         the sale is 6529 Stream's, which the auction never offers again.
+    function restartTx(uint256 tokenId) external view {
+        Addrs memory a = _addrs();
+        uint256 saleId = _oneOfOneSale(a, tokenId);
+        _info("saleId", saleId.toString());
+        _tx(
+            string.concat("restart-", tokenId.toString()),
+            "any",
+            a.auction,
+            0,
+            abi.encodeCall(IEnglishAuction.restart, (saleId))
+        );
+    }
+
+    /// @notice The four words of `auctionClock` for work `tokenId`'s 1/1 sale, as INFO lines.
+    function clock(uint256 tokenId) external view {
+        Addrs memory a = _addrs();
+        uint256 saleId = _oneOfOneSale(a, tokenId);
+        (IEnglishAuction.AuctionState state, uint64 endTime, uint64 pausedAt, uint64 restartedAt) =
+            IEnglishAuctionClock(a.auction).auctionClock(saleId);
+        _info("saleId", saleId.toString());
+        _info("state", uint256(state).toString());
+        _info("endTime", uint256(endTime).toString());
+        _info("pausedAt", uint256(pausedAt).toString());
+        _info("restartedAt", uint256(restartedAt).toString());
     }
 
     /// @notice `StreamWorkFacts6529.open` of the Independent Stream work, minted as `tokenId` of

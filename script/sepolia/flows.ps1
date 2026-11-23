@@ -50,6 +50,9 @@
     ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step independentEditionsList -Editions <editions>
     ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step independentOpenEdition -Editions <editions> -TokenId 1 -Work 1
     ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step editionBid -Editions <editions> -TokenId 1 -Bidder bidder3 -EditionStep 30
+    ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step independentStartNoBid -Token <token> -Work 2
+    ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step restart -Token <token> -TokenId 1
+    ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step clock -Token <token> -TokenId 1 -Label clock-before
     ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step prague
 
     The prague step replays each recorded transaction with
@@ -67,7 +70,8 @@ param(
         'englishWithdraw', 'outcome', 'cancel', 'send', 'safeCall', 'record', 'prague',
         'report', 'independentContent', 'independentDeploy', 'independentList',
         'independentStart', 'independentOpenRecord', 'starterRequest',
-        'independentEditionsDeploy', 'independentEditionsList', 'independentOpenEdition')] [string] $Step,
+        'independentEditionsDeploy', 'independentEditionsList', 'independentOpenEdition',
+        'independentStartNoBid', 'restart', 'clock')] [string] $Step,
     [string] $Rpc = 'https://ethereum-sepolia-rpc.publicnode.com',
     # The deployment record, relative to the repository root (script/DeployCore.s.sol writes
     # deployments/11155111/core-<timestamp>.json).
@@ -108,9 +112,9 @@ param(
     # steps (editionBid, editionRaise, editionSettle, claimBid, claimBidFor, editionState) act on
     # its sales in the Independent Stream edition auction when it is given.
     [string] $Editions = '',
-    # Which Independent Stream work the independent* steps act on: 0, an original; 1, an edition
-    # master.
-    [ValidateSet(0, 1)] [int] $Work = 0,
+    # Which Independent Stream work the independent* steps act on: 0, an original; 1 to 4, an
+    # edition master (each with its own media, so one pair of contracts runs several edition sales).
+    [ValidateSet(0, 1, 2, 3, 4)] [int] $Work = 0,
     # start, starter, startWithBid, starterRequest: the role whose wallet signs the artist's move
     # when it is not the account's root (a wallet consolidated with the artist, such as wallet2).
     [string] $MoveSigner = '',
@@ -153,7 +157,7 @@ $Accounts = @{
 }
 # Safe -> the owner keystores that sign for it (threshold many), from the genesis holders.
 $SafeSigners = @{
-    '0x54a769fe591c3f47cf83d30b69e576497ce34454' = @('safe-owner-1', 'safe-owner-2')  # the network Safe (r5 to r7), 2-of-3
+    '0x54a769fe591c3f47cf83d30b69e576497ce34454' = @('safe-owner-1', 'safe-owner-2')  # the network Safe (r5 to r8), 2-of-3
 }
 $Zero = '0x0000000000000000000000000000000000000000'
 
@@ -611,6 +615,20 @@ switch ($Step) {
     'independentStart' {
         if (-not $Token) { throw 'independentStart needs -Token' }
         Send-Items (Invoke-Plan 'independentStartTx(address,address,uint256)' @($Token, (Get-Address $Bidder), $Amount))
+    }
+    'independentStartNoBid' {
+        # `start` with no bid, sent by the relay: the sale ends unsold unless someone bids.
+        if (-not $Token) { throw 'independentStartNoBid needs -Token' }
+        Send-Items (Invoke-Plan 'independentStartNoBidTx(address)' @($Token))
+    }
+    'restart' {
+        # Offers an unsold Independent Stream work again (-Token, -TokenId); with -ExpectRevert the
+        # refusal is read first and the failed transaction recorded (too early, or a 6529 Stream sale).
+        Send-Items (Invoke-Plan 'restartTx(uint256)' @("$TokenId"))
+    }
+    'clock' {
+        # auctionClock's four words (state, end, pause start, last restart), kept under -Label.
+        Save-Snapshot (Invoke-Plan 'clock(uint256)' @("$TokenId")) $Label
     }
     'independentEditionsDeploy' {
         # The artist deploys the editions contract of its 1/1 contract -Token; the address is kept
