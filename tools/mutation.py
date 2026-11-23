@@ -129,6 +129,13 @@ SKIPPED_ON_SPLIT_FILES = "ASOR,BOR,FHR,LIR,MVIE,MVIV,MWA,SBR"
 # replacements. Their mutants are exactly the ones a single shard would make, so their floors
 # are measured on the same mutants (the 21 November 2026 campaign measured them this way).
 FULL_SPLIT_FILES = {
+    # The permanent core (ADR 0010): on the 23 November 2026 campaign one mutant took about half
+    # a minute on a loaded 96-core machine, which puts a whole-file shard of 200 to 330 mutants
+    # past a CI job.
+    "src/core/EditionsBase.sol",
+    "src/core/Modules.sol",
+    "src/core/StreamBase.sol",
+    "src/core/StreamWorkFacts6529.sol",
     "src/economics/RevenueEscrow.sol",
     "src/economics/SplitLedger.sol",
     "src/independent/IndependentStreamEditions6529.sol",
