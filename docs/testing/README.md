@@ -194,12 +194,10 @@ A record of one pass of every layer over one commit, with the counts and what wa
 ## What is not tested
 
 - **No external audit.** The project is pre-audit ([SECURITY.md](../../SECURITY.md)).
-- **The suites being ported.** The integration scenarios on the deployed stack, the gas table,
-  the fork suites (the delegation contract, the VRF coordinator, the deploy simulation), the
-  log replay of the ledger and content store, the real-data vectors, and the campaigns listed as
-  placeholders in [Invariants](../audit/invariants.md) have no test on the new contracts yet.
-- **Floors not yet measured.** The coverage floors of the files added by the restructuring are
-  placeholders until the first coverage run on the new code. The mutation floors are measured
+- **Stateful campaigns still to be ported.** The campaigns that
+  [Invariants](../audit/invariants.md#gaps) lists as gaps have no stateful campaign on the new
+  contracts yet; unit, fuzz and integration tests cover those rules meanwhile.
+- **Mutation testing of every file.** The mutation floors are measured
   ([Mutation scores](mutation-scores.md)), except for any file that page lists as not finished.
 - **Bounded proofs only.** The Halmos proofs cover every input within their stated bounds. Not
   proved: the share arithmetic across payees (256-bit division), multi-payee release
@@ -211,4 +209,6 @@ A record of one pass of every layer over one commit, with the counts and what wa
 - **Campaign gaps.** Listed in [Invariants: Gaps](../audit/invariants.md#gaps).
 - **Rules without a test.** The rules that name no test are listed by
   `python tools/check_rules.py --uncovered`; the declaration rules are off-chain conventions.
-- **Live rehearsal.** The new contracts have not yet been deployed on Sepolia.
+- **Live rehearsal.** The new contracts run on Sepolia only (rounds r6, r7 and r8,
+  [records](../../deployments/11155111/README.md)); what each round did not run is at the end
+  of its flows page. There is no mainnet deployment.
