@@ -61,6 +61,16 @@ contract WorkFactsFixesTest is RulesFixture {
         records.repin(b, id, c);
         assertEq(facts.rendererOf(b, id), c);
     }
+
+    /// 23 bytes whose first three sort above the designator's prefix are a contract too.
+    function test_Pin_TwentyThreeBytesAboveTheDesignatorPrefix() public {
+        uint256 id = _finalized(4);
+        address c = makeAddr("c");
+        vm.etch(c, abi.encodePacked(hex"fe0000", address(renderer)));
+        assertTrue(DependencyProbe.installable(c));
+        records.repin(b, id, c);
+        assertEq(facts.rendererOf(b, id), c);
+    }
 }
 
 /// @notice `Dependency.isInstallable`, callable from a test.

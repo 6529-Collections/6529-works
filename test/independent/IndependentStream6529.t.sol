@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { Vm } from "forge-std/Vm.sol";
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { IERC2981 } from "@openzeppelin/contracts/interfaces/IERC2981.sol";
 import { IERC4906 } from "@openzeppelin/contracts/interfaces/IERC4906.sol";
@@ -604,5 +605,130 @@ contract IndependentStreamTest is IndependentTokenFixture {
         assertTrue(fs.supportsInterface(type(IIndependentStreamMembership).interfaceId));
         assertFalse(fs.supportsInterface(type(IModules).interfaceId));
         assertFalse(fs.supportsInterface(0xffffffff));
+    }
+
+    // ------------------------------------------------- boundaries found by the mutation campaign
+
+    function test_Constructor_LogsTheFirstModuleDelay() public {
+        vm.expectEmit();
+        emit IModuleSlots.ModuleDelaySet(0, 7 days);
+        new IndependentStream6529(
+            "N", "S", address(facts), address(directory), 1, marketOwner, address(renderer)
+        );
+    }
+
+    function test_Constructor_WithoutARendererLogsNoModuleSet() public {
+        vm.recordLogs();
+        new IndependentStream6529(
+            "N", "S", address(facts), address(directory), 1, marketOwner, address(0)
+        );
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        assertGt(logs.length, 0, "the construction logs");
+        for (uint256 i; i < logs.length; ++i) {
+            assertTrue(logs[i].topics[0] != IModuleSlots.ModuleSet.selector, "no ModuleSet");
+        }
+    }
+
+    /// The announcement belongs to the RENDERER slot alone: no other slot reads it.
+    function test_PendingModule_OnlyTheRendererSlotReadsTheAnnouncement() public {
+        MockRenderer next = new MockRenderer();
+        vm.prank(artistWallet);
+        fs.proposeModule(Slots.RENDERER, address(next));
+        assertEq(fs.pendingModule(Slots.RENDERER).module, address(next));
+        bytes32[4] memory others =
+            [Slots.RECORDS, Slots.TERMS, bytes32(0), bytes32(type(uint256).max)];
+        for (uint256 i; i < others.length; ++i) {
+            PendingModule memory p = fs.pendingModule(others[i]);
+            assertEq(p.module, address(0));
+            assertEq(p.readyAt, 0);
+        }
+    }
+
+    function test_ActivateModule_StillInstallsAfterTheReadyTime() public {
+        MockRenderer next = new MockRenderer();
+        vm.prank(artistWallet);
+        fs.proposeModule(Slots.RENDERER, address(next));
+        vm.warp(block.timestamp + 7 days + 1);
+        fs.activateModule(Slots.RENDERER);
+        assertEq(fs.moduleOf(Slots.RENDERER), address(next));
+    }
+
+    /// With nothing announced, nobody can empty the renderer slot through `activateModule`.
+    function test_ActivateModule_RefusedWithNothingAnnounced() public {
+        vm.prank(stranger);
+        vm.expectRevert(
+            abi.encodeWithSelector(IModuleSlots.ModuleNotReady.selector, Slots.RENDERER)
+        );
+        fs.activateModule(Slots.RENDERER);
+        // Nor a second time after an announcement was installed.
+        MockRenderer next = new MockRenderer();
+        vm.prank(artistWallet);
+        fs.proposeModule(Slots.RENDERER, address(next));
+        vm.warp(block.timestamp + 7 days);
+        fs.activateModule(Slots.RENDERER);
+        vm.expectRevert(
+            abi.encodeWithSelector(IModuleSlots.ModuleNotReady.selector, Slots.RENDERER)
+        );
+        fs.activateModule(Slots.RENDERER);
+        assertEq(fs.moduleOf(Slots.RENDERER), address(next));
+    }
+
+    function test_CancelModule_TheArtistWithdrawsTheAnnouncement() public {
+        MockRenderer next = new MockRenderer();
+        vm.prank(artistWallet);
+        fs.proposeModule(Slots.RENDERER, address(next));
+        vm.expectEmit(address(fs));
+        emit IModuleSlots.ModuleCancelled(Slots.RENDERER, address(next));
+        vm.prank(artistWallet2);
+        fs.cancelModule(Slots.RENDERER);
+        PendingModule memory p = fs.pendingModule(Slots.RENDERER);
+        assertEq(p.module, address(0));
+        assertEq(p.readyAt, 0);
+        vm.warp(block.timestamp + 7 days);
+        vm.expectRevert(
+            abi.encodeWithSelector(IModuleSlots.ModuleNotReady.selector, Slots.RENDERER)
+        );
+        fs.activateModule(Slots.RENDERER);
+        assertEq(fs.moduleOf(Slots.RENDERER), address(renderer));
+    }
+
+    function test_CancelModule_RefusedWithNothingAnnouncedForOthersAndForASharedSlot() public {
+        vm.prank(artistWallet);
+        vm.expectRevert(
+            abi.encodeWithSelector(IModuleSlots.ModuleNotReady.selector, Slots.RENDERER)
+        );
+        fs.cancelModule(Slots.RENDERER);
+        MockRenderer next = new MockRenderer();
+        vm.prank(artistWallet);
+        fs.proposeModule(Slots.RENDERER, address(next));
+        vm.prank(stranger);
+        vm.expectRevert(
+            abi.encodeWithSelector(IIndependentStreamMembership.NotArtist.selector, stranger)
+        );
+        fs.cancelModule(Slots.RENDERER);
+        vm.prank(artistWallet);
+        vm.expectRevert(
+            abi.encodeWithSelector(IIndependentStream.NotLocalSlot.selector, Slots.TERMS)
+        );
+        fs.cancelModule(Slots.TERMS);
+        assertEq(fs.pendingModule(Slots.RENDERER).module, address(next));
+    }
+
+    function test_SupportsInterface_RefusesIdsBelowAndAboveItsOwn() public view {
+        assertFalse(fs.supportsInterface(0x00000001));
+        assertFalse(fs.supportsInterface(0xfffffffe));
+    }
+
+    /// The minter recorded is the contract that called `mint`, whoever started the transaction.
+    function test_Mint_RecordsTheMintingContractWhateverTheTransactionOrigin() public {
+        _fmint(1);
+        MockSale other = new MockSale();
+        gate.setMinter(address(fs), address(other), true);
+        // The transaction's origin is an account that minted here before.
+        vm.prank(stranger, address(sale));
+        uint256 id = other.mint(address(fs), _ffacts(2));
+        assertTrue(fs.hasMinted(address(other)));
+        other.record(address(fs), id, true, collector, 1 ether);
+        assertEq(uint8(fs.workOf(id).outcome), uint8(Outcome.SOLD));
     }
 }

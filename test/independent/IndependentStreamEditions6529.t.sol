@@ -293,4 +293,9 @@ contract IndependentStreamEditionsTest is IndependentTokenFixture {
         assertTrue(fe.supportsInterface(type(IIndependentStreamMembership).interfaceId));
         assertFalse(fe.supportsInterface(type(IModules).interfaceId));
     }
+
+    function test_SupportsInterface_RefusesIdsBelowAndAboveItsOwn() public view {
+        assertFalse(fe.supportsInterface(0x00000001));
+        assertFalse(fe.supportsInterface(0xffffffff));
+    }
 }
