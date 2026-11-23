@@ -411,7 +411,7 @@ library DeployGuards {
         address account
     ) private pure {
         bool forbidden = account == p.delegation || account == p.vrfCoordinator
-            || account == address(d.manager);
+            || account == address(d.manager) || account == d.coreFactory;
         for (uint256 j; j < names.length && !forbidden; ++j) {
             forbidden = account == DeployCore.addressOf(d, names[j]);
         }

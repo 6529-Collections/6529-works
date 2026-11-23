@@ -26,10 +26,10 @@
     (-GasLimit) so the node does not refuse to estimate it, and records the failed receipt.
 
 .EXAMPLE
-    $r = '-Record deployments/11155111/core-<timestamp>.json'
-    ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step content
-    ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step starter -Index 0
-    ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step settle -TokenId 6
+    $r = 'deployments/11155111/core-<timestamp>.json'
+    ./flows.ps1 -SignerModule <path> -State <state.json> -Record $r -Step content
+    ./flows.ps1 -SignerModule <path> -State <state.json> -Record $r -Step starter -Index 0
+    ./flows.ps1 -SignerModule <path> -State <state.json> -Record $r -Step settle -TokenId 6
     ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step bid -TokenId 2 -Bidder bidder1 -Amount 60000000000000000 -Label bid-2-antisnipe
     ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step openEdition -Index 5 -TokenId 2
     ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step editionBid -TokenId 2 -Bidder bidder3 -EditionStep 30 -Quantity 2

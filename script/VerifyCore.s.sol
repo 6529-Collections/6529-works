@@ -112,6 +112,7 @@ contract VerifyCoreScript is ScriptIO {
         topics[0] = IModules.MinterAdded.selector;
         uint256 last = block.number;
         uint256 range = _envUint("LOG_BLOCK_RANGE", 5_000);
+        if (range == 0) revert MissingParameter("LOG_BLOCK_RANGE");
         for (uint256 from = fromBlock; from <= last; from += range) {
             uint256 to = from + range - 1 < last ? from + range - 1 : last;
             Vm.EthGetLogs[] memory logs = vm.eth_getLogs(from, to, token, topics);
@@ -134,6 +135,11 @@ contract VerifyCoreScript is ScriptIO {
         returns (DeployCore.Deployment memory d)
     {
         d.coreFactory = vm.parseJsonAddress(record, ".CoreFactory");
+        // A record with an entropy module is verified with the deploy's VRF settings, so the
+        // module is in the list below and is read back like every other contract.
+        if (vm.keyExistsJson(record, ".EntropyModule") && p.vrfCoordinator == address(0)) {
+            revert MissingParameter("VRF_COORDINATOR");
+        }
         string[] memory list = DeployCore.order(p);
         for (uint256 i; i < list.length; ++i) {
             DeployCore.assign(d, list[i], vm.parseJsonAddress(record, string.concat(".", list[i])));

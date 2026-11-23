@@ -88,7 +88,10 @@ $creation = @{}
 if (-not $StatusOnly) {
     $run = Get-Content -Raw -Encoding UTF8 (Join-Path $Repo $Run) | ConvertFrom-Json
     foreach ($t in $run.transactions) {
-        if ($t.contractAddress) { $creation[$t.contractAddress.ToLower()] = $t.hash }
+        # On a CALL forge records the destination as contractAddress: only a creation counts.
+        if ($t.contractAddress -and $t.transactionType -like 'CREATE*') {
+            $creation[$t.contractAddress.ToLower()] = $t.hash
+        }
         foreach ($c in @($t.additionalContracts)) {
             if ($c -and $c.address) { $creation[$c.address.ToLower()] = $t.hash }
         }

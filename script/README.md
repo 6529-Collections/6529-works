@@ -94,6 +94,7 @@ network Safe and holders.
 python script/sepolia/make_genesis.py r6 r5        # the committed policy with r5's holders
 python tools/check_genesis.py --config config/sepolia-r6/genesis.json
 python script/sepolia/make_manifest.py r6 r5 <commit>            # first pass: no addresses
+# the next line is PowerShell (the simulation; no broadcast):
 ./script/sepolia/deploy.ps1 -SignerModule <path> -EnvFile config/sepolia-r6/deploy.env -Log sim.txt
 python script/sepolia/make_manifest.py r6 r5 <commit> sim.txt    # second pass: the addresses
 ```
@@ -121,7 +122,9 @@ so broadcast through an endpoint with a higher estimate cap:
   -Broadcast -Rpc https://sepolia.gateway.tenderly.co -Log run.txt
 ```
 
-A broadcast that stops partway resumes with `-Resume`.
+A broadcast that stops partway resumes with `-Resume`: forge sends the transactions it recorded
+that are not yet mined, without simulating again, so the script, the namespace, the environment
+and the deployer's nonce must be as the stopped run left them.
 
 ### 4. After the broadcast
 

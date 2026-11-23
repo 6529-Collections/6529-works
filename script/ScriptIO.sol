@@ -129,12 +129,14 @@ abstract contract ScriptIO is Script {
             bytes32 keyHash = _envBytes32("VRF_KEY_HASH", bytes32(0));
             if (subscription == 0) revert MissingParameter("VRF_SUBSCRIPTION_ID");
             if (keyHash == 0) revert MissingParameter("VRF_KEY_HASH");
+            uint256 nativePayment = _envUint("VRF_NATIVE_PAYMENT", 0);
+            if (nativePayment > 1) revert MissingParameter("VRF_NATIVE_PAYMENT");
             p.vrf = VrfEntropyModule.VrfConfig(
                 subscription,
                 keyHash,
                 SafeCast.toUint32(_envUint("VRF_CALLBACK_GAS_LIMIT", 200_000)),
                 SafeCast.toUint16(_envUint("VRF_CONFIRMATIONS", 3)),
-                _envUint("VRF_NATIVE_PAYMENT", 0) == 1
+                nativePayment == 1
             );
             p.vrfRetryDelay = SafeCast.toUint64(_envUint("VRF_RETRY_DELAY", 3 days));
         }

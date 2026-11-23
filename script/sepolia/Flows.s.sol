@@ -80,6 +80,9 @@ interface IDigests {
 ///      files, items and root, so every step can be re-run and re-derived.
 ///      `script/sepolia/flows.ps1` is the driver.
 contract Flows is Script {
+    /// @notice The deployment in the record has no entropy module (deployed without VRF).
+    error NoEntropyModule();
+
     using Strings for uint256;
     using Strings for address;
 
@@ -827,6 +830,7 @@ contract Flows is Script {
     /// @notice `requestSeed` for the VRF item (anyone).
     function requestSeedTx() external view {
         Addrs memory a = _addrs();
+        if (a.entropy == address(0)) revert NoEntropyModule();
         Work[] memory works = _works(a);
         bytes32[] memory leaves = _leaves(works);
         _info("itemHash", vm.toString(WorksHashing.itemHash(works[ITEM_VRF].item)));

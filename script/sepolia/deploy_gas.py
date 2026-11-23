@@ -41,7 +41,10 @@ def label(t, names):
 
 
 def main(out, record, url="https://ethereum-sepolia-rpc.publicnode.com"):
-    names = {a.lower(): n for n, a in json.loads(Path(record).read_text(encoding="utf-8")).items()}
+    rec = json.loads(Path(record).read_text(encoding="utf-8"))
+    # The record also holds the deployer, the delegation contract and the fork block.
+    skip = ("deployer", "delegation", "forkBlock")
+    names = {a.lower(): n for n, a in rec.items() if n not in skip and isinstance(a, str)}
     run = json.loads((B / "run-latest.json").read_text(encoding="utf-8"))
     dry = json.loads((B / "dry-run/run-latest.json").read_text(encoding="utf-8"))
     assert len(run["transactions"]) == len(dry["transactions"]) == len(run["receipts"])
