@@ -135,7 +135,7 @@ changes is only when; the amounts are never more than the money that has itself 
 | ECO-36 | Retired: no ERC-20 settlement payouts. | |
 | ECO-37 | The museum is set at deployment, never zero or a protocol contract; changed by the network compare-and-set. | `test_Museum_SetAtDeployment`, `test_SetMuseum_IsCompareAndSet` |
 | ECO-38 | ETH is always active: no function deprecates it, and no other asset can be admitted. | `test_NoOtherAssetCanBeAdmitted` |
-| ECO-39 | A split vault is the 66-byte code and obeys only its ledger. | `test_RuntimeIsTheDocumentedSixtySixBytes`, `check_vault_obeysOnlyItsLedger` |
+| ECO-39 | A split vault is the 66-byte code and obeys only its ledger. | `test_RuntimeIsTheDocumentedSixtySixBytes`, `check_vault_obeysOnlyItsLedger`, `SplitVaultDifferential.t.sol` (every call shape against a plain Solidity vault) |
 | ECO-40 | `sweepExcess` moves only what nobody is owed. | `test_SweepExcess_TakesOnlyWhatNobodyIsOwed`, `invariant_EscrowExcessIsExactlyTheUnowed` |
 | ECO-41 | A governed vault moves what it holds only to its destination, which only the network changes. | `test_AnyoneForwardsETHToTheDestinationOnly`, `invariant_HoldingsLeaveOnlyToTheDestination` |
 | ECO-42 | No compiled gas number in the ledger; a shortfall reverts, never a refusal. | `test_GasRule_ThePushToTheNetworkIsNeverSkippedForGas` |

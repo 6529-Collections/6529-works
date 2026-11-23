@@ -29,8 +29,8 @@ interface ISplitFactory {
         ISplitWallet.Payee[] payees
     );
 
-    /// @notice The wallet CREATE2 deployed is not at the `predicted` address (zero when the
-    ///         creation itself failed).
+    /// @notice The wallet CREATE2 deployed is not at the `predicted` address. (A creation that
+    ///         itself fails reverts with OpenZeppelin's `Errors.FailedDeployment`.)
     error WalletAddressMismatch(address predicted, address deployed);
 
     /// @notice The resolver every wallet uses for artist-resolved payees.
