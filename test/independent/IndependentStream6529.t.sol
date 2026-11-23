@@ -481,6 +481,23 @@ contract IndependentStreamTest is IndependentTokenFixture {
         fs.setRescueDelay(3);
     }
 
+    /// A call relayed through the manager's `execute` reaches the token with the manager as
+    /// caller, and the token refuses it: the network calls an Independent Stream token directly.
+    function test_Network_ACallRelayedThroughTheManagerIsRefused() public {
+        bytes memory data = abi.encodeCall(IStream.setRescueDelay, (5));
+        uint48 before = fs.rescueDelay();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IIndependentStreamMembership.NotNetwork.selector, address(manager)
+            )
+        );
+        manager.execute(address(fs), data);
+        assertEq(fs.rescueDelay(), before);
+        // The same holder, calling the token itself, is the network.
+        fs.setRescueDelay(5);
+        assertEq(fs.rescueDelay(), 5);
+    }
+
     function test_Network_FollowsTheDirectorysAuthority() public {
         assertEq(IAccessManaged(address(directory)).authority(), address(manager));
         uint256 id = _fmint(1);

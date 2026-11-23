@@ -111,6 +111,34 @@ contract DeployCoreSafetyTest is Test {
         this.checkCodeExternal(p, d, actual, ref, VerifyCore.codeHashes(p, ref));
     }
 
+    /// @dev After the deployment, the one-use proxies are still on chain and anyone may call
+    ///      them. Such a call creates at the proxy's next nonce, a different address: the code at
+    ///      the predicted address does not change.
+    function test_ALaterCallToAUsedProxyCreatesElsewhere() public {
+        DeployCore.Params memory p = _params("used proxy");
+        DeployCore.Deployment memory d = DeployCore.deploy(p, address(this));
+        bytes memory foreign = type(DelegationManagementMock).creationCode;
+        string[2] memory targets = ["EnglishAuction", "Accounts"];
+        for (uint256 i; i < targets.length; ++i) {
+            address predicted = DeployCore.addressOf(d, targets[i]);
+            bytes32 codeBefore = predicted.codehash;
+            assertGt(predicted.code.length, 0);
+            address proxy = vm.computeCreate2Address(
+                DeployCore.salt(p, targets[i]), keccak256(DeployCore.PROXY_INITCODE), d.coreFactory
+            );
+            assertGt(proxy.code.length, 0, "the proxy stays on chain");
+            uint64 nonce = vm.getNonce(proxy);
+            assertEq(nonce, 2, "its first nonce is spent");
+            address later = vm.computeCreateAddress(proxy, nonce);
+            assertTrue(later != predicted);
+            vm.prank(outsider);
+            (bool ok,) = proxy.call(foreign);
+            assertTrue(ok);
+            assertGt(later.code.length, 0, "created at the later nonce");
+            assertEq(predicted.codehash, codeBefore, "the predicted address is untouched");
+        }
+    }
+
     /// @dev The script path: the factory is created through the public CREATE2 deployer, and
     ///      an outsider who creates it first creates the same factory, owned by the deployer.
     function test_AFrontRunFactoryIsTheDeployersOwn() public {

@@ -22,8 +22,9 @@ import { VerifyCore } from "./VerifyCore.sol";
 ///      `DEPLOY_NAMESPACE`, `NETWORK_FEE_RECIPIENT`, `MUSEUM`, `MARKETPLACE_OWNER`,
 ///      `MANIFEST_PATH` (a file under `config/`, hashed with SHA-256) or `MANIFEST_DIGEST`,
 ///      `MANIFEST_URI`, `AUCTION_DURATION` (seconds; a testnet round only), `ACCEPT_NETWORK`
-///      (1 on anvil to accept as the network). Off anvil the genesis file's network must be a deployed Safe and its holders
-///      real keys (`DeployGuards.checkHolders`), and no brake is installed.
+///      (1 on anvil to accept as the network). Off anvil the genesis file's network must be a
+///      deployed Safe and its holders real keys (`DeployGuards.checkHolders`), and no brake is
+///      installed.
 ///      Off anvil it also checks, before `configure`, that the genesis policy is the committed
 ///      one (`DeployGuards.checkPolicy`) and that no holder is a contract of the deployment
 ///      (`DeployGuards.checkHoldersAgainst`). VRF: `VRF_COORDINATOR` (zero or unset: no entropy
