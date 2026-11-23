@@ -33,7 +33,7 @@ pair; [`GasBase.sol`](GasBase.sol) the whole-transaction gas measurement.
 | --- | --- |
 | [`CuratedSale.t.sol`](CuratedSale.t.sol) | Package, attestation, registration, acceptance and move signature; `start` and `startWithBid`; bids and the soft close; `settle`; releases from the split vaults |
 | [`Museum.t.sol`](Museum.t.sol) | A work with no bid goes to the museum; a governed change of the museum; rescue |
-| [`Dispute.t.sol`](Dispute.t.sol) | Pause, the dispute statement the renderer shows, cancel and the content release |
+| [`Dispute.t.sol`](Dispute.t.sol), [`DisputeCancelOutcome.t.sol`](DisputeCancelOutcome.t.sol) | Pause, the dispute statement the renderer shows, cancel and the content release; which recorded outcome a cancel accepts |
 | [`VrfWork.t.sol`](VrfWork.t.sol) | `requestSeed`, the mock fulfilment, the start, and the seed in the metadata |
 | [`Releases.t.sol`](Releases.t.sol), [`Credits.t.sol`](Credits.t.sol), [`EscrowRecovery.t.sol`](EscrowRecovery.t.sol), [`LoweredShareRoyalties.t.sol`](LoweredShareRoyalties.t.sol) | Money: releases, credits that age under a changing unclaimed period, escrow recovery, a lowered network share |
 | [`RecordLifecycle.t.sol`](RecordLifecycle.t.sol), [`ContentToTokenURI.t.sol`](ContentToTokenURI.t.sol), [`WorkRecordsStackPorted.t.sol`](WorkRecordsStackPorted.t.sol), [`SyncOnChainResumePorted.t.sol`](SyncOnChainResumePorted.t.sol) | A work's record from open to finalized, and content from upload to `tokenURI` |

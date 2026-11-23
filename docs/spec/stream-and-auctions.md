@@ -63,15 +63,18 @@ contract, not promises of the token:
 1. **Start** (anyone). The auction calls `policy.authorize(token, request)`. The policy checks
    the approved item, the artist's signature and the content rules, consumes the item and
    answers `MintFacts` (with the royalty receiver and rate) and `MintTerms` (seller, fee
-   recipient, fee share). The auction checks the terms, calls `Stream.mint(address(this),
-   facts)`, stores the seller and fee share in the sale, and opens the clock. `startWithBid`
-   also places the first bid.
-2. **Bid** (anyone). A bid must reach the minimum; a bid in the last window extends the end. An
-   outbid bid is credited to its payer, never pushed.
+   recipient, fee share). The auction checks the terms it sells by (the sale kind, empty params,
+   the seller and the fee share; it does not read the terms' fee recipient or creator), calls
+   `Stream.mint(address(this), facts)`, stores the seller and fee share in the sale, and opens
+   the clock. `startWithBid` also places the first bid.
+2. **Bid** (anyone). A bid must reach the minimum; a bid in the last window extends the end. The
+   opening bid, the increment and the window are the governed values in force when the bid is
+   placed, not those at the start. An outbid bid is credited to its payer, never pushed.
 3. **Settle** (anyone, after the end). With a bid, the auction calls
    `Stream6529.recordPrimarySale(tokenId, true, buyer, price)`, delivers the token and pays the
-   seller and the network; a refused payout goes to the escrow, a failed delivery waits as a
-   pending delivery. With no bid, it records `UNSOLD`; a 6529 Stream work is then transferred by
+   seller and the network (the seller's part rounds down and the fee is the remainder, paid to
+   the recipient the economics resolver names at that moment); a refused payout goes to the
+   escrow, a failed delivery waits as a pending delivery. With no bid, it records `UNSOLD`; a 6529 Stream work is then transferred by
    the auction to the museum the economics resolver names at that moment; an unsold Independent
    Stream work stays in the auction and can be started again there for the same item.
 4. **Cancel after an upheld dispute** (network). The auction calls `Stream6529.burn(tokenId)`.
@@ -135,55 +138,55 @@ the seller when the share is zero.
 | --- | --- | --- |
 | AUC-1 | Only an active minter mints: added, past the `moduleDelay` it was given, and not removed. Genesis minters are active at once. | `test_Mint_OnlyAMinterAndOneLiveTokenPerContent`, `testFuzz_AddMinter_NeverActiveBeforeTheWait`, `test_Genesis_ModuleAndMinterAreActiveAtOnce` |
 | AUC-2 | A mint needs a nonzero item hash, content hash and artist ID, a rate of at most 100,000 and an existing collection. | `test_Mint_StoresFactsAndCountsSerial`, `test_Mint_OnlyAMinterAndOneLiveTokenPerContent` |
-| AUC-3 | Every start asks the mint policy in the same call; a policy revert reverts the start and mints nothing. | |
-| AUC-4 | A VRF work mints only once its seed is delivered; the seed is stored in the token at mint and never changes. | |
+| AUC-3 | Every start asks the mint policy in the same call; a policy revert reverts the start and mints nothing. | `test_Start_AsksTheMintPolicyInTheSameCall`, `test_HostilePolicy_RevertingMintsNothing`, `test_StartWithBid_APolicyRevertMintsNothingAndTakesNoBid` |
+| AUC-4 | A VRF work mints only once its seed is delivered; the seed is stored in the token at mint and never changes. | `test_VrfWork_SeedRequestedDeliveredThenStartedStoredAndRendered`, `test_VrfWork_RetryAfterTheDelayAndTheFirstDeliveryWins` |
 | AUC-5 | Token IDs are one sequence from 1, never reused; serials count per collection from 1; `totalSupply` is minted minus burned. | `test_Mint_StoresFactsAndCountsSerial` |
 | AUC-6 | A token's royalty receiver and rate change only through the TERMS module; a locked rate never changes again. | `test_Hostile_NoSeamPositionReachesACollectorsToken` |
-| AUC-7 | `royaltyInfo` returns the stored receiver and exactly `floor(price × rate / 100,000)` for any price, asking no module. | |
+| AUC-7 | `royaltyInfo` returns the stored receiver and exactly `floor(price × rate / 100,000)` for any price, asking no module. | `testFuzz_RoyaltyInfo_ExactForAnyPrice`, `test_RoyaltyInfo_NeedsNoModule`, `test_RoyaltyInfo_EdgesAndUnminted` |
 | AUC-8 | Only the minter holding a token records its outcome, once: SOLD with a buyer, or UNSOLD. An outcome never changes. | `test_Sold_TheMinterCanDoNothingMore` |
 | AUC-9 | Only the minter holding a token burns it, and only before an outcome, even after its removal. | `test_Sold_TheMinterCanDoNothingMore` |
 | AUC-10 | Retired: content release moved to the mint policy (CUR rules). | |
 | AUC-11 | Retired: Stream has no satellites to bind and no edition link. | |
 | AUC-12 | Retired: collection names are checked by the keeper; the renderer tolerates any name. | |
-| AUC-13 | The emergency pause stops only new starts. | |
-| AUC-14 | A start refuses unusable terms: the escrow as seller or fee recipient, a zero seller or creator, a fee share above 100,000, or a token not in the auction's custody. | |
-| AUC-15 | A sale locks its opening bid, increment share and window at start, and its increment floor at the first bid. | |
-| AUC-16 | The first bid is at least the opening bid (and 1 wei); a later bid adds at least the larger of the increment share and the floor. | |
-| AUC-17 | A bid in the last window moves the end to the bid's time plus the window; no bid is accepted at or after the end. | |
-| AUC-18 | Outbid bids are credited to their payer, never pushed; only that account claims them. | |
+| AUC-13 | The emergency pause stops only new starts. | `test_Pause_StopsStartsOnly`, `test_Start_RefusedWhileStartsArePaused` |
+| AUC-14 | A start refuses terms it cannot sell by: a sale kind other than the English auction, params that are not empty, a zero seller, the escrow or the auction itself as seller, a fee share above 100,000, or a token not in the auction's custody after the mint. It does not read the terms' fee recipient or creator. The fee goes to the recipient the economics resolver names at settlement, which is checked where it is set (ECO-3); the creator is the mint policy's own answer (for 6529 Stream, the wallet whose signed move the package registry accepted, CUR-10). | `test_Start_RefusesTermsItCannotSellBy`, `test_HostilePolicy_LyingTermsAreRefused`, `test_HostileToken_AMintThatLandsElsewhereIsRefused`, `test_Start_ReadsNeitherTheFeeRecipientNorTheCreatorOfTheTerms`, `test_Settle_TheFeeGoesToTheRecipientNamedAtSettlement`, `test_FeeRecipient_RefusesSystemContracts` |
+| AUC-15 | A sale stores its seller, its fee share and its end at start, and nothing else of the settings. The opening bid, the increment share, the increment floor and the anti-snipe window are read when a bid is placed, so a running sale follows the governed values in force at each bid. | `test_Bid_ARunningSaleFollowsTheSettingsInForceWhenTheBidIsPlaced`, `test_Bid_FirstBidReachesTheOpeningBidReadWhenBidding`, `test_Independent_TheFeeShareIsTheModulesKeptFromTheStart` |
+| AUC-16 | The first bid is at least the opening bid (and 1 wei); a later bid adds at least the larger of the increment share and the floor. | `test_Bid_FirstBidReachesTheOpeningBidReadWhenBidding`, `test_Bid_ZeroIsNeverABid`, `testFuzz_Bid_IncrementRule` |
+| AUC-17 | A bid in the last window moves the end to the bid's time plus the window; no bid is accepted at or after the end. | `test_Bid_InTheLastWindowExtendsTheEnd`, `test_Bid_BeforeTheWindowDoesNotExtend`, `test_Bid_RefusedAfterTheEnd` |
+| AUC-18 | Outbid bids are credited to their payer, never pushed; only that account claims them. | `test_Bid_AnOutbidBidIsCreditedNotPushed`, `test_Claim_OnlyTheCreditedAccountClaimsItsCredit`, `test_Claim_SendsTheWholeCredit` |
 | AUC-19 | Retired: ETH only; no ERC-20 payments. | |
-| AUC-20 | The auction holds exactly its live high bids plus its credits; every sale ends at most once. | |
-| AUC-21 | Settlement never depends on the recipient accepting the token: a failed delivery leaves a pending delivery. | |
-| AUC-22 | A settler that does not forward the delivery and payout gas is refused. | |
-| AUC-23 | A refused payout goes to the escrow for that wallet. | |
-| AUC-24 | With no bid, a 6529 Stream work goes to the museum the economics resolver names at settlement; the auction transfers it. | |
+| AUC-20 | The auction holds exactly its live high bids plus its credits; every sale ends at most once. | `test_Balance_EqualsStandingBidsPlusCredits`, `invariant_BalanceIsStandingBidsPlusCredits`, `test_Settle_RefusedBeforeTheEndAndOnce`, `test_Cancel_ThenNothingSettles` |
+| AUC-21 | Settlement never depends on the recipient accepting the token: a failed delivery leaves a pending delivery. | `test_Settle_ARecipientThatRefusesLeavesAPendingDelivery`, `test_Settle_ARecipientThatBurnsGasLeavesAPendingDelivery` |
+| AUC-22 | A settler that does not forward the delivery and payout gas is refused. | `test_Settle_RefusesASettlerThatWithholdsThePayoutOrDeliveryGas` |
+| AUC-23 | A refused payout goes to the escrow for that wallet. | `test_Settle_ASellerThatRefusesIsPaidThroughTheEscrow`, `test_HostileFeeRecipient_IsPaidThroughTheEscrow` |
+| AUC-24 | With no bid, a 6529 Stream work goes to the museum the economics resolver names at settlement; the auction transfers it. | `test_Settle_UnsoldStreamWorkGoesToTheMuseum`, `test_Settle_TheMuseumIsReadAtSettlement`, `test_Museum_UnbidWorkGoesToTheMuseum` |
 | AUC-25 | Retired: no currency freeze (ETH only). | |
-| AUC-26 | A dispute pause is once per live auction and lasts at most 3 days (a compiled value of the auction). | |
-| AUC-27 | A resumed auction runs at least the longer of the governed duration and its locked window. | |
-| AUC-28 | An Independent Stream token sells only while the Independent Stream module reports it active; an unsold Independent Stream work stays in the auction and can be started again there for the same item. | |
-| AUC-29 | The auction refuses every safe transfer into it except its own mint. | |
-| AUC-30 | Governed auction parameters stay within bounds and are compare-and-set. | |
-| AUC-31 | No reentrant call reaches a value-moving function. | |
-| AUC-32 | Gas: every start row, with or without a bid, costs at most 370,000 Prague gas and writes at most 8 new slots. A start with a bid of a VRF work also writes the seed: at most 395,000 Prague gas and 9 new slots. These are test budgets, asserted in the gas report; no contract enforces them. | |
-| AUC-33 | An unsold 6529 Stream work is never a pending delivery: the auction moves it with a plain transfer, no receiver callback. | |
+| AUC-26 | A dispute pause is once per live auction and lasts at most 3 days (a compiled value of the auction). | `test_Pause_OncePerSale`, `test_Pause_OnlyALiveSale`, `test_Pause_EndsByItselfAfterMaxPause` |
+| AUC-27 | A resumed auction runs at least the longer of the governed duration and the governed anti-snipe window, both as they stand when it resumes. | `test_Resume_GivesBackAtLeastTheDuration`, `testFuzz_Resume_RunsAtLeastTheLongerOfTheDurationAndTheWindow`, `test_Pause_EndsByItselfAfterMaxPause` |
+| AUC-28 | An Independent Stream token sells only while the Independent Stream module reports it active; an unsold Independent Stream work stays in the auction and can be started again there for the same item. | `test_Independent_AnUnlistedTokenCannotStart`, `test_Delisted_RefusesBidsAndEndsUnsoldWithARefund`, `test_Independent_AnUnsoldWorkStaysInCustodyWithNoOutcome`, `test_Restart_OffersAnUnsoldWorkAgainAndSellsIt` |
+| AUC-29 | The auction refuses every safe transfer into it except its own mint. | `test_OnERC721Received_RefusesEverySafeTransferIn`, `test_OnERC721Received_AcceptsOnlyItsOwnMintDuringAStart` |
+| AUC-30 | Governed auction parameters stay within bounds and are compare-and-set. | `test_SetConfig_WithinBoundsAndCompareAndSet`, `test_SetStreamPolicy_CompareAndSetAndChecked` |
+| AUC-31 | No reentrant call reaches a value-moving function. | `test_HostilePolicy_CannotReenter`, `test_HostileToken_CannotReenterFromItsMint`, `test_HostileRecipient_ReenteringOnDeliveryChangesNothing`, `test_ExpireCredit_AReentrantClaimIsBlocked` |
+| AUC-32 | Gas: every steady-state start row, with or without a bid, costs at most 370,000 Prague gas and writes at most 8 new slots. A start with a bid of a VRF work also writes the seed: at most 395,000 Prague gas and 9 new slots. Three other rows have regression ceilings of their own: the deployment's first start ever (357,000 Prague gas, 9 new slots), the auction's first bid (353,000, 8 new slots) and `SaleStarter.start`, which also deploys the vaults and opens the record (579,000, 13 new slots). These are test budgets, asserted in the gas report; no contract enforces them. | `test_Gas_Start_SteadyState`, `test_Gas_StartWithBid_TwoPartyWork`, `test_Gas_StartWithBid_VrfWork`, `test_Gas_StartWithBid_ArtistsFirstWork_TwoParty_Vrf_MaxParams`, `test_Gas_Start_FirstWorkInANewCollection`, `test_Gas_Start_FirstWorkEver`, `test_Gas_StartWithBid_FirstBid`, `test_Gas_SaleStarter_Start` |
+| AUC-33 | An unsold 6529 Stream work is never a pending delivery: the auction moves it with a plain transfer, no receiver callback. | `test_Settle_AnUnsoldStreamWorkIsMovedWithoutAskingTheMuseum` |
 | AUC-34 | Retired: the auction's views are its own. | |
 | AUC-35 | The network may `rescue` a token only while a removed minter holds it with no outcome, once `rescueDelay` has passed since the removal; re-adding the minter clears the removal. | `test_Rescue_AfterFourteenDaysOnlyTheNetworkOnlyUnsold`, `testFuzz_Rescue_RefusedBeforeThePeriodInForce` |
-| AUC-36 | A sale whose token was rescued closes with refunds only. | |
+| AUC-36 | A sale whose token was rescued closes with refunds only. | `test_Settle_ARescuedWorkClosesWithRefunds`, `test_Museum_RescueOfAWorkARemovedMinterHoldsAndTheSaleCloses` |
 | AUC-37 | An outcome is NONE until recorded, then SOLD, UNSOLD or RESCUED for good. | `test_Sold_TheMinterCanDoNothingMore` |
-| AUC-38 | The mint policy decides new mints only; Stream never calls it, and no answer of it changes an existing token. | |
+| AUC-38 | The mint policy decides new mints only; Stream never calls it, and no answer of it changes an existing token. | `test_MintPolicy_DecidesNewMintsOnlyAndIsNeverCalledForAnExistingToken`, `test_ModuleSwap_TheMintPolicyComesOnlyFromTheNewRegistry` |
 | AUC-39 | Retired: Stream holds no dependencies. | |
-| AUC-40 | `supportsInterface` answers ERC-165, ERC-721, ERC-2981, ERC-4906, `IStream` and `IModules`. | |
+| AUC-40 | `supportsInterface` answers ERC-165, ERC-721, ERC-721 Metadata, ERC-2981, ERC-4906, `IStream`, `IModules` and `IModuleSlots`, and nothing else. | `StreamTest.test_SupportsInterface`, `testFuzz_SupportsInterface_NothingElse` |
 | AUC-41 | `rescueDelay` is the network's setting (14 days at launch), changed at once, zero allowed, with old and new in `RescueDelaySet`. | `test_RescueDelay_FourteenDaysAtDeploymentOnlyTheNetworkSetsIt`, `testFuzz_Rescue_RefusedBeforeThePeriodInForce` |
-| AUC-42 | `tokenURI` of a finalized work uses the renderer pinned in `StreamWorkFacts6529`; otherwise the RENDERER module. A missing, failing or changed renderer reverts; there is no fallback. | |
-| AUC-43 | `WorkMinted` carries the whole `MintFacts`; Stream's state is rebuilt from its logs alone. | |
+| AUC-42 | `tokenURI` of a finalized work uses the renderer pinned in `StreamWorkFacts6529`; otherwise the RENDERER module. A missing, failing or changed renderer reverts; there is no fallback. | `test_RendererOf_PinnedThenModuleThenNone`, `test_RendererOf_AFailingReadFailsClosed`, `test_RendererOf_ShortGasNeverServesAnotherRenderer`, `test_Hostile_AsRenderer` |
+| AUC-43 | `WorkMinted` carries the whole `MintFacts`; Stream's state is rebuilt from its logs alone. | `test_Mint_EmitsTransferAndWorkMintedWithEveryFact`, `test_Stream_EveryEventReplaysToTheSameState`, `test_Stream_ReplayFailsOnADroppedLog` |
 | AUC-44 | One live token per content hash: a content mints again only after the token it names is burned, and then only as the mint policy allows. | `test_Mint_OnlyAMinterAndOneLiveTokenPerContent` |
-| AUC-45 | `settleOrRefund` is for Independent Stream sales only, from 2 days after the end; a failed attempt closes the sale with the bid credited back. | |
-| AUC-46 | The refusal delay is 2 days, compiled in the auction. | |
-| AUC-47 | The refusal gas is governed, raise-only, at most doubled per step, between bounds in code. | |
-| AUC-48 | An Independent Stream sale's fee share is the Independent Stream module's, stored in the sale at start; the fee goes to the recipient the economics resolver names. | |
+| AUC-45 | `settleOrRefund` is for Independent Stream sales only, from 2 days after the end; a failed attempt closes the sale with the bid credited back. | `test_SettleOrRefund_OnlyIndependentAndOnlyAfterTheDelay`, `test_SettleOrRefund_ClosesWithARefundWhenTheTokenRefuses`, `test_SettleOrRefund_SettlesWhenTheTokenCooperates` |
+| AUC-46 | The refusal delay is 2 days, compiled in the auction. | `test_SettleOrRefund_OpensAtTheEndPlusTheCompiledRefusalDelay`, `test_SettleOrRefund_OnlyIndependentAndOnlyAfterTheDelay` |
+| AUC-47 | The refusal gas is governed, raise-only, at most doubled per step, between bounds in code. | `test_SetConfig_RefusalGasIsRaiseOnlyAtMostDoubledWithinItsBounds`, `test_SetConfig_WithinBoundsAndCompareAndSet` |
+| AUC-48 | An Independent Stream sale's fee share is the Independent Stream module's, stored in the sale at start; the fee goes to the recipient the economics resolver names. | `test_Independent_TheFeeShareIsTheModulesKeptFromTheStart`, `test_Independent_SoldPaysTheIndependentFeeRecipient`, `test_Restart_TakesTheLoweredShare` |
 | AUC-49 | Retired: there is no view extension. | |
-| AUC-50 | The TERMS module may lower a work's fee share, never raise it, and deploys the new split wallet before naming it. | |
-| AUC-51 | Only money that has itself waited the unclaimed period in force goes from a credit to the network; a later credit starts no earlier clock and no third party can shorten or postpone one. | |
+| AUC-50 | The TERMS module may lower a work's fee share, never raise it, and deploys the new split wallet before naming it. | `test_LowerFeeShare_DeploysTheNewVaultFirstAndKeepsTheRate`, `testFuzz_LowerFeeShare_LowerOnlyNeverAnUndeployedReceiver`, `testFuzz_LowerFeeShare_TheFeeVaultsShareNeverRises` |
+| AUC-51 | Only money that has itself waited the unclaimed period in force goes from a credit to the network; a later credit starts no earlier clock and no third party can shorten or postpone one. | `test_Expire_TakesOnlyTheMoneyThatWaitedThePeriod`, `test_AThirdPartyCanNeitherShortenNorPostponeAWait`, `testFuzz_NeverTakesMoneyYoungerThanThePeriod` |
 | AUC-52 | Retired: ETH only; no permit payments. | |
 | AUC-53 | Removing a minter is immediate: it mints nothing new but still records outcomes and burns for tokens it holds. | `test_RemoveMinter_AtOnceKeepsItsRecord` |
 | AUC-54 | `moduleDelay` is the network's setting (7 days at launch), changed at once, zero allowed; a pending addition keeps its time. | `test_SetDelay_OnlyTheNetworkAtOnceWithOldAndNew`, `test_SetDelay_PendingAdditionsKeepTheirTime`, `test_SetDelay_ZeroIsAllowed` |

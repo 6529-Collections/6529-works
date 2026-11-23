@@ -52,23 +52,23 @@ is the wait that applies to a change of who may mint Independent Stream tokens.
 
 | ID | Rule | Tests |
 | --- | --- | --- |
-| IND-1 | A copy is genuine only if the approved deployer recorded it (IND-64); its code is the approved code. | |
+| IND-1 | A copy is genuine only if the approved deployer recorded it (IND-64); its code is the approved code. | `test_Deploy_ACopyRunsTheApprovedCode`, `test_Register_RefusesATokenTheDeployerDidNotRecord`, `test_Register_RefusesAnUnapprovedDeployer` |
 | IND-2 | Retired: the token holds no fee terms; the fee share is the Independent Stream module's (IND-73). | |
-| IND-3 | Every artist power on the token asks the accounts module, through `StreamDirectory6529`, whether the caller is a wallet of the artist's account now; none while frozen. | |
-| IND-4 | The network reaches an Independent Stream token only through `StreamDirectory6529` (its authority and modules) and the Independent Stream module. | |
+| IND-3 | Every artist power on the token asks the accounts module, through `StreamDirectory6529`, whether the caller is a wallet of the artist's account now; none while frozen. | `test_ArtistPowers_AnyWalletOfTheAccountAndNoneWhileFrozen`, `test_ArtistPowers_AWalletNoLongerOfTheAccountIsRefusedAtOnce`, `test_ProposeModule_OnlyAWalletOfTheArtist`, `test_Admin_RefusedForOthersAndForAnEmptyAccountsSlot` |
+| IND-4 | The network reaches an Independent Stream token only through `StreamDirectory6529` (its authority and modules) and the Independent Stream module. | `test_Network_IsTheDirectorysAuthorityForTheSameSelectorAtOnce`, `test_Network_ACallRelayedThroughTheManagerIsRefused`, `test_ModuleOf_SharedSlotsAreTheDirectorysAndFollowIt`, `test_Flow_ReplacingTheIndependentStreamModuleChangesEveryTokensGateAtOnce` |
 | IND-5 | Retired: the token has no minters of its own (IND-7). | |
-| IND-6 | A token is listed through the Independent Stream module with a wallet of the artist's account consenting to its facts. | |
-| IND-7 | A mint needs the Independent Stream module's `canMint` for the caller; a delisted contract, or one of a suspended or revoked template, mints nothing. | |
-| IND-8 | There is no exit: nothing leaves Independent Stream. | |
+| IND-6 | A token is listed through the Independent Stream module with a wallet of the artist's account consenting to its facts. | `test_Register_StreamOfANewArtistCreatesItsIdentity`, `test_Register_AConsolidatedWalletOfANewArtistMayConsent`, `test_Register_RefusesAConsentByANonWallet`, `test_IndependentPair_ListedWithTheArtistsConsent` |
+| IND-7 | A mint needs the Independent Stream module's `canMint` for the caller; a delisted contract, or one of a suspended or revoked template, mints nothing. | `test_Start_ADelistedSuspendedOrRevokedContractMintsNothing`, `test_Mint_RefusedForAContractTheGateDoesNotAdmit`, `test_Authorize_CallerMustBeAnActiveSaleContract` |
+| IND-8 | There is no exit: nothing leaves Independent Stream. | `test_NoExit_ADelistedContractStaysListed`, `test_SetStatus_SkipsUnlistedAndRefusesNone` |
 | IND-9 | (Removed in the second pass: there are no minters of the artist's own.) | |
-| IND-10 | A work is a `PackageItem` with its media list; `itemHash` is `WorksHashing.itemHash`. | |
-| IND-11 | The artist approves one mint per approval in the Independent Stream module and sets the work's royalty rate (at most 100,000); a revoke withdraws it. | |
+| IND-10 | A work is a `PackageItem` with its media list; `itemHash` is `WorksHashing.itemHash`. | `test_Flow_MintRecordFinalizeAndRender`, `test_Authorize_MediaHashMustCommit`, `test_Authorize_MediaCountBounds` |
+| IND-11 | The artist approves one mint per approval in the Independent Stream module and sets the work's royalty rate (at most 100,000); a revoke withdraws it. | `test_ApproveItem_ByAnyWalletLoggedAndBounded`, `test_Authorize_AnItemMintsOnce`, `test_RevokeItem_BeforeMintStopsIt`, `test_Authorize_NeedsAnApproval` |
 | IND-12 | Retired: the mint request is the Independent Stream module's `authorize` input. | |
 | IND-13 | Retired: the record opens in `StreamWorkFacts6529` (WS-2). | |
-| IND-14 | The Independent Stream module deploys the seller and royalty vaults before the mint. | |
+| IND-14 | The Independent Stream module deploys the seller and royalty vaults before the mint. | `test_Authorize_DeploysTheVaultsAndAnswersExactly`, `test_IndependentPair_ACollaboratedWorkIsMintedAndSold` |
 | IND-15 | Retired: the sale contract stores each sale's terms. | |
 | IND-16 | Retired: the same token code as Stream (AUC-8). | |
-| IND-17 | An unsold Independent Stream work stays in the sale contract's custody and can be started again there for the same item; the artist cannot take it out without a sale. | |
+| IND-17 | An unsold Independent Stream work stays in the sale contract's custody and can be started again there for the same item; the artist cannot take it out without a sale. | `test_Unsold_TheArtistCannotTakeTheWorkOutOfTheSaleContract`, `test_Independent_AnUnsoldWorkStaysInCustodyWithNoOutcome`, `test_Restart_OffersAnUnsoldWorkAgainAndSellsIt`, `test_IndependentPair_AnUnsoldWorkStaysInCustodyAndRestarts` |
 | IND-18 | Retired: a restart is a new start in the sale contract (IND-17). | |
 | IND-19 | Retired: a refused settlement leaves the work in the sale contract (IND-17). | |
 | IND-20 | Retired: the token holds no custody. | |
@@ -81,53 +81,53 @@ is the wait that applies to a change of who may mint Independent Stream tokens.
 | IND-27 | Retired: locators live in the delivery module (WS-18 to WS-22). | |
 | IND-28 | Retired: on-chain completeness is `StreamWorkFacts6529` (WS-17). | |
 | IND-29 | Retired: an editions contract names its partner at construction. | |
-| IND-30 | A missing or failing Independent Stream module stops minting only; ownership, transfers and existing works never call it. | |
+| IND-30 | A missing or failing Independent Stream module stops minting only; ownership, transfers and existing works never call it. | `test_Mint_AnEmptyIndependentStreamSlotStopsMintingOnly`, `test_RevertingGate_StopsMintingOnly`, `test_GasBurningGate_RevertsTheMintAndNothingElse` |
 | IND-31 | Retired: the edition sale contract creates the edition (ED-1). | |
 | IND-32 | Retired: the same token code as Editions (ED-5). | |
 | IND-33 | Retired: the same token code as Editions (ED-25). | |
 | IND-34 | Retired: the same token code as Editions (ED-25, ED-26). | |
 | IND-35 | Retired: the edition sale contract pays as EA-12 and IND-54 say. | |
 | IND-36 | Retired: the same token code as Editions. | |
-| IND-41 | The Independent Stream module holds the per-token directory: listing, status, fee share and the Independent Stream sale contracts. | |
-| IND-42 | `isActive`: listed ACTIVE, template approved or suspended. `canMint`: a listed sale contract, the token listed ACTIVE, template approved, and for editions the partner listed ACTIVE. | |
+| IND-41 | The Independent Stream module holds the per-token directory: listing, status, fee share and the Independent Stream sale contracts. | `test_Entry_FieldsOfAListedPair`, `test_SetAdapter_AddRemoveReAdd`, `test_Gate_TokensAskTheRegistry`, `test_LowerFeeShare_LowersAndLogs` |
+| IND-42 | `isActive`: listed ACTIVE, its account not delisted, its template approved or suspended. `canMint`: a listed sale contract of the token's form that is not removed; the token listed ACTIVE, its account not delisted and its template approved; and for editions the same of the partner. | `testFuzz_GateMatrix`, `test_Editions_MintOnlyWhileTheirStreamIsMintable`, `test_Form_ASaleContractMintsOnlyItsForm`, `test_SetAccountDelisted_DelistsEveryContractOfTheAccount` |
 | IND-43 | Retired: listing is IND-6. | |
-| IND-44 | A template code hash is approved once, bound to its deployer, only by the network. | |
-| IND-45 | Suspension stops new joins, works and sales; running sales finish. | |
-| IND-46 | Revocation stops serving the contracts; running sales end unsold with refunds; the network can reverse it. | |
+| IND-44 | A template version is approved once per deployer (the version's ownerless deployer, which alone creates its copies), with its version number and its form, only by the network; the deployer must have code. | `test_ApproveTemplate_RecordsAndLogs`, `test_ApproveTemplate_OncePerDeployer`, `test_Governance_EveryWriterIsRestricted` |
+| IND-45 | Suspension stops new joins, new works and new edition sales; running sales finish, and an unsold work already in the auction's custody may still be offered again. | `test_SuspendedVersion_NoNewWorkOrContractAndTheRunningSaleSells`, `test_Register_RefusesASuspendedOrRevokedDeployer`, `test_SuspendedVersion_ItsRunningSaleStillSells`, `testFuzz_GateMatrix`, `test_Restart_AnUnsoldWorkOfASuspendedVersionIsOfferedAgain` |
+| IND-46 | Revocation stops serving the contracts; running sales end unsold with refunds; the network can reverse it. | `test_RevokedVersion_ARunningSaleEndsUnsoldWithARefundUntilReinstated`, `test_Templates_TransitionsAndTheirRefusals`, `testFuzz_GateMatrix` |
 | IND-47 | (Removed by the review fixes of the second pass: no revocation propagation call.) | |
-| IND-48 | The network delists and relists by contract or by account, in bounded batches. | |
-| IND-49 | The network lists Independent Stream sale contracts; removal stops new works; the module answers which were minters and when they were removed. | |
-| IND-50 | A delisting or revocation never touches tokens, ownership, records, vaults or credits. | |
-| IND-51 | Independent Stream never changes 6529 Stream or a curated artist's identity. | |
-| IND-52 | On every sold Independent Stream sale the network receives exactly its share at the stored share, and nothing on any other outcome. | |
-| IND-53 | The Independent Stream edition auction sells any contract the Independent Stream module serves; its master is the contract's partner. | |
-| IND-54 | Its fee is the Independent Stream module's share, stored at open, never the token's answer. | |
-| IND-55 | A sale of a contract the module stops serving is void with full refunds; bidding closes at the delisting. | |
+| IND-48 | The network delists and relists by contract or by account, in bounded batches. | `test_SetStatus_DelistsAndRelistsWithEvents`, `test_SetStatus_BatchBound`, `test_SetAccountDelisted_DelistsEveryContractOfTheAccount` |
+| IND-49 | The network lists Independent Stream sale contracts; removal stops new works; the module answers which were minters and when they were removed. | `test_SetAdapter_AddRemoveReAdd`, `test_SetAdapter_Refusals`, `test_Authorize_CallerMustBeAnActiveSaleContract` |
+| IND-50 | A delisting or revocation never touches tokens, ownership, records, vaults or credits. | `test_Delisting_TouchesNoTokenRecordVaultOrCredit`, `test_Flow_DelistingStopsMintingAndTouchesNothingHeld` |
+| IND-51 | Independent Stream never changes 6529 Stream or a curated artist's identity. | `test_SetAccountDelisted_LeavesIdentityPayoutAndStreamAlone` |
+| IND-52 | On every sold Independent Stream sale the network receives exactly its share at the stored share, and nothing on any other outcome. | `testFuzz_Settle_TheNetworkReceivesExactlyTheShareStoredInTheSale`, `test_Settle_TheNetworkReceivesNothingWhenTheSaleDoesNotSell`, `test_IndependentPair_ACollaboratedWorkIsMintedAndSold` |
+| IND-53 | The Independent Stream edition auction sells any contract the Independent Stream module serves; its master is the contract's partner. | `test_IndependentEditionSale_BidsClearCopiesAreClaimedAndEveryWeiIsAccounted`, `test_Open_CreatesTheEditionWithTheIndependentStreamModulesShare`, `test_Open_RefusedUnlessTheModuleLetsThisAuctionMint` |
+| IND-54 | Its fee is the Independent Stream module's share, stored at open, never the token's answer. | `test_Open_TheStoredShareIsNotMovedByLaterAnswers`, `test_Open_CreatesTheEditionWithTheIndependentStreamModulesShare` |
+| IND-55 | A sale of a contract the module stops serving is void with full refunds; bidding closes at the delisting. | `test_Delisted_BidsRefusedAndTheSaleVoidsWithAZeroSeal`, `test_Delisted_ARaiseIsRefused`, `test_Delisted_DuringTheScanVoids`, `test_DelistedMaster_VoidsTheEditionSale` |
 | IND-56 | `abandon` of an Independent Stream edition sale needs its 1/1 closed, then 21 days after the edition close; it seals at zero. | |
-| IND-57 | Every other rule of the edition auction is the shared base's (EA-1 onward). | |
-| IND-58 | A delisted sale's views show its 1/1 as it is, while bids and settlement treat it as cancelled. | |
+| IND-57 | Every other rule of the edition auction is the shared base's (EA-1 onward). | `test_Sale_SettlesPaysAndTheWinnersClaim`, `test_Adopted_ASaleThatRunsOnItsOwnSettlesWhileListed`, `test_IndependentEditionSale_BidsClearCopiesAreClaimedAndEveryWeiIsAccounted` |
+| IND-58 | Once the module stops serving a sale's contract (or its master's), the sale's own views report its 1/1 as cancelled and bidding as closed, as bids and settlement treat it; the 1/1's own auction still answers for the 1/1 itself. | `test_Delisted_TheSalesViewsReportTheOneOfOneCancelled`, `test_Delisted_BidsRefusedAndTheSaleVoidsWithAZeroSeal` |
 | IND-59 | (Removed in the second pass: there is no exit, so no left contract.) | |
-| IND-60 | An item's first party is the contract's artist; every artist-resolved payee has a payout address now. | |
+| IND-60 | An item's first party is the contract's artist; every artist-resolved payee has a payout address now. | `test_Authorize_FirstPartyIsTheArtist`, `test_Authorize_AnArtistResolvedPayeeNeedsAPayoutAddressNow`, `test_Authorize_ArtistResolvedPayeeMustBeAPartyWithAPayout` |
 | IND-61 | Retired: no raw storage reads; the renderer reads plain views. | |
 | IND-62 | (Removed in the second pass: the abandonment wait is a fixed 21 days.) | |
-| IND-63 | Genesis installs the Independent Stream module in `StreamDirectory6529`, lists both shared sale contracts in it and approves the two token versions. | |
-| IND-64 | A copy joins only if the approved, ownerless deployer recorded it. | |
-| IND-65 | A listing needs a consent to its facts signed by a wallet of the artist's account. | |
+| IND-63 | Genesis installs the Independent Stream module in `StreamDirectory6529`, lists both shared sale contracts in it and approves the two token versions. | `test_GenesisWiring_EveryWiredCallTookEffectAtGenesis`, `test_GenesisModulesAndMintersAreConstructorArguments` |
+| IND-64 | A copy joins only if the approved, ownerless deployer recorded it. | `test_Register_RefusesATokenTheDeployerDidNotRecord`, `test_Register_RefusesAnUnapprovedDeployer`, `test_Register_RefusesTheWrongEditionsDeployer` |
+| IND-65 | A listing needs a consent to its facts signed by a wallet of the artist's account. | `test_Register_RefusesAConsentByANonWallet`, `test_Register_RefusesAConsentToAnotherShare`, `test_Register_RefusesAConsentToAnotherPartner`, `test_ListingSubject_CommitsToEveryField` |
 | IND-66 | (Removed in the second pass: no LEFT or LEFT_DELISTED status.) | |
-| IND-67 | The pair as one: the 1/1 contract joins only after its editions are listed; an editions contract mints only while its partner is listed ACTIVE. | |
+| IND-67 | The pair as one: the 1/1 contract is listed first; an editions contract joins only while the 1/1 contract it names is listed ACTIVE, is the same artist's and has no editions contract yet; and an editions contract mints only while its partner may mint too. | `test_Register_RefusesEditionsBeforeTheirStream`, `test_Register_RefusesEditionsOfADelistedStream`, `test_Register_RefusesEditionsOfAnotherArtistsStream`, `test_Register_RefusesASecondEditionsForAStream`, `test_Register_EditionsRecordThePartnerBothWays`, `test_Editions_MintOnlyWhileTheirStreamIsMintable` |
 | IND-68 | Retired: content checks are `StreamWorkFacts6529`' (WS-2). | |
 | IND-69 | Retired: `StreamDirectory6529` names the one current Independent Stream module. | |
-| IND-70 | Each genesis setter reaches only a target declaring its interface. | |
-| IND-71 | Each collaborator after the first consents to `Core.independentConsent(itemHash, royaltyRate)`, through the accounts module's `requireConsent`. | |
-| IND-72 | A VRF item mints only once its seed is delivered; the seed is stored in the token at mint. | |
-| IND-73 | The share in force is the Independent Stream module's `feeShareOf(token)`, recorded at listing and only ever lowered. | |
-| IND-74 | The network may reinstate a revoked template. | |
-| IND-75 | An account delisting reports every contract of the account DELISTED, with no batch. | |
-| IND-76 | A hostile Independent Stream module can mint junk into an Independent Stream token but cannot move, burn or re-record a sold token. | |
-| IND-77 | An Independent Stream token's RENDERER slot is set by the artist with the same announce-and-wait as other module slots. | |
+| IND-70 | Each genesis selector of the governance wiring reaches only a target that declares the interface it is admitted for. Two selectors that only one contract declares (the asset allowlist's `setOpeningBid` and the statement log's `appendGovernanceManifest`; neither contract implements ERC-165) pass on any configured target. | `test_IndependentStreamRegistrySelectorsNeedTheirInterface`, `test_GenesisWiring_AGenesisSelectorReachesOnlyATargetDeclaringItsInterface`, `test_GenesisSelectorsReachOnlyTheirTargets` |
+| IND-71 | Each party after the first consents to `Core.independentConsent(itemHash, royaltyRate)` for the token: a wallet of its account signs the accounts module's `consentDigest(token, ...)`, checked with `requireSigned`. | `test_Authorize_ACollaboratorConsentsToTheItemAndTheRate`, `test_Authorize_AConsentToAnotherRateFails`, `test_Authorize_AConsentForAnotherTokenOrItemFails`, `test_Authorize_OneConsentPerCollaborator` |
+| IND-72 | A VRF item mints only once its seed is delivered; the seed is stored in the token at mint. | `test_Authorize_VrfNeedsADeliveredSeed`, `test_RequestIndependentSeed_AnArtistWalletPaysTheQuoteAndTheWrapperDelivers` |
+| IND-73 | The share in force is the Independent Stream module's `feeShareOf(token)`, recorded at listing and only ever lowered. | `test_Register_ShareIsTheEconomicsShareAtListing`, `test_FeeShare_LaterEconomicsChangeLeavesListingAlone`, `testFuzz_LowerFeeShare_NeverRaises`, `test_Restart_TakesTheLoweredShare` |
+| IND-74 | The network may reinstate a revoked template. | `test_Templates_TransitionsAndTheirRefusals`, `test_RevokedVersion_ARunningSaleEndsUnsoldWithARefundUntilReinstated`, `test_Register_RefusesASuspendedOrRevokedDeployer` |
+| IND-75 | An account delisting reports every contract of the account DELISTED, with no batch. | `test_SetAccountDelisted_DelistsEveryContractOfTheAccount`, `test_Flow_AccountDelistingStopsEveryContractOfTheAccount` |
+| IND-76 | A hostile Independent Stream module can mint junk into an Independent Stream token but cannot move, burn or re-record a sold token. | `test_LyingGate_MintsJunkButReachesNoHeldToken`, `test_LyingGate_EditionsMintJunkButNeverPastASealOrAnothersCopies`, `test_Rescue_ALyingGateCannotMakeACollectorRescuable` |
+| IND-77 | An Independent Stream token's RENDERER slot is set by the artist with the same announce-and-wait as other module slots. | `test_ProposeModule_TheArtistAnnouncesARendererThatAnyoneInstallsAfterTheWait`, `testFuzz_ModuleDelay_AnActivationBeforeThePeriodIsRefused`, `test_ProposeModule_OnlyAWalletOfTheArtist` |
 | ID-12 | A directory entry is written once per token by the Independent Stream module, with a wallet of the account's consent to its facts, never for a delisted account; status changes need no signature. | `test_List_*` |
-| ID-13 | An account delisting covers every contract of the account and blocks new listings; identity and payout are untouched. | |
-| ID-14 | A listing's recorded fee share only lowers. | |
+| ID-13 | An account delisting covers every contract of the account and blocks new listings; identity and payout are untouched. | `test_SetAccountDelisted_LeavesIdentityPayoutAndStreamAlone`, `test_SetAccountDelisted_DelistsEveryContractOfTheAccount`, `test_Register_RefusesADelistedAccount` |
+| ID-14 | A listing's recorded fee share only lowers. | `testFuzz_LowerFeeShare_NeverRaises`, `test_IndependentPair_TheShareIsOnlyLoweredForNewWorks` |
 
 ## The nine template guarantees, as met
 
