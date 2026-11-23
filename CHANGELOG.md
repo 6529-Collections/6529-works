@@ -13,8 +13,9 @@
   invariant catalogue that named no test since the plain-core restructuring name their tests
   again: existing suites where they already pin the rule, and 62 new tests where they did not
   (the English auction, disputes, the records and delivery modules, the edition auction, the
-  Independent Stream module and its sales, the entropy module's setters). Nine rules stay in
-  `tools/rules-uncovered.txt` because their row and the code differ; each entry says how. No
+  Independent Stream module and its sales, the entropy module's setters). Nine rules stayed in
+  `tools/rules-uncovered.txt` because their row and the code differed (eight are settled by the
+  entry above). No
   contract changed.
 - **Sepolia round r6.** The plain core is deployed on Sepolia (testnet only) from `main` at
   `2aac8579`, read back with `VerifyCore` and verified on Sourcify
