@@ -158,7 +158,11 @@ constant moved one up and one down), plans one shard per `src/` file, splits the
 shard does not finish in a CI job, and compares each file's score with its floor in
 [`tools/mutation-floors.json`](../../tools/mutation-floors.json). slither-mutate mutates only the
 contract named like its file, so the tool runs it once for every contract a file declares (a
-base contract beside the concrete one would otherwise never be mutated). The scores measured on
+base contract beside the concrete one would otherwise never be mutated). A group too slow for
+one job runs in parts that together make exactly the group's mutants: the statements group is
+cut by source line, because slither-mutate makes no comment mutant on a line whose revert
+mutant survived, and both have to run in the same part. A run of slither-mutate that stops
+before it has mutated its target fails its shard. The scores measured on
 the current contracts, with their survivors triaged, are in
 [Mutation scores](mutation-scores.md); the figures measured on the contracts before ADR 0010 are
 kept as a historical record in [mutation-baseline.md](mutation-baseline.md).

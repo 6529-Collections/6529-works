@@ -26,10 +26,14 @@ come from this page. How a campaign works and how to run one is in the
 - **Mutants.** The tool's own mutants per file: every operator for most files, the reduced
   set (statements, arithmetic, logical and unary operators, two relational replacements per
   comparison, `if` conditions) for the files in `SPLIT_FILES`, and the constant rule. To fit
-  the night, each file's groups ran as parts of about 45 mutants in separate checkouts. A
-  part does not see the lines whose revert or comment mutant survived in another part, which
-  slither-mutate would skip, so a few more mutants ran here than one whole-file run makes:
-  the rates below are, if anything, slightly low.
+  the night, each file's groups ran as parts of about 45 mutants in separate checkouts, a
+  part taking every n-th mutant of each operator. slither-mutate skips the lines whose revert
+  or comment mutant survived earlier in the same run, and a part knows only its own
+  survivors. So a few more mutants ran here than one whole-file run makes, which lowers a
+  rate if anything. And where a revert mutant survived in a statements part, that part's
+  list of comment mutants moved up by one from there on, so some comment mutants ran in two
+  parts and others in none. That happened in seven files; two were measured again
+  ([The statements parts](#the-statements-parts)).
 - **Every contract of a file.** slither-mutate mutates one contract per file, the one named
   like the file. Three base contracts declared beside their concrete contract had therefore
   never been mutated: `ModuleSlots` (in `Modules.sol`), `UniformEditionAuctionBase` and
@@ -78,7 +82,7 @@ final score minus two points, rounded down.
 | `src/records/WorkRules.sol` | 373 | 353 | 20 | 0 | 94.6% | 12 | 97.9% | 95 (was 89) |
 | `src/sales/EnglishAuction.sol` | 683 | 602 | 81 | 0 | 88.1% | 60 | 96.9% | 94 (was 90) |
 | `src/sales/UniformClearing.sol` | 278 | 276 | 2 | 0 | 99.3% | 0 | 99.3% | 97 (was 93) |
-| `src/sales/UniformEditionAuction.sol` | 1113 | 1019 | 94 | 0 | 91.6% | 27 | 94.0% | 91 |
+| `src/sales/UniformEditionAuction.sol` | 1113 | 1019 | 94 | 0 | 91.6% | 27 | 94.0% (measured again) | 91 |
 | `src/terms/StreamTerms.sol` | 170 | 160 | 10 | 0 | 94.1% | 9 | 99.4% | 97 (was 90) |
 | **Total** | **4731** | **4335** | **396** | **0** | **91.6%** | **172** | **95.3%** | |
 
@@ -130,12 +134,54 @@ final score minus two points, rounded down.
 | `src/libraries/SignatureVerifier.sol` | 88 | 75 | 13 | 0 | 85.2% | 0 | 85.2% | 83 (was 80) |
 | `src/libraries/Utf8.sol` | 118 | 102 | 16 | 0 | 86.4% | 0 | 86.4% | 84 |
 | `src/sales/SaleStarter.sol` | 20 | 19 | 1 | 0 | 95.0% | 0 | 95.0% | 93 (was 98) |
-| `src/sales/UniformEditionAuctionLens.sol` | 1134 | 994 | 140 | 0 | 87.7% | 0 | 87.7% | 85 (was 87) |
+| `src/sales/UniformEditionAuctionLens.sol` | 1134 | 994 | 140 | 0 | 87.7% | 0 | 88.0% (measured again) | 85 (was 87) |
 | `src/stream/SpdxId.sol` | 114 | 106 | 8 | 0 | 93.0% | 0 | 93.0% | 90 |
 | `src/stream/WorkDelivery.sol` | 567 | 496 | 71 | 0 | 87.5% | 0 | 87.5% | 85 (was 88) |
 | **Total** | **7299** | **6520** | **779** | **0** | **89.3%** | **0** | **89.3%** | |
 
 A file with no mutants (constants of other types, or declarations only) needs no floor.
+
+### The statements parts
+
+The statements group (revert a body, comment out a statement) was cut into parts by position
+in each operator's list. slither-mutate makes no comment mutant on a line whose revert mutant
+survived, so a surviving revert mutant shortened the comment list of its own part only, and
+the parts no longer fitted together: some comment mutants ran twice and others not at all.
+The table counts them from the campaign's own results, before compiling (slither-mutate
+drops the mutants that do not compile, so fewer than these were tested). In every other
+file whose statements ran in parts no surviving revert mutant moved a list, and the parts
+are exactly the whole group.
+
+| Contract | Comment mutants of a whole run | Ran twice | Not run | Ran on a line a whole run skips |
+| --- | ---: | ---: | ---: | ---: |
+| `src/curation/PackageRegistry.sol` | 288 | 36 | 36 | 1 |
+| `src/independent/IndependentEditionAuctionLens.sol` | 8 | 2 | 3 | 11 |
+| `src/independent/IndependentStream6529.sol` | 55 | 0 | 0 | 2 |
+| `src/libraries/BoundedCall.sol` | 127 | 17 | 18 | 2 |
+| `src/sales/EnglishAuction.sol` | 368 | 22 | 21 | 2 |
+| `src/sales/UniformEditionAuction.sol` | 572 | 30 | 30 | 2 |
+| `src/sales/UniformEditionAuctionLens.sol` | 618 | 171 | 167 | 2 |
+
+`tools/mutation.py` now cuts a statements group by source line: a line's revert and comment
+mutants run in the same part, so the parts together are the mutants of the whole group
+whatever survives. The two files the tool itself runs in parts were measured again that way,
+every group, at commit a39245e3 (the contracts as merged, with the tests added here):
+
+| Contract | Mutants | Killed | Survived | Timed out | Score | Floor |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `src/sales/UniformEditionAuction.sol` | 1112 | 1045 | 67 | 0 | 94.0% | 91 |
+| `src/sales/UniformEditionAuctionLens.sol` | 1113 | 979 | 134 | 0 | 88.0% | 85 |
+
+These figures are the two files' "final" and floor in the tables above; the other columns of
+their rows stay as the campaign measured them. Two survivors of `UniformEditionAuctionLens`
+were not run against the whole suite before their shard's time budget ended; they count as
+survived, so that score is a lower bound.
+
+The other five files in this section's first table were not measured again: their rows are the
+campaign's, with comment mutants that are a slightly different sample of the same code, and
+a mutant their parts never ran may yet survive (one did in `UniformEditionAuction`, below).
+The tool runs the statements group of each of them as one whole run, so the weekly run
+measures them without this effect.
 
 ## The tests added
 
@@ -1006,6 +1052,18 @@ One row per surviving mutant of the permanent contracts and the money and mint m
 | 1375 | CR | equivalent | softWindow is read only when the 1/1 is not read fresh; settlement always reads it fresh |
 | 1387 | ROR | equivalent | 0 is the lowest status, so > NONE and != NONE (or <= NONE and == NONE) agree |
 | 1390 | ROR | equivalent | callers want OPEN (NONE refused on the line before) or SETTLING (OPEN and SETTLED handled before the call), so > and != agree |
+
+Measured again with the corrected parts ([The statements parts](#the-statements-parts)): 67
+survivors. Every mutant marked killed above is killed there. The survivors are the equivalent
+and gas mutants above, with line 1151 counted once (it is one mutant, which the campaign's
+parts ran twice), and one comment mutant the campaign's parts never ran:
+
+| Line | Rule | Verdict | Why, or the test |
+| ---: | --- | --- | --- |
+| 1017 | CR | killed | `test_Settle_AResumedScanKeepsTheDemandAlreadyCounted`: a scan resumed in a second settle call forgot the demand counted in the first and sold one copy fewer |
+
+That test was written after the second measurement and shown to fail on the mutant; the
+score measured again does not count it.
 
 ### `src/terms/StreamTerms.sol`
 

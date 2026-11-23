@@ -9,7 +9,16 @@
   [`docs/testing/mutation-scores.md`](docs/testing/mutation-scores.md). `tools/mutation.py` now
   mutates every contract a file declares (slither-mutate alone skipped `ModuleSlots`,
   `UniformEditionAuctionBase` and `UniformEditionAuctionLensBase`) and runs the two
-  edition-auction files' groups in parts.
+  edition-auction files' groups in parts. A statements group is cut into parts by source line,
+  so the parts together are exactly the group's mutants: cut by position, as the campaign ran
+  them, a surviving revert mutant made some comment mutants run twice and others not at all
+  (seven files, counted on the scores page). The build is cleaned between the contracts of one
+  file, and a slither-mutate run that stops before it mutates fails its shard. The two
+  edition-auction files were measured again with the corrected tool at `a39245e3`:
+  `UniformEditionAuction` 1045 of 1112 mutants killed, 94.0% (the campaign's final figure was 94.0% of 1113), floor 91;
+  `UniformEditionAuctionLens` 979 of 1113 mutants killed, 88.0% (the campaign's final figure was 87.7% of 1134), floor 85; 2 survivors not re-checked, so a lower bound.
+  One comment mutant the campaign's parts never ran survived there and has a test now
+  (`test_Settle_AResumedScanKeepsTheDemandAlreadyCounted`).
 - **Before the merge of the plain core.**
     - `StreamTerms.lowerFeeShare` accepts one fee recipient, the split ledger's network fee
       vault, so the share it lowers is always the network's; the seller and the fee recipient
