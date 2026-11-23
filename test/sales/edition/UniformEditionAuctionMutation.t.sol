@@ -171,6 +171,29 @@ contract UniformEditionAuctionMutationTest is EditionAuctionBase {
 
     // ------------------------------------------------------------------ settlement
 
+    /// @dev A scan that takes two calls carries the demand it counted in the first call into the
+    ///      second: the stored result is the whole book's, as the lens computes it in one pass.
+    function test_Settle_AResumedScanKeepsTheDemandAlreadyCounted() public {
+        uint256 saleId = _open(0);
+        _bid(saleId, alice, 335, 1); // the book spans more than 24 words
+        // Enough copies at the lowest step that selling to both bidders there earns the most.
+        uint256 low = 2 * _price(saleId, 335) / _price(saleId, 0);
+        _bid(saleId, bob, 0, low);
+        IUniformEditionAuction.Clearing memory c = ua.clearing(saleId);
+        assertEq(c.count, low + 1, "both bids win at the lowest step");
+        assertEq(c.step, 0);
+        _closeOneOfOne(saleId);
+        assertFalse(auction.settle(saleId, new uint256[](0)), "the first scan call");
+        assertEq(
+            uint8(ua.auction(saleId).status), uint8(IUniformEditionAuction.AuctionStatus.SETTLING)
+        );
+        _settle(saleId);
+        IUniformEditionAuction.Settlement memory s = ua.settlement(saleId);
+        assertEq(s.count, low + 1, "the demand of the first call is kept");
+        assertEq(s.step, 0);
+        assertEq(s.price, _price(saleId, 0));
+    }
+
     /// @dev A 1/1 end that moved after the last bid (placed far from the close, so the cached
     ///      end was not refreshed) is stored by the first settle call.
     function test_Settle_StoresTheOneOfOneEndItRead() public {
