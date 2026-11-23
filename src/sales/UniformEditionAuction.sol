@@ -63,13 +63,15 @@ import { UniformClearing } from "./UniformClearing.sol";
 ///
 ///      A sale follows only the 1/1 sale it was opened in. The English auction offers an unsold
 ///      Independent Stream work again under the same sale ID (`IEnglishAuction.restart`), and
-///      answers when (`auctionClock`'s `restartedAt`). A work is offered again only after its
-///      sale ended and was settled unsold, and the new sale ends later than its own start. So a
-///      restart at or after the 1/1 end this sale recorded is a restart of the sale it followed
-///      (a sale opened in the restarted 1/1 records an end after that restart): from then this
-///      sale reads its 1/1 as settled and keeps the end it last recorded, so it closes and
-///      settles by its own rule whatever the work's later sales do (`_end`). A cancelled 1/1
-///      still voids it.
+///      answers when (`auctionClock`'s `restartedAt`). A work is offered again only once its
+///      sale is over (settled without a sale, or closed after a refused settlement) and
+///      `CLOSE_OFFSET` has passed since that sale's end (`EnglishAuction.RESTART_DELAY`, the same
+///      15 minutes). An edition sale opens before its 1/1's end plus `CLOSE_OFFSET`, so a restart
+///      later than this sale's opening is a restart of the 1/1 sale it followed, and this sale's
+///      close, counted from that 1/1's real end, has passed by then whatever end it last read.
+///      From then this sale reads its 1/1 as settled and keeps the end it recorded (only a soft
+///      close still running keeps it open), so it settles by its own rule whatever the work's
+///      later sales do (`_end`). A cancelled 1/1 still voids it.
 ///
 ///      `open` hands its token-specific data to the lens (`masterTerms`), which checks the
 ///      package item against the master token and the 1/1, computes the economics and returns
@@ -714,9 +716,9 @@ abstract contract UniformEditionAuctionBase is
     ///      or when the cached close is within `softWindow` of now or past (the 1/1's end only
     ///      moves later, so nothing earlier can change), recording a later end in `a`. Returns
     ///      the 1/1's state when read, ACTIVE when not; while it is PAUSED the end is meaningless.
-    ///      A 1/1 offered again at or after the end `a` holds is read as SETTLED with that end:
-    ///      the sale this one followed had ended and was settled unsold, and a later sale of the
-    ///      work moves nothing here. A cancelled 1/1 stays CANCELLED.
+    ///      A 1/1 offered again after this sale opened is read as SETTLED with the end `a` already
+    ///      holds: the 1/1 sale this one followed is over, and a later sale of the work moves
+    ///      nothing here. A cancelled 1/1 stays CANCELLED.
     function _end(
         uint256 saleId,
         SaleWord memory a,
@@ -730,10 +732,7 @@ abstract contract UniformEditionAuctionBase is
             uint64 oneEnd;
             uint64 restartedAt;
             (one, oneEnd, restartedAt) = _oneOfOneClock(saleId);
-            if (
-                restartedAt != 0 && restartedAt >= a.oneOfOneEnd
-                    && one != IEnglishAuction.AuctionState.CANCELLED
-            ) {
+            if (restartedAt > a.openedAt && one != IEnglishAuction.AuctionState.CANCELLED) {
                 one = IEnglishAuction.AuctionState.SETTLED;
             } else if (oneEnd > a.oneOfOneEnd) {
                 // The 1/1 stores its end in 32 bits; checked all the same.

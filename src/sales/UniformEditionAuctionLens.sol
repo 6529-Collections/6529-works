@@ -401,7 +401,7 @@ abstract contract UniformEditionAuctionLensBase is IUniformEditionAuctionLens {
         returns (IUniformEditionAuction.EndTimes memory e)
     {
         IStorage.SaleWord memory a = _opened(saleId);
-        (IEnglishAuction.AuctionState state, uint64 oneEnd) = _clockOf(saleId, a.oneOfOneEnd);
+        (IEnglishAuction.AuctionState state, uint64 oneEnd) = _clockOf(saleId, a.openedAt);
         _clocks(e, a, _config(a.termsId), oneEnd);
         e.oneOfOneState = state;
         // Open while the 1/1 is paused, whatever the time; else until the end, unless cancelled.
@@ -414,10 +414,10 @@ abstract contract UniformEditionAuctionLensBase is IUniformEditionAuctionLens {
 
     /// @dev Sale `saleId`'s 1/1 state and end as its settlement reads them: SETTLED with no end
     ///      of its own for an adopted sale that runs on its own, and for a sale whose 1/1 was
-    ///      offered again at or after `recordedEnd`, the 1/1 end the sale recorded (the 1/1 sale
-    ///      it followed had ended and was settled unsold; a cancelled 1/1 stays CANCELLED), else
-    ///      the English auction's `auctionClock` (the deployment's `_clock`).
-    function _clockOf(uint256 saleId, uint256 recordedEnd)
+    ///      offered again after the sale opened at `openedAt` (the 1/1 sale it followed is over;
+    ///      a cancelled 1/1 stays CANCELLED), else the English auction's `auctionClock` (the
+    ///      deployment's `_clock`).
+    function _clockOf(uint256 saleId, uint256 openedAt)
         private
         view
         returns (IEnglishAuction.AuctionState state, uint64 endTime)
@@ -426,10 +426,7 @@ abstract contract UniformEditionAuctionLensBase is IUniformEditionAuctionLens {
         if (p.runsOnItsOwn) return (IEnglishAuction.AuctionState.SETTLED, 0);
         uint64 restartedAt;
         (state, endTime, restartedAt) = _clock(_tokenOfSale(saleId), p.id);
-        if (
-            restartedAt != 0 && restartedAt >= recordedEnd
-                && state != IEnglishAuction.AuctionState.CANCELLED
-        ) {
+        if (restartedAt > openedAt && state != IEnglishAuction.AuctionState.CANCELLED) {
             return (IEnglishAuction.AuctionState.SETTLED, 0);
         }
     }

@@ -643,7 +643,7 @@
       },
       {
         "operation": "Edition settle, 5 used steps",
-        "pragueGas": 180817,
+        "pragueGas": 180815,
         "pragueCeiling": {
           "gas": 185000,
           "kind": "regression"
@@ -734,7 +734,7 @@
       },
       {
         "operation": "Independent Stream restart, a work's first (records when it was offered again)",
-        "pragueGas": 110904,
+        "pragueGas": 111151,
         "pragueCeiling": {
           "gas": 114000,
           "kind": "regression"
@@ -745,7 +745,7 @@
       },
       {
         "operation": "Independent Stream restart, a later one",
-        "pragueGas": 93804,
+        "pragueGas": 94051,
         "pragueCeiling": {
           "gas": 96000,
           "kind": "regression"

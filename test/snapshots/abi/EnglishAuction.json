@@ -405,6 +405,24 @@
     "type": "error"
   },
   {
+    "id": "0xe91b3a05",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "saleId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "allowedAt",
+        "type": "uint256"
+      }
+    ],
+    "name": "RestartTooEarly",
+    "signature": "RestartTooEarly(uint256,uint256)",
+    "type": "error"
+  },
+  {
     "id": "0x6dfcc650",
     "inputs": [
       {
@@ -1130,6 +1148,21 @@
       }
     ],
     "signature": "REFUSAL_DELAY()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x4d4ac1f0",
+    "inputs": [],
+    "name": "RESTART_DELAY",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "signature": "RESTART_DELAY()",
     "stateMutability": "view",
     "type": "function"
   },

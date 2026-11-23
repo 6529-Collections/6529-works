@@ -192,7 +192,7 @@ What each ceiling applies to (all are test gates in Prague gas, not chain code):
 | Edition auction `open`, an artist's first sale (deploys both vaults) | 396,779 | 402,000 (regression) | 7 | 2 | — |
 | Edition `bid`, opens an 8-step word | 86,353 | 89,000 (regression) | 2 | 0 | 269,355 |
 | Edition `bid`, its 8-step word exists | 69,283 | 71,000 (regression) | 1 | 0 | — |
-| Edition `settle`, 5 used steps | 180,817 | 185,000 (regression) | 1 | 0 | — |
+| Edition `settle`, 5 used steps | 180,815 | 185,000 (regression) | 1 | 0 | — |
 | Edition `claimBid`, a winner, the edition's first mint | 111,227 | 114,000 (regression) | 1 | 0 | — |
 | Edition `claimBid`, refund only | 72,540 | 74,000 (regression) | 0 | 0 | — |
 | re-rate a work (governed `execute`) | 225,603 | 231,000 (regression) | 1 | 0 | — |
@@ -200,8 +200,8 @@ What each ceiling applies to (all are test gates in Prague gas, not chain code):
 | `release`, the artist's first ETH release | 101,456 | 104,000 (regression) | 2 | 0 | 274,996 |
 | `claimSigned`, the artist's first signed release (relayed) | 146,964 | 150,000 (regression) | 3 | 0 | — |
 | `claimSigned`, a later signed release (next nonce) | 95,696 | 98,000 (regression) | 0 | 0 | — |
-| Independent Stream `restart`, a work's first (records when it was offered again) | 110,904 | 114,000 (regression) | 1 | 0 | — |
-| Independent Stream `restart`, a later one | 93,804 | 96,000 (regression) | 0 | 0 | — |
+| Independent Stream `restart`, a work's first (records when it was offered again) | 111,151 | 114,000 (regression) | 1 | 0 | — |
+| Independent Stream `restart`, a later one | 94,051 | 96,000 (regression) | 0 | 0 | — |
 
 **Amendment note, 23 November 2026 (the clock answers when a work was offered again).**
 `auctionClock` now also answers when a work was last offered again, one more storage word that

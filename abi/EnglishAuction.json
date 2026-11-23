@@ -147,6 +147,19 @@
   },
   {
     "inputs": [],
+    "name": "RESTART_DELAY",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
     "name": "allowlist",
     "outputs": [
       {
@@ -1761,6 +1774,22 @@
       }
     ],
     "name": "RefusalTooEarly",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "saleId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "allowedAt",
+        "type": "uint256"
+      }
+    ],
+    "name": "RestartTooEarly",
     "type": "error"
   },
   {

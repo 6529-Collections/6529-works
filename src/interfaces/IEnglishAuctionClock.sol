@@ -16,10 +16,10 @@ interface IEnglishAuctionClock {
     ///         Reverts with `IEnglishAuction.UnknownSale` for a sale ID with no sale.
     /// @dev A sale ID names a work, so a work offered again (`IEnglishAuction.restart`) answers
     ///      under the same ID with a new end. `restartedAt` lets a contract that followed the
-    ///      earlier sale tell: a restart is only possible after that sale ended and was settled
-    ///      unsold, and the new sale ends later than the restart. So a `restartedAt` at or after
-    ///      the end the follower recorded means the sale it followed is over, whatever the state
-    ///      and end read now.
+    ///      earlier sale tell: a restart is accepted only from 15 minutes after that sale's end,
+    ///      once it is settled without a sale or closed after a refused settlement. So a
+    ///      `restartedAt` later than the moment the follower began to follow means the sale it
+    ///      followed is over, whatever the state and end read now.
     /// @param saleId The auction's sale ID.
     /// @return state The derived state (`auction(saleId).state`).
     /// @return endTime The end (`auction(saleId).endTime`): for a dispute pause past

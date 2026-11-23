@@ -101,7 +101,7 @@ contract EnglishAuctionIndependentTest is AuctionFixture {
         (,,, restartedAt) = auction.auctionClock(saleId);
         assertEq(restartedAt, 0, "settling records nothing");
 
-        vm.warp(block.timestamp + 10 minutes);
+        vm.warp(block.timestamp + 15 minutes);
         uint64 first = uint64(block.timestamp);
         vm.expectEmit(address(auction));
         emit IEnglishAuction.SaleStarted(
@@ -137,6 +137,48 @@ contract EnglishAuctionIndependentTest is AuctionFixture {
         (state,,, restartedAt) = auction.auctionClock(streamSale);
         assertEq(uint256(state), uint256(IEnglishAuction.AuctionState.SETTLED));
         assertEq(restartedAt, 0);
+    }
+
+    /// @dev A work is offered again only from `RESTART_DELAY` after its last sale's end, to the
+    ///      second, whenever that sale was settled; the refusal names the time and changes
+    ///      nothing. There is no later limit.
+    function test_Restart_RefusedBeforeTheRestartDelay() public {
+        assertEq(auction.RESTART_DELAY(), 15 minutes);
+        uint256 saleId = _startInd(1);
+        _end(saleId);
+        uint256 end = auction.auction(saleId).endTime;
+        auction.settle(saleId);
+        bytes memory tooEarly = abi.encodeWithSelector(
+            IEnglishAuction.RestartTooEarly.selector, saleId, end + 15 minutes
+        );
+        vm.expectRevert(tooEarly);
+        auction.restart(saleId);
+        vm.warp(end + 15 minutes - 1);
+        vm.expectRevert(tooEarly);
+        auction.restart(saleId);
+        (IEnglishAuction.AuctionState state,,, uint64 restartedAt) = auction.auctionClock(saleId);
+        assertEq(uint256(state), uint256(IEnglishAuction.AuctionState.SETTLED));
+        assertEq(restartedAt, 0, "nothing recorded");
+
+        vm.warp(end + 15 minutes);
+        auction.restart(saleId);
+        uint256 secondEnd = auction.auction(saleId).endTime;
+        assertEq(secondEnd, end + 15 minutes + DURATION);
+
+        // The wait counts from each sale's own end; a year later is still accepted.
+        vm.warp(secondEnd);
+        auction.settle(saleId);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IEnglishAuction.RestartTooEarly.selector, saleId, secondEnd + 15 minutes
+            )
+        );
+        auction.restart(saleId);
+        vm.warp(secondEnd + 365 days);
+        auction.restart(saleId);
+        assertEq(
+            uint256(auction.auction(saleId).state), uint256(IEnglishAuction.AuctionState.ACTIVE)
+        );
     }
 
     function test_Restart_Refusals() public {

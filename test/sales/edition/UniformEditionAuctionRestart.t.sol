@@ -9,10 +9,11 @@ import { EditionAuctionBase } from "./EditionAuctionBase.sol";
 /// @notice The shared edition auction and a 1/1 that is offered again (EA-17 in
 ///         `docs/spec/editions-and-sales.md`): a sale follows only the 1/1 sale it was opened in.
 ///         The English auction answers when a work was last offered again
-///         (`IEnglishAuctionClock.auctionClock`); a time at or after the 1/1 end the sale recorded
-///         means the 1/1 sale it followed ended and was settled unsold, so the sale reads its 1/1
-///         as settled and keeps the end it recorded. Here the 1/1's auction is a mock whose clock the test sets,
-///         so every answer the rule can meet is reached; the real contracts run the same rule in
+///         (`IEnglishAuctionClock.auctionClock`); a time later than the sale's opening means the
+///         1/1 sale it followed is over, so the sale reads its 1/1 as settled and keeps the end it
+///         recorded. Here the 1/1's auction is a mock whose clock the test sets, so every answer
+///         the rule can meet is reached, also restarts placed where the real auction refuses
+///         them (before the sale's close); the real contracts run the same rule in
 ///         `test/integration/IndependentEditionRestart.t.sol`.
 contract UniformEditionAuctionRestartTest is EditionAuctionBase {
     uint256 internal constant CLOSE_OFFSET = 15 minutes;
@@ -37,8 +38,8 @@ contract UniformEditionAuctionRestartTest is EditionAuctionBase {
         english.setRestartedAt(address(stream), ID, at);
     }
 
-    /// @dev A 1/1 offered again at the end the sale recorded (the earliest a restart can be) reads
-    ///      SETTLED in the sale's views and at settlement, with the end the sale recorded: bidding closes at that close, anyone
+    /// @dev A 1/1 offered again after the sale opened reads SETTLED in the sale's views and at
+    ///      settlement, with the end the sale recorded: bidding closes at that close, anyone
     ///      settles from it, the seller and the network are paid and every bid is claimed.
     function test_Restarted_TheSaleReadsItsOneOfOneAsSettledAndKeepsItsClose() public {
         vm.warp(firstEnd);
@@ -116,15 +117,17 @@ contract UniformEditionAuctionRestartTest is EditionAuctionBase {
         _assertConserved();
     }
 
-    /// @dev A restart before the 1/1 end the sale recorded, here one second before it, is the
-    ///      start of the 1/1 sale this sale was opened in: the sale follows it, later end
-    ///      included. So does a sale opened in the very block of the restart.
-    function test_Restarted_ARestartBeforeTheRecordedEndIsTheSaleItFollows() public {
-        english.setRestartedAt(address(stream), ID, firstEnd - 1);
+    /// @dev A restart one second after the opening is a restart of the 1/1 sale this sale
+    ///      followed. A restart in the block the sale opened in is the start of the 1/1 sale it
+    ///      was opened in (no sale opens against an ended 1/1 once it may be offered again): the
+    ///      sale follows it, later end included.
+    function test_Restarted_ARestartNotLaterThanTheOpeningIsTheSaleItFollows() public {
+        uint64 openedAt = ua.auction(saleId).openedAt;
+        english.setRestartedAt(address(stream), ID, openedAt + 1);
         assertEq(
-            uint8(ua.endTimes(saleId).oneOfOneState), uint8(IEnglishAuction.AuctionState.ACTIVE)
+            uint8(ua.endTimes(saleId).oneOfOneState), uint8(IEnglishAuction.AuctionState.SETTLED)
         );
-        english.setRestartedAt(address(stream), ID, ua.auction(saleId).openedAt);
+        english.setRestartedAt(address(stream), ID, openedAt);
         english.set(address(stream), ID, IEnglishAuction.AuctionState.ACTIVE, firstEnd + 1 hours);
 
         vm.warp(firstEnd);

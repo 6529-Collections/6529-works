@@ -42,6 +42,7 @@ contract IndependentRestartGasTest is GasBase, IndependentIntegrationBase {
 
     function test_Gas_IndependentRestart_AWorksFirst() public {
         _settleAtEnd(saleId);
+        vm.warp(block.timestamp + auction.RESTART_DELAY());
         (uint256 total, StateGrowth.Growth memory growth) = _restart();
         emit log_named_uint("Independent Stream restart, a work's first: Prague gas", total);
         assertLe(total, RESTART_FIRST_CEILING, "first restart over its regression ceiling");
@@ -51,9 +52,11 @@ contract IndependentRestartGasTest is GasBase, IndependentIntegrationBase {
 
     function test_Gas_IndependentRestart_ALaterOne() public {
         _settleAtEnd(saleId);
+        vm.warp(block.timestamp + auction.RESTART_DELAY());
         vm.prank(anyone);
         auction.restart(saleId);
         _settleAtEnd(saleId);
+        vm.warp(block.timestamp + auction.RESTART_DELAY());
         (uint256 total, StateGrowth.Growth memory growth) = _restart();
         emit log_named_uint("Independent Stream restart, a later one: Prague gas", total);
         assertLe(total, RESTART_LATER_CEILING, "later restart over its regression ceiling");

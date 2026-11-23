@@ -90,12 +90,12 @@
     },
     {
       "abi": "EnglishAuction.json",
-      "errors": 31,
+      "errors": 32,
       "events": 19,
-      "functions": 46,
+      "functions": 47,
       "kind": "contract",
       "name": "EnglishAuction",
-      "sha256": "52a5bdb7ec4df5a9541666e94d5e4c411f7d9efd0ec392ee9042d50a7b6ac4dd",
+      "sha256": "22bc65521a01bf05c245439d4aed528089619f0e459d602a6cbb1f727a06fd23",
       "solc": "0.8.37+commit.f401782d",
       "source": "src/sales/EnglishAuction.sol"
     },
@@ -315,13 +315,13 @@
     },
     {
       "abi": "IEnglishAuction.json",
-      "errors": 20,
+      "errors": 21,
       "events": 17,
       "functions": 26,
       "interfaceId": "0x54df3713",
       "kind": "interface",
       "name": "IEnglishAuction",
-      "sha256": "42e9e79a3e6b86010e47ae1fbe599fc4f398914303a06108f4c1379019a8e88a",
+      "sha256": "5bbe252901ba8bf3fe9002212280b996e096062da741a9a680176f81561503f4",
       "solc": "0.8.37+commit.f401782d",
       "source": "src/interfaces/IEnglishAuction.sol"
     },

@@ -5,12 +5,14 @@
 - **Three fixes in replaceable modules.** No permanent contract changed.
     - **An edition sale no longer follows a restarted 1/1.** `EnglishAuction` records when an
       unsold Independent Stream work was last offered again and answers it as a fourth value
-      of `auctionClock` (`restartedAt`; the selector is unchanged). An edition sale follows
-      only the 1/1 sale it was opened in: once that 1/1 has been settled unsold and offered
-      again, the edition sale reads its 1/1 as settled and keeps the close it recorded, so it
-      closes, settles and pays by its own rule and its bidders claim, whatever the work's later
-      sales do. A sale opened after a restart follows the restarted 1/1; a cancelled 1/1 or a
-      delisting still voids the sale. 6529 Stream works are never offered again, so the
+      of `auctionClock` (`restartedAt`; the selector is unchanged). A work is offered again
+      only from 15 minutes after its last sale's end (`RESTART_DELAY`, the time an edition
+      sale stays open after its 1/1; `RestartTooEarly` before; AUC-55), so an edition sale
+      that followed the ended 1/1 has reached its close by then. An edition sale follows only
+      the 1/1 sale it was opened in: from a restart it reads its 1/1 as settled and keeps the
+      close it recorded, so it settles and pays by its own rule and its bidders claim,
+      whatever the work's later sales do. A sale opened or adopted after a restart follows
+      the restarted 1/1; a cancelled 1/1 or a delisting still voids a sale not yet settled. 6529 Stream works are never offered again, so the
       curated edition sale behaves as before. Both edition auctions and both lenses read the
       new value, so they are deployed together with the English auction (EA-17, IND-56,
       LIM-EA-22). The lens now reads the clock one way at every place (the open, the views

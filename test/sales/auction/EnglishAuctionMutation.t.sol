@@ -130,6 +130,7 @@ contract EnglishAuctionMutationTest is AuctionFixture {
         independentStream.setMinter(address(ind), address(auction), false);
         _end(saleId);
         auction.settle(saleId);
+        vm.warp(block.timestamp + auction.RESTART_DELAY());
         assertEq(auction.auction(saleId).bid, 1 ether, "the refunded amount stays until restart");
         independentStream.setMinter(address(ind), address(auction), true);
         auction.restart(saleId);
@@ -144,6 +145,7 @@ contract EnglishAuctionMutationTest is AuctionFixture {
         uint256 saleId = _startInd(1);
         _end(saleId);
         auction.settle(saleId);
+        vm.warp(block.timestamp + auction.RESTART_DELAY());
         independentStream.setTerms(SaleKind.ENGLISH_AUCTION, "", indSeller, 100_001);
         vm.expectRevert(
             abi.encodeWithSelector(IEnglishAuction.InvalidSaleTerms.selector, address(ind), 1)
