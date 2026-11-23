@@ -1,7 +1,7 @@
 # Sepolia r6: the flows on the plain core (23 November 2026)
 
 On 23 November 2026 the flows below ran on **r6**
-([README](README.md#sepolia-r6-23-november-2026-current)), the first Sepolia rehearsal of the
+([README](README.md#sepolia-r6-23-november-2026-module-swap-test-instance)), the first Sepolia rehearsal of the
 plain permanent core ([ADR 0010](../../docs/adr/0010-plain-permanent-core.md)), `main` at
 `2aac8579`, record [`core-1795412520.json`](core-1795412520.json). Earlier rounds are in
 [flows.md](flows.md); their contracts are an earlier design.
@@ -13,7 +13,10 @@ the same transaction replayed on its parent block's state at Prague prices
 (`flows.ps1 -Step prague`, which runs `cast run --quick --evm-version prague`). The starts
 here are first starts (a new collection, the artist's first works), which
 [ADR 0004](../../docs/adr/0004-gas-budgets-under-glamsterdam.md) measures apart from its
-steady-state rows.
+steady-state rows. (Note, 23 November 2026: ADR 0004 now compares each of them with its row.
+`startWithBid-0` was the deployment's first start and the auction's first bid in one
+transaction, which no row measures; `startWithBid-6` is the row of a VRF work started with a
+bid. [r7](flows-r7.md) ran each start as its own row.)
 
 Every transaction was planned by [`script/sepolia/Flows.s.sol`](../../script/sepolia/Flows.s.sol)
 against the live chain and sent by [`script/sepolia/flows.ps1`](../../script/sepolia/flows.ps1)

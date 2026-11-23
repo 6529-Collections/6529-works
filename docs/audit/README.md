@@ -45,9 +45,12 @@ seed, 395,000 and 9; asserted in the gas report).
 - **Static analysis.** Slither runs in CI; every High or Medium finding has a reviewed row in
   the [triage record](../security/slither-triage.md).
 - **Sepolia.** Earlier rehearsals ran the code before this restructuring
-  ([flows](../../deployments/11155111/flows.md)); round r6 runs the plain core
-  ([record](../../deployments/11155111/README.md#sepolia-r6-23-november-2026-current),
-  [flows](../../deployments/11155111/flows-r6.md)).
+  ([flows](../../deployments/11155111/flows.md)); rounds r6 and r7 run the plain core
+  (r6: [record](../../deployments/11155111/README.md#sepolia-r6-23-november-2026-module-swap-test-instance),
+  [flows](../../deployments/11155111/flows-r6.md); r7:
+  [record](../../deployments/11155111/README.md#sepolia-r7-23-november-2026-clean-reference-instance),
+  [flows](../../deployments/11155111/flows-r7.md)). The flows are rehearsals with throwaway
+  keys, not an audit.
 
 ## Reporting
 

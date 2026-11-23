@@ -10,13 +10,18 @@ signers; do not send them value you care about.
 | Network | Chain ID | Instance | Source | Record |
 | --- | ---: | --- | --- | --- |
 | Ethereum mainnet | 1 | Not deployed | | |
-| Sepolia | 11155111 | r6 (current) | `main` at `2aac8579`, the plain core ([ADR 0010](../adr/0010-plain-permanent-core.md)) | [`core-1795412520.json`](../../deployments/11155111/core-1795412520.json) |
+| Sepolia | 11155111 | r7 (reference instance) | `main` at `5de6abaa`, the plain core ([ADR 0010](../adr/0010-plain-permanent-core.md)); governance as genesis installed it | [`core-1795423896.json`](../../deployments/11155111/core-1795423896.json) |
+| Sepolia | 11155111 | r6 (module-swap test instance) | `main` at `2aac8579`, the same contracts; a renderer is announced for `Stream6529`'s `RENDERER` slot, ready on 30 November 2026 at 06:18:12 UTC | [`core-1795412520.json`](../../deployments/11155111/core-1795412520.json) |
 | Sepolia | 11155111 | r5 (superseded) | `main` at `ca02473`, the design before ADR 0010 | [`1795338612.json`](../../deployments/11155111/1795338612.json) |
 
 Earlier rounds (r1 to r4) ran earlier designs; their records stay in
 [`deployments/11155111/`](../../deployments/11155111) and the
 [Sepolia README](../../deployments/11155111/README.md). Every address of every instance comes
 from its deployment record, which is the source of truth; this page does not copy them.
+
+r6 and r7 are two separate deployments of the same contracts, with different addresses: use
+one instance's record throughout, never a mix. They share the network Safe, the holders' keys
+and the VRF subscription. Use r7 unless you are following the module swap on r6.
 
 The plain core changes every address: r5's contracts do not implement the interfaces the other
 pages describe.
@@ -29,9 +34,10 @@ pages describe.
   slots, the minters, the settings, the stored configuration, the epoch-0 manifest and the
   governance configuration with the chain. Run it from the instance's source commit with the
   round's `deploy.env` ([runbook](../../script/README.md#4-after-the-broadcast)). It checks the
-  state right after genesis, so for r6 run it at a block before the renderer announcement, as
+  state genesis left. r7 is kept in that state, so run it against r7 at the chain's head; for
+  r6 run it at a block before the renderer announcement, as
   [Reading r6 back later](../../deployments/11155111/README.md#reading-r6-back-later) shows.
-  r6 passed it on 23 November 2026, and Sourcify holds an exact match for each of its 35
+  Both passed it on 23 November 2026, and Sourcify holds an exact match for each instance's 35
   contracts.
 - **Governance.** The genesis policy each instance installed is committed under `config/`. The
   [role matrix](../audit/roles.md) is generated from `main`'s genesis policy.

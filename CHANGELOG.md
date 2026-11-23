@@ -2,9 +2,22 @@
 
 ## Unreleased
 
+- **Sepolia round r7.** A second instance of the plain core on Sepolia (testnet only), from
+  `main` at `5de6abaa`, kept with its governance as genesis installed it so that `VerifyCore`
+  passes at the chain's head; verified on Sourcify
+  ([record](deployments/11155111/README.md#sepolia-r7-23-november-2026-clean-reference-instance),
+  [flows](deployments/11155111/flows-r7.md)). r6 stays as deployed, with its renderer proposal
+  pending. r7 ran the flows r6 did not: a dispute pause and cancel, a capped edition's cut
+  step, the anti-snipe extension, a move signed by a consolidated wallet, an Independent Stream
+  edition sale, and the reference keeper sending starts, edition opens and settlements.
+  Tooling: `flows.ps1` gains the Independent Stream editions steps (`-Editions`, `-Work`),
+  `-MoveSigner` and `starterRequest`.
+- **ADR 0004's gas table** is re-measured on the plain core (`test_Gas_Table`), says what each
+  ceiling applies to, and compares every Sepolia start of r6 and r7 with its own row. No
+  ceiling changed.
 - **Sepolia round r6.** The plain core is deployed on Sepolia (testnet only) from `main` at
   `2aac8579`, read back with `VerifyCore` and verified on Sourcify
-  ([record](deployments/11155111/README.md#sepolia-r6-23-november-2026-current),
+  ([record](deployments/11155111/README.md#sepolia-r6-23-november-2026-module-swap-test-instance),
   [flows](deployments/11155111/flows-r6.md)). Tooling: `script/sepolia/make_record.py`
   completes a deployment record; `flows.ps1` gains the Independent Stream steps and `-Token`;
   `sourcify.ps1` and `deploy_gas.py` find each creation transaction from the factory call's
