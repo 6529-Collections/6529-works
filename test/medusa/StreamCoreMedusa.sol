@@ -141,9 +141,11 @@ contract StreamCoreMedusa is MedusaBase {
         return mActiveFrom[s] != 0 && block.timestamp >= mActiveFrom[s] && mRemovedAt[s] == 0;
     }
 
-    /// Is or was an active minter: settles the sales it holds even after removal.
+    /// Is or was an active minter: settles the sales it holds even after removal. Every sale
+    /// contract here was active from genesis, so a removed one always was active, also when it
+    /// was added again and removed before that addition took effect.
     function _wasActive(uint256 s) internal view returns (bool) {
-        return mActiveFrom[s] != 0 && block.timestamp >= mActiveFrom[s];
+        return mRemovedAt[s] != 0 || (mActiveFrom[s] != 0 && block.timestamp >= mActiveFrom[s]);
     }
 
     function _liveWith(uint256 c) internal view returns (bool) {
