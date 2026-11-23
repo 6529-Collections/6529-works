@@ -289,11 +289,13 @@ contract IndependentEditionRestartTest is IndependentIntegrationBase {
         assertEq(uint8(e.oneOfOneState), uint8(IEnglishAuction.AuctionState.SETTLED));
         assertFalse(e.biddingOpen, "closed, as it was a moment before the restart");
         assertTrue(indAuction.settle(saleId, new uint256[](0)));
+        uint256 owed = 2 * ea.stepPrice(saleId, 100) - ea.clearing(saleId).revenue;
         uint256 before = alice.balance;
         vm.prank(alice);
-        (uint256 won,) = indAuction.claimBid(saleId, 1, alice);
+        (uint256 won, uint256 refund) = indAuction.claimBid(saleId, 1, alice);
         assertEq(won, 2);
-        assertGt(alice.balance + 1, before);
+        assertEq(refund, owed, "the escrow less the copies at the clearing price");
+        assertEq(alice.balance - before, owed, "the refund is paid");
         assertEq(address(indAuction).balance, 0);
     }
 
@@ -344,18 +346,25 @@ contract IndependentEditionRestartTest is IndependentIntegrationBase {
         uint256 written = auction.auction(oneSaleId).endTime;
         assertLt(written, longer, "the end is earlier under the new setting");
 
-        if (block.timestamp < written + CLOSE_OFFSET) vm.warp(written + CLOSE_OFFSET);
+        // The first moment the work may be offered again is before the close the sale recorded.
+        uint256 restartAt = written + CLOSE_OFFSET;
+        if (block.timestamp > restartAt) restartAt = block.timestamp;
+        assertLt(restartAt, longer + CLOSE_OFFSET, "a restart while the edition sale is open");
+        vm.warp(restartAt);
         auction.settle(oneSaleId);
-        _restartAt(block.timestamp);
+        _restartAt(restartAt);
         IUniformEditionAuction.EndTimes memory e = ea.endTimes(saleId);
         assertEq(uint8(e.oneOfOneState), uint8(IEnglishAuction.AuctionState.SETTLED));
         assertEq(e.closeAt, longer + CLOSE_OFFSET, "the close it recorded");
-        if (block.timestamp < e.endTime) {
-            assertTrue(e.biddingOpen, "open until the close it recorded");
-            vm.warp(e.endTime);
-        }
+        assertLt(block.timestamp, e.endTime, "before its end");
+        assertTrue(e.biddingOpen, "open until the close it recorded");
+        escrow += _bid(saleId, bob, 100, 1);
+        e = ea.endTimes(saleId);
+        assertEq(e.closeAt, longer + CLOSE_OFFSET, "the bid does not move the close");
+        vm.warp(e.endTime);
         IUniformEditionAuction.Clearing memory c = _settleAndCheckThePayout(saleId);
-        assertEq(_claim(saleId, 1, alice) + _claim(saleId, 2, bob), escrow - c.revenue);
+        uint256 refunds = _claim(saleId, 1, alice) + _claim(saleId, 2, bob);
+        assertEq(refunds + _claim(saleId, 3, bob), escrow - c.revenue);
     }
 
     // ------------------------------------------------------------------ a refused settlement

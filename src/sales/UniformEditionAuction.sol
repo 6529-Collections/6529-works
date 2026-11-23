@@ -67,11 +67,13 @@ import { UniformClearing } from "./UniformClearing.sol";
 ///      sale is over (settled without a sale, or closed after a refused settlement) and
 ///      `CLOSE_OFFSET` has passed since that sale's end (`EnglishAuction.RESTART_DELAY`, the same
 ///      15 minutes). An edition sale opens before its 1/1's end plus `CLOSE_OFFSET`, so a restart
-///      later than this sale's opening is a restart of the 1/1 sale it followed, and this sale's
-///      close, counted from that 1/1's real end, has passed by then whatever end it last read.
-///      From then this sale reads its 1/1 as settled and keeps the end it recorded (only a soft
-///      close still running keeps it open), so it settles by its own rule whatever the work's
-///      later sales do (`_end`). A cancelled 1/1 still voids it.
+///      later than this sale's opening is a restart of the 1/1 sale it followed, and by then
+///      fifteen minutes have passed since that 1/1's end as the English auction wrote it. So a
+///      restart never ends this sale's bidding before that. From the restart this sale reads its
+///      1/1 as settled and keeps the end it recorded: it is closed unless a soft close is still
+///      running or it recorded a later end than the one written (the end of a dispute pause
+///      that ran out, read before the auction's duration was lowered), and it settles by its
+///      own rule whatever the work's later sales do (`_end`). A cancelled 1/1 still voids it.
 ///
 ///      `open` hands its token-specific data to the lens (`masterTerms`), which checks the
 ///      package item against the master token and the 1/1, computes the economics and returns
