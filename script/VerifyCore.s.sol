@@ -2,8 +2,10 @@
 pragma solidity 0.8.37;
 
 import { console2 } from "forge-std/console2.sol";
+import { Vm } from "forge-std/Vm.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { WorksAccessManager } from "src/governance/WorksAccessManager.sol";
+import { IModules } from "src/interfaces/core/IModules.sol";
 import { DeployCore } from "./DeployCore.sol";
 import { ScriptIO } from "./ScriptIO.sol";
 import { VerifyCore } from "./VerifyCore.sol";
@@ -11,7 +13,10 @@ import { VerifyCore } from "./VerifyCore.sol";
 /// @title VerifyCoreScript
 /// @notice Checks a plain-core deployment against the chain after the broadcast, read-only.
 ///         It loads a deployment record written by `script/DeployCore.s.sol`, runs every
-///         `VerifyCore` readback against the same parameters and genesis file the deploy used,
+///         `VerifyCore` readback against the same parameters and genesis file the deploy used
+///         (the stored configuration included: the auctions' values, the ETH increment floor and
+///         the VRF request parameters), asks the RPC for every `MinterAdded` log of the two
+///         tokens since the deployment and requires exactly the two genesis minters,
 ///         then deploys the same build again, in the script's own memory, from the last block
 ///         before the deployment (the record's `forkBlock`) and compares the runtime code of
 ///         every contract with what is on chain. Any foreign code at a predicted address, any
@@ -19,8 +24,11 @@ import { VerifyCore } from "./VerifyCore.sol";
 /// @dev `forge script script/VerifyCore.s.sol --rpc-url <rpc>` with `DEPLOYMENT` (the record)
 ///      and the deploy's environment (`GENESIS_CONFIG`, `NETWORK_FEE_RECIPIENT`, `MUSEUM`,
 ///      `MARKETPLACE_OWNER`, `DEPLOY_NAMESPACE`, `AUCTION_DURATION`, `VRF_*`). It sends no
-///      transaction. The RPC must serve the state of `forkBlock` (an archive node, or a recent
-///      deployment). Off anvil the network must have accepted: the full governance readback
+///      transaction. A value the deploy was given and this run is not (a shortened
+///      `AUCTION_DURATION`, a VRF setting) fails the readback: the stored configuration is
+///      compared with this run's parameters. The RPC must serve the state of `forkBlock` (an
+///      archive node, or a recent deployment) and `eth_getLogs` from `forkBlock` to the latest
+///      block, asked `LOG_BLOCK_RANGE` blocks at a time (default 5,000). Off anvil the network must have accepted: the full governance readback
 ///      is part of the check. The settings are the network's to change at once: this check is
 ///      for the state right after genesis.
 contract VerifyCoreScript is ScriptIO {
@@ -49,7 +57,10 @@ contract VerifyCoreScript is ScriptIO {
         );
         console2.log("Editions rebindDelay (s):", d.editions.rebindDelay());
         console2.log("Directory unclaimedPeriod (s):", d.directory.unclaimedPeriod());
-        uint256 compared = checkCode(p, d, vm.parseJsonUint(record, ".forkBlock"));
+        uint256 forkBlock = vm.parseJsonUint(record, ".forkBlock");
+        checkMinters(d, forkBlock);
+        console2.log("no minter was ever added but the two genesis minters, from block:", forkBlock);
+        uint256 compared = checkCode(p, d, forkBlock);
         console2.log("runtime code equal to the build's, contracts:", compared);
     }
 
@@ -77,6 +88,42 @@ contract VerifyCoreScript is ScriptIO {
         ref.manager = WorksAccessManager(ref.configurator.worksManager());
         VerifyCore.checkCode(p, d, actual, ref, VerifyCore.codeHashes(p, ref));
         return actual.length;
+    }
+
+    /// @notice Reverts unless the only minter each token has logged since `forkBlock` is its
+    ///         genesis minter (`VerifyCore.verifyMinterLogs`). A minter given to a token's
+    ///         constructor that is not a contract of the deployment shows here and nowhere else.
+    function checkMinters(DeployCore.Deployment memory d, uint256 forkBlock) public {
+        VerifyCore.verifyMinterLogs(
+            d,
+            mintersAdded(address(d.stream), forkBlock),
+            mintersAdded(address(d.editions), forkBlock)
+        );
+    }
+
+    /// @notice Every minter `token` logged as added (`IModules.MinterAdded`) from `fromBlock` to
+    ///         the current block, in order, read from the RPC with `eth_getLogs`.
+    function mintersAdded(address token, uint256 fromBlock)
+        public
+        virtual
+        returns (address[] memory added)
+    {
+        bytes32[] memory topics = new bytes32[](1);
+        topics[0] = IModules.MinterAdded.selector;
+        uint256 last = block.number;
+        uint256 range = _envUint("LOG_BLOCK_RANGE", 5_000);
+        for (uint256 from = fromBlock; from <= last; from += range) {
+            uint256 to = from + range - 1 < last ? from + range - 1 : last;
+            Vm.EthGetLogs[] memory logs = vm.eth_getLogs(from, to, token, topics);
+            address[] memory grown = new address[](added.length + logs.length);
+            for (uint256 i; i < added.length; ++i) {
+                grown[i] = added[i];
+            }
+            for (uint256 i; i < logs.length; ++i) {
+                grown[added.length + i] = address(uint160(uint256(logs[i].topics[1])));
+            }
+            added = grown;
+        }
     }
 
     /// @notice The deployment in `record` (name to address), with the manager and the CC0 file ID

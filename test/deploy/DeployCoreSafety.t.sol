@@ -2,19 +2,44 @@
 pragma solidity 0.8.37;
 
 import { Test } from "forge-std/Test.sol";
+import { Vm } from "forge-std/Vm.sol";
 import { CoreFactory } from "script/CoreFactory.sol";
 import { DeployCore } from "script/DeployCore.sol";
+import { ScriptIO } from "script/ScriptIO.sol";
 import { VerifyCore } from "script/VerifyCore.sol";
+import { StreamEditions6529 } from "src/core/StreamEditions6529.sol";
+import { Stream6529 } from "src/core/Stream6529.sol";
+import { VrfEntropyModule } from "src/entropy/VrfEntropyModule.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { Slots } from "src/interfaces/core/CoreTypes.sol";
+import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
+import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
+import { MockVrfCoordinator } from "../mocks/entropy/EntropyMocks.sol";
 import { DelegationManagementMock } from "../mocks/identity/DelegationManagementMock.sol";
+
+/// @notice The scripts' parameter reader (`ScriptIO.params`) with the environment set by the
+///         test.
+contract ParamsHarness is ScriptIO {
+    mapping(string name => string) internal _envs;
+
+    function setEnv(string memory name, string memory value) external {
+        _envs[name] = value;
+    }
+
+    function _env(string memory name) internal view override returns (string memory) {
+        return _envs[name];
+    }
+}
 
 /// @notice The deployment cannot be taken over and its readback catches a half-built or foreign
 ///         deployment: every contract is created in one call only the deployer may make, so
 ///         nobody can put code at a predicted address between two steps; `VerifyCore` compares
 ///         every contract's runtime code with a reference deployment of the same build and
 ///         fails on foreign code at any address, on a deployment that was never installed, on a
-///         wrong module slot and on each missing genesis wiring call.
+///         wrong module slot and on each missing genesis wiring call. It also reads back what
+///         the constructors stored (each auction value, the ETH increment floor, each VRF
+///         setting) against what it is told the deployment was given, and the tokens'
+///         `MinterAdded` logs show a genesis minter that is not a contract of the deployment.
 contract DeployCoreSafetyTest is Test {
     string internal constant GENESIS = "config/genesis.core.example.json";
     string internal constant CC0_FIXTURE = "test/fixtures/cc0-legalcode.txt";
@@ -237,7 +262,269 @@ contract DeployCoreSafetyTest is Test {
         }
     }
 
+    // ------------------------------------------------------------------ stored configuration
+
+    /// @dev Each value of the English auction's configuration, one at a time: a deployment
+    ///      given another value reads back when the check is told that value, and fails, naming
+    ///      the field with both values, when it is told the launch value.
+    function test_EachEnglishAuctionValueOtherThanToldFailsTheReadback() public {
+        string[4] memory fields = ["duration", "extensionWindow", "incrementShare", "refusalGas"];
+        uint32[4] memory launch = [uint32(24 hours), 15 minutes, 5_000, 4_000_000];
+        uint32[4] memory planted = [uint32(1 hours), 10 minutes, 10_000, 5_000_000];
+        for (uint256 i; i < fields.length; ++i) {
+            string memory namespace = string.concat("english ", fields[i]);
+            DeployCore.Params memory told = _params(namespace);
+            DeployCore.Params memory given = _params(namespace);
+            given.auctionConfig = _englishConfig(i, planted[i]);
+            (DeployCore.Deployment memory d, GovernanceConfig.Config memory cfg) = _deploy(given);
+            this.verifyExternal(given, d, cfg);
+            _expectValue(
+                string.concat("EnglishAuction.config.", fields[i]),
+                d.englishAuction,
+                launch[i],
+                planted[i]
+            );
+            this.verifyExternal(told, d, cfg);
+        }
+    }
+
+    /// @dev The scripts' own path: with `AUCTION_DURATION` set, `ScriptIO.params` shortens the
+    ///      1/1 auction. That deployment reads back only for a run with the same variable; a run
+    ///      without it, or with another duration, fails on the duration.
+    function test_AnAuctionShortenedByTheEnvironmentReadsBackOnlyWithTheSameEnvironment() public {
+        ParamsHarness io = new ParamsHarness();
+        io.setEnv("DELEGATION_CONTRACT", vm.toString(delegation));
+        io.setEnv("AUCTION_DURATION", "7200");
+        DeployCore.Params memory given = io.params(true);
+        given.deployer = deployer;
+        (DeployCore.Deployment memory d, GovernanceConfig.Config memory cfg) = _deploy(given);
+        this.verifyExternal(given, d, cfg);
+
+        io.setEnv("AUCTION_DURATION", "");
+        DeployCore.Params memory told = io.params(true);
+        told.deployer = deployer;
+        _expectValue("EnglishAuction.config.duration", d.englishAuction, 24 hours, 2 hours);
+        this.verifyExternal(told, d, cfg);
+
+        io.setEnv("AUCTION_DURATION", "3600");
+        told = io.params(true);
+        told.deployer = deployer;
+        _expectValue("EnglishAuction.config.duration", d.englishAuction, 1 hours, 2 hours);
+        this.verifyExternal(told, d, cfg);
+    }
+
+    /// @dev Each value of the edition auctions' configuration and the payout gas, one at a
+    ///      time. Both auctions are built from the same parameters, so the 6529 Stream one fails
+    ///      first; with its answer replaced by the launch value, the Independent Stream one
+    ///      fails on what it stored.
+    function test_EachEditionAuctionValueOtherThanToldFailsTheReadback() public {
+        string[7] memory fields = [
+            "config.basePrice",
+            "config.stepsPerDecade",
+            "config.stepCount",
+            "config.marginShare",
+            "config.softWindow",
+            "config.maxExtension",
+            "limits.payoutGas"
+        ];
+        uint256[7] memory launch =
+            [uint256(0.0001 ether), 48, 336, 10_000, 5 minutes, 24 hours, 100_000];
+        uint256[7] memory planted =
+            [uint256(0.001 ether), 24, 384, 20_000, 10 minutes, 12 hours, 200_000];
+        for (uint256 i; i < fields.length; ++i) {
+            _editionCase(fields[i], i, launch[i], planted[i]);
+        }
+    }
+
+    function _editionCase(string memory field, uint256 i, uint256 launch, uint256 planted)
+        internal
+    {
+        string memory namespace = string.concat("edition ", field);
+        DeployCore.Params memory told = _params(namespace);
+        DeployCore.Params memory given = _params(namespace);
+        given.editionAuctionConfig = _editionConfig(i, planted);
+        (DeployCore.Deployment memory d, GovernanceConfig.Config memory cfg) = _deploy(given);
+        this.verifyExternal(given, d, cfg);
+        _expectValue(
+            string.concat("UniformEditionAuction.", field), d.editionAuction, launch, planted
+        );
+        this.verifyExternal(told, d, cfg);
+        // The 6529 Stream edition auction answers the launch values; the other still fails.
+        _answerLaunchValues(d.editionAuction);
+        _expectValue(
+            string.concat("IndependentEditionAuction.", field),
+            d.independentEditionAuction,
+            launch,
+            planted
+        );
+        this.verifyExternal(told, d, cfg);
+        vm.clearMockedCalls();
+    }
+
+    function test_AnotherEthIncrementFloorThanToldFailsTheReadback() public {
+        DeployCore.Params memory told = _params("increment floor");
+        DeployCore.Params memory given = _params("increment floor");
+        given.ethIncrementFloor = 0.002 ether;
+        (DeployCore.Deployment memory d, GovernanceConfig.Config memory cfg) = _deploy(given);
+        this.verifyExternal(given, d, cfg);
+        _expectValue(
+            "AssetAllowlist.incrementFloor(ETH)", d.assetAllowlist, 0.001 ether, 0.002 ether
+        );
+        this.verifyExternal(told, d, cfg);
+    }
+
+    /// @dev Each VRF setting the entropy module stores, one at a time.
+    function test_EachVrfSettingOtherThanToldFailsTheReadback() public {
+        string[6] memory fields = [
+            "config.subscriptionId",
+            "config.keyHash",
+            "config.callbackGasLimit",
+            "config.confirmations",
+            "config.nativePayment",
+            "retryDelay"
+        ];
+        uint256[6] memory launch =
+            [uint256(1), uint256(keccak256("vrf key hash")), 500_000, 3, 0, 3 days];
+        uint256[6] memory planted =
+            [uint256(2), uint256(keccak256("another key hash")), 400_000, 5, 1, 4 days];
+        address coordinator = address(new MockVrfCoordinator());
+        for (uint256 i; i < fields.length; ++i) {
+            _vrfCase(coordinator, fields[i], i, launch[i], planted[i]);
+        }
+    }
+
+    function _vrfCase(
+        address coordinator,
+        string memory field,
+        uint256 i,
+        uint256 launch,
+        uint256 planted
+    ) internal {
+        string memory namespace = string.concat("vrf ", field);
+        DeployCore.Params memory told = _vrfParams(namespace, coordinator);
+        DeployCore.Params memory given = _vrfParams(namespace, coordinator);
+        _plantVrf(given, i, planted);
+        (DeployCore.Deployment memory d, GovernanceConfig.Config memory cfg) = _deploy(given);
+        assertGt(d.entropyModule.code.length, 0);
+        this.verifyExternal(given, d, cfg);
+        _expectValue(string.concat("EntropyModule.", field), d.entropyModule, launch, planted);
+        this.verifyExternal(told, d, cfg);
+    }
+
+    /// @dev A deployment built on one coordinator does not read back for a run told another.
+    function test_AnotherVrfCoordinatorThanToldFailsTheReadback() public {
+        MockVrfCoordinator first = new MockVrfCoordinator();
+        MockVrfCoordinator second = new MockVrfCoordinator();
+        DeployCore.Params memory given = _vrfParams("vrf coordinator", address(first));
+        DeployCore.Params memory told = _vrfParams("vrf coordinator", address(second));
+        (DeployCore.Deployment memory d, GovernanceConfig.Config memory cfg) = _deploy(given);
+        this.verifyExternal(given, d, cfg);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                VerifyCore.Mismatch.selector, "EntropyModule.coordinator", address(first)
+            )
+        );
+        this.verifyExternal(told, d, cfg);
+    }
+
+    /// @dev The module is built with no wrapper; one in its storage at genesis fails the readback.
+    function test_AVrfWrapperSetAtGenesisFailsTheReadback() public {
+        DeployCore.Params memory p = _vrfParams("vrf wrapper", address(new MockVrfCoordinator()));
+        (DeployCore.Deployment memory d, GovernanceConfig.Config memory cfg) = _deploy(p);
+        this.verifyExternal(p, d, cfg);
+        vm.record();
+        assertEq(VrfEntropyModule(d.entropyModule).wrapper(), address(0));
+        (bytes32[] memory reads,) = vm.accesses(d.entropyModule);
+        assertEq(reads.length, 1, "the wrapper's storage slot");
+        vm.store(d.entropyModule, reads[0], bytes32(uint256(uint160(outsider))));
+        vm.expectRevert(
+            abi.encodeWithSelector(VerifyCore.Mismatch.selector, "EntropyModule.wrapper", outsider)
+        );
+        this.verifyExternal(p, d, cfg);
+    }
+
+    // ------------------------------------------------------------------ minter logs
+
+    /// @dev The honest deployment: each token logged exactly its genesis minter.
+    function test_TheMinterLogsOfTheBuildAreTheTwoGenesisMinters() public {
+        DeployCore.Params memory p = _params("minter logs");
+        vm.recordLogs();
+        (DeployCore.Deployment memory d, GovernanceConfig.Config memory cfg) = _deploy(p);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        address[] memory streamAdded = VerifyCore.mintersAdded(logs, address(d.stream));
+        address[] memory editionsAdded = VerifyCore.mintersAdded(logs, address(d.editions));
+        assertEq(streamAdded.length, 1);
+        assertEq(streamAdded[0], d.englishAuction);
+        assertEq(editionsAdded.length, 1);
+        assertEq(editionsAdded[0], d.editionAuction);
+        this.verifyExternal(p, d, cfg);
+        this.verifyMinterLogsExternal(d, streamAdded, editionsAdded);
+    }
+
+    /// @dev `Stream6529` built with a second genesis minter that is not a contract of the
+    ///      deployment: every readback of state passes (no view lists the minters), and the
+    ///      logs show it.
+    function test_AGenesisStreamMinterOutsideTheDeploymentShowsInTheLogs() public {
+        DeployCore.Params memory p = _params("outside stream minter");
+        vm.recordLogs();
+        DeployCore.Deployment memory d = _deployWithExtraMinters(p, outsider, address(0));
+        GovernanceConfig.Config memory cfg = _install(d, _calls(d));
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        assertTrue(d.stream.isMinter(outsider), "the outside minter mints");
+        this.verifyExternal(p, d, cfg);
+        address[] memory streamAdded = VerifyCore.mintersAdded(logs, address(d.stream));
+        address[] memory editionsAdded = VerifyCore.mintersAdded(logs, address(d.editions));
+        assertEq(streamAdded.length, 2);
+        vm.expectRevert(
+            abi.encodeWithSelector(VerifyCore.UnexpectedMinter.selector, "Stream6529", outsider)
+        );
+        this.verifyMinterLogsExternal(d, streamAdded, editionsAdded);
+    }
+
+    /// @dev The same for `StreamEditions6529`.
+    function test_AGenesisEditionsMinterOutsideTheDeploymentShowsInTheLogs() public {
+        DeployCore.Params memory p = _params("outside editions minter");
+        vm.recordLogs();
+        DeployCore.Deployment memory d = _deployWithExtraMinters(p, address(0), outsider);
+        GovernanceConfig.Config memory cfg = _install(d, _calls(d));
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        assertTrue(d.editions.isMinter(outsider), "the outside minter mints");
+        this.verifyExternal(p, d, cfg);
+        address[] memory streamAdded = VerifyCore.mintersAdded(logs, address(d.stream));
+        address[] memory editionsAdded = VerifyCore.mintersAdded(logs, address(d.editions));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                VerifyCore.UnexpectedMinter.selector, "StreamEditions6529", outsider
+            )
+        );
+        this.verifyMinterLogsExternal(d, streamAdded, editionsAdded);
+    }
+
+    /// @dev Logs that do not reach back to the deployment (no `MinterAdded` at all for a token)
+    ///      fail too: the check needs exactly one per token.
+    function test_MinterLogsThatMissATokensGenesisMinterFail() public {
+        DeployCore.Params memory p = _params("missing minter logs");
+        vm.recordLogs();
+        (DeployCore.Deployment memory d,) = _deploy(p);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        address[] memory streamAdded = VerifyCore.mintersAdded(logs, address(d.stream));
+        address[] memory editionsAdded = VerifyCore.mintersAdded(logs, address(d.editions));
+        address[] memory none = new address[](0);
+        _expectValue("Stream6529 MinterAdded logs", address(d.stream), 1, 0);
+        this.verifyMinterLogsExternal(d, none, editionsAdded);
+        _expectValue("StreamEditions6529 MinterAdded logs", address(d.editions), 1, 0);
+        this.verifyMinterLogsExternal(d, streamAdded, none);
+    }
+
     // ------------------------------------------------------------------ external wrappers
+
+    function verifyMinterLogsExternal(
+        DeployCore.Deployment memory d,
+        address[] memory streamAdded,
+        address[] memory editionsAdded
+    ) external pure {
+        VerifyCore.verifyMinterLogs(d, streamAdded, editionsAdded);
+    }
 
     function verifyExternal(
         DeployCore.Params memory p,
@@ -287,6 +574,154 @@ contract DeployCoreSafetyTest is Test {
         p.ethIncrementFloor = 0.001 ether;
         p.auctionConfig = DeployCore.auctionConfig();
         p.editionAuctionConfig = DeployCore.editionAuctionConfig();
+    }
+
+    /// @dev The parameters with a VRF coordinator, so the entropy module is deployed.
+    function _vrfParams(string memory namespace, address coordinator)
+        internal
+        returns (DeployCore.Params memory p)
+    {
+        p = _params(namespace);
+        p.vrfCoordinator = coordinator;
+        p.vrfCoordinatorCodeHash = coordinator.codehash;
+        p.vrf = VrfEntropyModule.VrfConfig(1, keccak256("vrf key hash"), 500_000, 3, false);
+        p.vrfRetryDelay = 3 days;
+    }
+
+    /// @dev Sets VRF setting `i` (in the order of the test's table) to `value`.
+    function _plantVrf(DeployCore.Params memory p, uint256 i, uint256 value) internal pure {
+        if (i == 0) p.vrf.subscriptionId = value;
+        else if (i == 1) p.vrf.keyHash = bytes32(value);
+        else if (i == 2) p.vrf.callbackGasLimit = uint32(value);
+        else if (i == 3) p.vrf.confirmations = uint16(value);
+        else if (i == 4) p.vrf.nativePayment = value == 1;
+        else p.vrfRetryDelay = uint64(value);
+    }
+
+    /// @dev The English auction's launch configuration with value `i` replaced.
+    function _englishConfig(uint256 i, uint32 value) internal pure returns (bytes memory) {
+        IEnglishAuction.AuctionConfig memory c =
+            abi.decode(DeployCore.auctionConfig(), (IEnglishAuction.AuctionConfig));
+        if (i == 0) c.duration = value;
+        else if (i == 1) c.extensionWindow = value;
+        else if (i == 2) c.incrementShare = value;
+        else c.refusalGas = value;
+        return abi.encode(c);
+    }
+
+    /// @dev The edition auctions' launch configuration and limits with value `i` replaced.
+    function _editionConfig(uint256 i, uint256 value) internal pure returns (bytes memory) {
+        (IUniformEditionAuction.AuctionConfig memory c, IUniformEditionAuction.Limits memory l) = abi.decode(
+            DeployCore.editionAuctionConfig(),
+            (IUniformEditionAuction.AuctionConfig, IUniformEditionAuction.Limits)
+        );
+        if (i == 0) c.basePrice = uint96(value);
+        else if (i == 1) c.stepsPerDecade = uint16(value);
+        else if (i == 2) c.stepCount = uint16(value);
+        else if (i == 3) c.marginShare = uint32(value);
+        else if (i == 4) c.softWindow = uint32(value);
+        else if (i == 5) c.maxExtension = uint32(value);
+        else l.payoutGas = uint32(value);
+        return abi.encode(c, l);
+    }
+
+    /// @dev Makes `auction` answer the launch configuration and limits, whatever it stored.
+    function _answerLaunchValues(address auction) internal {
+        (IUniformEditionAuction.AuctionConfig memory c, IUniformEditionAuction.Limits memory l) = abi.decode(
+            DeployCore.editionAuctionConfig(),
+            (IUniformEditionAuction.AuctionConfig, IUniformEditionAuction.Limits)
+        );
+        vm.mockCall(auction, abi.encodeCall(IUniformEditionAuction.config, ()), abi.encode(c));
+        vm.mockCall(auction, abi.encodeCall(IUniformEditionAuction.limits, ()), abi.encode(l));
+    }
+
+    /// @dev Deploys the whole stack with `p`, installs the committed policy and accepts.
+    function _deploy(DeployCore.Params memory p)
+        internal
+        returns (DeployCore.Deployment memory d, GovernanceConfig.Config memory cfg)
+    {
+        d = DeployCore.deploy(p, address(this));
+        cfg = _install(d, _calls(d));
+    }
+
+    /// @dev `DeployCore.deploy` step by step, with one more genesis minter given to the
+    ///      constructor of `Stream6529` (`streamExtra`) or `StreamEditions6529` (`editionsExtra`)
+    ///      when nonzero. Everything else is the library's creation code at the same addresses.
+    function _deployWithExtraMinters(
+        DeployCore.Params memory p,
+        address streamExtra,
+        address editionsExtra
+    ) internal returns (DeployCore.Deployment memory d) {
+        d = DeployCore.predict(p, address(this));
+        address factory =
+            address(new CoreFactory{ salt: DeployCore.salt(p, "CoreFactory") }(address(this)));
+        assertEq(factory, d.coreFactory);
+        string[] memory list = DeployCore.order(p);
+        for (uint256 i; i < list.length; ++i) {
+            bytes32 n = keccak256(bytes(list[i]));
+            bytes memory code = DeployCore.initcode(p, d, list[i]);
+            if (n == keccak256("Stream6529") && streamExtra != address(0)) {
+                code = _streamCode(p, d, streamExtra);
+            }
+            if (n == keccak256("StreamEditions6529") && editionsExtra != address(0)) {
+                code = _editionsCode(p, d, editionsExtra);
+            }
+            CoreFactory(factory).create(DeployCore.salt(p, list[i]), code);
+            if (n == keccak256("ContentStore")) {
+                d.cc0TextFileId = DeployCore.uploadText(d.contentStore, p.cc0Text, "text/plain");
+            }
+        }
+    }
+
+    /// @dev `Stream6529`'s creation code as `DeployCore.initcode` builds it, with `extra` as a
+    ///      second genesis minter.
+    function _streamCode(DeployCore.Params memory p, DeployCore.Deployment memory d, address extra)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        return bytes.concat(
+            type(Stream6529).creationCode,
+            abi.encode(
+                d.manager,
+                d.workFacts,
+                p.marketOwner,
+                d.renderer,
+                d.streamTerms,
+                d.workRules,
+                _pair(d.englishAuction, extra)
+            )
+        );
+    }
+
+    /// @dev The same for `StreamEditions6529`.
+    function _editionsCode(
+        DeployCore.Params memory p,
+        DeployCore.Deployment memory d,
+        address extra
+    ) internal pure returns (bytes memory) {
+        return bytes.concat(
+            type(StreamEditions6529).creationCode,
+            abi.encode(
+                d.manager, d.stream, p.marketOwner, d.streamTerms, _pair(d.editionAuction, extra)
+            )
+        );
+    }
+
+    function _pair(address a, address b) internal pure returns (address[] memory list) {
+        list = new address[](2);
+        list[0] = a;
+        list[1] = b;
+    }
+
+    function _expectValue(string memory what, address account, uint256 expected, uint256 found)
+        internal
+    {
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                VerifyCore.ValueMismatch.selector, what, account, expected, found
+            )
+        );
     }
 
     function _manifest() internal pure returns (DeployCore.Manifest memory) {

@@ -59,7 +59,8 @@ modules and minters as constructor arguments; every later addition waits `module
 [`script/DeployCore.sol`](../script/DeployCore.sol) deploys, in order: the AccessManager →
 `ContentStore` → `StreamWorkFacts6529` → `StreamDirectory6529` → `SplitLedger` (with
 `StreamDirectory6529` as its payout resolver) → vaults and `RevenueEscrow` → `Stream6529` →
-`StreamEditions6529` → the modules. `VerifyCore` reads every slot, minter and setting back. The
+`StreamEditions6529` → the modules. `VerifyCore` reads every slot, minter and setting back, and the configuration the modules'
+constructors stored; the tokens' `MinterAdded` logs must name only the two genesis minters. The
 genesis policy is [`config/genesis.core.example.json`](../config/genesis.core.example.json).
 
 ## Identifiers and hashes

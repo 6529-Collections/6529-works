@@ -25,6 +25,11 @@
   for both auctions (`AgedCredits`): only money that has itself waited the unclaimed period goes to
   the network. The old `Stream`, `WorkRecords`, `Editions`, `ArtistRegistry`, the
   English auction's lens, the old deploy and verify scripts and their tests are removed.
+- `VerifyCore` also reads back what the constructors stored and compares it with the deployment's
+  parameters (the English auction's four values, both edition auctions' configuration and payout
+  gas, the ETH increment floor, the VRF coordinator, request parameters and retry delay), and
+  `VerifyCore.s.sol` requires the tokens' `MinterAdded` logs since the deployment to name exactly
+  the two genesis minters, so a genesis minter outside the deployment is seen.
 - Developer path on the new contracts: `script/DeployCore.s.sol` and `VerifyCore.s.sol`; the local
   walkthrough (a full sale, an edition sale, an Independent Stream work and a module swap on anvil);
   the reference keeper; nine integrator examples, one of them new (a module swap seen by an

@@ -8,9 +8,13 @@ pragma solidity 0.8.37;
 ///      (salt and the fixed proxy code) and, in the same call, sends it the contract's creation
 ///      code, which the proxy creates with CREATE at its first nonce. So the address does not
 ///      depend on the creation code, and genesis modules and minters can be constructor
-///      arguments of contracts created before them. Because only the owner can call `create`,
-///      and the proxy exists only inside that call, nobody else can create anything at a
-///      predicted address. A creation that fails reverts the whole call, proxy included.
+///      arguments of contracts created before them. The proxy's code stays on chain after the
+///      call, and anyone may call it afterwards. That is harmless: the predicted address is the
+///      proxy's CREATE address at its first nonce, that nonce is spent inside the same `create`
+///      call that made the proxy, and only the owner can call `create`. A later call to the
+///      proxy creates at a later nonce, which is a different address. So nobody else can create
+///      anything at a predicted address. A creation that fails reverts the whole call, proxy
+///      included.
 ///
 ///      The factory itself is created with CREATE2 from a salt and creation code that includes
 ///      the owner, so its address commits to the owner: anyone who creates it first creates the

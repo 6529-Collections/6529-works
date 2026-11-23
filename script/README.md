@@ -10,7 +10,7 @@ deploy script refuses every other chain. 6529 Works is pre-audit and not deploye
 | [`DeployCore.sol`](DeployCore.sol) | The library: predicts every address, deploys, builds the governance configuration and the genesis wiring from the genesis JSON, installs it |
 | [`CoreFactory.sol`](CoreFactory.sol) | The deployer's factory: creates each contract at its predicted address in one call only the deployer may make |
 | [`DeployCore.s.sol`](DeployCore.s.sol) | The broadcast script (anvil or Sepolia). It deploys, installs, accepts on anvil, reads back, prints every address and writes `deployments/<chain>/core-<timestamp>.json` |
-| [`VerifyCore.sol`](VerifyCore.sol), [`VerifyCore.s.sol`](VerifyCore.s.sol) | The read-back, as a library and as a read-only script over a deployment record: every contract's runtime code against a fresh deployment of the build, and the whole wiring |
+| [`VerifyCore.sol`](VerifyCore.sol), [`VerifyCore.s.sol`](VerifyCore.s.sol) | The read-back, as a library and as a read-only script over a deployment record: every contract's runtime code against a fresh deployment of the build, the whole wiring, the configuration the constructors stored, and the tokens' minter logs |
 | [`DeployGuards.sol`](DeployGuards.sol) | The off-anvil checks run before anything is broadcast |
 | [`ScriptIO.sol`](ScriptIO.sol) | Everything the scripts read from outside the EVM: environment, files, chain ID, the deployment parameters |
 | [`local/`](local/README.md) | The local walkthrough: one command, a full sale end to end on anvil |
@@ -132,7 +132,16 @@ A broadcast that stops partway resumes with `-Resume`.
    accepted (it refuses before, off anvil). It checks the permanent wiring, the genesis modules
    and minters (and that nothing else of the deployment mints), the four settings at their
    launch values, every module's manager and wiring, the effect of every genesis wiring call and
-   the governance configuration; then it deploys the same build again in memory from the
+   the governance configuration. It also reads back the configuration the constructors stored and
+   compares it with this run's parameters: the English auction's duration, extension window,
+   increment share and refusal gas, both edition auctions' configuration and payout gas, the ETH
+   increment floor, and the entropy module's coordinator, subscription, key hash, callback gas,
+   confirmations, payment mode and retry delay (no wrapper is set at genesis). A round deployed
+   with `AUCTION_DURATION` reads back only with the same `AUCTION_DURATION`. It then asks the
+   endpoint for every `MinterAdded` log of `Stream6529` and `StreamEditions6529` since
+   `forkBlock` (`eth_getLogs`, `LOG_BLOCK_RANGE` blocks per request) and requires exactly one per
+   token, its genesis minter, so a genesis minter that is not a contract of the deployment fails
+   the check. Then it deploys the same build again in memory from the
    record's `forkBlock` and compares every contract's address and runtime code with the chain's.
    The endpoint must serve the state of `forkBlock` (an archive endpoint such as
    `https://sepolia.gateway.tenderly.co`, or run it soon after the deploy).
@@ -237,3 +246,4 @@ notice, deploys missing vaults, and sends credits that waited `unclaimedPeriod` 
 | `VRF_COORDINATOR`, `VRF_SUBSCRIPTION_ID`, `VRF_KEY_HASH`, `VRF_NATIVE_PAYMENT`, `VRF_CALLBACK_GAS_LIMIT` (200,000), `VRF_CONFIRMATIONS` (3), `VRF_RETRY_DELAY` (3 days) | Unset: no entropy module | The round's subscription |
 | `DELEGATION_CONTRACT` | A mock is deployed | Unused: the official Sepolia deployment |
 | `DEPLOYMENT` | (`VerifyCore.s.sol`) the record to read back | Same |
+| `LOG_BLOCK_RANGE` | (`VerifyCore.s.sol`) blocks per `eth_getLogs` request, 5,000 | Same; lower it for an endpoint with a smaller limit |

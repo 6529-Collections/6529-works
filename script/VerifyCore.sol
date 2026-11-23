@@ -5,10 +5,13 @@ import { Vm } from "forge-std/Vm.sol";
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { Roles } from "src/governance/Roles.sol";
-import { Slots } from "src/interfaces/core/CoreTypes.sol";
-import { IModuleSlots } from "src/interfaces/core/IModules.sol";
+import { VrfEntropyModule } from "src/entropy/VrfEntropyModule.sol";
+import { Minter, Slots } from "src/interfaces/core/CoreTypes.sol";
+import { IModules, IModuleSlots } from "src/interfaces/core/IModules.sol";
+import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IIndependentStreamRegistry } from "src/interfaces/IIndependentStreamRegistry.sol";
 import { IStatementLog } from "src/interfaces/IStatementLog.sol";
+import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
 import {
     PRODUCT_EDITIONS,
     PRODUCT_INDEPENDENT,
@@ -26,6 +29,12 @@ import { DeployCore } from "./DeployCore.sol";
 ///           launch values;
 ///         - every module's manager and stored wiring, the vaults' destinations and the
 ///           economics' recipients;
+///         - the configuration the constructors stored (`verifyConfiguration`): the English
+///           auction's four values, durations included, both edition auctions' six values and
+///           payout gas, the ETH increment floor, and the entropy module's coordinator, request
+///           parameters and retry delay, each against the deployment's parameters;
+///         - (`verifyMinterLogs`) that the only minter each token ever logged is its genesis
+///           minter, so a genesis minter outside the deployment is seen;
 ///         - the effect of every genesis wiring call of the genesis file (a call this library
 ///           does not know how to read back fails the check);
 ///         - that the genesis configuration was installed: the network accepted and every role,
@@ -42,6 +51,11 @@ library VerifyCore {
 
     /// @notice A value read from the chain is not the expected one.
     error Mismatch(string what, address account);
+    /// @notice A stored number or word of `account` is not the one the deployment was told to
+    ///         use.
+    error ValueMismatch(string what, address account, uint256 expected, uint256 found);
+    /// @notice `token` logged `minter` as added, and it is not the token's genesis minter.
+    error UnexpectedMinter(string token, address minter);
     /// @notice The runtime code at `account` (contract `name`) is not the build's.
     error CodeMismatch(string name, address account);
     /// @notice The genesis file has a wiring call whose effect this library cannot read back.
@@ -83,6 +97,7 @@ library VerifyCore {
         }
         verifyPermanent(p, d);
         verifyModules(p, d, cfg);
+        verifyConfiguration(p, d);
         verifyWiring(d, json);
         verifyInstalled(d, cfg, networkAccepted);
     }
@@ -265,6 +280,81 @@ library VerifyCore {
         );
     }
 
+    /// @notice Checks the configuration the modules' constructors stored against the
+    ///         deployment's parameters `p`: the English auction's duration, extension window,
+    ///         increment share and refusal gas; both edition auctions' configuration and payout
+    ///         gas; the ETH increment floor; and, with a VRF coordinator, the entropy module's
+    ///         coordinator, request parameters and retry delay, with no wrapper set. Runtime
+    ///         code does not cover these: they are storage. The opening bid is a genesis wiring
+    ///         call and is read back by `verifyWiring`.
+    /// @dev `p` must be the parameters the deployment was told to use: a 1/1 auction shortened
+    ///      with `AUCTION_DURATION` reads back only against the same shortened duration.
+    function verifyConfiguration(DeployCore.Params memory p, DeployCore.Deployment memory d)
+        internal
+        view
+    {
+        address a = d.englishAuction;
+        IEnglishAuction.AuctionConfig memory want =
+            abi.decode(p.auctionConfig, (IEnglishAuction.AuctionConfig));
+        IEnglishAuction.AuctionConfig memory got = IEnglishAuction(a).config();
+        _value(got.duration, want.duration, "EnglishAuction.config.duration", a);
+        _value(
+            got.extensionWindow, want.extensionWindow, "EnglishAuction.config.extensionWindow", a
+        );
+        _value(got.incrementShare, want.incrementShare, "EnglishAuction.config.incrementShare", a);
+        _value(got.refusalGas, want.refusalGas, "EnglishAuction.config.refusalGas", a);
+
+        _editionConfiguration(p, d.editionAuction, "UniformEditionAuction");
+        _editionConfiguration(p, d.independentEditionAuction, "IndependentEditionAuction");
+
+        a = d.assetAllowlist;
+        _value(
+            IAllowlistWiring(a).incrementFloor(address(0)),
+            p.ethIncrementFloor,
+            "AssetAllowlist.incrementFloor(ETH)",
+            a
+        );
+
+        if (p.vrfCoordinator != address(0)) _entropyConfiguration(p, d.entropyModule);
+    }
+
+    /// @notice Reverts unless the minters each token logged as added (`IModules.MinterAdded`,
+    ///         from the last block before the deployment on) are exactly its one genesis minter:
+    ///         the English auction for `Stream6529`, the edition auction for
+    ///         `StreamEditions6529`. The tokens keep no list of their minters, so a genesis
+    ///         minter that is not a contract of the deployment shows only in the logs.
+    /// @param d The deployment.
+    /// @param streamAdded Every minter `Stream6529` logged as added, in order.
+    /// @param editionsAdded Every minter `StreamEditions6529` logged as added, in order.
+    function verifyMinterLogs(
+        DeployCore.Deployment memory d,
+        address[] memory streamAdded,
+        address[] memory editionsAdded
+    ) internal pure {
+        _onlyMinter(streamAdded, d.englishAuction, "Stream6529", address(d.stream));
+        _onlyMinter(editionsAdded, d.editionAuction, "StreamEditions6529", address(d.editions));
+    }
+
+    /// @notice The minters `token` logged as added among `logs` (recorded with
+    ///         `vm.recordLogs`), in order.
+    function mintersAdded(Vm.Log[] memory logs, address token)
+        internal
+        pure
+        returns (address[] memory added)
+    {
+        uint256 n;
+        for (uint256 i; i < logs.length; ++i) {
+            if (_isMinterAdded(logs[i], token)) ++n;
+        }
+        added = new address[](n);
+        uint256 k;
+        for (uint256 i; i < logs.length; ++i) {
+            if (_isMinterAdded(logs[i], token)) {
+                added[k++] = address(uint160(uint256(logs[i].topics[1])));
+            }
+        }
+    }
+
     /// @notice Checks the effect of every genesis wiring call of `json` that applies to `d`
     ///         (`DeployCore.wiring`). A call this library cannot read back reverts
     ///         `UnverifiedWiring`.
@@ -407,13 +497,85 @@ library VerifyCore {
         }
     }
 
+    function _editionConfiguration(DeployCore.Params memory p, address a, string memory name)
+        private
+        view
+    {
+        (
+            IUniformEditionAuction.AuctionConfig memory want,
+            IUniformEditionAuction.Limits memory l
+        ) = abi.decode(
+            p.editionAuctionConfig,
+            (IUniformEditionAuction.AuctionConfig, IUniformEditionAuction.Limits)
+        );
+        IUniformEditionAuction.AuctionConfig memory got = IUniformEditionAuction(a).config();
+        _value(got.basePrice, want.basePrice, string.concat(name, ".config.basePrice"), a);
+        _value(
+            got.stepsPerDecade,
+            want.stepsPerDecade,
+            string.concat(name, ".config.stepsPerDecade"),
+            a
+        );
+        _value(got.stepCount, want.stepCount, string.concat(name, ".config.stepCount"), a);
+        _value(got.marginShare, want.marginShare, string.concat(name, ".config.marginShare"), a);
+        _value(got.softWindow, want.softWindow, string.concat(name, ".config.softWindow"), a);
+        _value(got.maxExtension, want.maxExtension, string.concat(name, ".config.maxExtension"), a);
+        _value(
+            IUniformEditionAuction(a).limits().payoutGas,
+            l.payoutGas,
+            string.concat(name, ".limits.payoutGas"),
+            a
+        );
+    }
+
+    function _entropyConfiguration(DeployCore.Params memory p, address a) private view {
+        VrfEntropyModule module = VrfEntropyModule(a);
+        _eq(module.coordinator(), p.vrfCoordinator, "EntropyModule.coordinator");
+        _eq(module.wrapper(), address(0), "EntropyModule.wrapper");
+        VrfEntropyModule.VrfConfig memory got = module.config();
+        _value(got.subscriptionId, p.vrf.subscriptionId, "EntropyModule.config.subscriptionId", a);
+        _value(uint256(got.keyHash), uint256(p.vrf.keyHash), "EntropyModule.config.keyHash", a);
+        _value(
+            got.callbackGasLimit, p.vrf.callbackGasLimit, "EntropyModule.config.callbackGasLimit", a
+        );
+        _value(got.confirmations, p.vrf.confirmations, "EntropyModule.config.confirmations", a);
+        _value(
+            got.nativePayment ? 1 : 0,
+            p.vrf.nativePayment ? 1 : 0,
+            "EntropyModule.config.nativePayment",
+            a
+        );
+        _value(module.retryDelay(), p.vrfRetryDelay, "EntropyModule.retryDelay", a);
+    }
+
+    function _onlyMinter(
+        address[] memory added,
+        address expected,
+        string memory name,
+        address token
+    ) private pure {
+        for (uint256 i; i < added.length; ++i) {
+            if (added[i] != expected) revert UnexpectedMinter(name, added[i]);
+        }
+        if (added.length != 1) {
+            revert ValueMismatch(string.concat(name, " MinterAdded logs"), token, 1, added.length);
+        }
+    }
+
+    function _isMinterAdded(Vm.Log memory log, address token) private pure returns (bool) {
+        return log.emitter == token && log.topics.length == 2
+            && log.topics[0] == IModules.MinterAdded.selector;
+    }
+
     function _minter(address token, address account, bool expected, string memory what)
         private
         view
     {
-        IModuleSlotsMinters t = IModuleSlotsMinters(token);
-        bool listed = t.minterOf(account).activeFrom != 0;
-        if (t.isMinter(account) != expected || listed != expected) revert Mismatch(what, account);
+        Minter memory record = IModules(token).minterOf(account);
+        bool listed = record.activeFrom != 0;
+        if (IModules(token).isMinter(account) != expected || listed != expected) {
+            revert Mismatch(what, account);
+        }
     }
 
     function _template(address deployer, string memory artifact) private view {
@@ -435,6 +597,13 @@ library VerifyCore {
 
     function _setting(uint48 actual, uint48 expected, string memory what) private pure {
         if (actual != expected) revert Mismatch(what, address(0));
+    }
+
+    function _value(uint256 found, uint256 expected, string memory what, address account)
+        private
+        pure
+    {
+        if (found != expected) revert ValueMismatch(what, account, expected, found);
     }
 
     function _eq(address actual, address expected, string memory what) private pure {
@@ -482,6 +651,7 @@ interface IRegistryWiring {
 }
 
 interface IAllowlistWiring {
+    function incrementFloor(address asset) external view returns (uint256);
     function openingBid(address asset) external view returns (uint256);
     function setOpeningBid(address asset, uint64 expectedRevision, uint256 bid) external;
 }
@@ -518,15 +688,4 @@ interface ITemplateWiring {
 interface IEconomicsWiring {
     function museum() external view returns (address);
     function networkFeeRecipient(bytes32 product) external view returns (address);
-}
-
-interface IModuleSlotsMinters {
-    function isMinter(address account) external view returns (bool);
-    function minterOf(address minter) external view returns (MinterView memory);
-}
-
-/// @dev `Minter` of `src/interfaces/core/CoreTypes.sol`.
-struct MinterView {
-    uint48 activeFrom;
-    uint48 removedAt;
 }
