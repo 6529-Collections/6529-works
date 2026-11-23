@@ -129,6 +129,10 @@ FOUNDRY_PROFILE=symbolic halmos
 `test/symbolic` into `out-symbolic/`. The solver is the pinned `yices-smt2` from the lock. Each
 `*SymbolicTest` contract states the bounds of its proofs in its NatSpec: a proof covers every
 input up to those bounds and nothing beyond. The strength workflow runs one job per contract.
+A proof takes a fact as given (`vm.assume`) only when a Forge test in the same contract checks
+that fact for every input inside the proof's bounds: `check_RoyaltyInfoFromStorage` does so for
+one 256-bit division the solver needs most of its time limit for, and
+`test_DividesBackToTheRate_EveryRate` tries each of the 100,001 rates.
 
 ## Coverage
 
@@ -166,6 +170,26 @@ before it has mutated its target fails its shard. The scores measured on
 the current contracts, with their survivors triaged, are in
 [Mutation scores](mutation-scores.md); the figures measured on the contracts before ADR 0010 are
 kept as a historical record in [mutation-baseline.md](mutation-baseline.md).
+
+The tables of that page and the floors file are generated from
+[`tools/mutation-scores.json`](../../tools/mutation-scores.json), which holds each file's
+counts, its triaged survivors and the tests added for them:
+
+```bash
+python tools/mutation.py report mutation --json mutation/report.json   # after a campaign
+python tools/gen_mutation_scores.py --merge mutation/report.json --commit <sha> --write-floors
+python tools/gen_mutation_scores.py --check                            # what CI runs
+```
+
+`--merge` takes a file's new counts, keeps its earlier floor as "was" and drops its earlier
+survivor rows, which describe mutants of older code; the new survivors are then triaged in the
+data file and the page is written again.
+
+## Validation records
+
+A record of one pass of every layer over one commit, with the counts and what was not run:
+
+- [23 November 2026](validation-2026-11-23.md), commit `961bc956`.
 
 ## What is not tested
 

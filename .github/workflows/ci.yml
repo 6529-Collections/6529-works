@@ -44,6 +44,14 @@ jobs:
         # docs/audit/roles.md must be generated from config/genesis.core.example.json.
         run: python tools/gen_role_matrix.py --check
 
+      - name: Mutation scores generator unit tests
+        run: python -m tools.test_gen_mutation_scores
+
+      - name: Mutation scores
+        # docs/testing/mutation-scores.md and tools/mutation-floors.json must be generated from
+        # tools/mutation-scores.json.
+        run: python tools/gen_mutation_scores.py --check
+
       - name: Docs facts checker unit tests
         run: python -m tools.test_check_docs_facts
 

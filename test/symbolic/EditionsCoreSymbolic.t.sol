@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import { Test } from "forge-std/Test.sol";
 import { EditionsBase } from "src/core/EditionsBase.sol";
-import { Edition } from "src/interfaces/core/CoreTypes.sol";
+import { Core, Edition } from "src/interfaces/core/CoreTypes.sol";
 
 /// @notice A master that exists for every ID, with no renderer and no modules.
 contract SymbolicMaster {
@@ -197,16 +197,41 @@ contract EditionsCoreSymbolicTest is Test {
     ///      at the denominator pays exactly the rate and a sale at zero nothing; an edition that
     ///      does not exist answers nothing. BOUNDED: two prices (a symbolic price through
     ///      `Math.mulDiv`'s 512-bit path timed out, even below 2^64); the unit suite fuzzes
-    ///      every price against `Math.mulDiv`.
+    ///      every price against `Math.mulDiv`. The proof is in two parts. The solver spends
+    ///      most of its time limit on one fact, that the 256-bit division in
+    ///      `_dividesBackToTheRate` gives the rate, and finishes in well under a second once it
+    ///      has it. So this function takes that fact as given and proves everything else for
+    ///      every rate: the stored receiver and rate are the ones read, the 512-bit product has
+    ///      no high word, and the answer is that one division. The fact itself is checked for
+    ///      each of the 100,001 rates by `test_DividesBackToTheRate_EveryRate`.
     function check_RoyaltyInfoFromStorage(uint24 rate) public {
-        vm.assume(rate <= 100_000);
+        vm.assume(rate <= Core.DENOMINATOR);
+        vm.assume(_dividesBackToTheRate(rate));
         vm.prank(SALE);
         editions.create(ID, 1, address(0xFEE), rate);
-        (address receiver, uint256 amount) = editions.royaltyInfo(ID, 100_000);
+        (address receiver, uint256 amount) = editions.royaltyInfo(ID, Core.DENOMINATOR);
         assert(receiver == address(0xFEE) && amount == rate);
         (, amount) = editions.royaltyInfo(ID, 0);
         assert(amount == 0);
-        (receiver, amount) = editions.royaltyInfo(ID + 1, 100_000);
+        (receiver, amount) = editions.royaltyInfo(ID + 1, Core.DENOMINATOR);
         assert(receiver == address(0) && amount == 0);
+    }
+
+    /// @dev The division `check_RoyaltyInfoFromStorage` takes as given, written as
+    ///      `Math.mulDiv` computes it for a sale at the denominator: the low word of the
+    ///      product, divided by the denominator, is the rate.
+    function _dividesBackToTheRate(uint24 rate) internal pure returns (bool) {
+        unchecked {
+            return (uint256(Core.DENOMINATOR) * rate) / Core.DENOMINATOR == rate;
+        }
+    }
+
+    /// @notice The division `check_RoyaltyInfoFromStorage` takes as given holds for every rate
+    ///         an edition can store, 0 to the denominator, each one tried. Forge runs it; Halmos
+    ///         runs only the `check_` functions.
+    function test_DividesBackToTheRate_EveryRate() public pure {
+        for (uint24 rate; rate <= Core.DENOMINATOR; ++rate) {
+            assertTrue(_dividesBackToTheRate(rate));
+        }
     }
 }
