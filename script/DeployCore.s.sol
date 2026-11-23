@@ -51,13 +51,7 @@ contract DeployCoreScript is ScriptIO {
             DeployGuards.checkNoBrake(json);
         }
         DeployCore.Params memory p = params(local);
-        DeployCore.Manifest memory manifest = DeployCore.Manifest(
-            _envBytes32("MANIFEST_DIGEST", local ? keccak256("local manifest") : bytes32(0)),
-            _envString("MANIFEST_URI", local ? "ar://local-manifest" : "")
-        );
-        string memory manifestPath = _envString("MANIFEST_PATH", "");
-        if (bytes(manifestPath).length != 0) manifest.digest = sha256(_readBinary(manifestPath));
-        if (manifest.digest == 0) revert MissingParameter("MANIFEST_DIGEST");
+        DeployCore.Manifest memory manifest = manifestFromEnv(local);
 
         vm.recordLogs();
         vm.startBroadcast(msg.sender);

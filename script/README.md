@@ -144,7 +144,10 @@ and the deployer's nonce must be as the stopped run left them.
    endpoint for every `MinterAdded` log of `Stream6529` and `StreamEditions6529` since
    `forkBlock` (`eth_getLogs`, `LOG_BLOCK_RANGE` blocks per request) and requires exactly one per
    token, its genesis minter, so a genesis minter that is not a contract of the deployment fails
-   the check. Then it deploys the same build again in memory from the
+   the check. It asks in the same way for the statement log's entries of the governance chain
+   and requires exactly one, the epoch-0 manifest this run was given (`MANIFEST_PATH` or
+   `MANIFEST_DIGEST`, and `MANIFEST_URI`): the entry's logged head must be the chain's stored
+   head and its statement the expected one. Then it deploys the same build again in memory from the
    record's `forkBlock` and compares every contract's address and runtime code with the chain's.
    The endpoint must serve the state of `forkBlock` (an archive endpoint such as
    `https://sepolia.gateway.tenderly.co`, or run it soon after the deploy).

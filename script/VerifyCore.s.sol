@@ -6,6 +6,7 @@ import { Vm } from "forge-std/Vm.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { WorksAccessManager } from "src/governance/WorksAccessManager.sol";
 import { IModules } from "src/interfaces/core/IModules.sol";
+import { IStatementLog } from "src/interfaces/IStatementLog.sol";
 import { DeployCore } from "./DeployCore.sol";
 import { ScriptIO } from "./ScriptIO.sol";
 import { VerifyCore } from "./VerifyCore.sol";
@@ -16,14 +17,17 @@ import { VerifyCore } from "./VerifyCore.sol";
 ///         `VerifyCore` readback against the same parameters and genesis file the deploy used
 ///         (the stored configuration included: the auctions' values, the ETH increment floor and
 ///         the VRF request parameters), asks the RPC for every `MinterAdded` log of the two
-///         tokens since the deployment and requires exactly the two genesis minters,
+///         tokens since the deployment and requires exactly the two genesis minters, asks it
+///         for the governance chain's entries in the statement log and requires exactly the
+///         expected epoch-0 manifest,
 ///         then deploys the same build again, in the script's own memory, from the last block
 ///         before the deployment (the record's `forkBlock`) and compares the runtime code of
 ///         every contract with what is on chain. Any foreign code at a predicted address, any
 ///         different constructor argument and any missing wiring fails it.
 /// @dev `forge script script/VerifyCore.s.sol --rpc-url <rpc>` with `DEPLOYMENT` (the record)
 ///      and the deploy's environment (`GENESIS_CONFIG`, `NETWORK_FEE_RECIPIENT`, `MUSEUM`,
-///      `MARKETPLACE_OWNER`, `DEPLOY_NAMESPACE`, `AUCTION_DURATION`, `VRF_*`). It sends no
+///      `MARKETPLACE_OWNER`, `DEPLOY_NAMESPACE`, `AUCTION_DURATION`, `VRF_*`, `MANIFEST_PATH` or
+///      `MANIFEST_DIGEST`, `MANIFEST_URI`). It sends no
 ///      transaction. A value the deploy was given and this run is not (a shortened
 ///      `AUCTION_DURATION`, a VRF setting) fails the readback: the stored configuration is
 ///      compared with this run's parameters. The RPC must serve the state of `forkBlock` (an
@@ -60,6 +64,8 @@ contract VerifyCoreScript is ScriptIO {
         uint256 forkBlock = vm.parseJsonUint(record, ".forkBlock");
         checkMinters(d, forkBlock);
         console2.log("no minter was ever added but the two genesis minters, from block:", forkBlock);
+        checkManifest(d, manifestFromEnv(local), forkBlock);
+        console2.log("the governance chain holds exactly the expected epoch-0 manifest");
         uint256 compared = checkCode(p, d, forkBlock);
         console2.log("runtime code equal to the build's, contracts:", compared);
     }
@@ -101,6 +107,25 @@ contract VerifyCoreScript is ScriptIO {
         );
     }
 
+    /// @notice Reverts unless the governance chain in the statement log holds exactly the
+    ///         expected epoch-0 manifest (`VerifyCore.verifyManifest`), with the chain's entries
+    ///         read from the RPC since `forkBlock`.
+    function checkManifest(
+        DeployCore.Deployment memory d,
+        DeployCore.Manifest memory expected,
+        uint256 forkBlock
+    ) public {
+        bytes32[] memory topics = new bytes32[](2);
+        topics[0] = IStatementLog.StatementAppended.selector;
+        topics[1] = keccak256(abi.encode(address(d.manager), uint256(0)));
+        Vm.EthGetLogs[] memory logs = logsSince(d.statementLog, topics, forkBlock);
+        VerifyCore.ManifestEntry[] memory entries = new VerifyCore.ManifestEntry[](logs.length);
+        for (uint256 i; i < logs.length; ++i) {
+            entries[i] = VerifyCore.manifestEntry(logs[i].data);
+        }
+        VerifyCore.verifyManifest(d, expected, entries);
+    }
+
     /// @notice Every minter `token` logged as added (`IModules.MinterAdded`) from `fromBlock` to
     ///         the current block, in order, read from the RPC with `eth_getLogs`.
     function mintersAdded(address token, uint256 fromBlock)
@@ -110,20 +135,34 @@ contract VerifyCoreScript is ScriptIO {
     {
         bytes32[] memory topics = new bytes32[](1);
         topics[0] = IModules.MinterAdded.selector;
+        Vm.EthGetLogs[] memory logs = logsSince(token, topics, fromBlock);
+        added = new address[](logs.length);
+        for (uint256 i; i < logs.length; ++i) {
+            added[i] = address(uint160(uint256(logs[i].topics[1])));
+        }
+    }
+
+    /// @notice Every log of `emitter` with `topics` from `fromBlock` to the current block, in
+    ///         order, read from the RPC with `eth_getLogs`, `LOG_BLOCK_RANGE` blocks at a time.
+    function logsSince(address emitter, bytes32[] memory topics, uint256 fromBlock)
+        public
+        virtual
+        returns (Vm.EthGetLogs[] memory all)
+    {
         uint256 last = block.number;
         uint256 range = _envUint("LOG_BLOCK_RANGE", 5_000);
         if (range == 0) revert MissingParameter("LOG_BLOCK_RANGE");
         for (uint256 from = fromBlock; from <= last; from += range) {
             uint256 to = from + range - 1 < last ? from + range - 1 : last;
-            Vm.EthGetLogs[] memory logs = vm.eth_getLogs(from, to, token, topics);
-            address[] memory grown = new address[](added.length + logs.length);
-            for (uint256 i; i < added.length; ++i) {
-                grown[i] = added[i];
+            Vm.EthGetLogs[] memory logs = vm.eth_getLogs(from, to, emitter, topics);
+            Vm.EthGetLogs[] memory grown = new Vm.EthGetLogs[](all.length + logs.length);
+            for (uint256 i; i < all.length; ++i) {
+                grown[i] = all[i];
             }
             for (uint256 i; i < logs.length; ++i) {
-                grown[added.length + i] = address(uint160(uint256(logs[i].topics[1])));
+                grown[all.length + i] = logs[i];
             }
-            added = grown;
+            all = grown;
         }
     }
 

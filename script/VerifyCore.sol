@@ -10,7 +10,7 @@ import { Minter, Slots } from "src/interfaces/core/CoreTypes.sol";
 import { IModules, IModuleSlots } from "src/interfaces/core/IModules.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IIndependentStreamRegistry } from "src/interfaces/IIndependentStreamRegistry.sol";
-import { IStatementLog } from "src/interfaces/IStatementLog.sol";
+import { IStatementLog, Statement } from "src/interfaces/IStatementLog.sol";
 import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
 import {
     PRODUCT_EDITIONS,
@@ -62,6 +62,15 @@ library VerifyCore {
     error UnverifiedWiring(bytes4 selector);
     /// @notice The genesis configuration was not installed (the configurator still holds it).
     error NotInstalled();
+
+    /// @notice A governance manifest entry as the statement log logged it
+    ///         (`IStatementLog.StatementAppended`).
+    /// @param head The governance chain's head after the entry.
+    /// @param statement The statement in full.
+    struct ManifestEntry {
+        bytes32 head;
+        Statement statement;
+    }
 
     /// @notice `verify` with the committed genesis policy's wiring.
     function verify(
@@ -355,6 +364,57 @@ library VerifyCore {
         }
     }
 
+    /// @notice Reverts unless the governance chain in the statement log (the subject
+    ///         `(manager, 0)`) holds exactly one entry and that entry is the expected epoch-0
+    ///         manifest (`DeployCore.manifestStatement`): the one logged entry carries the
+    ///         chain's stored head, and its statement is the expected one, field for field. The
+    ///         log stores only a count and a head, so the statement itself is read from its
+    ///         event.
+    /// @param d The deployment.
+    /// @param manifest The manifest the deployment was given (its digest and URI).
+    /// @param entries Every entry the statement log logged for the governance chain, in order.
+    function verifyManifest(
+        DeployCore.Deployment memory d,
+        DeployCore.Manifest memory manifest,
+        ManifestEntry[] memory entries
+    ) internal view {
+        (uint64 count, bytes32 head) = IStatementLog(d.statementLog).chainOf(address(d.manager), 0);
+        _value(count, 1, "governance manifest entries", d.statementLog);
+        _value(entries.length, 1, "governance manifest logs", d.statementLog);
+        if (entries[0].head != head) revert Mismatch("governance manifest head", d.statementLog);
+        if (
+            keccak256(abi.encode(entries[0].statement))
+                != keccak256(abi.encode(DeployCore.manifestStatement(d, manifest)))
+        ) revert Mismatch("governance manifest", d.statementLog);
+    }
+
+    /// @notice The governance chain's entries among `logs` (recorded with `vm.recordLogs`), in
+    ///         order.
+    function manifestsAppended(Vm.Log[] memory logs, DeployCore.Deployment memory d)
+        internal
+        pure
+        returns (ManifestEntry[] memory entries)
+    {
+        bytes32 key = keccak256(abi.encode(address(d.manager), uint256(0)));
+        uint256 n;
+        for (uint256 i; i < logs.length; ++i) {
+            if (_isManifest(logs[i], d.statementLog, key)) ++n;
+        }
+        entries = new ManifestEntry[](n);
+        uint256 k;
+        for (uint256 i; i < logs.length; ++i) {
+            if (_isManifest(logs[i], d.statementLog, key)) {
+                entries[k++] = manifestEntry(logs[i].data);
+            }
+        }
+    }
+
+    /// @notice The head and the statement in the data of a `StatementAppended` log.
+    function manifestEntry(bytes memory data) internal pure returns (ManifestEntry memory e) {
+        (,,,,, e.head, e.statement) =
+            abi.decode(data, (uint8, address, uint64, uint64, bytes32, bytes32, Statement));
+    }
+
     /// @notice Checks the effect of every genesis wiring call of `json` that applies to `d`
     ///         (`DeployCore.wiring`). A call this library cannot read back reverts
     ///         `UnverifiedWiring`.
@@ -560,6 +620,15 @@ library VerifyCore {
         if (added.length != 1) {
             revert ValueMismatch(string.concat(name, " MinterAdded logs"), token, 1, added.length);
         }
+    }
+
+    function _isManifest(Vm.Log memory log, address statementLog, bytes32 key)
+        private
+        pure
+        returns (bool)
+    {
+        return log.emitter == statementLog && log.topics.length == 4
+            && log.topics[0] == IStatementLog.StatementAppended.selector && log.topics[1] == key;
     }
 
     function _isMinterAdded(Vm.Log memory log, address token) private pure returns (bool) {

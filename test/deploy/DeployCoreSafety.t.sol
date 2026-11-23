@@ -5,12 +5,16 @@ import { Test } from "forge-std/Test.sol";
 import { Vm } from "forge-std/Vm.sol";
 import { CoreFactory } from "script/CoreFactory.sol";
 import { DeployCore } from "script/DeployCore.sol";
+import { DeployGuards } from "script/DeployGuards.sol";
 import { ScriptIO } from "script/ScriptIO.sol";
 import { VerifyCore } from "script/VerifyCore.sol";
+import { VerifyCoreScript } from "script/VerifyCore.s.sol";
 import { StreamEditions6529 } from "src/core/StreamEditions6529.sol";
 import { Stream6529 } from "src/core/Stream6529.sol";
 import { VrfEntropyModule } from "src/entropy/VrfEntropyModule.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
+import { Roles } from "src/governance/Roles.sol";
+import { IModuleSlots } from "src/interfaces/core/IModules.sol";
 import { Slots } from "src/interfaces/core/CoreTypes.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
@@ -20,6 +24,19 @@ import { DelegationManagementMock } from "../mocks/identity/DelegationManagement
 /// @notice The scripts' parameter reader (`ScriptIO.params`) with the environment set by the
 ///         test.
 contract ParamsHarness is ScriptIO {
+    mapping(string name => string) internal _envs;
+
+    function setEnv(string memory name, string memory value) external {
+        _envs[name] = value;
+    }
+
+    function _env(string memory name) internal view override returns (string memory) {
+        return _envs[name];
+    }
+}
+
+/// @notice The verification script with the environment set by the test.
+contract VerifyHarness is VerifyCoreScript {
     mapping(string name => string) internal _envs;
 
     function setEnv(string memory name, string memory value) external {
@@ -544,7 +561,193 @@ contract DeployCoreSafetyTest is Test {
         this.verifyMinterLogsExternal(d, streamAdded, none);
     }
 
+    // ------------------------------------------------------------------ governance manifest
+
+    /// @dev The honest deployment: the governance chain holds exactly the manifest it was given.
+    function test_TheManifestOfTheBuildIsTheOneGiven() public {
+        DeployCore.Params memory p = _params("manifest");
+        vm.recordLogs();
+        (DeployCore.Deployment memory d,) = _deploy(p);
+        VerifyCore.ManifestEntry[] memory entries =
+            VerifyCore.manifestsAppended(vm.getRecordedLogs(), d);
+        assertEq(entries.length, 1);
+        assertEq(entries[0].statement.content.digest, _manifest().digest);
+        this.verifyManifestExternal(d, _manifest(), entries);
+    }
+
+    /// @dev A deployment given another manifest (another digest, or another URI) has an entry in
+    ///      its governance chain, which is all the wiring readback asks; the manifest check
+    ///      fails it.
+    function test_AnotherManifestThanExpectedFails() public {
+        DeployCore.Params memory p = _params("another manifest");
+        vm.recordLogs();
+        (DeployCore.Deployment memory d, GovernanceConfig.Config memory cfg) = _deploy(p);
+        VerifyCore.ManifestEntry[] memory entries =
+            VerifyCore.manifestsAppended(vm.getRecordedLogs(), d);
+        this.verifyExternal(p, d, cfg);
+        DeployCore.Manifest memory expected = _manifest();
+        expected.digest = keccak256("the manifest that was reviewed");
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                VerifyCore.Mismatch.selector, "governance manifest", d.statementLog
+            )
+        );
+        this.verifyManifestExternal(d, expected, entries);
+        expected = _manifest();
+        expected.uri = "ar://elsewhere";
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                VerifyCore.Mismatch.selector, "governance manifest", d.statementLog
+            )
+        );
+        this.verifyManifestExternal(d, expected, entries);
+    }
+
+    /// @dev Logs that are not the chain's (none, two, or one whose head is not the stored head)
+    ///      fail: the check needs the one entry the chain's head commits to.
+    function test_ManifestLogsThatAreNotTheChainsFail() public {
+        DeployCore.Params memory p = _params("manifest logs");
+        vm.recordLogs();
+        (DeployCore.Deployment memory d,) = _deploy(p);
+        VerifyCore.ManifestEntry[] memory entries =
+            VerifyCore.manifestsAppended(vm.getRecordedLogs(), d);
+        _expectValue("governance manifest logs", d.statementLog, 1, 0);
+        this.verifyManifestExternal(d, _manifest(), new VerifyCore.ManifestEntry[](0));
+        VerifyCore.ManifestEntry[] memory two = new VerifyCore.ManifestEntry[](2);
+        (two[0], two[1]) = (entries[0], entries[0]);
+        _expectValue("governance manifest logs", d.statementLog, 1, 2);
+        this.verifyManifestExternal(d, _manifest(), two);
+        // A log that states the expected manifest but is not the entry the chain holds.
+        entries[0].head = keccak256("another head");
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                VerifyCore.Mismatch.selector, "governance manifest head", d.statementLog
+            )
+        );
+        this.verifyManifestExternal(d, _manifest(), entries);
+    }
+
+    // ------------------------------------------------------------------ script guards
+
+    /// @dev `ScriptIO.params` refuses a `VRF_NATIVE_PAYMENT` that is neither 0 nor 1, and reads
+    ///      both.
+    function test_AVrfNativePaymentOtherThanZeroOrOneIsRefused() public {
+        ParamsHarness io = new ParamsHarness();
+        io.setEnv("DELEGATION_CONTRACT", vm.toString(delegation));
+        io.setEnv("VRF_COORDINATOR", vm.toString(address(new MockVrfCoordinator())));
+        io.setEnv("VRF_SUBSCRIPTION_ID", "1");
+        io.setEnv("VRF_KEY_HASH", vm.toString(keccak256("vrf key hash")));
+        io.setEnv("VRF_NATIVE_PAYMENT", "2");
+        vm.expectRevert(
+            abi.encodeWithSelector(ScriptIO.MissingParameter.selector, "VRF_NATIVE_PAYMENT")
+        );
+        io.params(true);
+        io.setEnv("VRF_NATIVE_PAYMENT", "1");
+        assertTrue(io.params(true).vrf.nativePayment);
+        io.setEnv("VRF_NATIVE_PAYMENT", "0");
+        assertFalse(io.params(true).vrf.nativePayment);
+        io.setEnv("VRF_NATIVE_PAYMENT", "");
+        assertFalse(io.params(true).vrf.nativePayment);
+    }
+
+    /// @dev `VerifyCoreScript.load` refuses a record with an entropy module when the run has no
+    ///      VRF coordinator: the module would otherwise be left out of the readback.
+    function test_ARecordWithAnEntropyModuleNeedsTheVrfCoordinator() public {
+        VerifyHarness script = new VerifyHarness();
+        DeployCore.Params memory p = _params("entropy record");
+        string memory record = string.concat(
+            "{\"CoreFactory\":\"",
+            vm.toString(outsider),
+            "\",\"EntropyModule\":\"",
+            vm.toString(outsider),
+            "\"}"
+        );
+        vm.expectRevert(
+            abi.encodeWithSelector(ScriptIO.MissingParameter.selector, "VRF_COORDINATOR")
+        );
+        script.load(p, record);
+    }
+
+    /// @dev A zero `LOG_BLOCK_RANGE` is refused before any log is asked for (the loop over the
+    ///      blocks would never advance).
+    function test_AZeroLogBlockRangeIsRefused() public {
+        VerifyHarness script = new VerifyHarness();
+        script.setEnv("LOG_BLOCK_RANGE", "0");
+        vm.expectRevert(
+            abi.encodeWithSelector(ScriptIO.MissingParameter.selector, "LOG_BLOCK_RANGE")
+        );
+        script.mintersAdded(outsider, block.number);
+    }
+
+    /// @dev The environment's manifest: the digest is required off anvil, and a file is hashed.
+    function test_TheManifestIsReadFromTheEnvironment() public {
+        ParamsHarness io = new ParamsHarness();
+        vm.expectRevert(
+            abi.encodeWithSelector(ScriptIO.MissingParameter.selector, "MANIFEST_DIGEST")
+        );
+        io.manifestFromEnv(false);
+        assertEq(io.manifestFromEnv(true).digest, keccak256("local manifest"));
+        io.setEnv("MANIFEST_PATH", CC0_FIXTURE);
+        io.setEnv("MANIFEST_URI", "ar://manifest");
+        DeployCore.Manifest memory m = io.manifestFromEnv(false);
+        assertEq(m.digest, sha256(vm.readFileBinary(CC0_FIXTURE)));
+        assertEq(m.uri, "ar://manifest");
+    }
+
+    /// @dev `DeployGuards.checkHoldersAgainst` refuses the factory as the network or as a role
+    ///      holder, like every contract of the deployment.
+    function test_TheFactoryIsRefusedAsARoleHolder() public {
+        DeployCore.Params memory p = _params("factory holder");
+        DeployCore.Deployment memory d = DeployCore.predict(p, address(this));
+        GovernanceConfig.Config memory cfg = _config(d);
+        this.checkHoldersAgainstExternal(d, p, cfg);
+        cfg.network = d.coreFactory;
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DeployGuards.HolderIsADeploymentContract.selector, Roles.NETWORK, d.coreFactory
+            )
+        );
+        this.checkHoldersAgainstExternal(d, p, cfg);
+        cfg = _config(d);
+        uint64 role = cfg.grants[0].role;
+        cfg.grants[0].account = d.coreFactory;
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DeployGuards.HolderIsADeploymentContract.selector, role, d.coreFactory
+            )
+        );
+        this.checkHoldersAgainstExternal(d, p, cfg);
+    }
+
+    /// @dev A token given the zero address as a genesis minter does not deploy.
+    function test_AZeroGenesisMinterIsRefused() public {
+        address[] memory minters = new address[](2);
+        minters[0] = outsider;
+        vm.expectRevert(abi.encodeWithSelector(IModuleSlots.InvalidModule.selector, address(0)));
+        new Stream6529(
+            address(1), address(2), address(3), address(4), address(5), address(6), minters
+        );
+        vm.expectRevert(abi.encodeWithSelector(IModuleSlots.InvalidModule.selector, address(0)));
+        new StreamEditions6529(address(1), address(2), address(3), address(4), minters);
+    }
+
     // ------------------------------------------------------------------ external wrappers
+
+    function verifyManifestExternal(
+        DeployCore.Deployment memory d,
+        DeployCore.Manifest memory expected,
+        VerifyCore.ManifestEntry[] memory entries
+    ) external view {
+        VerifyCore.verifyManifest(d, expected, entries);
+    }
+
+    function checkHoldersAgainstExternal(
+        DeployCore.Deployment memory d,
+        DeployCore.Params memory p,
+        GovernanceConfig.Config memory cfg
+    ) external pure {
+        DeployGuards.checkHoldersAgainst(d, p, cfg);
+    }
 
     function verifyMinterLogsExternal(
         DeployCore.Deployment memory d,

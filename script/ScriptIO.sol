@@ -94,6 +94,19 @@ abstract contract ScriptIO is Script {
     }
 
     /// @notice The deployment parameters from the environment; placeholders only on anvil.
+    /// @notice The epoch-0 governance manifest from the environment: `MANIFEST_PATH` (the file,
+    ///         hashed with SHA-256) or `MANIFEST_DIGEST`, and `MANIFEST_URI`. The deploy appends
+    ///         it and the verification expects it.
+    function manifestFromEnv(bool local) public view returns (DeployCore.Manifest memory m) {
+        m = DeployCore.Manifest(
+            _envBytes32("MANIFEST_DIGEST", local ? keccak256("local manifest") : bytes32(0)),
+            _envString("MANIFEST_URI", local ? "ar://local-manifest" : "")
+        );
+        string memory path = _envString("MANIFEST_PATH", "");
+        if (bytes(path).length != 0) m.digest = sha256(_readBinary(path));
+        if (m.digest == 0) revert MissingParameter("MANIFEST_DIGEST");
+    }
+
     function params(bool local) public view returns (DeployCore.Params memory p) {
         p.deployer = msg.sender;
         p.namespace =

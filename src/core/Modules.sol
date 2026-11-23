@@ -151,7 +151,9 @@ abstract contract Modules is ModuleSlots, IModules {
     /// @dev Records a minter. Called from constructors (genesis minters, active at once) and
     ///      `addMinter` only.
     ///      The first time it was to become active is kept through removals and re-additions.
+    ///      The zero address is never a minter (`InvalidModule`).
     function _addMinter(address minter, uint48 activeFrom) internal {
+        if (minter == address(0)) revert InvalidModule(minter);
         uint48 first = _minters[minter].firstActiveFrom;
         _minters[minter] = Minter(activeFrom, 0, first == 0 ? activeFrom : first);
         emit MinterAdded(minter, activeFrom);
