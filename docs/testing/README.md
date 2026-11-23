@@ -18,7 +18,8 @@ check. [What is not tested](#what-is-not-tested) says where the layers stop.
 > integration suites, the gas table, the fork suites and several invariant campaigns are being
 > ported to the new contracts. Until they land, the rows of the
 > [specification](../spec/README.md) and of [Invariants](../audit/invariants.md) that await them
-> name no test, and the coverage and mutation floors of the new files are placeholders.
+> name no test, and the coverage floors of the new files are placeholders. The mutation floors
+> were measured on the new contracts on 23 November 2026 ([Mutation scores](mutation-scores.md)).
 
 ## Run it
 
@@ -155,9 +156,12 @@ python tools/mutation.py report mutation --markdown mutation/report.md
 generates the mutants; `tools/mutation.py` adds one rule of its own (every integer-literal
 constant moved one up and one down), plans one shard per `src/` file, splits the files whose
 shard does not finish in a CI job, and compares each file's score with its floor in
-[`tools/mutation-floors.json`](../../tools/mutation-floors.json). The figures measured on the
-contracts before ADR 0010 are kept as a historical record in
-[mutation-baseline.md](mutation-baseline.md).
+[`tools/mutation-floors.json`](../../tools/mutation-floors.json). slither-mutate mutates only the
+contract named like its file, so the tool runs it once for every contract a file declares (a
+base contract beside the concrete one would otherwise never be mutated). The scores measured on
+the current contracts, with their survivors triaged, are in
+[Mutation scores](mutation-scores.md); the figures measured on the contracts before ADR 0010 are
+kept as a historical record in [mutation-baseline.md](mutation-baseline.md).
 
 ## What is not tested
 
@@ -166,8 +170,9 @@ contracts before ADR 0010 are kept as a historical record in
   the fork suites (the delegation contract, the VRF coordinator, the deploy simulation), the
   log replay of the ledger and content store, the real-data vectors, and the campaigns listed as
   placeholders in [Invariants](../audit/invariants.md) have no test on the new contracts yet.
-- **Floors not yet measured.** The coverage and mutation floors of the files added by the
-  restructuring are placeholders until the first coverage and mutation runs on the new code.
+- **Floors not yet measured.** The coverage floors of the files added by the restructuring are
+  placeholders until the first coverage run on the new code. The mutation floors are measured
+  ([Mutation scores](mutation-scores.md)), except for any file that page lists as not finished.
 - **Bounded proofs only.** The Halmos proofs cover every input within their stated bounds. Not
   proved: the share arithmetic across payees (256-bit division), multi-payee release
   interleavings, ECDSA and ERC-1271 themselves. No other prover has been run.
