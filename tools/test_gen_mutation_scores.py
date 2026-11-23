@@ -147,7 +147,7 @@ class FloorTest(unittest.TestCase):
     def test_survivor_rows_must_match_the_counts(self) -> None:
         data = sample()
         data["survivors"]["src/a/Core.sol"].pop()
-        self.assertIn("3 rows for 4 survivors", gs.validate(data)[0])
+        self.assertIn("3 rows and 0 not triaged for 4 survivors", gs.validate(data)[0])
         data = sample()
         data["files"]["src/a/Core.sol"].update(newKills=1, floor=96)
         self.assertIn("2 rows are killed, but newKills is 1", gs.validate(data)[0])
@@ -210,6 +210,12 @@ class RenderTest(unittest.TestCase):
             "  - `test_One` (B L4)\n"
         ))
         self.assertEqual(gs.render_tests([]), "")
+
+    def test_summary_counts_the_survivors_left_without_a_row(self) -> None:
+        rows = [row(1, "equivalent"), row(2, "killed")]
+        self.assertEqual(
+            gs.survivor_summary(rows, 3), "5 survivors: 1 equivalent, 1 killed, 3 not triaged."
+        )
 
     def test_summary_lists_verdicts_in_order_of_first_appearance(self) -> None:
         rows = [row(1, "killed"), row(2, "equivalent"), row(3, "equivalent"), row(4, "gas"),

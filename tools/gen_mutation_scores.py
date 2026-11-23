@@ -25,16 +25,19 @@ The data file, tools/mutation-scores.json:
                         "was": the floor before this measurement, or null,
                         "remeasured": optional {"mutants", "killed"}, a later whole
                             measurement of the file,
-                        "measuredAt": optional, the commit `--merge` was given}.
+                        "measuredAt": optional, the commit `--merge` was given,
+                        "untriaged": optional, how many of the file's survivors its rows
+                            under "survivors" leave out}.
                Survived is mutants - killed. Score is killed / mutants. Final is
                (killed + newKills) / mutants, or the rate of "remeasured" where there is one
                (shown with "(measured again)"). The floor must be the final score minus the
                margin, rounded down, and never below zero: anything else fails.
   "survivors"  path -> the file's surviving mutants in page order, each
                {"line", "rule", "verdict", "why"}. A file listed here must list every
-               survivor, and as many "killed" rows as its "newKills". The line under the
-               heading ("48 survivors: 45 equivalent, 2 killed, 1 gas.") is counted from the
-               rows, verdicts in the order they first appear.
+               survivor but the "untriaged" ones, and as many "killed" rows as its
+               "newKills". The line under the heading ("48 survivors: 45 equivalent, 2 killed,
+               1 gas.") is counted from the rows, verdicts in the order they first appear,
+               with ", 3 not triaged" at the end where some are left out.
   "addenda"    path -> blocks shown after the file's survivor table, each {"text": [lines]}
                or {"rows": [survivor rows]}. Their rows are not counted as survivors.
   "tests"      the tests added: [{"file", "tests": [{"name", "where": ["Stem L123", ...]}]}].
@@ -83,7 +86,7 @@ MARKER_LIKE = re.compile(r"\s*<!--\s*/?generated\b")
 
 TOP_KEYS = ("margin", "files", "survivors", "addenda", "tests")
 FILE_KEYS = ("tier", "mutants", "killed", "timedOut", "newKills", "floor", "was")
-FILE_OPTIONAL_KEYS = ("remeasured", "measuredAt")
+FILE_OPTIONAL_KEYS = ("remeasured", "measuredAt", "untriaged")
 ROW_KEYS = ("line", "rule", "verdict", "why")
 
 SCORES_HEADER = (
@@ -174,6 +177,11 @@ def validate(data: dict) -> list[str]:
             continue
         if entry["was"] is not None and not _is_count(entry["was"]):
             errors.append(f"{path}: was must be a whole number or null")
+        if "untriaged" in entry and not (_is_count(entry["untriaged"]) and entry["untriaged"]):
+            errors.append(f"{path}: untriaged must be a whole number above zero")
+            continue
+        if "untriaged" in entry and not data.get("survivors", {}).get(path):
+            errors.append(f"{path}: untriaged needs the file's other survivors listed")
         want = expected_floor(entry, margin)
         if entry["floor"] != want:
             killed, mutants = final_counts(entry)
@@ -196,8 +204,14 @@ def validate(data: dict) -> list[str]:
         if not all(_is_count(entry.get(key)) for key in ("mutants", "killed", "newKills")):
             continue
         survived = entry["mutants"] - entry["killed"]
-        if len(rows) != survived:
-            errors.append(f"survivors of {path}: {len(rows)} rows for {survived} survivors")
+        untriaged = entry.get("untriaged", 0)
+        if not _is_count(untriaged):
+            continue
+        if len(rows) + untriaged != survived:
+            errors.append(
+                f"survivors of {path}: {len(rows)} rows and {untriaged} not triaged "
+                f"for {survived} survivors"
+            )
         killed_rows = sum(1 for row in rows if row["verdict"] == "killed")
         if killed_rows != entry["newKills"]:
             errors.append(
@@ -302,13 +316,18 @@ def render_tests(tests: list) -> str:
     return "".join(out)
 
 
-def survivor_summary(rows: list) -> str:
-    """"10 survivors: 8 equivalent, 2 killed." with verdicts in the order they first appear."""
+def survivor_summary(rows: list, untriaged: int = 0) -> str:
+    """"10 survivors: 8 equivalent, 2 killed." with verdicts in the order they first appear.
+
+    `untriaged` survivors have no row: they are counted and named last ("3 not triaged").
+    """
     counts: dict[str, int] = {}
     for row in rows:
         counts[row["verdict"]] = counts.get(row["verdict"], 0) + 1
-    parts = ", ".join(f"{count} {verdict}" for verdict, count in counts.items())
-    return f"{len(rows)} survivors: {parts}."
+    parts = [f"{count} {verdict}" for verdict, count in counts.items()]
+    if untriaged:
+        parts.append(f"{untriaged} not triaged")
+    return f"{len(rows) + untriaged} survivors: {', '.join(parts)}."
 
 
 def render_survivor_table(rows: list) -> str:
@@ -328,7 +347,8 @@ def render_survivors(files: dict, survivors: dict, addenda: dict) -> str:
         rows = survivors[path]
         if not rows:
             continue
-        blocks = [f"### `{path}`\n", survivor_summary(rows) + "\n", render_survivor_table(rows)]
+        summary = survivor_summary(rows, files[path].get("untriaged", 0))
+        blocks = [f"### `{path}`\n", summary + "\n", render_survivor_table(rows)]
         for block in addenda.get(path, []):
             if "text" in block:
                 blocks.append("".join(line + "\n" for line in block["text"]))
@@ -462,7 +482,8 @@ def merge_report(data: dict, report: dict, commit: str | None = None) -> dict:
 
     Each reported file gets the report's counts, its previous floor as "was", no kills by new
     tests, a floor computed afresh, and `commit` as "measuredAt" when one is given. Its
-    "remeasured" figures, survivor rows and addenda are dropped. The tests added are kept.
+    "remeasured" figures, "untriaged" count, survivor rows and addenda are dropped. The tests
+    added are kept.
     A file that did not finish, or that the data does not list, refuses the whole merge.
     """
     refused = []
