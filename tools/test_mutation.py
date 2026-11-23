@@ -355,7 +355,11 @@ class ShardTest(unittest.TestCase):
                 finally:
                     mt._run_logged = real
                 if result.status == "error":
-                    want = "`forge clean` before Thing failed" if clean else "did not finish Thing"
+                    want = (
+                        "`forge clean` before Thing failed" if clean
+                        else "an operator failed for Thing" if mt.MUTATOR_FAILED in logs[-1]
+                        else "did not finish Thing"
+                    )
                     self.assertIn(want, err.getvalue())
                 return result.status, result.mutants
 
@@ -364,6 +368,14 @@ class ShardTest(unittest.TestCase):
         self.assertEqual(status([finished, ""]), ("error", 34))
         # A target that finished with nothing to mutate is fine.
         self.assertEqual(status([finished, nothing_to_mutate]), ("ok", 34))
+        # A run that finished after one of its operators raised lacks that operator's mutants
+        # (slither-mutate logs the failure and counts none for it): not a result either.
+        failed_operator = (
+            "INFO:Slither-Mutate:Mutating contract Thing\n"
+            "ERROR:Slither-Mutate:CR mutator failed in Thing: 99\n" + LOG.split("\n", 2)[2]
+        )
+        self.assertIn(mt.COMPLETED, failed_operator)
+        self.assertEqual(status([finished, failed_operator]), ("error", 34))
         # The second target is not run on a build that could not be cleaned.
         self.assertEqual(status([finished, nothing_to_mutate], clean=1), ("error", 34))
         # A file that is not `ok` fails the floor check by name, whatever its rate.

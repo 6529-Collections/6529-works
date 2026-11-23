@@ -187,6 +187,11 @@ ABORTED = "Test suite fails with mutations, aborting"
 # first, unmutated test run took longer than --timeout, or the named contract is not in the
 # file) logs nothing of the kind and still exits with 0.
 COMPLETED = "Done mutating"
+# Logged by slither-mutate 0.11.6 when an operator raises while it makes its mutants: the
+# operator then counts as having none, and the run goes on and finishes. The text is that
+# version's (`AbstractMutator.mutate`); check it again when the pin in requirements-tools.lock
+# moves.
+MUTATOR_FAILED = "mutator failed in"
 TIMED_OUT = "Tests took too long"
 # `uint256 internal constant NAME = 1_000;` (any visibility order), integer literals only.
 CONSTANT = re.compile(
@@ -767,6 +772,16 @@ def run_slither_mutate(
         # Every run has to say that it finished: a run that stopped early exits with 0 too, and
         # read as a result it would count as a target with nothing to mutate. A run that finds
         # nothing to mutate still logs the line. (An aborted run is told apart in `parse_log`.)
+        if MUTATOR_FAILED in text:
+            # The run finished, without that operator's mutants: its totals are not the file's.
+            result.status = "error"
+            print(
+                f"[{shard.name}] an operator failed for {contract or shard.path} "
+                f"(`{MUTATOR_FAILED}` in {log.as_posix()})",
+                file=sys.stderr,
+                flush=True,
+            )
+            return
         if ABORTED not in text and COMPLETED not in text:
             result.status = "error"
             print(
