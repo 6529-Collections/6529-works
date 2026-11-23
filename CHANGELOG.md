@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Rule rows brought in line with the code.** Eight of the nine rules left in
+  `tools/rules-uncovered.txt` are reworded to say what the contracts do and now name the tests
+  that pin it: AUC-14, AUC-15, PROP-AUC-1, GV-20, ENT-20, EA-19, IND-58 and IND-67. IND-56
+  stays listed until a decision on it is made. Stale wording is corrected in other rows
+  (AUC-27, AUC-32, AUC-40, WS-11, WS-40, ED-4, EA-21, IND-42, IND-44, IND-45, IND-70, IND-71,
+  ENT-17, PROP-ED-1, PROP-GAS-1) and in the limitations register (LIM-GAS-1, LIM-ID-21,
+  LIM-EA-18, LIM-ENT-8). Documentation only: no contract and no test changed.
 - **Rule tests on the plain core.** 146 rules of the specification and properties of the
   invariant catalogue that named no test since the plain-core restructuring name their tests
   again: existing suites where they already pin the rule, and 62 new tests where they did not
