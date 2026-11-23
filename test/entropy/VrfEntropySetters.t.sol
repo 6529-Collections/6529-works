@@ -41,7 +41,7 @@ contract VrfEntropySettersTest is EntropyBase {
         vm.startPrank(successor);
         vm.expectRevert(IEntropyModule.ExpectedValueMismatch.selector);
         module.lowerCallbackGasLimit(previous.callbackGasLimit + 1, next.callbackGasLimit);
-        vm.expectRevert(VrfEntropyModule.InvalidConfig.selector);
+        vm.expectRevert(IEntropyModule.InvalidConfig.selector);
         module.lowerCallbackGasLimit(previous.callbackGasLimit, next.callbackGasLimit - 1);
         assertEq(module.config().callbackGasLimit, previous.callbackGasLimit, "unchanged");
 
