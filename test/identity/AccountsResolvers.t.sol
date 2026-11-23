@@ -9,6 +9,7 @@ import { IIndependentStreamRegistry } from "src/interfaces/IIndependentStreamReg
 import { MintFacts, Slots } from "src/interfaces/core/CoreTypes.sol";
 import { SignatureVerifier } from "src/libraries/SignatureVerifier.sol";
 import { CoreFixture } from "../mocks/core/CoreFixture.sol";
+import { RawStreamAnswer } from "../mocks/identity/AccountsMutationMocks.sol";
 import { DelegationManagementMock } from "../mocks/identity/DelegationManagementMock.sol";
 import { SplitFactoryWalletsMock } from "../mocks/identity/IdentityWorksMocks.sol";
 
@@ -42,23 +43,6 @@ contract RawWorkToken {
     }
 
     function workOf(uint256) external view returns (bytes memory) {
-        bytes memory a = _answer;
-        assembly ("memory-safe") {
-            return(add(a, 0x20), mload(a))
-        }
-    }
-}
-
-/// @notice An editions-like contract that answers `stream` with whatever bytes the test sets
-///         (and has no `workOf`).
-contract RawStreamAnswer {
-    bytes internal _answer;
-
-    function setAnswer(bytes calldata answer) external {
-        _answer = answer;
-    }
-
-    function stream() external view returns (bytes memory) {
         bytes memory a = _answer;
         assembly ("memory-safe") {
             return(add(a, 0x20), mload(a))

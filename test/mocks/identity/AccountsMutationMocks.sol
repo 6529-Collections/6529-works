@@ -8,3 +8,20 @@ contract YesToEveryInterface {
         return true;
     }
 }
+
+/// @notice An editions-like contract that answers `stream` with whatever bytes the test sets
+///         (and has no `workOf`).
+contract RawStreamAnswer {
+    bytes internal _answer;
+
+    function setAnswer(bytes calldata answer) external {
+        _answer = answer;
+    }
+
+    function stream() external view returns (bytes memory) {
+        bytes memory a = _answer;
+        assembly ("memory-safe") {
+            return(add(a, 0x20), mload(a))
+        }
+    }
+}

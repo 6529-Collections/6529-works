@@ -29,6 +29,12 @@ contract IndependentEditionAuctionMutationTest is IndependentEditionAuctionTest 
     function test_Raise_MovesTheBidUpForTheDifference() public {
         uint256 saleId = _open();
         uint256 bidId = _bid(saleId, alice, 10, 2);
+        uint256 paid = 2 * (ua.stepPrice(saleId, 12) - ua.stepPrice(saleId, 10));
+        // An uncapped sale has no queue position, and a raise this early leaves the end as it is.
+        vm.expectEmit(address(auction));
+        emit IUniformEditionAuction.BidRaised(
+            saleId, bidId, alice, 10, 12, 0, paid, ua.endTimes(saleId).endTime
+        );
         _raise(saleId, alice, bidId, 12);
         assertEq(ua.bidOf(saleId, bidId).step, 12);
         assertEq(address(auction).balance, 2 * ua.stepPrice(saleId, 12));

@@ -1070,8 +1070,16 @@ contract PackageRegistryTest is CurationBase {
     ///      nonce 255 is the first to write another slot.
     function test_revokeMove_first255NoncesShareOneSlot() public {
         _ready(SHA_A);
+        // Find the slot with a revoke, then undo the revoke: the word must hold the acceptance's
+        // sentinel (the top bit) and no nonce before any nonce is spent.
+        uint256 beforeAnyRevoke = vm.snapshotState();
         bytes32 first = _slotWrittenByRevoke(0);
-        assertNotEq(vm.load(address(registry), first), bytes32(0), "the acceptance wrote it");
+        assertTrue(vm.revertToState(beforeAnyRevoke), "state restored");
+        assertFalse(registry.isMoveNonceUsed(_id(lead), 0), "no nonce spent yet");
+        assertEq(
+            vm.load(address(registry), first), bytes32(uint256(1) << 255), "the acceptance wrote it"
+        );
+        assertEq(_slotWrittenByRevoke(0), first, "nonce 0 writes that word");
         assertEq(_slotWrittenByRevoke(254), first, "nonce 254 is in the first word");
         assertNotEq(_slotWrittenByRevoke(255), first, "nonce 255 opens the second word");
     }

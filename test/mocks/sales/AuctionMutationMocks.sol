@@ -39,3 +39,33 @@ contract SafeMintingToken {
         return 1;
     }
 }
+
+/// @notice A bidder that, while its refund is being paid, tries every call it was armed with on
+///         the auction, records whether each succeeded and the first four bytes of its answer, and
+///         then accepts the refund.
+contract RefundReentrant {
+    address internal immutable _auction;
+    bytes[] internal _calls;
+    bool[] public succeeded;
+    bytes4[] public answers;
+
+    constructor(address auction_) {
+        _auction = auction_;
+    }
+
+    function arm(bytes calldata call_) external {
+        _calls.push(call_);
+    }
+
+    function attempts() external view returns (uint256) {
+        return answers.length;
+    }
+
+    receive() external payable {
+        for (uint256 i; i < _calls.length; ++i) {
+            (bool ok, bytes memory ret) = _auction.call(_calls[i]);
+            succeeded.push(ok);
+            answers.push(bytes4(ret));
+        }
+    }
+}

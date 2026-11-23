@@ -171,7 +171,7 @@ A file with no mutants (constants of other types, or declarations only) needs no
 - `test/economics/RevenueEscrow.t.sol`
   - `test_Recover_ReentryIsBlocked` (RevenueEscrow L147)
 - `test/identity/Accounts.t.sol`
-  - `test_OwnChange_APayoutThatDoesNotImplementErc165IsNotANetworkContract` (Accounts L663)
+  - `test_OwnChange_CurrentBehaviour_APayoutAnsweringTrueToEveryProbeIsAccepted` (Accounts L663)
   - `test_OwnChange_TheAccountStillActsWhileItsOwnChangeWaits` (Accounts L695)
   - `test_Register_LogsTheNewAccount` (Accounts L569)
   - `test_Register_RefusesARootAPendingChangeReserves` (Accounts L564)
@@ -643,8 +643,8 @@ One row per surviving mutant of the permanent contracts and the money and mint m
 | 578 | MIA | equivalent | an ID over 160 bits names no account (isWallet answers false for it), so returning it instead of zero gives the same 'no' |
 | 578 | ROR | killed | `test_IsArtist_TheHighestArtistIdCounts`: the artist ID type(uint160).max was read as no artist (`>=` for `>`) |
 | 599 | ROR | equivalent | ChangeKind.NONE is the lowest enum value, so the comparison is the same |
-| 663 | LOR | killed | `test_OwnChange_APayoutThatDoesNotImplementErc165IsNotANetworkContract`: a payout contract that answers true to every ERC-165 probe (so is not ERC-165) was refused as a network contract |
-| 663 | MIA | killed | `test_OwnChange_APayoutThatDoesNotImplementErc165IsNotANetworkContract`: a payout contract that answers true to every ERC-165 probe (so is not ERC-165) was refused as a network contract |
+| 663 | LOR | killed | `test_OwnChange_CurrentBehaviour_APayoutAnsweringTrueToEveryProbeIsAccepted`: a payout contract that answers true to every ERC-165 probe (so is not ERC-165) was refused as a network contract |
+| 663 | MIA | killed | `test_OwnChange_CurrentBehaviour_APayoutAnsweringTrueToEveryProbeIsAccepted`: a payout contract that answers true to every ERC-165 probe (so is not ERC-165) was refused as a network contract |
 | 675 | ROR | equivalent | `<` vs `!=` on a loop counter that steps by one |
 | 675 | UOR | equivalent | `++i` vs `i++` as a loop step whose value is unused |
 | 678 | CR | equivalent | the removed `return false` equals the default return value |

@@ -84,9 +84,15 @@ contract AccountsTest is AccountsFixture {
         assertEq(registry.requireSigned(artistId, digest, _proof(walletKey, digest)), wallet);
     }
 
-    /// @dev Only a contract that implements ERC-165 and declares a network contract's interface
-    ///      is refused as a payout: one answering true to every probe does not implement ERC-165.
-    function test_OwnChange_APayoutThatDoesNotImplementErc165IsNotANetworkContract() public {
+    /// @dev Documents current behaviour; it is not a requirement. The payout check refuses a
+    ///      contract that declares a network contract's interface, and reads declarations the
+    ///      way ERC-165 defines them: a contract answering true to every probe, `0xffffffff`
+    ///      included, does not implement ERC-165, so nothing it answers counts and it is
+    ///      accepted like any other contract. The check guards an account against naming a
+    ///      known network contract as its own payout by mistake; an account that names a
+    ///      contract like this one affects only its own payouts. A stricter check that refused
+    ///      it would be just as acceptable: change this test with the check.
+    function test_OwnChange_CurrentBehaviour_APayoutAnsweringTrueToEveryProbeIsAccepted() public {
         address odd = address(new YesToEveryInterface());
         _stage(artistKey, _identity(artist, odd));
         assertEq(registry.pendingChange(artistId).next.payout, odd);
