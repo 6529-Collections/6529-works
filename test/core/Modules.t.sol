@@ -289,4 +289,18 @@ contract ModulesTest is Test {
         assertTrue(m.isMinter(genesisMinter));
         assertEq(m.removedAt(genesisMinter), 0);
     }
+
+    /// A minter that was active, added again and removed before its new wait ended keeps its
+    /// record: it counts as a minter that was active, though its new start never came.
+    function test_RemoveMinter_AgainBeforeTheNewWaitStillCountsAsOnceActive() public {
+        m.removeMinter(genesisMinter);
+        m.addMinter(genesisMinter);
+        assertFalse(m.wasActive(genesisMinter));
+        skip(1 days);
+        m.removeMinter(genesisMinter);
+        assertTrue(m.wasActive(genesisMinter));
+        assertEq(m.removedAt(genesisMinter), block.timestamp);
+        assertGt(m.minterOf(genesisMinter).activeFrom, block.timestamp);
+        assertFalse(m.isMinter(genesisMinter));
+    }
 }

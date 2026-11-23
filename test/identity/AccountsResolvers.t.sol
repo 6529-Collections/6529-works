@@ -7,6 +7,7 @@ import { ConsolidationAdapter, IDelegationManagement } from "src/identity/Consol
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
 import { IIndependentStreamRegistry } from "src/interfaces/IIndependentStreamRegistry.sol";
 import { MintFacts, Slots } from "src/interfaces/core/CoreTypes.sol";
+import { SignatureVerifier } from "src/libraries/SignatureVerifier.sol";
 import { CoreFixture } from "../mocks/core/CoreFixture.sol";
 import { DelegationManagementMock } from "../mocks/identity/DelegationManagementMock.sol";
 import { SplitFactoryWalletsMock } from "../mocks/identity/IdentityWorksMocks.sol";
@@ -41,6 +42,23 @@ contract RawWorkToken {
     }
 
     function workOf(uint256) external view returns (bytes memory) {
+        bytes memory a = _answer;
+        assembly ("memory-safe") {
+            return(add(a, 0x20), mload(a))
+        }
+    }
+}
+
+/// @notice An editions-like contract that answers `stream` with whatever bytes the test sets
+///         (and has no `workOf`).
+contract RawStreamAnswer {
+    bytes internal _answer;
+
+    function setAnswer(bytes calldata answer) external {
+        _answer = answer;
+    }
+
+    function stream() external view returns (bytes memory) {
         bytes memory a = _answer;
         assembly ("memory-safe") {
             return(add(a, 0x20), mload(a))
@@ -163,6 +181,44 @@ contract AccountsResolversTest is CoreFixture {
         assertTrue(acc.isArtist(address(raw), id, artist), "an edition naming a master");
     }
 
+    /// @dev An edition's master is read only from exactly one word holding a clean address: a
+    ///      longer answer, or a word with bits above the address, is "no" even when the address
+    ///      in it is a master whose artist asks.
+    function test_IsArtist_AnEditionAnswerThatIsNotOneCleanAddressIsNo() public {
+        uint256 id = _mintFor(1, artistId);
+        RawStreamAnswer raw = new RawStreamAnswer();
+        raw.setAnswer(abi.encode(address(stream)));
+        assertTrue(acc.isArtist(address(raw), id, artist), "one clean address");
+        raw.setAnswer(abi.encode(address(stream), uint256(0)));
+        assertFalse(acc.isArtist(address(raw), id, artist), "two words");
+        raw.setAnswer(abi.encode(uint256(1) << 160 | uint160(address(stream))));
+        assertFalse(acc.isArtist(address(raw), id, artist), "bits above the address");
+    }
+
+    /// @dev Every 160-bit value is an address: a master at the highest one is read as any other.
+    function test_IsArtist_AMasterAtTheHighestAddressCounts() public {
+        address top = address(type(uint160).max);
+        vm.etch(top, address(new RawWorkToken()).code);
+        RawWorkToken(top).setAnswer(_work(artistId, 11));
+        RawStreamAnswer raw = new RawStreamAnswer();
+        raw.setAnswer(abi.encode(top));
+        assertTrue(acc.isArtist(address(raw), 1, artist));
+        assertFalse(acc.isArtist(address(raw), 1, outsider));
+    }
+
+    /// @dev Every 160-bit value is an artist ID: the account of the highest address is answered
+    ///      for as any other.
+    function test_IsArtist_TheHighestArtistIdCounts() public {
+        address top = address(type(uint160).max);
+        vm.prank(packageRegistry);
+        uint256 topId = acc.register(top, bytes32(0), bytes32(0));
+        assertEq(topId, type(uint160).max);
+        RawWorkToken raw = new RawWorkToken();
+        raw.setAnswer(_work(topId, 11));
+        assertTrue(acc.isArtist(address(raw), 1, top));
+        assertFalse(acc.isArtist(address(raw), 1, artist));
+    }
+
     // ------------------------------------------------------------------ Independent Stream
     // forwards
 
@@ -192,6 +248,27 @@ contract AccountsResolversTest is CoreFixture {
             uint160(account)
         );
         assertEq(acc.authorityOf(uint160(account)), account);
+    }
+
+    /// @dev The account's acceptance is good through its deadline and refused a second later.
+    function test_RegisterIndependent_RefusesAnExpiredAcceptance() public {
+        uint256 key = 0xF1;
+        address account = vm.addr(key);
+        uint64 deadline = uint64(block.timestamp + 1 days);
+        bytes memory sig =
+            _sign(key, acc.registrationDigest(account, bytes32(0), bytes32(0), deadline));
+        vm.warp(uint256(deadline) + 1);
+        vm.prank(address(independentStream));
+        vm.expectRevert(
+            abi.encodeWithSelector(SignatureVerifier.SignatureExpired.selector, uint256(deadline))
+        );
+        acc.registerIndependent(account, bytes32(0), bytes32(0), deadline, sig);
+        vm.warp(deadline);
+        vm.prank(address(independentStream));
+        assertEq(
+            acc.registerIndependent(account, bytes32(0), bytes32(0), deadline, sig),
+            uint160(account)
+        );
     }
 
     function test_RegisterIndependent_RefusedWhileTheSlotIsEmpty() public {

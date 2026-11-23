@@ -427,6 +427,21 @@ contract StreamTest is CoreFixture {
         sale.record(address(stream), id, true, collector, 1);
     }
 
+    /// @dev A minter removed, added again and removed once more before its new wait ended is a
+    ///      removed minter that was active: it still settles the tokens it holds.
+    function test_RecordPrimarySale_AMinterRemovedTwiceStillSettlesItsSales() public {
+        uint256 id = _mint(1);
+        uint256 second = _mint(2);
+        stream.removeMinter(address(sale));
+        stream.addMinter(address(sale));
+        skip(1 days);
+        stream.removeMinter(address(sale));
+        sale.record(address(stream), id, true, collector, 1 ether);
+        assertEq(uint8(stream.workOf(id).outcome), uint8(Outcome.SOLD));
+        sale.burn(address(stream), second);
+        assertEq(stream.totalBurned(), 1);
+    }
+
     // ------------------------------------------------------------------------------ burn
 
     function test_Burn_LeavesTheRecordAndTheGap() public {
@@ -736,6 +751,23 @@ contract StreamTest is CoreFixture {
         terms.setRoyalty(address(stream), live, address(1), 1);
         vm.expectRevert(_notTerms(address(terms)));
         terms.lockRoyaltyRate(address(stream), live);
+    }
+
+    function test_SetRoyalty_AcceptsARateOfExactlyTheDenominator() public {
+        uint256 id = _mint(1);
+        vm.expectEmit(address(stream));
+        emit IStream.RoyaltySet(id, address(1), uint24(Core.DENOMINATOR));
+        terms.setRoyalty(address(stream), id, address(1), uint24(Core.DENOMINATOR));
+        (address receiver, uint256 amount) = stream.royaltyInfo(id, 7 ether);
+        assertEq(receiver, address(1));
+        assertEq(amount, 7 ether);
+    }
+
+    /// Only equal IDs are one update: a range is logged as given, descending included.
+    function test_EmitMetadataUpdate_ADescendingRangeIsLoggedAsARange() public {
+        vm.expectEmit(address(stream));
+        emit IERC4906.BatchMetadataUpdate(9, 1);
+        terms.refresh(address(stream), 9, 1);
     }
 
     function testFuzz_LockRoyaltyRate_TheRateNeverChangesTheReceiverStillCan(

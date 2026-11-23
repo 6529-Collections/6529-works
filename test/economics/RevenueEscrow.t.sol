@@ -236,6 +236,31 @@ contract RevenueEscrowTest is EconomicsBase {
         assertEq(escrow.owed(address(wallet), ETH), 1 ether);
     }
 
+    /// @dev A recovery holds the escrow's guard too: an account the network lets recover cannot
+    ///      do it from inside a flush that pays it.
+    function test_Recover_ReentryIsBlocked() public {
+        ReentrantRecipient hostile = new ReentrantRecipient();
+        manager.grantRole(manager.ADMIN_ROLE(), address(hostile), 0);
+        vm.startPrank(depositor);
+        escrow.depositETH{ value: 1 ether }(address(hostile));
+        escrow.depositETH{ value: 1 ether }(alice);
+        vm.stopPrank();
+        vm.prank(alice);
+        escrow.consentToRecovery(bob);
+        hostile.configure(
+            address(escrow), abi.encodeCall(IRevenueEscrow.recover, (alice, bob, ETH))
+        );
+        escrow.flush(address(hostile), ETH);
+        assertFalse(hostile.lastOk());
+        assertEq(
+            hostile.lastResult(),
+            abi.encodeWithSelector(ReentrancyGuardTransient.ReentrancyGuardReentrantCall.selector)
+        );
+        assertEq(escrow.owed(alice, ETH), 1 ether);
+        assertEq(escrow.owed(bob, ETH), 0);
+        assertEq(escrow.recoveryConsent(alice), bob);
+    }
+
     function test_DeprecatedAssetCreditsStillFlush() public {
         vm.prank(depositor);
         escrow.depositERC20(address(wallet), address(token), 10);

@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
+import { IERC721Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import { Splits } from "src/economics/Splits.sol";
 import { MintFacts, Slots } from "src/interfaces/core/CoreTypes.sol";
 import { IDirectory } from "src/interfaces/core/IDirectory.sol";
@@ -11,6 +12,7 @@ import { Stream6529 } from "src/core/Stream6529.sol";
 import { StreamEditions6529 } from "src/core/StreamEditions6529.sol";
 import { HostileModule } from "../mocks/core/CoreMocks.sol";
 import { FeeGate } from "../mocks/records/RulesMocks.sol";
+import { RevertingGate } from "../mocks/terms/TermsMocks.sol";
 import { RulesFixture } from "../records/RulesFixture.sol";
 
 /// @notice `StreamTerms`, the TERMS module: rates only through the RECORDS module, the
@@ -285,5 +287,69 @@ contract StreamTermsTest is RulesFixture {
         assertEq(streamTerms.stream(), s);
         assertEq(streamTerms.directory(), address(directory));
         assertEq(IDirectory(address(directory)).moduleOf(Slots.ACCOUNTS), address(signers));
+    }
+
+    // ---------------------------------------------------- pinned by mutation testing
+
+    function test_Constructor_WithoutEditionsPairsNothing() public {
+        StreamTerms lone = new StreamTerms(
+            address(manager), address(ledger), s, address(0), address(directory)
+        );
+        assertEq(lone.editionsOf(s), address(0));
+        assertEq(lone.tokenOfEditions(address(editions)), address(0));
+    }
+
+    function test_LowerFeeShare_NeedsALiveWork() public {
+        vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, 99));
+        streamTerms.lowerFeeShare(s, 99, SELLER, FEE, 10_000, 1);
+    }
+
+    /// @dev The stated current terms are only compared with the stored receiver: a vault that
+    ///      was never deployed stays undeployed; only the new one is created.
+    function test_LowerFeeShare_NeverDeploysTheOldVault() public {
+        address old = ledger.walletFor(Splits.royaltyPayees(SELLER, FEE, 10_000), 0);
+        MintFacts memory f;
+        f.itemHash = keccak256("item");
+        f.contentHash = keccak256("content");
+        f.artistId = uint160(artist);
+        f.collectionId = 1;
+        f.royaltyReceiver = old;
+        f.royaltyRate = 5_000;
+        f.seller = SELLER;
+        uint256 id = sale.mint(s, f);
+        streamTerms.lowerFeeShare(s, id, SELLER, FEE, 10_000, 4_000);
+        assertEq(old.code.length, 0);
+        assertGt(stream.workOf(id).royaltyReceiver.code.length, 0);
+    }
+
+    /// @dev A pairing the network set here is answered without the Independent Stream module,
+    ///      so 6529 Stream, its editions and every pair set here keep working while that
+    ///      module is down.
+    function test_Pairing_APairSetHereNeverAsksTheIndependentStreamModule() public {
+        uint256 id = _mintAt(stream, 1, 10_000);
+        sale.createEdition(address(editions), id, 0, _vault(8_000), 5_000);
+        StreamEditions6529 bareEditions = new StreamEditions6529(
+            address(manager), address(bare), marketOwner, address(terms), new address[](0)
+        );
+        streamTerms.setEditions(address(bare), address(bareEditions));
+        directory.setModuleDelay(0);
+        directory.proposeModule(Slots.INDEPENDENT_STREAM, address(new RevertingGate()));
+        directory.activateModule(Slots.INDEPENDENT_STREAM);
+        assertEq(streamTerms.editionsOf(s), address(editions));
+        assertEq(streamTerms.tokenOfEditions(address(editions)), s);
+        assertEq(streamTerms.tokenOfEditions(s), address(0));
+        assertEq(streamTerms.editionsOf(address(bare)), address(bareEditions));
+        assertEq(streamTerms.tokenOfEditions(address(bareEditions)), address(bare));
+        streamTerms.lowerFeeShare(address(editions), id, SELLER, FEE, 8_000, 2_000);
+        assertEq(
+            editions.editionOf(id).royaltyReceiver,
+            ledger.walletFor(Splits.royaltyPayees(SELLER, FEE, 2_000), 0)
+        );
+    }
+
+    function test_Pairing_AnEmptyIndependentStreamSlotListsNoPair() public {
+        directory.removeModule(Slots.INDEPENDENT_STREAM);
+        assertEq(streamTerms.editionsOf(address(bare)), address(0));
+        assertEq(streamTerms.tokenOfEditions(address(bare)), address(0));
     }
 }

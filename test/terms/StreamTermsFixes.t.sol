@@ -88,4 +88,13 @@ contract StreamTermsFixesTest is IndependentStreamFixture {
         assertEq(streamTerms.editionsOf(address(fStream)), address(fEditions));
         assertEq(streamTerms.tokenOfEditions(address(fEditions)), address(fStream));
     }
+
+    /// @dev Only a listing of form ERC1155 names the token an editions contract belongs to.
+    function test_IndependentPair_OnlyAnErc1155ListingNamesTheTokenOfEditions() public {
+        LyingGate gate = new LyingGate();
+        indDirectory.proposeModule(Slots.INDEPENDENT_STREAM, address(gate));
+        indDirectory.activateModule(Slots.INDEPENDENT_STREAM);
+        gate.list(address(fEditions), IIndependentStreamRegistry.Form.PAIR, address(fStream));
+        assertEq(streamTerms.tokenOfEditions(address(fEditions)), address(0));
+    }
 }

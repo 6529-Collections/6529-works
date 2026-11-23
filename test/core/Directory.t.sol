@@ -160,6 +160,12 @@ contract DirectoryTest is CoreFixture {
         assertFalse(directory.supportsInterface(0xffffffff));
     }
 
+    /// An ID that sorts below every supported one is not supported: each is matched exactly.
+    function test_SupportsInterface_NothingBelowTheSupportedIds() public view {
+        assertFalse(directory.supportsInterface(bytes4(0)));
+        assertFalse(directory.supportsInterface(0x00000001));
+    }
+
     /// @dev Nothing in the directory accepts ETH.
     function test_NonPayable() public {
         vm.deal(address(this), 1 ether);
