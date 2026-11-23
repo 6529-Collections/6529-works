@@ -92,7 +92,7 @@ is the wait that applies to a change of who may mint Independent Stream tokens.
 | IND-42 | `isActive`: listed ACTIVE, template approved or suspended. `canMint`: a listed sale contract, the token listed ACTIVE, template approved, and for editions the partner listed ACTIVE. | `testFuzz_GateMatrix`, `test_Editions_MintOnlyWhileTheirStreamIsMintable`, `test_Form_ASaleContractMintsOnlyItsForm` |
 | IND-43 | Retired: listing is IND-6. | |
 | IND-44 | A template code hash is approved once, bound to its deployer, only by the network. | `test_ApproveTemplate_RecordsAndLogs`, `test_ApproveTemplate_OncePerDeployer`, `test_Governance_EveryWriterIsRestricted` |
-| IND-45 | Suspension stops new joins, works and sales; running sales finish. | |
+| IND-45 | Suspension stops new joins, works and sales; running sales finish. | `test_SuspendedVersion_NoNewWorkOrContractAndTheRunningSaleSells`, `test_Register_RefusesASuspendedOrRevokedDeployer`, `test_SuspendedVersion_ItsRunningSaleStillSells`, `testFuzz_GateMatrix` |
 | IND-46 | Revocation stops serving the contracts; running sales end unsold with refunds; the network can reverse it. | `test_RevokedVersion_ARunningSaleEndsUnsoldWithARefundUntilReinstated`, `test_Templates_TransitionsAndTheirRefusals`, `testFuzz_GateMatrix` |
 | IND-47 | (Removed by the review fixes of the second pass: no revocation propagation call.) | |
 | IND-48 | The network delists and relists by contract or by account, in bounded batches. | `test_SetStatus_DelistsAndRelistsWithEvents`, `test_SetStatus_BatchBound`, `test_SetAccountDelisted_DelistsEveryContractOfTheAccount` |
@@ -103,7 +103,7 @@ is the wait that applies to a change of who may mint Independent Stream tokens.
 | IND-53 | The Independent Stream edition auction sells any contract the Independent Stream module serves; its master is the contract's partner. | `test_IndependentEditionSale_BidsClearCopiesAreClaimedAndEveryWeiIsAccounted`, `test_Open_CreatesTheEditionWithTheIndependentStreamModulesShare`, `test_Open_RefusedUnlessTheModuleLetsThisAuctionMint` |
 | IND-54 | Its fee is the Independent Stream module's share, stored at open, never the token's answer. | `test_Open_TheStoredShareIsNotMovedByLaterAnswers`, `test_Open_CreatesTheEditionWithTheIndependentStreamModulesShare` |
 | IND-55 | A sale of a contract the module stops serving is void with full refunds; bidding closes at the delisting. | `test_Delisted_BidsRefusedAndTheSaleVoidsWithAZeroSeal`, `test_Delisted_ARaiseIsRefused`, `test_Delisted_DuringTheScanVoids`, `test_DelistedMaster_VoidsTheEditionSale` |
-| IND-56 | `abandon` of an Independent Stream edition sale needs its 1/1 closed, then 21 days after the edition close; it seals at zero. | `test_Abandon_AfterTheOneOfOneIsCancelledAndTheWaitItSealsAtZero`, `test_Abandon_ASaleWhoseOneOfOneSettledIsRefused` |
+| IND-56 | `abandon` of an Independent Stream edition sale needs its 1/1 closed, then 21 days after the edition close; it seals at zero. | |
 | IND-57 | Every other rule of the edition auction is the shared base's (EA-1 onward). | `test_Sale_SettlesPaysAndTheWinnersClaim`, `test_Adopted_ASaleThatRunsOnItsOwnSettlesWhileListed`, `test_IndependentEditionSale_BidsClearCopiesAreClaimedAndEveryWeiIsAccounted` |
 | IND-58 | A delisted sale's views show its 1/1 as it is, while bids and settlement treat it as cancelled. | |
 | IND-59 | (Removed in the second pass: there is no exit, so no left contract.) | |
