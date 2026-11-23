@@ -9,9 +9,9 @@ import { EditionAuctionBase } from "./EditionAuctionBase.sol";
 /// @notice The shared edition auction and a 1/1 that is offered again (EA-17 in
 ///         `docs/spec/editions-and-sales.md`): a sale follows only the 1/1 sale it was opened in.
 ///         The English auction answers when a work was last offered again
-///         (`IEnglishAuctionClock.auctionClock`); a time later than the sale's opening means the
-///         1/1 sale it followed was settled unsold, so the sale reads its 1/1 as settled and
-///         keeps the end it recorded. Here the 1/1's auction is a mock whose clock the test sets,
+///         (`IEnglishAuctionClock.auctionClock`); a time at or after the 1/1 end the sale recorded
+///         means the 1/1 sale it followed ended and was settled unsold, so the sale reads its 1/1
+///         as settled and keeps the end it recorded. Here the 1/1's auction is a mock whose clock the test sets,
 ///         so every answer the rule can meet is reached; the real contracts run the same rule in
 ///         `test/integration/IndependentEditionRestart.t.sol`.
 contract UniformEditionAuctionRestartTest is EditionAuctionBase {
@@ -37,8 +37,8 @@ contract UniformEditionAuctionRestartTest is EditionAuctionBase {
         english.setRestartedAt(address(stream), ID, at);
     }
 
-    /// @dev A 1/1 offered again after the sale opened reads SETTLED in the sale's views and at
-    ///      settlement, with the end the sale recorded: bidding closes at that close, anyone
+    /// @dev A 1/1 offered again at the end the sale recorded (the earliest a restart can be) reads
+    ///      SETTLED in the sale's views and at settlement, with the end the sale recorded: bidding closes at that close, anyone
     ///      settles from it, the seller and the network are paid and every bid is claimed.
     function test_Restarted_TheSaleReadsItsOneOfOneAsSettledAndKeepsItsClose() public {
         vm.warp(firstEnd);
@@ -116,11 +116,15 @@ contract UniformEditionAuctionRestartTest is EditionAuctionBase {
         _assertConserved();
     }
 
-    /// @dev A restart in the block the sale opened in is not later than the opening: the sale
-    ///      was opened in the restarted 1/1 sale and follows it, later end included.
-    function test_Restarted_ARestartNotLaterThanTheOpeningIsFollowed() public {
-        uint64 openedAt = ua.auction(saleId).openedAt;
-        english.setRestartedAt(address(stream), ID, openedAt);
+    /// @dev A restart before the 1/1 end the sale recorded, here one second before it, is the
+    ///      start of the 1/1 sale this sale was opened in: the sale follows it, later end
+    ///      included. So does a sale opened in the very block of the restart.
+    function test_Restarted_ARestartBeforeTheRecordedEndIsTheSaleItFollows() public {
+        english.setRestartedAt(address(stream), ID, firstEnd - 1);
+        assertEq(
+            uint8(ua.endTimes(saleId).oneOfOneState), uint8(IEnglishAuction.AuctionState.ACTIVE)
+        );
+        english.setRestartedAt(address(stream), ID, ua.auction(saleId).openedAt);
         english.set(address(stream), ID, IEnglishAuction.AuctionState.ACTIVE, firstEnd + 1 hours);
 
         vm.warp(firstEnd);
@@ -161,20 +165,52 @@ contract UniformEditionAuctionRestartTest is EditionAuctionBase {
         assertTrue(editions.editionOf(ID).supplySealed, "sealed at zero");
     }
 
-    /// @dev A 1/1 auction that answers a restart time fitting no clock (past 64 bits) gives the
-    ///      views no usable answer: they report no 1/1 state and the end the sale recorded.
-    function test_Restarted_ARestartTimePastSixtyFourBitsIsNoAnswerForTheViews() public {
+    /// @dev A 1/1 auction that answers a restart time fitting no clock (past 64 bits) gives no
+    ///      usable answer, everywhere the lens reads the clock: the views report no 1/1 state and
+    ///      the end the sale recorded, no sale opens against it, and the sale is voided and
+    ///      refunded by `abandon` after its wait, as for any auction that stops answering.
+    function test_Restarted_ARestartTimePastSixtyFourBitsIsNoUsableAnswer() public {
+        english.set(
+            address(stream),
+            9,
+            IEnglishAuction.AuctionState.ACTIVE,
+            uint64(block.timestamp + 1 days)
+        );
+        PackageItem memory item = _item(9, 0);
         english.setRawRestartedAt(uint256(type(uint64).max) + 1);
         IUniformEditionAuction.EndTimes memory e = ua.endTimes(saleId);
         assertEq(uint8(e.oneOfOneState), uint8(IEnglishAuction.AuctionState.NONE));
         assertEq(e.oneOfOneEnd, firstEnd, "the sale's own recorded end");
         assertEq(e.closeAt, firstEnd + CLOSE_OFFSET);
+        vm.prank(opener);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IUniformEditionAuction.NoOneOfOneAuction.selector, address(stream), 9
+            )
+        );
+        auction.open(address(editions), 9, _openData(item));
 
         // The same answer with a time that fits is read as a restart.
         english.setRawRestartedAt(type(uint64).max);
         e = ua.endTimes(saleId);
         assertEq(uint8(e.oneOfOneState), uint8(IEnglishAuction.AuctionState.SETTLED));
         assertEq(e.closeAt, firstEnd + CLOSE_OFFSET);
+        (bool ok, uint256 abandonAt) = ua.abandonable(saleId);
+        assertFalse(ok, "a sale that settles is not abandoned");
+        assertEq(abandonAt, 0);
+
+        // With the answer that fits no clock, the sale is abandoned after its wait.
+        english.setRawRestartedAt(uint256(type(uint64).max) + 1);
+        (ok, abandonAt) = ua.abandonable(saleId);
+        assertFalse(ok, "not before the wait");
+        assertEq(abandonAt, firstEnd + CLOSE_OFFSET + 21 days);
+        vm.warp(abandonAt);
+        vm.expectEmit(address(auction));
+        emit IUniformEditionAuction.AuctionVoided(saleId);
+        auction.abandon(saleId);
+        assertEq(_claimAll(saleId), 0, "nothing is minted");
+        assertEq(refundsOut, escrowIn, "every bid is refunded in full");
+        assertEq(address(auction).balance, 0);
     }
 
     /// @dev An English auction that answers the clock in three words, without the restart time,

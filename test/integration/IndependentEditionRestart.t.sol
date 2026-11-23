@@ -18,7 +18,7 @@ import { IndependentIntegrationBase } from "./IndependentIntegrationBase.sol";
 ///         opened in: once that 1/1 is settled unsold and offered again (`restart`), the edition
 ///         sale keeps the end it recorded, closes, settles and pays by its own rule, and its
 ///         bidders claim, whatever the work's later sales do. A sale opened after a restart
-///         follows the restarted 1/1.
+///         follows the restarted 1/1, in whichever order the two happen inside one block.
 contract IndependentEditionRestartTest is IndependentIntegrationBase {
     uint256 internal constant CLOSE_OFFSET = 15 minutes;
 
@@ -192,6 +192,35 @@ contract IndependentEditionRestartTest is IndependentIntegrationBase {
         assertTrue(indAuction.settle(saleId, new uint256[](0)));
         assertEq(_claim(saleId, 1, alice), escrow - ea.clearing(saleId).revenue);
         assertEq(fEditions.balanceOf(alice, tokenId), 1);
+    }
+
+    /// @dev The other order inside one block: the 1/1 has ended unsold and is settled, an edition
+    ///      sale is opened in its last fifteen minutes, and the 1/1 is offered again in the same
+    ///      block, after the open. The sale was opened in the 1/1 sale that ended: it keeps that
+    ///      close, takes a bid until then, settles and pays.
+    function test_Restart_ASaleOpenedBeforeARestartInTheSameBlockKeepsItsClose() public {
+        uint256 firstEnd = auction.auction(oneSaleId).endTime;
+        vm.warp(firstEnd + 1 minutes);
+        auction.settle(oneSaleId);
+        uint256 saleId = _openEdition();
+        vm.prank(anyone);
+        auction.restart(oneSaleId);
+        assertEq(ea.auction(saleId).openedAt, block.timestamp, "opened in the restart's block");
+        assertEq(_restartedAt(), block.timestamp);
+
+        IUniformEditionAuction.EndTimes memory e = ea.endTimes(saleId);
+        assertEq(uint8(e.oneOfOneState), uint8(IEnglishAuction.AuctionState.SETTLED));
+        assertEq(e.oneOfOneEnd, firstEnd, "the end of the 1/1 sale it was opened in");
+        assertEq(e.closeAt, firstEnd + CLOSE_OFFSET);
+        assertTrue(e.biddingOpen);
+
+        uint256 escrow = _bid(saleId, alice, 100, 2);
+        vm.warp(e.closeAt + ea.auction(saleId).terms.softWindow);
+        IUniformEditionAuction.Clearing memory c = _settleAndCheckThePayout(saleId);
+        assertEq(c.count, 2);
+        assertEq(_claim(saleId, 1, alice), escrow - c.revenue);
+        assertEq(fEditions.balanceOf(alice, tokenId), 2);
+        assertEq(address(indAuction).balance, 0);
     }
 
     // ------------------------------------------------------------------ steps

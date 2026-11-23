@@ -15,7 +15,7 @@ with `--artifacts out --update` to refresh them. No audit has taken place.
 | --- | --- |
 | Language and compiler | Solidity 0.8.37, EVM `prague`, optimizer on (200 runs), `via_ir` off ([`foundry.toml`](../../foundry.toml)) |
 | Dependencies | OpenZeppelin Contracts 5.7.0 and forge-std 1.17.0, as git submodules in `lib/` |
-| Source lines | 13,932 non-blank, non-comment lines in 120 files under `src/` (budget: 17,000) |
+| Source lines | 13,934 non-blank, non-comment lines in 120 files under `src/` (budget: 17,000) |
 | Deployed contracts | Every contract `script/DeployCore.sol` deploys: the permanent core, the money contracts, the modules, the governance pair and the two Independent Stream deployers (the deploy order is in the [runbook](../../script/README.md#how-a-deployment-is-built)) |
 | Linked libraries | None: every library function is `internal` |
 | Proxies and `delegatecall` | None in `src/`. The one exception is OpenZeppelin `Multicall` inside `AccessManager` ([ADR 0002](../adr/0002-access-manager-hardening.md)) |
@@ -53,10 +53,10 @@ Deployed once and never replaced ([ADR 0010](../adr/0010-plain-permanent-core.md
 | Contract | Source | nSLOC | Runtime (bytes) | Initcode (bytes) | EIP-170 margin |
 | --- | --- | ---: | ---: | ---: | ---: |
 | `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) | 604 | 21,287 | 23,553 | 3,289 |
-| `UniformEditionAuction` | [`src/sales/UniformEditionAuction.sol`](../../src/sales/UniformEditionAuction.sol) | 922 | 23,535 | 28,010 | 1,041 |
-| `UniformEditionAuctionLens` | [`src/sales/UniformEditionAuctionLens.sol`](../../src/sales/UniformEditionAuctionLens.sol) | 962 | 22,795 | 23,267 | 1,781 |
-| `IndependentEditionAuction` | [`src/independent/IndependentEditionAuction.sol`](../../src/independent/IndependentEditionAuction.sol) | 77 | 23,982 | 27,941 | 594 |
-| `IndependentEditionAuctionLens` | [`src/independent/IndependentEditionAuctionLens.sol`](../../src/independent/IndependentEditionAuctionLens.sol) | 107 | 23,726 | 24,057 | 850 |
+| `UniformEditionAuction` | [`src/sales/UniformEditionAuction.sol`](../../src/sales/UniformEditionAuction.sol) | 925 | 23,555 | 28,030 | 1,021 |
+| `UniformEditionAuctionLens` | [`src/sales/UniformEditionAuctionLens.sol`](../../src/sales/UniformEditionAuctionLens.sol) | 961 | 22,651 | 23,109 | 1,925 |
+| `IndependentEditionAuction` | [`src/independent/IndependentEditionAuction.sol`](../../src/independent/IndependentEditionAuction.sol) | 77 | 24,002 | 27,961 | 574 |
+| `IndependentEditionAuctionLens` | [`src/independent/IndependentEditionAuctionLens.sol`](../../src/independent/IndependentEditionAuctionLens.sol) | 107 | 23,582 | 23,899 | 994 |
 | `SaleStarter` (stateless helper for the keeper) | [`src/sales/SaleStarter.sol`](../../src/sales/SaleStarter.sol) | 35 | 5,954 | 5,982 | 18,622 |
 
 ### Modules

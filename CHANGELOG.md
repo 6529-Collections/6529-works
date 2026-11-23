@@ -13,7 +13,9 @@
       delisting still voids the sale. 6529 Stream works are never offered again, so the
       curated edition sale behaves as before. Both edition auctions and both lenses read the
       new value, so they are deployed together with the English auction (EA-17, IND-56,
-      LIM-EA-22).
+      LIM-EA-22). The lens now reads the clock one way at every place (the open, the views
+      and the abandonment check): an answer that is not four words fitting their types is no
+      usable answer.
     - **A fee recipient is never zero.** `EconomicsResolver.setFeeTerms` refuses a zero
       recipient at any share (`InvalidEconomics`), also at a zero share: a sale already running
       pays the share it stored to the recipient named when it settles, so a recipient must

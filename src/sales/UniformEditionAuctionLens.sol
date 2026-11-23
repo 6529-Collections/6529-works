@@ -193,16 +193,8 @@ abstract contract UniformEditionAuctionLensBase is IUniformEditionAuctionLens {
         view
         returns (uint64, IEnglishAuction.AuctionState)
     {
-        (bool answered, bytes memory clock) = BoundedCall.tryReadAll(
-            _englishAuction,
-            abi.encodeCall(IEnglishAuctionClock.auctionClock, (_saleIdOf(master, id))),
-            128
-        );
-        if (!answered || clock.length != 128) {
-            revert IUniformEditionAuction.NoOneOfOneAuction(master, id);
-        }
-        (uint256 state, uint256 endTime) = abi.decode(clock, (uint256, uint256));
-        if (state == uint256(IEnglishAuction.AuctionState.CANCELLED) || state > 5) {
+        (bool usable, uint256 state, uint256 endTime,) = _readClock(_saleIdOf(master, id));
+        if (!usable || state == uint256(IEnglishAuction.AuctionState.CANCELLED)) {
             revert IUniformEditionAuction.NoOneOfOneAuction(master, id);
         }
         // forge-lint: disable-next-line(block-timestamp)
@@ -275,15 +267,9 @@ abstract contract UniformEditionAuctionLensBase is IUniformEditionAuctionLens {
                         || _word(IStorage.Space.SCAN, saleId, 0) == 0))
         ) return (false, 0);
         uint256 oneEnd = a.oneOfOneEnd;
-        (bool answered, bytes memory clock) = BoundedCall.tryReadAll(
-            _englishAuction,
-            abi.encodeCall(
-                IEnglishAuctionClock.auctionClock, (_saleIdOf(_masterOfSale(saleId), p.id))
-            ),
-            128
-        );
-        if (answered && clock.length == 128) {
-            (uint256 state, uint256 end) = abi.decode(clock, (uint256, uint256));
+        (bool usable, uint256 state, uint256 end,) =
+            _readClock(_saleIdOf(_masterOfSale(saleId), p.id));
+        if (usable) {
             if (
                 state == uint256(IEnglishAuction.AuctionState.ACTIVE)
                     || state == uint256(IEnglishAuction.AuctionState.PAUSED)
@@ -415,7 +401,7 @@ abstract contract UniformEditionAuctionLensBase is IUniformEditionAuctionLens {
         returns (IUniformEditionAuction.EndTimes memory e)
     {
         IStorage.SaleWord memory a = _opened(saleId);
-        (IEnglishAuction.AuctionState state, uint64 oneEnd) = _clockOf(saleId, a.openedAt);
+        (IEnglishAuction.AuctionState state, uint64 oneEnd) = _clockOf(saleId, a.oneOfOneEnd);
         _clocks(e, a, _config(a.termsId), oneEnd);
         e.oneOfOneState = state;
         // Open while the 1/1 is paused, whatever the time; else until the end, unless cancelled.
@@ -428,10 +414,10 @@ abstract contract UniformEditionAuctionLensBase is IUniformEditionAuctionLens {
 
     /// @dev Sale `saleId`'s 1/1 state and end as its settlement reads them: SETTLED with no end
     ///      of its own for an adopted sale that runs on its own, and for a sale whose 1/1 was
-    ///      offered again after it opened at `openedAt` (the 1/1 sale it followed was settled
-    ///      unsold; a cancelled 1/1 stays CANCELLED), else the English auction's `auctionClock`
-    ///      (the deployment's `_clock`).
-    function _clockOf(uint256 saleId, uint256 openedAt)
+    ///      offered again at or after `recordedEnd`, the 1/1 end the sale recorded (the 1/1 sale
+    ///      it followed had ended and was settled unsold; a cancelled 1/1 stays CANCELLED), else
+    ///      the English auction's `auctionClock` (the deployment's `_clock`).
+    function _clockOf(uint256 saleId, uint256 recordedEnd)
         private
         view
         returns (IEnglishAuction.AuctionState state, uint64 endTime)
@@ -440,7 +426,10 @@ abstract contract UniformEditionAuctionLensBase is IUniformEditionAuctionLens {
         if (p.runsOnItsOwn) return (IEnglishAuction.AuctionState.SETTLED, 0);
         uint64 restartedAt;
         (state, endTime, restartedAt) = _clock(_tokenOfSale(saleId), p.id);
-        if (restartedAt > openedAt && state != IEnglishAuction.AuctionState.CANCELLED) {
+        if (
+            restartedAt != 0 && restartedAt >= recordedEnd
+                && state != IEnglishAuction.AuctionState.CANCELLED
+        ) {
             return (IEnglishAuction.AuctionState.SETTLED, 0);
         }
     }
@@ -456,20 +445,38 @@ abstract contract UniformEditionAuctionLensBase is IUniformEditionAuctionLens {
         virtual
         returns (IEnglishAuction.AuctionState state, uint64 endTime, uint64 restartedAt)
     {
-        (bool answered, bytes memory clock) = BoundedCall.tryReadAll(
-            _englishAuction,
-            abi.encodeCall(IEnglishAuctionClock.auctionClock, (_saleIdOf(_masterFor(token), id))),
-            128
-        );
-        if (!answered || clock.length != 128) return (IEnglishAuction.AuctionState.NONE, 0, 0);
-        (uint256 s, uint256 e,, uint256 r) = abi.decode(clock, (uint256, uint256, uint256, uint256));
-        if (
-            s > uint256(IEnglishAuction.AuctionState.CANCELLED) || e > type(uint64).max
-                || r > type(uint64).max
-        ) return (IEnglishAuction.AuctionState.NONE, 0, 0);
-        // Safe: all three checked above.
+        (bool usable, uint256 s, uint256 e, uint256 r) =
+            _readClock(_saleIdOf(_masterFor(token), id));
+        if (!usable) return (IEnglishAuction.AuctionState.NONE, 0, 0);
+        // Safe: `_readClock` checked all three.
         // forge-lint: disable-next-line(unsafe-typecast)
         return (IEnglishAuction.AuctionState(s), uint64(e), uint64(r));
+    }
+
+    /// @dev The English auction's `auctionClock` answer for 1/1 sale `oneOfOneSaleId`, read with
+    ///      the forward-all read and checked as the adapter's own typed read checks it: `usable`
+    ///      only for exactly four words that fit their types (a valid state and three 64-bit
+    ///      times). A refusal, a short or long answer and a word out of range are all no usable
+    ///      answer, at every place the lens reads the clock, so the open, the views and the
+    ///      abandonment check agree with what settlement can read. A shortfall reverts
+    ///      (`BoundedCallShortfall`).
+    function _readClock(uint256 oneOfOneSaleId)
+        private
+        view
+        returns (bool usable, uint256 state, uint256 endTime, uint256 restartedAt)
+    {
+        (bool answered, bytes memory clock) = BoundedCall.tryReadAll(
+            _englishAuction,
+            abi.encodeCall(IEnglishAuctionClock.auctionClock, (oneOfOneSaleId)),
+            128
+        );
+        if (!answered || clock.length != 128) return (false, 0, 0, 0);
+        uint256 pausedAt;
+        (state, endTime, pausedAt, restartedAt) =
+            abi.decode(clock, (uint256, uint256, uint256, uint256));
+        usable = state <= uint256(IEnglishAuction.AuctionState.CANCELLED)
+            && endTime <= type(uint64).max && pausedAt <= type(uint64).max
+            && restartedAt <= type(uint64).max;
     }
 
     /// @dev Fills `e`'s clocks from the 1/1's end now (`oneOfOneEnd`, at least the cached one).
