@@ -247,7 +247,7 @@ Notes from the reviews of the plain permanent core (November 2026) that were lef
   vault names another fee recipient keeps its share under this TERMS module.
 - **The English auction's end after an expired dispute pause follows the current `duration`
   setting.** A pause longer than the maximum counts as resumed; until the next write to the
-  sale stores the end, the views compute it from the setting in force at that moment.
+  sale stores the end, it is computed from the setting in force at that moment.
 - **A store is selected for a file in one call.** `WorkRules.setFileStore` checks every chunk
   of the file against the added store in that call, so an added store cannot be selected for a
   file too large for one such scan; the file stays served by the content store.
