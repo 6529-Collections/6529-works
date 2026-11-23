@@ -1337,7 +1337,7 @@ contract Flows is Script {
     /// @notice The artist lists `token` (`register`, with the consent signature) and approves the
     ///         Independent Stream work for one mint (`approveItem`, at `royaltyRate` out of
     ///         100,000). The artist's account must exist already (it accepted the curated
-    ///         package).
+    ///         package). The registration is planned only for a token that is not listed yet.
     function independentListTx(
         address token,
         uint64 deadline,
@@ -1345,9 +1345,34 @@ contract Flows is Script {
         uint24 royaltyRate
     ) external view {
         Addrs memory a = _addrs();
+        address module = _registerTx(a, token, deadline, signature);
+        bytes32 itemHash = WorksHashing.itemHash(_independentWork(a).item);
+        _info("itemHash", vm.toString(itemHash));
+        _tx(
+            "independentApproveItem",
+            "artist",
+            module,
+            0,
+            abi.encodeWithSignature(
+                "approveItem(address,bytes32,uint24)", token, itemHash, royaltyRate
+            )
+        );
+    }
+
+    /// @dev Plans `register` for `token` unless the module lists it already, so a re-run after a
+    ///      failed approval sends only the approval. Returns the Independent Stream module.
+    function _registerTx(Addrs memory a, address token, uint64 deadline, bytes calldata signature)
+        internal
+        view
+        returns (address module)
+    {
         string memory json = _record();
         address artist = _artist();
-        (address module,) = _listingSubject(json, token, deadline);
+        (module,) = _listingSubject(json, token, deadline);
+        IIndependentStreamRegistry.Status status =
+        IIndependentStreamRegistry(module).entry(token).status;
+        _info("listingStatus", uint256(status).toString());
+        if (status != IIndependentStreamRegistry.Status.NONE) return module;
         IIndependentStreamRegistry.Join memory j;
         j.deployer = vm.parseJsonAddress(json, ".IndependentStream721Deployer");
         j.profileId = _profileId(artist);
@@ -1360,17 +1385,6 @@ contract Flows is Script {
             module,
             0,
             abi.encodeCall(IIndependentStreamRegistry.register, (token, j))
-        );
-        bytes32 itemHash = WorksHashing.itemHash(_independentWork(a).item);
-        _info("itemHash", vm.toString(itemHash));
-        _tx(
-            "independentApproveItem",
-            "artist",
-            module,
-            0,
-            abi.encodeWithSignature(
-                "approveItem(address,bytes32,uint24)", token, itemHash, royaltyRate
-            )
         );
     }
 

@@ -28,8 +28,11 @@ pages describe.
   memory from the record's `forkBlock` and compares every address and runtime code, the module
   slots, the minters, the settings, the stored configuration, the epoch-0 manifest and the
   governance configuration with the chain. Run it from the instance's source commit with the
-  round's `deploy.env` ([runbook](../../script/README.md#4-after-the-broadcast)). r6 passed it
-  on 23 November 2026, and Sourcify holds an exact match for each of its 35 contracts.
+  round's `deploy.env` ([runbook](../../script/README.md#4-after-the-broadcast)). It checks the
+  state right after genesis, so for r6 run it at a block before the renderer announcement, as
+  [Reading r6 back later](../../deployments/11155111/README.md#reading-r6-back-later) shows.
+  r6 passed it on 23 November 2026, and Sourcify holds an exact match for each of its 35
+  contracts.
 - **Governance.** The genesis policy each instance installed is committed under `config/`. The
   [role matrix](../audit/roles.md) is generated from `main`'s genesis policy.
 - **Settings.** Read `moduleDelay()`, `rescueDelay()`, `rebindDelay()` and
