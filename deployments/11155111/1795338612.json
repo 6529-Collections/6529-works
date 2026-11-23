@@ -53,23 +53,23 @@
       "address": "0x2b5067dd458c9C01Ab70B5A290E10D185C3ae892",
       "codehash": "0x4e3758df4a545eef59457d259e156166eec226ccecbf7a53a249289468b35cd7"
     },
-    "IndependentEditionAuction": {
+    "FederatedEditionAuction": {
       "address": "0x896180534Fc8508894c40634776e914798F7CeDD",
       "codehash": "0xacab96dc2157619e7168bda00e2cabc93bad89edf5372745fbf8539e34e21ea3"
     },
-    "IndependentEditionAuctionLens": {
+    "FederatedEditionAuctionLens": {
       "address": "0x7401C865A9cA473C3EFfCcd709311C8aF207De31",
       "codehash": "0xcbd1ba33f1df087ae3e2f9da2b885929cf2ce45bba11d64af3eb0a3456ae9f2d"
     },
-    "IndependentStreamEditionsDeployer": {
+    "FederatedEditionsDeployer": {
       "address": "0x58082Ff7cbC34EC300ee8FE9F9dF835977a2F71B",
       "codehash": "0x315ffa567b99e45c30612eebedc8518616cbe314b2d485b5eb6dedd1d2dde0d1"
     },
-    "IndependentStream721Deployer": {
+    "FederatedStreamDeployer": {
       "address": "0xb7dA4f98894356c710030A02809BCA98a301ACeD",
       "codehash": "0x315ffa567b99e45c30612eebedc8518616cbe314b2d485b5eb6dedd1d2dde0d1"
     },
-    "IndependentStreamRegistry": {
+    "FederationRegistry": {
       "address": "0xD674C284C89d1B63d7d82ac051a6daB5be4e1Fc4",
       "codehash": "0x71134c8f8b84225ea4621a3f90177a6c79d316f869a27c09ab0f0c2078016f6a"
     },

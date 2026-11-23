@@ -38,8 +38,11 @@ delay: the wait that applies is the contract's own setting, which the network ch
 
 Other files:
 - `sepolia-r1/` to `sepolia-r6/`: each Sepolia round's public inputs (`accounts.json`,
-  `genesis.json`, `deploy.env`, `manifest-epoch0.json`). r1 to r5 deployed earlier contracts and
-  are kept as records; r6 is the first round of the plain core ([runbook](../script/README.md#sepolia)).
+  `genesis.json`, `deploy.env`, `manifest-epoch0.json`). r1 to r5 were deployed before the
+  contracts were renamed and are kept exactly as deployed, with the names of that time
+  ([old name to new name](../deployments/11155111/README.md)); r6, not yet deployed, is the
+  first round of the plain core and uses the current names
+  ([runbook](../script/README.md#sepolia)).
 - `local/` (git-ignored): the walkthrough's genesis file, written by
   `script/local/make_genesis.py`.
 

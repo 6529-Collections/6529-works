@@ -543,9 +543,9 @@
       ],
       "deferred": [
         {
-          "signature": "bindIndependentStreamRegistry(address)",
+          "signature": "bindFederationRegistry(address)",
           "selector": "0x3d4dbd3c",
-          "note": "v1.1: bound when the Independent Stream registry ships, as a 30-day ADMIN action"
+          "note": "v1.1: bound when the federation registry ships, as a 30-day ADMIN action"
         }
       ]
     },
@@ -652,7 +652,7 @@
           "delay": 2592000
         },
         {
-          "signature": "setIndependentStreamRegistry(address,address)",
+          "signature": "setFederationRegistry(address,address)",
           "selector": "0x747e3199",
           "role": "SUCCESSOR_SETTER",
           "class": "successor",
@@ -698,7 +698,7 @@
           "delay": 2592000
         },
         {
-          "signature": "setIndependentStreamRegistry(address,address)",
+          "signature": "setFederationRegistry(address,address)",
           "selector": "0x747e3199",
           "role": "SUCCESSOR_SETTER",
           "class": "successor",
@@ -1013,7 +1013,7 @@
         0,
         "0x0000000000000000000000000000000000000000"
       ],
-      "note": "PRODUCT_INDEPENDENT: ETH, revision 0",
+      "note": "PRODUCT_FEDERATED: ETH, revision 0",
       "calldata": "0xbc27c0e912f6fbd5cb8f4522cd7d37f0fdc7097a4960a4f90e7a869820d34c7bdb75edff00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
     },
     {
@@ -1045,9 +1045,9 @@
       "note": "Mapped from the lane's Editions implementation; tools/check_genesis.py reports it pending until it merges, then checks it in full."
     },
     {
-      "contract": "IndependentStreamRegistry",
-      "lane": "Independent Stream (v1.1)",
-      "note": "Not deployed at genesis. setStatus and setArtistDelisted map to PARAMETER_SETTER; ArtistRegistry.bindIndependentStreamRegistry (deferred above) and the adapters' setIndependentStreamRegistry run when it ships."
+      "contract": "FederationRegistry",
+      "lane": "federated (v1.1)",
+      "note": "Not deployed at genesis. setStatus and setArtistDelisted map to PARAMETER_SETTER; ArtistRegistry.bindFederationRegistry (deferred above) and the adapters' setFederationRegistry run when it ships."
     }
   ],
   "unusedRoles": [

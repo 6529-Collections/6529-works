@@ -107,11 +107,11 @@
     "englishAuction": "0x73527a07c7F19B153EE32F14bE16e96c4219c67f",
     "editionAuctionLens": "0x3C2CCe1E80C8d0310D7246a603811dC187527B3B",
     "editionAuction": "0xFAb695D537d2C441D8Be6a8184c7cbE8646912a2",
-    "independentStreamRegistry": "0xD674C284C89d1B63d7d82ac051a6daB5be4e1Fc4",
-    "independentEditionAuctionLens": "0x7401C865A9cA473C3EFfCcd709311C8aF207De31",
-    "independentEditionAuction": "0x896180534Fc8508894c40634776e914798F7CeDD",
-    "independentStream721Deployer": "0xb7dA4f98894356c710030A02809BCA98a301ACeD",
-    "independentStreamEditionsDeployer": "0x58082Ff7cbC34EC300ee8FE9F9dF835977a2F71B",
+    "federationRegistry": "0xD674C284C89d1B63d7d82ac051a6daB5be4e1Fc4",
+    "federatedEditionAuctionLens": "0x7401C865A9cA473C3EFfCcd709311C8aF207De31",
+    "federatedEditionAuction": "0x896180534Fc8508894c40634776e914798F7CeDD",
+    "federatedStreamDeployer": "0xb7dA4f98894356c710030A02809BCA98a301ACeD",
+    "federatedEditionsDeployer": "0x58082Ff7cbC34EC300ee8FE9F9dF835977a2F71B",
     "saleStarter": "0x7A1091b86f8FBCa97126EE75bb6805EFd80C446D"
   }
 }

@@ -88,7 +88,9 @@ Prerequisites: Foundry (`forge`, `cast`, `anvil`) and Python 3.10 or later.
 
 The deployment record is the JSON file `script/DeployCore.s.sol` writes
 (`deployments/<chain>/core-<time>.json`, contract name to address); the local walkthrough
-writes one on anvil ([script/README.md](../script/README.md)).
+writes one on anvil ([script/README.md](../script/README.md)). The keeper reads the current
+contract names, so on Sepolia it works with round r6 and later; the records of r1 to r5 use the
+names of their time and are kept as deployed.
 
 ```bash
 # See what is due, sending nothing:
