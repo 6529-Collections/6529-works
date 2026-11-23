@@ -21,6 +21,17 @@ contract EnglishAuctionDisputeRulesTest is AuctionFixture {
         return abi.encodeWithSelector(IEnglishAuction.InvalidAuctionState.selector, saleId, state);
     }
 
+    /// @dev `c` with a quarter of its duration: a new struct, so `c` stays the value in force.
+    function _quarterDuration(IEnglishAuction.AuctionConfig memory c)
+        internal
+        pure
+        returns (IEnglishAuction.AuctionConfig memory)
+    {
+        return IEnglishAuction.AuctionConfig(
+            c.duration / 4, c.extensionWindow, c.incrementShare, c.refusalGas
+        );
+    }
+
     function _assertState(uint256 saleId, IEnglishAuction.AuctionState state) internal view {
         assertEq(uint256(_state(saleId)), uint256(state));
     }
@@ -94,8 +105,7 @@ contract EnglishAuctionDisputeRulesTest is AuctionFixture {
     function test_Resume_KeepsTheRemainingTimeWhenItIsLongerThanTheDuration() public {
         uint256 saleId = _start(1);
         IEnglishAuction.AuctionConfig memory c = auction.config();
-        IEnglishAuction.AuctionConfig memory shorter = c;
-        shorter.duration = c.duration / 4;
+        IEnglishAuction.AuctionConfig memory shorter = _quarterDuration(c);
         auction.setConfig(c, shorter);
 
         vm.warp(block.timestamp + 1 hours);
@@ -117,8 +127,7 @@ contract EnglishAuctionDisputeRulesTest is AuctionFixture {
     function test_Pause_ALapsedPauseKeepsTheRemainingTimeOrTheDuration() public {
         uint256 longSale = _start(1);
         IEnglishAuction.AuctionConfig memory c = auction.config();
-        IEnglishAuction.AuctionConfig memory shorter = c;
-        shorter.duration = c.duration / 4;
+        IEnglishAuction.AuctionConfig memory shorter = _quarterDuration(c);
         auction.setConfig(c, shorter);
         uint256 shortSale = _start(2);
 
@@ -185,13 +194,12 @@ contract EnglishAuctionDisputeRulesTest is AuctionFixture {
         assertEq(address(auction).balance, _owedFor(saleIds), "cancelled");
 
         // Custody: the kept work is still the auction's, the cancelled one is burned.
+        uint256 burned = _tokenId(cancelled);
         assertEq(stream.ownerOf(_tokenId(kept)), address(auction));
         vm.expectRevert(
-            abi.encodeWithSelector(
-                IERC721Errors.ERC721NonexistentToken.selector, _tokenId(cancelled)
-            )
+            abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, burned)
         );
-        stream.ownerOf(_tokenId(cancelled));
+        stream.ownerOf(burned);
         assertEq(stream.balanceOf(address(auction)), 1);
 
         _end(kept);

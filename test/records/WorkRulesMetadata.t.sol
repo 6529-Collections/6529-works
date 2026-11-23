@@ -4,10 +4,12 @@ pragma solidity 0.8.37;
 import { Vm } from "forge-std/Vm.sol";
 import { IERC4906 } from "@openzeppelin/contracts/interfaces/IERC4906.sol";
 import { Slots } from "src/interfaces/core/CoreTypes.sol";
+import { IStream } from "src/interfaces/core/IStream.sol";
 import { IWorkFacts } from "src/interfaces/core/IWorkFacts.sol";
 import { FileRole, Locator, LocatorKind, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { License, PackageItem } from "src/interfaces/types/PackageTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { WorkRules } from "src/records/WorkRules.sol";
 import { ContentAddresses as CA } from "../helpers/ContentAddresses.sol";
 import { CodeRenderer, RulesChunkStore } from "../mocks/records/RulesMocks.sol";
 import { RulesFixture } from "./RulesFixture.sol";
@@ -159,16 +161,40 @@ contract WorkRulesMetadataTest is RulesFixture {
     /// the same license, the renderer already pinned) emits no ERC-4906 event.
     function test_NoOps_EmitNoMetadataUpdate() public {
         (uint256 id, PackageItem memory item) = _open(1);
-        _artistFinalize(id);
         bytes32 version = _state(id);
-
         vm.recordLogs();
         vm.prank(artist);
         rules.setRecord(s, id, item.recordFileId, bytes32(0));
         rules.relicense(s, id, _cc0(), item, 0, 0, new bytes[](0));
-        rules.repinRenderer(s, id, address(renderer), 0);
-        assertEq(_refreshes(vm.getRecordedLogs()), 0);
+        assertEq(_refreshes(vm.getRecordedLogs()), 0, "the same record and license");
         assertEq(_state(id), version, "nothing changed");
+
+        _artistFinalize(id);
+        version = _state(id);
+        vm.recordLogs();
+        rules.repinRenderer(s, id, address(renderer), 0);
+        assertEq(_refreshes(vm.getRecordedLogs()), 0, "the renderer already pinned");
+        assertEq(_state(id), version, "nothing changed");
+    }
+
+    // ------------------------------------------------------------------ GV-18: the rate
+
+    /// GV-18: the network's change of a work's royalty rate is logged by the token with the
+    /// work and its new rate, and by the rules module with the work's new version.
+    function test_SetRoyaltyRate_EmitsRoyaltySetOnTheTokenAndBumpsTheVersion() public {
+        (uint256 id, PackageItem memory item) = _open(1);
+        uint24 rate = 10_000;
+        bytes32 state = _state(id);
+        bytes[] memory consents = _both(
+            keccak256(abi.encode(rules.ROYALTY_RATE_TYPEHASH(), s, id, rate, state, deadline))
+        );
+        address receiver = stream.workOf(id).royaltyReceiver;
+        vm.expectEmit(address(rules));
+        emit WorkRules.VersionBumped(s, id, 1);
+        vm.expectEmit(s);
+        emit IStream.RoyaltySet(id, receiver, rate);
+        rules.setRoyaltyRate(s, id, rate, item, state, deadline, consents);
+        assertEq(stream.workOf(id).royaltyRate, rate);
     }
 
     // ------------------------------------------------------------------ RND-2: the pin
