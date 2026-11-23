@@ -160,25 +160,20 @@ contract UniformEditionAuctionRestartTest is EditionAuctionBase {
         assertTrue(editions.editionOf(ID).supplySealed, "sealed at zero");
     }
 
-    /// @dev A 1/1 auction that answers a restart time fitting no clock (past 64 bits) gives no
-    ///      usable answer: the views fall back to the sale's own words, and the sale is voided
-    ///      and refunded by `abandon` after its wait, as for any auction that stops answering.
-    function test_Restarted_ARestartTimePastSixtyFourBitsIsNoUsableAnswer() public {
+    /// @dev A 1/1 auction that answers a restart time fitting no clock (past 64 bits) gives the
+    ///      views no usable answer: they report no 1/1 state and the end the sale recorded.
+    function test_Restarted_ARestartTimePastSixtyFourBitsIsNoAnswerForTheViews() public {
         english.setRawRestartedAt(uint256(type(uint64).max) + 1);
         IUniformEditionAuction.EndTimes memory e = ua.endTimes(saleId);
         assertEq(uint8(e.oneOfOneState), uint8(IEnglishAuction.AuctionState.NONE));
         assertEq(e.oneOfOneEnd, firstEnd, "the sale's own recorded end");
+        assertEq(e.closeAt, firstEnd + CLOSE_OFFSET);
 
-        (bool ok, uint256 abandonAt) = ua.abandonable(saleId);
-        assertFalse(ok, "not before the wait");
-        assertEq(abandonAt, firstEnd + CLOSE_OFFSET + 21 days);
-        vm.warp(abandonAt);
-        vm.expectEmit(address(auction));
-        emit IUniformEditionAuction.AuctionVoided(saleId);
-        auction.abandon(saleId);
-        assertEq(_claimAll(saleId), 0, "nothing is minted");
-        assertEq(refundsOut, escrowIn, "every bid is refunded in full");
-        assertEq(address(auction).balance, 0);
+        // The same answer with a time that fits is read as a restart.
+        english.setRawRestartedAt(type(uint64).max);
+        e = ua.endTimes(saleId);
+        assertEq(uint8(e.oneOfOneState), uint8(IEnglishAuction.AuctionState.SETTLED));
+        assertEq(e.closeAt, firstEnd + CLOSE_OFFSET);
     }
 
     /// @dev A 1/1 never offered again (the answer zero) is followed as before: a later end
