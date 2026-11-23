@@ -102,4 +102,4 @@ GV-22 removed The one-shot bind steps are gone; genesis modules and minters are 
 
 # Live rules whose row and code differ. Each needs a decision, a new wording or a code change,
 # before it can name a test.
-IND-56 uncovered the row allows abandon once the 1/1 is closed; a sale whose 1/1 settled is never abandoned (EA-19). Kept open until it is decided how an open edition sale follows a 1/1 that is offered again
+IND-56 uncovered the row allows abandon once the 1/1 is closed; a sale whose 1/1 settled is never abandoned (EA-19). Kept open pending a decision on its wording
