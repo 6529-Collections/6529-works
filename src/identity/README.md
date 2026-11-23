@@ -30,7 +30,7 @@ names the current one in its `ACCOUNTS` slot
 
 The module is deployed with its contracts (`Accounts.Wiring`: directory, 6529 Stream, 6529 Stream
 Editions, split ledger, statement log, first package registry) as constructor arguments; there is
-no bind step. The four `bind*` functions remain only so older tooling compiles, and always revert.
+no bind step.
 
 ## Freeze and contest
 
@@ -56,7 +56,6 @@ no bind step. The four `bind*` functions remain only so older tooling compiles, 
 - **Compiled waits.** `OWN_CHANGE_DELAY` 2 days, `REPLACEMENT_NOTICE` 14 days, `CONTEST_LAPSE`
   90 days, `FREEZE_PERIOD` 14 days. The module is replaceable, so these are its current rules,
   not promises of the permanent contracts.
-- **`independentListing`** forwards the Independent Stream module's `entry`, for the entropy module.
 - **Tests:** `test/identity/` (run with `FOUNDRY_TEST=test/identity` until the rest of the tree
   compiles again at integration).
 

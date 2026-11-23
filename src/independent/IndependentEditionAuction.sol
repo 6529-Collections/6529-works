@@ -75,13 +75,16 @@ contract IndependentEditionAuction is UniformEditionAuctionBase {
     /// @dev A sale whose scan is still in progress has paid nothing (the clearing call pays), so
     ///      a later call re-checks the registry first: a contract delisted since the first call
     ///      voids the sale with full refunds, as the first call would have. Once the clearing
-    ///      call has paid, the clearing stands.
+    ///      call has paid, the clearing stands. An adopted sale that runs on its own does not
+    ///      read the 1/1's clock, which is where the first call learns of a delisting, so it is
+    ///      checked here while it is still OPEN.
     function settle(uint256 saleId, uint256[] calldata order) public override returns (bool) {
         SaleWord storage stored = _sales[saleId];
-        if (
-            stored.status == IUniformEditionAuction.AuctionStatus.SETTLING && _scans[saleId] != 0
-                && !IndependentEditionAuctionLens(lens).isTarget(_tokens[saleId])
-        ) {
+        IUniformEditionAuction.AuctionStatus status = stored.status;
+        bool unpaid = status == IUniformEditionAuction.AuctionStatus.OPEN
+            ? _payouts[saleId].runsOnItsOwn
+            : status == IUniformEditionAuction.AuctionStatus.SETTLING && _scans[saleId] != 0;
+        if (unpaid && !IndependentEditionAuctionLens(lens).isTarget(_tokens[saleId])) {
             if (_reentrancyGuardEntered()) revert ReentrancyGuardReentrantCall();
             _void(saleId, stored);
             return true;

@@ -340,7 +340,10 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, IItemApprovals, Acces
         if (item.seedPolicy == uint8(SeedPolicy.ARTIST)) {
             facts.seed = item.seed;
         } else if (item.seedPolicy == uint8(SeedPolicy.VRF)) {
-            facts.seed = IEntropyModule(entropyModule).seedOfContent(item.contentHash);
+            IEntropyModule entropy = IEntropyModule(entropyModule);
+            if (entropy.isDeliveredContent(item.contentHash)) {
+                facts.seed = entropy.seedOfContent(item.contentHash);
+            }
         }
     }
 

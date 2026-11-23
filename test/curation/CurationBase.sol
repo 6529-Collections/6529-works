@@ -74,15 +74,23 @@ contract CurationPolicyStub is IERC165 {
 }
 
 /// @dev An entropy module whose deliveries the test sets. Answers ERC-165 for `IEntropyModule`.
+///      Like the VRF module, `seedOfContent` reverts until the seed is delivered.
 contract EntropyStub is IERC165 {
-    mapping(bytes32 contentHash => bytes32) public seedOfContent;
+    error SeedNotDelivered(bytes32 contentHash);
+
+    mapping(bytes32 contentHash => bytes32) internal _seeds;
 
     function deliver(bytes32 contentHash, bytes32 seed) external {
-        seedOfContent[contentHash] = seed;
+        _seeds[contentHash] = seed;
     }
 
     function isDeliveredContent(bytes32 contentHash) external view returns (bool) {
-        return seedOfContent[contentHash] != 0;
+        return _seeds[contentHash] != 0;
+    }
+
+    function seedOfContent(bytes32 contentHash) external view returns (bytes32) {
+        if (_seeds[contentHash] == 0) revert SeedNotDelivered(contentHash);
+        return _seeds[contentHash];
     }
 
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {

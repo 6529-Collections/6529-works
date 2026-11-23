@@ -11,7 +11,7 @@ import { EditionsBase } from "src/core/EditionsBase.sol";
 import { IndependentEditionAuction } from "src/independent/IndependentEditionAuction.sol";
 import { IndependentEditionAuctionLens } from "src/independent/IndependentEditionAuctionLens.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
-import { Edition, Slots } from "src/interfaces/core/CoreTypes.sol";
+import { Edition, Outcome, Slots } from "src/interfaces/core/CoreTypes.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
@@ -55,6 +55,10 @@ contract MockGate {
 
     function setFeeShare(address token, uint32 share) external {
         feeShareOf[token] = share;
+    }
+
+    function remove(address minter, uint256 when) external {
+        minterRemovedAt[minter] = when;
     }
 }
 
@@ -268,6 +272,73 @@ contract IndependentEditionAuctionTest is Test {
         vm.prank(alice);
         (, uint256 refund) = auction.claimBid(saleId, 1, alice);
         assertEq(refund, ua.stepPrice(saleId, 100));
+    }
+
+    /// @dev An adopted sale whose master's sale already ended runs on its own and does not read
+    ///      the 1/1's clock. Delisted while it is open, it still voids with full refunds: nothing
+    ///      is paid and no copy is minted.
+    function test_Delisted_AnAdoptedSaleThatRunsOnItsOwnVoids() public {
+        (IndependentEditionAuction next, uint256 saleId) = _adoptedOnItsOwn();
+        IUniformEditionAuction un = IUniformEditionAuction(address(next));
+        uint256 amount = un.stepPrice(saleId, 100);
+        vm.deal(alice, amount);
+        vm.prank(alice);
+        uint256 bidId = next.bid{ value: amount }(saleId, 100, 1);
+        gate.setActive(address(token), false);
+        vm.warp(un.endTimes(saleId).endTime);
+        assertTrue(next.settle(saleId, new uint256[](0)));
+        assertEq(uint8(un.auction(saleId).status), uint8(IUniformEditionAuction.AuctionStatus.VOID));
+        assertEq(fee.balance + seller.balance, 0, "nothing paid");
+        assertEq(token.editionOf(ID).minted, 0);
+        vm.prank(alice);
+        (uint256 won, uint256 refund) = next.claimBid(saleId, bidId, alice);
+        assertEq(won, 0);
+        assertEq(refund, amount);
+    }
+
+    /// @dev The same sale, still listed, settles and pays as before.
+    function test_Adopted_ASaleThatRunsOnItsOwnSettlesWhileListed() public {
+        (IndependentEditionAuction next, uint256 saleId) = _adoptedOnItsOwn();
+        IUniformEditionAuction un = IUniformEditionAuction(address(next));
+        uint256 amount = un.stepPrice(saleId, 100);
+        vm.deal(alice, amount);
+        vm.prank(alice);
+        next.bid{ value: amount }(saleId, 100, 1);
+        vm.warp(un.endTimes(saleId).endTime);
+        assertTrue(next.settle(saleId, new uint256[](0)));
+        assertEq(
+            uint8(un.auction(saleId).status), uint8(IUniformEditionAuction.AuctionStatus.SETTLED)
+        );
+        assertEq(fee.balance + seller.balance, amount, "the clearing is paid");
+    }
+
+    /// @dev The first auction opens the edition and is removed; after the rebind wait the network
+    ///      moves the edition to a second auction, which adopts it once the master's sale has an
+    ///      outcome, so the adopted sale runs on its own.
+    function _adoptedOnItsOwn() internal returns (IndependentEditionAuction next, uint256 saleId) {
+        _open();
+        address l = address(
+            new IndependentEditionAuctionLens(
+                address(english), address(escrow), address(directory), address(economics)
+            )
+        );
+        next = new IndependentEditionAuction(
+            address(manager),
+            address(escrow),
+            address(directory),
+            address(english),
+            l,
+            l.codehash,
+            IUniformEditionAuction.AuctionConfig(1e14, 48, 336, 10_000, 5 minutes, 1 days),
+            IUniformEditionAuction.Limits(100_000)
+        );
+        gate.set(address(token), address(next), true);
+        gate.set(address(token), address(auction), false);
+        gate.remove(address(auction), block.timestamp);
+        vm.warp(block.timestamp + token.rebindDelay());
+        token.rebind(ID, address(next));
+        master.setOutcome(ID, Outcome.SOLD);
+        saleId = next.adopt(address(token), ID, abi.encode(_item()));
     }
 
     /// @dev Delisted while a wide book's scan is in progress (nothing paid yet): the next settle

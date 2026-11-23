@@ -15,7 +15,7 @@ with `--artifacts out --update` to refresh them. No audit has taken place.
 | --- | --- |
 | Language and compiler | Solidity 0.8.37, EVM `prague`, optimizer on (200 runs), `via_ir` off ([`foundry.toml`](../../foundry.toml)) |
 | Dependencies | OpenZeppelin Contracts 5.7.0 and forge-std 1.17.0, as git submodules in `lib/` |
-| Source lines | 13,900 non-blank, non-comment lines in 120 files under `src/` (budget: 17,000) |
+| Source lines | 13,904 non-blank, non-comment lines in 120 files under `src/` (budget: 17,000) |
 | Deployed contracts | Every contract `script/DeployCore.sol` deploys: the permanent core, the money contracts, the modules, the governance pair and the two Independent Stream deployers (the deploy order is in the [runbook](../../script/README.md#how-a-deployment-is-built)) |
 | Linked libraries | None: every library function is `internal` |
 | Proxies and `delegatecall` | None in `src/`. The one exception is OpenZeppelin `Multicall` inside `AccessManager` ([ADR 0002](../adr/0002-access-manager-hardening.md)) |
@@ -55,7 +55,7 @@ Deployed once and never replaced ([ADR 0010](../adr/0010-plain-permanent-core.md
 | `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) | 601 | 21,227 | 23,493 | 3,349 |
 | `UniformEditionAuction` | [`src/sales/UniformEditionAuction.sol`](../../src/sales/UniformEditionAuction.sol) | 919 | 23,447 | 27,922 | 1,129 |
 | `UniformEditionAuctionLens` | [`src/sales/UniformEditionAuctionLens.sol`](../../src/sales/UniformEditionAuctionLens.sol) | 953 | 22,631 | 23,103 | 1,945 |
-| `IndependentEditionAuction` | [`src/independent/IndependentEditionAuction.sol`](../../src/independent/IndependentEditionAuction.sol) | 75 | 23,818 | 27,777 | 758 |
+| `IndependentEditionAuction` | [`src/independent/IndependentEditionAuction.sol`](../../src/independent/IndependentEditionAuction.sol) | 76 | 23,881 | 27,840 | 695 |
 | `IndependentEditionAuctionLens` | [`src/independent/IndependentEditionAuctionLens.sol`](../../src/independent/IndependentEditionAuctionLens.sol) | 107 | 23,519 | 23,850 | 1,057 |
 | `SaleStarter` (stateless helper for the keeper) | [`src/sales/SaleStarter.sol`](../../src/sales/SaleStarter.sol) | 35 | 5,954 | 5,982 | 18,622 |
 
@@ -63,7 +63,7 @@ Deployed once and never replaced ([ADR 0010](../adr/0010-plain-permanent-core.md
 
 | Contract | Source | nSLOC | Runtime (bytes) | Initcode (bytes) | EIP-170 margin |
 | --- | --- | ---: | ---: | ---: | ---: |
-| `PackageRegistry` (the mint policy) | [`src/curation/PackageRegistry.sol`](../../src/curation/PackageRegistry.sol) | 514 | 19,791 | 21,437 | 4,785 |
+| `PackageRegistry` (the mint policy) | [`src/curation/PackageRegistry.sol`](../../src/curation/PackageRegistry.sol) | 517 | 19,906 | 21,552 | 4,670 |
 | `Eip712CurationVerifier` | [`src/curation/Eip712CurationVerifier.sol`](../../src/curation/Eip712CurationVerifier.sol) | 117 | 5,835 | 6,526 | 18,741 |
 | `StreamTerms` (TERMS) | [`src/terms/StreamTerms.sol`](../../src/terms/StreamTerms.sol) | 151 | 6,860 | 7,638 | 17,716 |
 | `WorkRules` (RECORDS) | [`src/records/WorkRules.sol`](../../src/records/WorkRules.sol) | 388 | 15,757 | 16,700 | 8,819 |
