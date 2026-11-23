@@ -163,25 +163,34 @@ contract StreamTerms is AccessManaged, ITerms {
     /// @inheritdoc ITerms
     /// @dev The pairing the network set here, else, for a token other than 6529 Stream, the
     ///      ERC1155 partner the Independent Stream module lists for it (zero while none is listed
-    ///      or the INDEPENDENT_STREAM slot is empty).
+    ///      or the INDEPENDENT_STREAM slot is empty). A listed partner counts only if it names
+    ///      `token` as its `stream()`, the same rule as a pairing set here, so that module can
+    ///      never point a token at another token's editions.
     function editionsOf(address token) public view returns (address editions) {
         editions = _editionsOf[token];
         if (editions == address(0) && token != stream) {
             IIndependentStreamRegistry.Entry memory e = _entry(token);
-            if (e.form == IIndependentStreamRegistry.Form.ERC721) editions = e.partner;
+            if (
+                e.form == IIndependentStreamRegistry.Form.ERC721 && e.partner != address(0)
+                    && IEditions(e.partner).stream() == token
+            ) editions = e.partner;
         }
     }
 
     /// @notice The ERC-721 token contract an editions contract is paired with, or zero: the
     ///         pairing the network set here, else the ERC721 partner the Independent Stream module
-    ///         lists (never for 6529 Stream, which is no editions contract).
+    ///         lists (never for 6529 Stream, which is no editions contract), and only if the
+    ///         editions contract names that partner as its `stream()`.
     /// @param editions The editions contract.
     /// @return token The token contract.
     function tokenOfEditions(address editions) public view returns (address token) {
         token = _tokenOfEditions[editions];
         if (token == address(0) && editions != stream) {
             IIndependentStreamRegistry.Entry memory e = _entry(editions);
-            if (e.form == IIndependentStreamRegistry.Form.ERC1155) token = e.partner;
+            if (
+                e.form == IIndependentStreamRegistry.Form.ERC1155 && e.partner != address(0)
+                    && IEditions(editions).stream() == e.partner
+            ) token = e.partner;
         }
     }
 
