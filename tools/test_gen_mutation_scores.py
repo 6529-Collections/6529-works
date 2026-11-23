@@ -178,6 +178,17 @@ class RenderTest(unittest.TestCase):
             "| **Total** | **40** | **35** | **5** | **0** | **87.5%** | **0** | **87.5%** | |",
         ])
 
+    def test_the_total_final_score_counts_a_second_measurement(self) -> None:
+        files = {
+            "src/a/Again.sol": entry(3, 100, 80, floor=88, remeasured={"mutants": 50, "killed": 45}),
+            "src/b/Once.sol": entry(3, 100, 90, new_kills=5, floor=93),
+        }
+        total = gs.render_scores(files, 3, 2.0).splitlines()[-1]
+        # The campaign's columns sum the rows; the final score is (45 + 95) of (50 + 100).
+        self.assertEqual(
+            total, "| **Total** | **200** | **170** | **30** | **0** | **85.0%** | **5** | **93.3%** | |"
+        )
+
     def test_a_second_measurement_is_the_final_score(self) -> None:
         files = {"src/b/Sale.sol": entry(2, 1134, 994, floor=85, was=87,
                                          remeasured={"mutants": 1113, "killed": 979})}
@@ -210,6 +221,20 @@ class RenderTest(unittest.TestCase):
             "  - `test_One` (B L4)\n"
         ))
         self.assertEqual(gs.render_tests([]), "")
+
+    def test_a_malformed_shape_is_reported_not_raised(self) -> None:
+        self.assertIn("not a map", gs.validate(None)[0])
+        self.assertIn("not a map", gs.validate([])[0])
+        for key, value in (("survivors", None), ("addenda", []), ("tests", {})):
+            data = sample()
+            data[key] = value
+            self.assertIn(f"{key} is not a", gs.validate(data)[0], key)
+        data = sample()
+        data["files"]["src/b/Sale.sol"] = None
+        self.assertIn("src/b/Sale.sol: the entry is not a map", gs.validate(data))
+        data = sample()
+        data["survivors"]["src/a/Core.sol"] = None
+        self.assertIn("not a list of rows", gs.validate(data)[0])
 
     def test_summary_counts_the_survivors_left_without_a_row(self) -> None:
         rows = [row(1, "equivalent"), row(2, "killed")]
@@ -458,6 +483,47 @@ class CommandTest(unittest.TestCase):
         self.assertIn("is not current", out)
         self.assertEqual(self.get(gs.PAGE), PAGE)
 
+    def test_a_missing_or_unparsable_file_fails_with_its_path(self) -> None:
+        for relative in (gs.DATA, gs.PAGE, gs.FLOORS):
+            kept = self.get(relative)
+            (self.tmp / relative).unlink()
+            code, out = run(["--root", str(self.tmp), "--check"])
+            self.assertEqual(code, 1, relative)
+            self.assertIn(relative, out)
+            self.assertIn("cannot be read", out)
+            self.put(relative, kept)
+        for relative in (gs.DATA, gs.FLOORS):
+            kept = self.get(relative)
+            self.put(relative, "{ not json")
+            code, out = run(["--root", str(self.tmp), "--check"])
+            self.assertEqual(code, 1, relative)
+            self.assertIn(f"{relative}: not JSON", out)
+            self.put(relative, kept)
+        self.assertEqual(run(["--root", str(self.tmp), "--check"])[0], 0)
+
+    def test_the_writing_modes_fail_cleanly_on_bad_input(self) -> None:
+        page, floors = self.get(gs.PAGE), self.get(gs.FLOORS)
+        self.put(gs.DATA, "[]")
+        code, out = run(["--root", str(self.tmp), "--write-floors"])
+        self.assertEqual(code, 1)
+        self.assertIn(f"FAIL {gs.DATA}: the data is not a map", out)
+        self.put(gs.DATA, gs.dump_data(sample()))
+        report = self.tmp / "report.json"
+        for text, message in (("{ not json", "not JSON"), ("[1]", "not a map of file to result")):
+            self.put("report.json", text)
+            code, out = run(["--root", str(self.tmp), "--merge", str(report)])
+            self.assertEqual(code, 1, text)
+            self.assertIn(message, out)
+        code, out = run(["--root", str(self.tmp), "--merge", str(self.tmp / "absent.json")])
+        self.assertEqual(code, 1)
+        self.assertIn("cannot be read", out)
+        self.put(gs.FLOORS, "{ not json")
+        code, out = run(["--root", str(self.tmp), "--write-floors"])
+        self.assertEqual(code, 1)
+        self.assertIn(f"{gs.FLOORS}: not JSON", out)
+        self.assertEqual(self.get(gs.PAGE), page)
+        self.put(gs.FLOORS, floors)
+
     def test_check_fails_on_a_broken_marker(self) -> None:
         self.put(gs.PAGE, self.get(gs.PAGE).replace("<!-- generated:tests -->\n", ""))
         code, out = run(["--root", str(self.tmp), "--check"])
@@ -497,7 +563,7 @@ class CommandTest(unittest.TestCase):
         self.put(gs.PAGE, PAGE)
         code, out = run(["--root", str(self.tmp), "--write-floors"])
         self.assertEqual(code, 1)
-        self.assertIn("FAIL src/b/Sale.sol: floor 89", out)
+        self.assertIn(f"FAIL {gs.DATA}: src/b/Sale.sol: floor 89", out)
         self.assertEqual(self.get(gs.PAGE), PAGE)
 
     def test_write_floors_keeps_the_other_keys(self) -> None:

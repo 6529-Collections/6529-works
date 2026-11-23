@@ -147,7 +147,7 @@ final score minus two points, rounded down.
 | `src/sales/UniformEditionAuctionLens.sol` | 1134 | 994 | 140 | 0 | 87.7% | 0 | 88.0% (measured again) | 85 (was 87) |
 | `src/stream/SpdxId.sol` | 114 | 106 | 8 | 0 | 93.0% | 0 | 93.0% | 90 |
 | `src/stream/WorkDelivery.sol` | 567 | 496 | 71 | 0 | 87.5% | 0 | 87.5% | 85 (was 88) |
-| **Total** | **7299** | **6520** | **779** | **0** | **89.3%** | **0** | **89.3%** | |
+| **Total** | **7299** | **6520** | **779** | **0** | **89.3%** | **0** | **89.4%** | |
 
 <!-- /generated -->
 

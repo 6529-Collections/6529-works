@@ -139,6 +139,8 @@ def _is_count(value: object) -> bool:
 def validate(data: dict) -> list[str]:
     """Every reason the data cannot be rendered; an empty list when it is consistent."""
     errors: list[str] = []
+    if not isinstance(data, dict):
+        return ["the data is not a map of margin, files, survivors, addenda and tests"]
     unknown = sorted(set(data) - set(TOP_KEYS))
     if unknown:
         errors.append(f"unknown keys {unknown}")
@@ -149,7 +151,16 @@ def validate(data: dict) -> list[str]:
     if not isinstance(files, dict):
         return errors + ["files is not a map"]
 
+    for name, kind in (("survivors", dict), ("addenda", dict), ("tests", list)):
+        if name in data and not isinstance(data[name], kind):
+            errors.append(f"{name} is not a {'map' if kind is dict else 'list'}")
+    if errors:
+        return errors
+
     for path, entry in files.items():
+        if not isinstance(entry, dict):
+            errors.append(f"{path}: the entry is not a map")
+            continue
         missing = [key for key in FILE_KEYS if key not in entry]
         extra = sorted(set(entry) - set(FILE_KEYS) - set(FILE_OPTIONAL_KEYS))
         if missing or extra:
@@ -193,7 +204,7 @@ def validate(data: dict) -> list[str]:
 
     survivors = data.get("survivors", {})
     for path, rows in survivors.items():
-        if path not in files:
+        if not isinstance(files.get(path), dict):
             errors.append(f"survivors of {path}: the file is not in files")
             continue
         bad = _bad_rows(rows)
@@ -276,14 +287,21 @@ def escape_cell(text: str) -> str:
 
 
 def render_scores(files: dict, tier: int, margin: float) -> str:
-    """The kill-rate table of one tier: a row per file by path, then the totals."""
+    """The kill-rate table of one tier: a row per file by path, then the totals.
+
+    The total's final score is taken over the rows' final counts, so a file measured again
+    counts there with its later figures; the other totals are the campaign's.
+    """
     out = [SCORES_HEADER]
     total = {"mutants": 0, "killed": 0, "timedOut": 0, "newKills": 0}
+    final_killed = final_mutants = 0
     for path in sorted(p for p, entry in files.items() if entry["tier"] == tier):
         entry = files[path]
         for key in total:
             total[key] += entry[key]
         mutants, killed = entry["mutants"], entry["killed"]
+        final_killed += final_counts(entry)[0]
+        final_mutants += final_counts(entry)[1]
         final = percent(*final_counts(entry))
         if entry.get("remeasured"):
             final += " (measured again)"
@@ -297,7 +315,7 @@ def render_scores(files: dict, tier: int, margin: float) -> str:
     mutants, killed = total["mutants"], total["killed"]
     cells = [
         "Total", mutants, killed, mutants - killed, total["timedOut"], percent(killed, mutants),
-        total["newKills"], percent(killed + total["newKills"], mutants),
+        total["newKills"], percent(final_killed, final_mutants),
     ]
     out.append("| " + " | ".join(f"**{cell}**" for cell in cells) + " | |\n")
     return "".join(out)
@@ -547,7 +565,19 @@ def dump_data(data: dict) -> str:
 
 
 def read_text(path: Path) -> str:
-    return path.read_text(encoding="utf-8").replace("\r\n", "\n")
+    """The file's text, with a missing or unreadable file reported by its path."""
+    try:
+        return path.read_text(encoding="utf-8").replace("\r\n", "\n")
+    except (OSError, UnicodeDecodeError) as error:
+        raise DataError(f"{path.as_posix()}: cannot be read ({error})") from error
+
+
+def read_json(path: Path) -> object:
+    """The file's JSON value, with a file that is not JSON reported by its path."""
+    try:
+        return json.loads(read_text(path))
+    except ValueError as error:
+        raise DataError(f"{path.as_posix()}: not JSON ({error})") from error
 
 
 def write_text(path: Path, text: str) -> None:
@@ -557,12 +587,15 @@ def write_text(path: Path, text: str) -> None:
 
 def check(root: Path) -> list[str]:
     """Every reason the data, the page and the floors file disagree; empty when in sync."""
-    data = json.loads(read_text(root / DATA))
+    try:
+        data = read_json(root / DATA)
+    except DataError as error:
+        return [str(error)]
     errors = [f"{DATA}: {error}" for error in validate(data)]
     if errors:
         return errors
-    page = read_text(root / PAGE)
     try:
+        page = read_text(root / PAGE)
         wanted = regenerate(page, data)
     except DataError as error:
         return [f"{PAGE}: {line}" for line in str(error).splitlines()]
@@ -574,9 +607,11 @@ def check(root: Path) -> list[str]:
         errors.extend(list(diff)[:60])
         errors.append(f"{PAGE} is not current: run `python tools/gen_mutation_scores.py`")
     try:
-        floors = json.loads(read_text(root / FLOORS))
-    except (OSError, ValueError) as error:
-        return errors + [f"{FLOORS}: cannot be read ({error})"]
+        floors = read_json(root / FLOORS)
+    except DataError as error:
+        return errors + [str(error)]
+    if not isinstance(floors, dict) or not isinstance(floors.get("files", {}), dict):
+        return errors + [f"{FLOORS}: not a map with a `files` map"]
     mismatches = [f"{FLOORS}: {line}" for line in floor_mismatches(data, floors)]
     if mismatches:
         mismatches.append(
@@ -619,11 +654,24 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     try:
-        data = json.loads(read_text(root / DATA))
+        data = read_json(root / DATA)
+        errors = validate(data)
+        if errors:
+            raise DataError("\n".join(f"{DATA}: {error}" for error in errors))
         if args.merge:
-            report = json.loads(read_text(args.merge))
+            report = read_json(args.merge)
+            if not isinstance(report, dict) or not all(
+                isinstance(result, dict) for result in report.values()
+            ):
+                raise DataError(f"{args.merge.as_posix()}: not a map of file to result")
             data = merge_report(data, report, args.commit)
         page = regenerate(read_text(root / PAGE), data)
+        floors_path = root / FLOORS
+        floors = {}
+        if args.write_floors and floors_path.exists():
+            floors = read_json(floors_path)
+            if not isinstance(floors, dict):
+                raise DataError(f"{FLOORS}: not a map")
     except DataError as error:
         for line in str(error).splitlines():
             print(f"FAIL {line}")
@@ -634,8 +682,6 @@ def main(argv: list[str] | None = None) -> int:
     write_text(root / PAGE, page)
     print(f"mutation scores: wrote the generated regions of {PAGE}")
     if args.write_floors:
-        floors_path = root / FLOORS
-        floors = json.loads(read_text(floors_path)) if floors_path.exists() else {}
         write_text(floors_path, json.dumps(updated_floors(data, floors), indent=2) + "\n")
         print(f"mutation scores: wrote {FLOORS}")
     elif args.merge:
