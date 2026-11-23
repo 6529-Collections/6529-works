@@ -270,16 +270,136 @@ contract EnglishAuctionMutationTest is AuctionFixture {
         assertEq(address(deployed.allowlist()), address(allowlist));
     }
 
+    /// @notice The constructor refuses an escrow without code, and a refusal gas outside
+    ///         3,000,000 to 15,000,000 while taking both ends.
+    function test_Constructor_ChecksTheEscrowAndTheRefusalGasBounds() public {
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, carol));
+        _deployWith(address(economics), carol, address(statements), REFUSAL_GAS);
+        vm.expectRevert(IEnglishAuction.InvalidConfig.selector);
+        _deployWith(address(economics), address(escrow), address(statements), 2_999_999);
+        vm.expectRevert(IEnglishAuction.InvalidConfig.selector);
+        _deployWith(address(economics), address(escrow), address(statements), 15_000_001);
+        EnglishAuction top =
+            _deployWith(address(economics), address(escrow), address(statements), 15_000_000);
+        assertEq(top.config().refusalGas, 15_000_000);
+    }
+
+    /// @notice `setConfig` takes every bound itself: the shortest and longest duration and
+    ///         window, a window equal to the duration, the smallest and the whole increment
+    ///         share, an unchanged refusal gas, exactly double, and the ceiling.
+    function test_SetConfig_TakesEveryBoundItself() public {
+        IEnglishAuction.AuctionConfig memory a =
+            IEnglishAuction.AuctionConfig(1 hours, 1 minutes, 1_000, REFUSAL_GAS);
+        IEnglishAuction.AuctionConfig memory b =
+            IEnglishAuction.AuctionConfig(7 days, 1 days, 100_000, 6_000_000);
+        IEnglishAuction.AuctionConfig memory c =
+            IEnglishAuction.AuctionConfig(1 hours, 1 hours, 1_000, 12_000_000);
+        IEnglishAuction.AuctionConfig memory d =
+            IEnglishAuction.AuctionConfig(1 hours, 1 hours, 1_000, 15_000_000);
+        auction.setConfig(auction.config(), a);
+        auction.setConfig(a, b);
+        assertEq(auction.config().duration, 7 days);
+        assertEq(auction.config().incrementShare, 100_000);
+        auction.setConfig(b, c);
+        assertEq(auction.config().extensionWindow, 1 hours);
+        auction.setConfig(c, d);
+        assertEq(auction.config().refusalGas, 15_000_000);
+    }
+
+    // ------------------------------------------------------------------------- boundaries
+
+    /// @notice The gas constants integrators and settlers rely on.
+    function test_Constants_GasValues() public view {
+        assertEq(auction.PAYOUT_GAS(), 100_000);
+        assertEq(auction.DELIVERY_GAS(), 300_000);
+        assertEq(auction.DELIVERY_RESERVE(), 50_000);
+    }
+
+    /// @notice A refused settlement may be closed at any time from the delay on, not only at
+    ///         its first second.
+    function test_SettleOrRefund_AllowedAfterTheDelayToo() public {
+        uint256 saleId = _startInd(1);
+        _bid(alice, saleId, 1 ether);
+        _end(saleId);
+        vm.warp(auction.refusableAt(saleId) + 1);
+        auction.settleOrRefund(saleId);
+        assertEq(ind.ownerOf(1), alice);
+        assertEq(indSeller.balance, 0.95 ether);
+    }
+
+    /// @notice `cancel` takes only the recorded outcome itself, at any position from the one
+    ///         the pause set.
+    function test_Cancel_OnlyTheRecordedOutcomeAtAnyLaterPosition() public {
+        uint256 saleId = _start(1);
+        statements.setOutcome(address(stream), 1, OUTCOME, 4);
+        auction.pause(saleId, REF);
+        bytes32 later = keccak256("later");
+        statements.setOutcome(address(stream), 1, later, 7);
+        bytes32[2] memory wrong = [bytes32(uint256(later) + 1), bytes32(uint256(later) - 1)];
+        for (uint256 i; i < wrong.length; ++i) {
+            vm.expectRevert(
+                abi.encodeWithSelector(
+                    IEnglishAuction.OutcomeNotRecorded.selector, saleId, wrong[i]
+                )
+            );
+            auction.cancel(saleId, wrong[i]);
+        }
+        auction.cancel(saleId, later);
+        assertEq(uint256(_state(saleId)), uint256(IEnglishAuction.AuctionState.CANCELLED));
+    }
+
+    /// @notice A pause is live through its last second: the clock shows it and the bidder may
+    ///         still withdraw.
+    function test_Pause_IsLiveThroughItsLastSecond() public {
+        uint256 saleId = _start(1);
+        _bid(alice, saleId, 1 ether);
+        uint256 end = auction.auction(saleId).endTime;
+        auction.pause(saleId, REF);
+        uint256 pausedAt = block.timestamp;
+        vm.warp(pausedAt + 3 days);
+        (IEnglishAuction.AuctionState state, uint64 endTime, uint64 at) =
+            auction.auctionClock(saleId);
+        assertEq(uint256(state), uint256(IEnglishAuction.AuctionState.PAUSED));
+        assertEq(endTime, end);
+        assertEq(at, pausedAt);
+        vm.prank(alice);
+        auction.withdrawBid(saleId);
+        assertEq(auction.claimable(alice), 1 ether);
+    }
+
+    /// @notice The largest bid the sale can hold, 96 bits, is accepted.
+    function test_Bid_TheLargest96BitBidIsAccepted() public {
+        uint256 saleId = _start(1);
+        vm.deal(alice, type(uint96).max);
+        _bid(alice, saleId, type(uint96).max);
+        assertEq(auction.auction(saleId).bid, type(uint96).max);
+        assertEq(address(auction).balance, type(uint96).max);
+    }
+
+    /// @notice An interface ID below the supported ones is not supported.
+    function test_SupportsInterface_RefusesALowerId() public view {
+        assertFalse(auction.supportsInterface(0x00000001));
+    }
+
     function _deploy(address economics_, address statementLog_) internal returns (EnglishAuction) {
+        return _deployWith(economics_, address(escrow), statementLog_, REFUSAL_GAS);
+    }
+
+    function _deployWith(
+        address economics_,
+        address escrow_,
+        address statementLog_,
+        uint32 refusalGas
+    ) internal returns (EnglishAuction) {
         return new EnglishAuction(
             address(manager),
             address(stream),
             IDirectory(address(directory)),
             IEconomicsResolver(economics_),
-            IRevenueEscrow(address(escrow)),
+            IRevenueEscrow(escrow_),
             IStatementLog(statementLog_),
             address(policy),
-            IEnglishAuction.AuctionConfig(DURATION, WINDOW, SHARE, REFUSAL_GAS)
+            IEnglishAuction.AuctionConfig(DURATION, WINDOW, SHARE, refusalGas)
         );
     }
 }

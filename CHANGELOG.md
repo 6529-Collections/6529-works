@@ -2,8 +2,8 @@
 
 ## Unreleased
 
-- Tests: the first mutation campaign on the plain-core contracts (23 November 2026; 15,900
-  mutants, 91.5% killed, 92.6% with the tests added here). `tools/mutation-floors.json` holds
+- Tests: the first mutation campaign on the plain-core contracts (23 November 2026; 15,922
+  mutants, 91.5% killed, 92.8% with the tests added here). `tools/mutation-floors.json` holds
   measured floors for every file and has no placeholders left; the survivors of the permanent
   contracts and of the money and mint modules are triaged in
   [`docs/testing/mutation-scores.md`](docs/testing/mutation-scores.md). `tools/mutation.py` now

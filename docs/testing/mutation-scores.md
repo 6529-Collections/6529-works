@@ -17,6 +17,9 @@ come from this page. How a campaign works and how to run one is in the
   `IndependentStreamMembership`. Their scores were not measured again: each floor stays as
   measured, two points under, until the weekly run measures the merged code. Every test added
   here passes on the merged code.
+- **Three small files measured with the fixed tool.** `IWorkPowers.sol`, `CoreTypes.sol` and
+  `SaleTypes.sol` hold only libraries not named like their file; their rows are whole-file runs
+  of the tool after the fix described below.
 - **Tools.** slither-analyzer 0.11.6 (`slither-mutate`) through `tools/mutation.py`, Foundry
   1.7.1, solc 0.8.37, tests under the `lite` profile; three rented 96-core machines for about 3.7
   hours each (485 parts, 203 hours of part time in all).
@@ -73,11 +76,11 @@ final score minus two points, rounded down.
 | `src/independent/IndependentEditionAuction.sol` | 35 | 29 | 6 | 0 | 82.9% | 5 | 97.1% | 95 (was 92) |
 | `src/independent/IndependentStreamRegistry.sol` | 941 | 832 | 109 | 0 | 88.4% | 37 | 92.3% | 90 (was 89) |
 | `src/records/WorkRules.sol` | 373 | 353 | 20 | 0 | 94.6% | 12 | 97.9% | 95 (was 89) |
-| `src/sales/EnglishAuction.sol` | 683 | 602 | 81 | 0 | 88.1% | 26 | 91.9% | 89 (was 90) |
+| `src/sales/EnglishAuction.sol` | 683 | 602 | 81 | 0 | 88.1% | 60 | 96.9% | 94 (was 90) |
 | `src/sales/UniformClearing.sol` | 278 | 276 | 2 | 0 | 99.3% | 0 | 99.3% | 97 (was 93) |
 | `src/sales/UniformEditionAuction.sol` | 1113 | 1019 | 94 | 0 | 91.6% | 27 | 94.0% | 91 |
 | `src/terms/StreamTerms.sol` | 170 | 160 | 10 | 0 | 94.1% | 9 | 99.4% | 97 (was 90) |
-| **Total** | **4731** | **4335** | **396** | **0** | **91.6%** | **138** | **94.5%** | |
+| **Total** | **4731** | **4335** | **396** | **0** | **91.6%** | **172** | **95.3%** | |
 
 ### Everything else
 
@@ -108,11 +111,11 @@ final score minus two points, rounded down.
 | `src/independent/IndependentEditionAuctionLens.sol` | 48 | 38 | 10 | 0 | 79.2% | 0 | 79.2% | 77 (was 83) |
 | `src/independent/IndependentStreamDeployer.sol` | 100 | 94 | 6 | 0 | 94.0% | 0 | 94.0% | 92 |
 | `src/independent/IndependentStreamMembership.sol` | 65 | 61 | 4 | 0 | 93.8% | 0 | 93.8% | 91 (was 92) |
-| `src/interfaces/IWorkPowers.sol` | 8 | 8 | 0 | 0 | 100.0% | 0 | 100.0% | 98 |
-| `src/interfaces/core/CoreTypes.sol` | 2 | 2 | 0 | 0 | 100.0% | 0 | 100.0% | 98 |
+| `src/interfaces/IWorkPowers.sol` | 16 | 12 | 4 | 0 | 75.0% | 0 | 75.0% | 73 (was 98) |
+| `src/interfaces/core/CoreTypes.sol` | 12 | 11 | 1 | 0 | 91.7% | 0 | 91.7% | 89 |
 | `src/interfaces/types/HashRef.sol` | 6 | 6 | 0 | 0 | 100.0% | 0 | 100.0% | 98 |
 | `src/interfaces/types/Limits.sol` | 36 | 27 | 9 | 0 | 75.0% | 0 | 75.0% | 73 |
-| `src/interfaces/types/SaleTypes.sol` | 0 | 0 | 0 | 0 | n/a | 0 | n/a | none |
+| `src/interfaces/types/SaleTypes.sol` | 4 | 4 | 0 | 0 | 100.0% | 0 | 100.0% | 98 |
 | `src/interfaces/types/StatementKinds.sol` | 15 | 15 | 0 | 0 | 100.0% | 0 | 100.0% | 98 |
 | `src/interfaces/types/StepLadder.sol` | 216 | 205 | 11 | 0 | 94.9% | 0 | 94.9% | 92 |
 | `src/interfaces/types/Typehashes.sol` | 26 | 26 | 0 | 0 | 100.0% | 0 | 100.0% | 98 |
@@ -130,13 +133,13 @@ final score minus two points, rounded down.
 | `src/sales/UniformEditionAuctionLens.sol` | 1134 | 994 | 140 | 0 | 87.7% | 0 | 87.7% | 85 (was 87) |
 | `src/stream/SpdxId.sol` | 114 | 106 | 8 | 0 | 93.0% | 0 | 93.0% | 90 |
 | `src/stream/WorkDelivery.sol` | 567 | 496 | 71 | 0 | 87.5% | 0 | 87.5% | 85 (was 88) |
-| **Total** | **7277** | **6503** | **774** | **0** | **89.4%** | **0** | **89.4%** | |
+| **Total** | **7299** | **6520** | **779** | **0** | **89.3%** | **0** | **89.3%** | |
 
 A file with no mutants (constants of other types, or declarations only) needs no floor.
 
 ## The tests added
 
-111 test functions, each shown to fail on the mutants it is listed with:
+119 test functions, each shown to fail on the mutants it is listed with:
 
 - `test/content/ContentStorePermanence.t.sol`
   - `test_Source_ARangeCheckKeepsMemoryAtOneChunk` (ContentStore L584)
@@ -231,18 +234,26 @@ A file with no mutants (constants of other types, or declarations only) needs no
   - `test_Stores_ACodeHashAboveTheStoresOwnIsRefused` (WorkRules L328)
   - `test_Stores_EachIdNamesItsOwnStore` (WorkRules L564)
 - `test/sales/auction/EnglishAuctionMutation.t.sol`
+  - `test_Bid_TheLargest96BitBidIsAccepted` (EnglishAuction L647)
+  - `test_Cancel_OnlyTheRecordedOutcomeAtAnyLaterPosition` (EnglishAuction L414)
+  - `test_Constants_GasValues` (EnglishAuction L79, EnglishAuction L82, EnglishAuction L84)
+  - `test_Constructor_ChecksTheEscrowAndTheRefusalGasBounds` (EnglishAuction L170, EnglishAuction L96, EnglishAuction L97)
   - `test_Constructor_ChecksTheResolverTheAllowlistAndTheStatementLog` (EnglishAuction L169, EnglishAuction L171, EnglishAuction L173)
   - `test_OnERC721Received_AcceptsAMintIntoCustodyDuringAStart` (EnglishAuction L584, EnglishAuction L587)
+  - `test_Pause_IsLiveThroughItsLastSecond` (EnglishAuction L742, EnglishAuction L775)
   - `test_Restart_ForgetsTheRefundedBid` (EnglishAuction L227)
   - `test_Restart_RefusesACancelledSale` (EnglishAuction L213)
   - `test_Restart_RefusesAShareAboveTheWhole` (EnglishAuction L220)
   - `test_Resume_KeepsTheRemainingTimeWhenLongerThanTheDuration` (EnglishAuction L786)
   - `test_SetConfig_EachParameterIsComparedExactly` (EnglishAuction L471)
+  - `test_SetConfig_TakesEveryBoundItself` (EnglishAuction L813, EnglishAuction L95)
+  - `test_SettleOrRefund_AllowedAfterTheDelayToo` (EnglishAuction L357)
   - `test_Settle_AFeeWithNoRecipientIsRefused` (EnglishAuction L687)
   - `test_Settle_AGasShortfallRevertsInsteadOfDeliveringWithLess` (EnglishAuction L705, EnglishAuction L706)
   - `test_Settle_AZeroFeeNamesNoFeeRecipient` (EnglishAuction L308)
   - `test_StartWithBid_APolicyCannotReenter` (EnglishAuction L199)
   - `test_Start_RefusesEveryOtherSaleKind` (EnglishAuction L609)
+  - `test_SupportsInterface_RefusesALowerId` (EnglishAuction L592)
   - `test_WithdrawBid_ABidForARecipientIsCreditedAndTheRecipientCleared` (EnglishAuction L726, EnglishAuction L727, EnglishAuction L728)
 - `test/sales/edition/UniformEditionAuctionAdopt.t.sol`
   - `test_Adopt_RunsOnItsOwn_BidsAndSettlesByItsOwnCloseOnly` (UniformEditionAuction L1347, UniformEditionAuction L719)
@@ -800,59 +811,59 @@ One row per surviving mutant of the permanent contracts and the money and mint m
 
 ### `src/sales/EnglishAuction.sol`
 
-81 survivors: 34 open, 26 killed, 19 equivalent, 2 defensive.
+81 survivors: 60 killed, 19 equivalent, 2 defensive.
 
 | Line | Rule | Verdict | Why, or the test |
 | ---: | --- | --- | --- |
-| 79 | CONST | open | test drafted but removed unverified (kept in CM/triage/ea-unverified-EnglishAuctionMutation.t.sol): PAYOUT_GAS 100,001: the public constant was not pinned (behaviour differs only by one gas) |
-| 79 | CONST | open | test drafted but removed unverified (kept in CM/triage/ea-unverified-EnglishAuctionMutation.t.sol): PAYOUT_GAS 99,999: the public constant was not pinned |
-| 82 | CONST | open | test drafted but removed unverified (kept in CM/triage/ea-unverified-EnglishAuctionMutation.t.sol): DELIVERY_GAS 300,001: the public constant was not pinned |
-| 82 | CONST | open | test drafted but removed unverified (kept in CM/triage/ea-unverified-EnglishAuctionMutation.t.sol): DELIVERY_GAS 299,999: the public constant was not pinned |
-| 84 | CONST | open | test drafted but removed unverified (kept in CM/triage/ea-unverified-EnglishAuctionMutation.t.sol): DELIVERY_RESERVE 50,001: the public constant was not pinned |
-| 84 | CONST | open | test drafted but removed unverified (kept in CM/triage/ea-unverified-EnglishAuctionMutation.t.sol): DELIVERY_RESERVE 49,999: the public constant was not pinned |
-| 95 | CONST | open | test drafted but removed unverified (kept in CM/triage/ea-unverified-EnglishAuctionMutation.t.sol): setConfig refused the smallest increment share, 1,000 |
-| 96 | CONST | open | test drafted but removed unverified (kept in CM/triage/ea-unverified-EnglishAuctionMutation.t.sol): the constructor accepted a refusal gas of 2,999,999 |
-| 97 | CONST | open | test drafted but removed unverified (kept in CM/triage/ea-unverified-EnglishAuctionMutation.t.sol): a refusal gas of 15,000,000 was refused |
+| 79 | CONST | killed | `test_Constants_GasValues`: PAYOUT_GAS 100,001: the public constant was not pinned (behaviour differs only by one gas) |
+| 79 | CONST | killed | `test_Constants_GasValues`: PAYOUT_GAS 99,999: the public constant was not pinned |
+| 82 | CONST | killed | `test_Constants_GasValues`: DELIVERY_GAS 300,001: the public constant was not pinned |
+| 82 | CONST | killed | `test_Constants_GasValues`: DELIVERY_GAS 299,999: the public constant was not pinned |
+| 84 | CONST | killed | `test_Constants_GasValues`: DELIVERY_RESERVE 50,001: the public constant was not pinned |
+| 84 | CONST | killed | `test_Constants_GasValues`: DELIVERY_RESERVE 49,999: the public constant was not pinned |
+| 95 | CONST | killed | `test_SetConfig_TakesEveryBoundItself`: setConfig refused the smallest increment share, 1,000 |
+| 96 | CONST | killed | `test_Constructor_ChecksTheEscrowAndTheRefusalGasBounds`: the constructor accepted a refusal gas of 2,999,999 |
+| 97 | CONST | killed | `test_Constructor_ChecksTheEscrowAndTheRefusalGasBounds`: a refusal gas of 15,000,000 was refused |
 | 169 | CR | killed | `test_Constructor_ChecksTheResolverTheAllowlistAndTheStatementLog`: constructor accepted an economics resolver that does not declare IEconomicsResolver |
-| 170 | CR | open | test drafted but removed unverified (kept in CM/triage/ea-unverified-EnglishAuctionMutation.t.sol): constructor accepted an escrow without code |
+| 170 | CR | killed | `test_Constructor_ChecksTheEscrowAndTheRefusalGasBounds`: constructor accepted an escrow without code |
 | 171 | CR | killed | `test_Constructor_ChecksTheResolverTheAllowlistAndTheStatementLog`: constructor accepted a statement log without code |
 | 173 | CR | killed | `test_Constructor_ChecksTheResolverTheAllowlistAndTheStatementLog`: constructor accepted an asset allowlist without code |
 | 199 | CR | killed | `test_StartWithBid_APolicyCannotReenter`: startWithBid lost its reentrancy guard: a policy could settle another sale from inside the start |
 | 213 | ROR | killed | `test_Restart_RefusesACancelledSale`: revert reason only: a CANCELLED sale passed the status test and restart failed on ownerOf of the burned token instead of InvalidAuctionState |
 | 213 | ROR | equivalent | Outcome.NONE is the enum's zero: `> NONE` equals `!= NONE` |
 | 220 | MIA | killed | `test_Restart_RefusesAShareAboveTheWhole`: restart took a fee share above 100,000 from the gate (only a lying gate answers one; pinned anyway) |
-| 220 | ROR | open | existing test expected to kill it, not verified (run core-mut-v-ea-2 did not report in time): restart refused a full network share of exactly 100,000 |
+| 220 | ROR | killed | `test_Restart_RefusesAShareAboveTheWhole`: restart refused a full network share of exactly 100,000 |
 | 227 | CR | killed | `test_Restart_ForgetsTheRefundedBid`: restart kept the refunded bid as the new sale's reserve (minimum bid stayed at the old bid) |
 | 228 | CR | defensive | at a restart pausedAt is already zero and recipient is unread; a stale outcomeFrom matters only if the statement log later answers no outcome for a token it had one for |
 | 285 | MIA | defensive | the resolver never names a zero museum (EconomicsResolver._setMuseum refuses it), and the transfer to zero reverts anyway: revert reason only |
 | 308 | MIA | killed | `test_Settle_AZeroFeeNamesNoFeeRecipient`: with a zero fee SaleSettled named the network fee recipient instead of zero |
-| 357 | ROR | open | test drafted but removed unverified (kept in CM/triage/ea-unverified-EnglishAuctionMutation.t.sol): settleOrRefund worked only in the exact second the delay ended |
+| 357 | ROR | killed | `test_SettleOrRefund_AllowedAfterTheDelayToo`: settleOrRefund worked only in the exact second the delay ended |
 | 400 | ROR | equivalent | `> 0` equals `!= 0` on an unsigned bytes32 |
 | 407 | AOR | equivalent | `now % pausedAt` equals `now - pausedAt` while now < 2 * pausedAt; a pause is live at most 3 days, so it differs only for a pause begun within 3 days of 1970 |
 | 414 | ROR | equivalent | `<= 0` equals `== 0` on an unsigned bytes32 |
-| 414 | ROR | open | test drafted but removed unverified (kept in CM/triage/ea-unverified-EnglishAuctionMutation.t.sol): cancel accepted any outcome reference numerically above the recorded one |
-| 414 | ROR | open | test drafted but removed unverified (kept in CM/triage/ea-unverified-EnglishAuctionMutation.t.sol): cancel refused an outcome recorded later than the first position after the pause |
+| 414 | ROR | killed | `test_Cancel_OnlyTheRecordedOutcomeAtAnyLaterPosition`: cancel accepted any outcome reference numerically above the recorded one |
+| 414 | ROR | killed | `test_Cancel_OnlyTheRecordedOutcomeAtAnyLaterPosition`: cancel refused an outcome recorded later than the first position after the pause |
 | 471 | LOR | killed | `test_SetConfig_EachParameterIsComparedExactly`: setConfig compared only duration AND window: one stale parameter passed |
 | 471 | ROR | killed | `test_SetConfig_EachParameterIsComparedExactly`: setConfig accepted an expected duration above the one in force |
 | 471 | ROR | killed | `test_SetConfig_EachParameterIsComparedExactly`: setConfig accepted an expected extension window above the one in force |
 | 471 | ROR | killed | `test_SetConfig_EachParameterIsComparedExactly`: setConfig accepted an expected increment share above the one in force |
 | 471 | ROR | killed | `test_SetConfig_EachParameterIsComparedExactly`: setConfig accepted an expected refusal gas above the one in force |
-| 471 | ROR | open | existing test expected to kill it, not verified (run core-mut-v-ea-2 did not report in time): setConfig accepted an expected refusal gas below the one in force |
-| 471 | ROR | open | existing test expected to kill it, not verified (run core-mut-v-ea-2 did not report in time): setConfig accepted an expected duration below the one in force |
-| 471 | ROR | open | existing test expected to kill it, not verified (run core-mut-v-ea-2 did not report in time): setConfig accepted an expected extension window below the one in force |
-| 471 | ROR | open | existing test expected to kill it, not verified (run core-mut-v-ea-2 did not report in time): setConfig accepted an expected increment share below the one in force |
+| 471 | ROR | killed | `test_SetConfig_EachParameterIsComparedExactly`: setConfig accepted an expected refusal gas below the one in force |
+| 471 | ROR | killed | `test_SetConfig_EachParameterIsComparedExactly`: setConfig accepted an expected duration below the one in force |
+| 471 | ROR | killed | `test_SetConfig_EachParameterIsComparedExactly`: setConfig accepted an expected extension window below the one in force |
+| 471 | ROR | killed | `test_SetConfig_EachParameterIsComparedExactly`: setConfig accepted an expected increment share below the one in force |
 | 502 | ROR | equivalent | NONE is the enum's zero: the replacement comparison is the same test |
 | 526 | ROR | equivalent | NONE is the enum's zero: the replacement comparison is the same test |
 | 533 | ROR | equivalent | NONE is the enum's zero: the replacement comparison is the same test |
 | 542 | ROR | equivalent | NONE is the enum's zero: the replacement comparison is the same test |
 | 584 | MIA | killed | `test_OnERC721Received_AcceptsAMintIntoCustodyDuringAStart`: onERC721Received refused even a mint into custody during a start (reachable only by a token that mints with a receiver callback; StreamBase does not) |
 | 587 | RR | killed | `test_OnERC721Received_AcceptsAMintIntoCustodyDuringAStart`: onERC721Received never returned the selector (same path as above) |
-| 592 | ROR | open | test drafted but removed unverified (kept in CM/triage/ea-unverified-EnglishAuctionMutation.t.sol): supportsInterface answered true for every ID up to IERC165's |
-| 592 | ROR | open | test drafted but removed unverified (kept in CM/triage/ea-unverified-EnglishAuctionMutation.t.sol): supportsInterface answered true for every ID up to IEnglishAuction's |
-| 592 | ROR | open | test drafted but removed unverified (kept in CM/triage/ea-unverified-EnglishAuctionMutation.t.sol): supportsInterface answered true for every ID up to IERC721Receiver's |
+| 592 | ROR | killed | `test_SupportsInterface_RefusesALowerId`: supportsInterface answered true for every ID up to IERC165's |
+| 592 | ROR | killed | `test_SupportsInterface_RefusesALowerId`: supportsInterface answered true for every ID up to IEnglishAuction's |
+| 592 | ROR | killed | `test_SupportsInterface_RefusesALowerId`: supportsInterface answered true for every ID up to IERC721Receiver's |
 | 609 | ROR | killed | `test_Start_RefusesEveryOtherSaleKind`: start accepted any sale kind numerically below ENGLISH_AUCTION |
 | 619 | ROR | equivalent | NONE is the enum's zero: the replacement comparison is the same test |
-| 647 | ROR | open | test drafted but removed unverified (kept in CM/triage/ea-unverified-EnglishAuctionMutation.t.sol): a bid of exactly 2^96 - 1 wei was refused |
+| 647 | ROR | killed | `test_Bid_TheLargest96BitBidIsAccepted`: a bid of exactly 2^96 - 1 wei was refused |
 | 659 | MIA | equivalent | when recipientSet is false the branch writes false and zero over false and zero (recipient is zero whenever the flag is false) |
 | 661 | CR | equivalent | a stale s.recipient is never read while recipientSet is false, and is rewritten whenever the flag is set |
 | 665 | AOR | equivalent | `end % now` equals `end - now` while now < end < 2 * now, which holds for every live sale at a real clock (sales last days) |
@@ -870,21 +881,21 @@ One row per surviving mutant of the permanent contracts and the money and mint m
 | 727 | RR | killed | `test_WithdrawBid_ABidForARecipientIsCreditedAndTheRecipientCleared`: refunding a bid placed for a named recipient reverted (withdrawBid, cancel, delisted settle, refusal) |
 | 728 | CR | equivalent | a stale s.recipient is never read while recipientSet is false |
 | 728 | RR | killed | `test_WithdrawBid_ABidForARecipientIsCreditedAndTheRecipientCleared`: refunding a bid placed for a named recipient reverted |
-| 742 | ROR | open | test drafted but removed unverified (kept in CM/triage/ea-unverified-EnglishAuctionMutation.t.sol): a pause was written down as over in its last second (pausedAt + MAX_PAUSE): the bidder could no longer withdraw |
+| 742 | ROR | killed | `test_Pause_IsLiveThroughItsLastSecond`: a pause was written down as over in its last second (pausedAt + MAX_PAUSE): the bidder could no longer withdraw |
 | 746 | ROR | equivalent | NONE is the enum's zero: `<=` equals `==` |
-| 775 | ROR | open | test drafted but removed unverified (kept in CM/triage/ea-unverified-EnglishAuctionMutation.t.sol): the clock views showed a pause as over in its last second while the state was still PAUSED |
+| 775 | ROR | killed | `test_Pause_IsLiveThroughItsLastSecond`: the clock views showed a pause as over in its last second while the state was still PAUSED |
 | 786 | AOR | equivalent | `endTime % pausedAt` equals `endTime - pausedAt` while pausedAt <= endTime < 2 * pausedAt, true at any real clock |
 | 786 | AOR | killed | `test_Resume_KeepsTheRemainingTimeWhenLongerThanTheDuration`: a resumed sale lost its remaining time when that was longer than the duration in force (endTime / pausedAt is 1) |
-| 813 | ROR | open | test drafted but removed unverified (kept in CM/triage/ea-unverified-EnglishAuctionMutation.t.sol): setConfig refused the shortest duration, 1 hour |
-| 813 | ROR | open | test drafted but removed unverified (kept in CM/triage/ea-unverified-EnglishAuctionMutation.t.sol): setConfig refused the longest duration, 7 days |
-| 813 | ROR | open | test drafted but removed unverified (kept in CM/triage/ea-unverified-EnglishAuctionMutation.t.sol): setConfig refused the shortest extension window, 1 minute |
-| 813 | ROR | open | test drafted but removed unverified (kept in CM/triage/ea-unverified-EnglishAuctionMutation.t.sol): setConfig refused the longest extension window, 1 day |
-| 813 | ROR | open | test drafted but removed unverified (kept in CM/triage/ea-unverified-EnglishAuctionMutation.t.sol): setConfig refused a window equal to the duration |
-| 813 | ROR | open | test drafted but removed unverified (kept in CM/triage/ea-unverified-EnglishAuctionMutation.t.sol): setConfig refused the smallest increment share, 1,000 |
-| 813 | ROR | open | test drafted but removed unverified (kept in CM/triage/ea-unverified-EnglishAuctionMutation.t.sol): setConfig refused an increment share of the whole, 100,000 |
-| 813 | ROR | open | test drafted but removed unverified (kept in CM/triage/ea-unverified-EnglishAuctionMutation.t.sol): setConfig refused the refusal gas ceiling, 15,000,000 |
-| 813 | ROR | open | test drafted but removed unverified (kept in CM/triage/ea-unverified-EnglishAuctionMutation.t.sol): setConfig refused an unchanged refusal gas |
-| 813 | ROR | open | test drafted but removed unverified (kept in CM/triage/ea-unverified-EnglishAuctionMutation.t.sol): setConfig refused every refusal gas but exactly double |
+| 813 | ROR | killed | `test_SetConfig_TakesEveryBoundItself`: setConfig refused the shortest duration, 1 hour |
+| 813 | ROR | killed | `test_SetConfig_TakesEveryBoundItself`: setConfig refused the longest duration, 7 days |
+| 813 | ROR | killed | `test_SetConfig_TakesEveryBoundItself`: setConfig refused the shortest extension window, 1 minute |
+| 813 | ROR | killed | `test_SetConfig_TakesEveryBoundItself`: setConfig refused the longest extension window, 1 day |
+| 813 | ROR | killed | `test_SetConfig_TakesEveryBoundItself`: setConfig refused a window equal to the duration |
+| 813 | ROR | killed | `test_SetConfig_TakesEveryBoundItself`: setConfig refused the smallest increment share, 1,000 |
+| 813 | ROR | killed | `test_SetConfig_TakesEveryBoundItself`: setConfig refused an increment share of the whole, 100,000 |
+| 813 | ROR | killed | `test_SetConfig_TakesEveryBoundItself`: setConfig refused the refusal gas ceiling, 15,000,000 |
+| 813 | ROR | killed | `test_SetConfig_TakesEveryBoundItself`: setConfig refused an unchanged refusal gas |
+| 813 | ROR | killed | `test_SetConfig_TakesEveryBoundItself`: setConfig refused every refusal gas but exactly double |
 
 ### `src/sales/UniformClearing.sol`
 
