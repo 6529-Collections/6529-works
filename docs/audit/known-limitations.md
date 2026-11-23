@@ -231,6 +231,12 @@ Notes from the reviews of the plain permanent core (November 2026) that were lef
   on 6529 Stream, seals nothing on 6529 Stream Editions, and mints only editions sealed before
   its removal; an edition auction's settlement of an unsealed sale waits with it. Removing it
   again restores what a removed minter may do.
+- **An empty `INDEPENDENT_STREAM` slot forgets which sale contracts were removed.** The module
+  holds that record. While the slot is empty no Independent Stream token mints or creates an
+  edition, `rescue` and `rebind` wait, and a sale contract the module had removed may again seal
+  an edition it still holds without a seal. A replacement module carries the removals over, so
+  the network replaces the module rather than remove it
+  ([Replacing a module](../operations/replacing-modules.md#independent-stream-module-independentstreamregistry)).
 
 ## Removed and closed IDs
 

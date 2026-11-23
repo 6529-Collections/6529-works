@@ -61,6 +61,10 @@ with refunds; neither delisting nor exit ever touches tokens, ownership, records
   can be added later as a new template version, touching nothing permanent.
 - **No immutables.** Every value a constructor takes is written to storage, so every deployment
   of a version has one runtime code hash.
+  (Note, 22 November 2026, [ADR 0010](0010-plain-permanent-core.md): the plain templates keep
+  `facts`, `stream`, `directory` and `artistId` as immutables, so copies of one version differ
+  in runtime code. A template version is identified by its deployer, which records every copy
+  it creates; the deployer itself still has one runtime code hash.)
 - **A genuine copy is bound to how it was deployed (review F, F1; review G, G3).** As first
   built, a genuine copy was one `EXTCODEHASH` check. A code hash fixes the runtime code, not the
   storage the constructor leaves: any initcode that returns the approved runtime can first write

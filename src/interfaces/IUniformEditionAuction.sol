@@ -30,10 +30,12 @@ import { ISaleAdapter } from "./ISaleAdapter.sol";
 ///      (`IStream.itemHashOf`, `IStream.workOf(id).kind == 1`), computes the seller, the fee
 ///      share and the royalty receiver from the economics resolver, deploys the split wallets,
 ///      and creates the edition with the master's royalty rate. It stores the seller and the fee
-///      share itself. If the network removes this adapter, its sales still settle and its
-///      winners still claim (a removed minter seals and then mints up to the seal); an edition
-///      it never sold can be moved by the network to another adapter (`IEditions.rebind`),
-///      which opens its sale with `adopt`.
+///      share itself. If the network removes this adapter, the winners of a sale it sealed
+///      before the removal still claim (a removed minter mints only editions it sealed before
+///      its removal, and seals nothing). A sale it had not sealed is voided with full refunds
+///      and its edition stays without a seal; the network can move that edition to another
+///      adapter (`IEditions.rebind`, once `rebindDelay` has passed since the removal), which
+///      opens its sale with `adopt` or closes it with `closeEdition`.
 ///
 ///      Credits (claimable ETH, from `claimBidFor`). Only money that has itself waited the
 ///      unclaimed period expires to the network (`expireCredit`). The period is the network's

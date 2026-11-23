@@ -15,7 +15,6 @@ replaceable edition sale contract, the uniform-price edition auction in
 | [`../core/EditionsBase.sol`](../core/EditionsBase.sol) | The permanent ERC-1155, shared with each Independent Stream artist's editions: `create`, `mint`, `seal`, `rebind`, `burn`, `setRoyalty`, `royaltyInfo`, `uri`. Implements [`IEditions`](../interfaces/core/IEditions.sol). |
 | [`../core/StreamEditions6529.sol`](../core/StreamEditions6529.sol) | 6529 Stream Editions: `EditionsBase` with `Modules` (minters and the TERMS slot), the network as admin. |
 | `EditionRules.sol` | Internal library: the one validity rule for edition terms, applied by the package registry when it admits an edition master. |
-| `StreamEditions6529.sol` | The previous token, kept until integration deletes it. |
 
 ## Entry points
 
@@ -23,7 +22,7 @@ replaceable edition sale contract, the uniform-price edition auction in
 | --- | --- | --- |
 | An active minter (an edition sale contract) | `create(editionId, maxSupply, royaltyReceiver, royaltyRate)`: once, for a master that exists and is not burned; the caller becomes the edition's only minter | An edition is created once |
 | The edition's minter | `mint(to, editionId, amount, unitPrice)` within the maximum; `seal(editionId, supply)` once, between the count minted and the maximum | A sealed maximum never grows; burned copies still count |
-| A removed minter | `seal`, then `mint` up to the seal | Its winners are never stranded |
+| A removed minter | `mint` only for editions it sealed before its removal; it seals nothing | Winners of a sealed sale are still served; an edition with no seal waits for `rebind` |
 | The TERMS module | `setRoyalty`; `emitMetadataUpdate` (also the master's RECORDS module) | |
 | The network | `rebind` an edition with no seal, once `rebindDelay` has passed since its minter's removal; `setRebindDelay`; the module and minter functions; `setOwner`, `setContractURI` | `rebindDelay` is the network's setting, read when a rebind is attempted |
 | A holder | `burn` its own copies; transfers and approvals (OpenZeppelin's) | No module or minter can move a copy |
@@ -39,6 +38,6 @@ replaceable edition sale contract, the uniform-price edition auction in
 - **Logs rebuild the state**: every change emits an event; `ContractURISet` carries the URI
   that ERC-7572's `ContractURIUpdated` does not. The replay test is
   [`LogReplayEditions.t.sol`](../../test/replay/LogReplayEditions.t.sol).
-- **Tests**: `test/core/StreamEditions6529*.t.sol` (unit, fuzz, hostile modules and minters,
+- **Tests**: `test/core/Editions*.t.sol` (unit, fuzz, hostile modules and minters,
   invariants), `test/symbolic/EditionsCoreSymbolic.t.sol` (Halmos),
   `test/replay/LogReplayEditions.t.sol`.

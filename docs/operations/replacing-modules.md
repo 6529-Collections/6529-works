@@ -67,6 +67,16 @@ still holds through `Stream6529.tokenOfContent`, so the content of a burned work
 until the network releases it again in the new policy (`releaseContent`), which bars the
 burned item there too. A release made in the old policy and not yet used must be made again.
 
+## Independent Stream module (`IndependentStreamRegistry`)
+
+Replace it with `proposeModule` and `activateModule`; do not empty the slot with `removeModule`
+while any Independent Stream sale contract has been removed. The module holds the record of
+removed sale contracts, and the permanent tokens ask it. A successor reads through to the
+module it replaces, so removals carry over. While the slot is empty, no Independent Stream
+token mints or creates an edition, `rescue` and `rebind` are refused, and a sale contract the
+module had removed is read as never removed: it may seal an edition it still holds without a
+seal, and its edition sales settle instead of being voided.
+
 ## Two settings that follow a replaced module
 
 Two contracts keep their own pointer to a module instead of reading it at each use. The network
