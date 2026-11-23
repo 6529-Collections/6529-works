@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 import { IEnglishAuction } from "./IEnglishAuction.sol";
 import { IUniformEditionAuction } from "./IUniformEditionAuction.sol";
@@ -15,9 +15,8 @@ import { IUniformEditionAuctionStorage } from "./IUniformEditionAuctionStorage.s
 ///         it reads every sale from its caller, the adapter, which forwards its own views here,
 ///         so each view below has the signature `IUniformEditionAuction` gives it. Errors are
 ///         the adapter's.
-/// @dev Views that depend on the 1/1 read it live: `masterTerms` (on `open`'s path) through
-///      `IEnglishAuctionClock.auctionClock`, the others through `IEnglishAuction.auction`. The
-///      adapter's fallback forwards every selector it does not declare, so the lens's own
+/// @dev Views that depend on the 1/1 read it live, through `IEnglishAuctionClock.auctionClock`
+///      (an adopted sale that runs on its own does not read it). The adapter's fallback forwards every selector it does not declare, so the lens's own
 ///      `masterTerms`, `sweepOf` and `settlementOrderFor` are answered at the adapter's address
 ///      too. Every forwarded call is read-only (a `staticcall`), and the adapter's ERC-165 does
 ///      not advertise the lens's own views. `masterTerms` is the one call that writes: it
@@ -25,72 +24,105 @@ import { IUniformEditionAuctionStorage } from "./IUniformEditionAuctionStorage.s
 ///      fallback it answers only when they exist. Call the views at the adapter: called
 ///      directly, the lens reads its caller's words.
 interface IUniformEditionAuctionLens {
-    /// @notice What `open` locks for a master from the lens, from its token-specific data. The
-    ///         payout terms are not here: `open` pays exactly the economics 6529 Stream Editions
-    ///         locks and returns (`IEditions.bindMinter`).
+    /// @notice What `open` and `adopt` lock for a master from the lens, from its token-specific
+    ///         data, and what `open` creates the edition with.
     /// @param maxCount The creator's cap from the edition terms, zero for none.
-    /// @param oneOfOneEnd The 1/1's end now.
-    /// @param oneOfOneState The 1/1's state now: never NONE or CANCELLED.
+    /// @param oneOfOneEnd The 1/1's end now; for an adopted sale that runs on its own, the time
+    ///        its close is counted from (the adoption plus `ADOPTED_RUN`).
+    /// @param oneOfOneState The 1/1's state now: never NONE or CANCELLED (SETTLED for an adopted
+    ///        sale that runs on its own).
+    /// @param seller The artist-portion split wallet the sale pays.
+    /// @param feeShare The network's share of the revenue, out of 100,000.
+    /// @param feeRecipient The network fee recipient now (settlement reads it again).
+    /// @param royaltyReceiver The royalty receiver the edition is created with.
+    /// @param royaltyRate The master's royalty rate, which the edition is created with.
+    /// @param runsOnItsOwn True for an adopted sale whose master's sale already has an outcome.
     struct MasterTerms {
         uint32 maxCount;
         uint64 oneOfOneEnd;
         IEnglishAuction.AuctionState oneOfOneState;
+        address seller;
+        uint32 feeShare;
+        address feeRecipient;
+        address royaltyReceiver;
+        uint24 royaltyRate;
+        bool runsOnItsOwn;
     }
 
     /// @notice How long after its 1/1's final end every edition sale closes: 15 minutes, a fixed
-    ///         value (R20).
+    ///         value.
     /// @return 900.
     function CLOSE_OFFSET() external view returns (uint32);
     /// @notice How long after its scheduled close (its 1/1's final end plus {CLOSE_OFFSET}; a
-    ///         soft-close extension does not move it) a sale may be abandoned (R16): 21 days, a
+    ///         soft-close extension does not move it) a sale may be abandoned: 21 days, a
     ///         fixed value.
     /// @return 1,814,400.
     function ABANDON_DELAY() external view returns (uint32);
+    /// @notice How long an adopted sale whose master's sale already has an outcome runs before
+    ///         its close is counted (`IUniformEditionAuction.adopt`): one day, a value of this
+    ///         replaceable adapter. The sale closes 15 minutes after that, with the usual soft
+    ///         close.
+    /// @return 86,400.
+    function ADOPTED_RUN() external view returns (uint32);
 
-    /// @notice The 6529 Stream Editions this lens was deployed for (immutable).
+    /// @notice The 6529 Stream Editions this lens was deployed for (immutable; zero for the
+    ///         Independent Stream deployment, which sells many).
     /// @return The address its adapter must also have.
     function editions() external view returns (address);
-    /// @notice The 6529 Stream this lens was deployed for (immutable).
+    /// @notice The 6529 Stream this lens was deployed for (immutable; zero for the Independent
+    ///         Stream deployment).
     /// @return The address its adapter must also have.
     function stream() external view returns (address);
+    /// @notice The directory whose `unclaimedPeriod` decides when a credit may expire, and
+    ///         whose INDEPENDENT_STREAM module serves the Independent Stream deployment
+    ///         (immutable).
+    /// @return The address its adapter must also have.
+    function directory() external view returns (address);
+    /// @notice The economics resolver: seller wallets, fee terms and the network fee recipient
+    ///         (immutable).
+    /// @return The resolver.
+    function economics() external view returns (address);
     /// @notice The English auction this lens was deployed for (immutable).
     /// @return The address its adapter must also have.
     function englishAuction() external view returns (address);
     /// @notice The revenue escrow this lens was deployed for (immutable).
     /// @return The address its adapter must also have.
     function escrow() external view returns (address);
-    /// @notice The master check of `open`. For 6529 Stream Editions, `data` must be
-    ///         `abi.encode(PackageItem item, bytes32 packageRoot, bytes32[] proof)` with an
-    ///         EDITION_MASTER item whose `WorksHashing.itemHash` is the one 6529 Stream stored for
-    ///         `id` and that the package registry still approves in `packageRoot`
-    ///         (`IItemApprovals.isApprovedItem`, C23); for a federated pair `abi.encode(item)`,
-    ///         whose contract the federation registry lets this adapter mint (`canMint`: a
-    ///         suspended template opens no sale, C26). The edition terms must name
-    ///         `SaleKind.UNIFORM_AUCTION` and `CURRENCY_ETH`, with empty params; the payout terms
-    ///         the edition contract
-    ///         will lock (an existing edition's, or the current resolver's) must be payable; and
-    ///         its 1/1 auction must exist and not be cancelled. Reverts with the adapter's
-    ///         `InvalidSaleTerms` or `NoOneOfOneAuction` otherwise (a 1/1 auction that runs out
-    ///         of gas answering reverts with `BoundedCallShortfall`). Then deploys the seller's
-    ///         and, when it differs, the royalty receiver's split wallet, each only if it has no
-    ///         code, through the resolver's split factory (6529 Stream's own, which Stream requires of
-    ///         every resolver it installs), and requires each deployed address to
-    ///         be the one the terms name (`InvalidSaleTerms`).
+    /// @notice The master check of `open` and `adopt`. The master is `IEditions(token).stream()`;
+    ///         `IStream.workOf(id)` must be an edition master (kind 1) whose item hash is
+    ///         `WorksHashing.itemHash` of the item in `data`. For 6529 Stream Editions, `data`
+    ///         must be `abi.encode(PackageItem item, bytes32 packageRoot, bytes32[] proof)`, an
+    ///         item the package registry still approves in `packageRoot`
+    ///         (`IItemApprovals.isApprovedItem`); for an Independent Stream pair
+    ///         `abi.encode(item)`, whose contract the Independent Stream module lets this adapter
+    ///         mint (`canMint`). The edition terms must name `SaleKind.UNIFORM_AUCTION` and
+    ///         `CURRENCY_ETH`, with empty params; the payout terms (6529 Stream Editions: the
+    ///         resolver's `newWorkTerms(PRODUCT_EDITIONS, payees)`; Independent Stream: the
+    ///         seller's wallet and the Independent Stream module's fee share for the token) must be
+    ///         payable. For `open`, the 1/1 auction must exist and not be cancelled; for `adopt`,
+    ///         the edition must be the caller's with no copies and no seal, and the 1/1 is read
+    ///         only while the master's sale has no outcome. Reverts with the adapter's
+    ///         `InvalidSaleTerms` or `NoOneOfOneAuction` otherwise (a 1/1 auction that runs out of
+    ///         gas answering reverts with `BoundedCallShortfall`). Then deploys the seller's split
+    ///         wallet and, for `open` when it differs, the royalty receiver's, each only if the
+    ///         ledger has not deployed it, through the resolver's split factory, and requires each
+    ///         deployed address to be the one the terms name (`InvalidSaleTerms`).
     /// @param token The edition contract.
     /// @param id The edition ID.
-    /// @param data The token-specific terms `open` was given.
-    /// @return The terms `open` locks and the 1/1's state.
-    function masterTerms(address token, uint256 id, bytes calldata data)
+    /// @param data The token-specific terms `open` or `adopt` was given.
+    /// @param adopting True for `adopt`.
+    /// @return The terms the sale locks and the 1/1's state.
+    function masterTerms(address token, uint256 id, bytes calldata data, bool adopting)
         external
         returns (MasterTerms memory);
 
     /// @notice Whether the caller's sale can be abandoned now, and from when
     ///         (`IUniformEditionAuction.abandonable`): OPEN (or SETTLING with its scan in
-    ///         progress), its 1/1 auction no longer ACTIVE, PAUSED or ENDED (one that refuses to
-    ///         answer counts as finished, with the end last read), not both its master settled
-    ///         and its edition existing, and its scheduled close (its 1/1's final end plus 15
-    ///         minutes, not moved by a soft-close extension) plus 21 days passed. A shortfall in
-    ///         any read reverts with `BoundedCallShortfall`.
+    ///         progress), not adopted to run on its own, its 1/1 auction answering neither ACTIVE,
+    ///         PAUSED, ENDED nor SETTLED (one that refuses to answer counts, with the end last
+    ///         read), and its scheduled close (its 1/1's final end plus 15 minutes, not moved by
+    ///         a soft-close extension) plus 21 days passed. A shortfall in any read reverts with
+    ///         `BoundedCallShortfall`.
     /// @param saleId The sale ID.
     /// @return ok Whether it can be abandoned now.
     /// @return abandonAt The earliest time, or zero when it cannot be from what is known now.
@@ -98,27 +130,38 @@ interface IUniformEditionAuctionLens {
 
     /// @notice The check `abandon` makes: reverts with `NotAbandonable(saleId)` unless
     ///         `abandonable(saleId)` is true for the caller (`UnknownAuction` for a sale never
-    ///         opened), and says what `abandon` does.
+    ///         opened).
     /// @param saleId The sale ID.
-    /// @return createEdition True when the master's sale is settled in its token, so `abandon`
-    ///         creates the edition and the sale settles as usual; false when it voids the sale
-    ///         and seals the edition at zero.
-    function checkAbandon(uint256 saleId) external view returns (bool createEdition);
+    function checkAbandon(uint256 saleId) external view;
 
-    /// @notice The network fee recipient a payout of the caller pays now (R18): the economics
-    ///         resolver's for the deployment's product (6529 Stream Editions or Federated), or,
-    ///         when it names none or the escrow and `token` is nonzero, the recipient edition
-    ///         `id` of `token` recorded (zero when that edition does not exist).
+    /// @notice The network fee recipient a payout of the caller pays now: the economics
+    ///         resolver's for the deployment's product (6529 Stream Editions or Independent
+    ///         Stream), or, when it names none or the escrow and `token` is nonzero, the recipient
+    ///         the caller's sale of edition `id` of `token` recorded at open (zero when it has
+    ///         none).
     /// @param token The edition contract, or zero for the resolver's answer alone.
     /// @param id The edition ID.
     /// @return The recipient.
     function feeRecipient(address token, uint256 id) external view returns (address);
 
-    /// @notice When `account`'s credit may be sent to the network's fee recipient
-    ///         (`expireCredit`): 180 days after it went from zero; zero with no credit.
+    /// @notice When the waiting batch of `account`'s credit may be sent to the network's fee
+    ///         recipient (`expireCredit`): the unclaimed period in force now
+    ///         (`IDirectory.unclaimedPeriod()`) after the batch started waiting; zero with no
+    ///         credit. A change of the period moves this answer.
     /// @param account The credited account.
-    /// @return The first second `expireCredit` succeeds, or zero.
+    /// @return The first second `expireCredit` succeeds under the period in force, or zero.
     function creditExpiresAt(address account) external view returns (uint256);
+
+    /// @notice An account's credit: its total, the batch that is waiting (all of which arrived
+    ///         no later than `since`) and when that batch started waiting.
+    /// @param account The credited account.
+    /// @return total Its whole claimable ETH.
+    /// @return aged The batch `expireCredit` may move once the period has passed since `since`.
+    /// @return since When the batch started waiting; zero with no credit.
+    function creditOf(address account)
+        external
+        view
+        returns (uint256 total, uint256 aged, uint256 since);
 
     /// @notice One of the caller's storage words, from which every other view is computed: the
     ///         lens finds its slot from the adapter's layout and reads it with
@@ -166,17 +209,17 @@ interface IUniformEditionAuctionLens {
     /// @param id The edition ID.
     /// @return `uint256(keccak256(abi.encode(token, id)))`.
     function saleIdOf(address token, uint256 id) external pure returns (uint256);
-    /// @notice The federation registry (`ISaleAdapter.federationRegistry`): zero for 6529 Stream
-    ///         Editions' deployment, which serves no federated token; the pinned registry for the
-    ///         federated deployment (ADR 0008).
+    /// @notice The Independent Stream registry (`ISaleAdapter.independentStreamRegistry`): zero for
+    ///         6529 Stream Editions' deployment, which serves no Independent Stream token; the
+    ///         pinned registry for the Independent Stream deployment (ADR 0008).
     /// @return The registry, or zero.
-    function federationRegistry() external view returns (address);
+    function independentStreamRegistry() external view returns (address);
     /// @notice Refused by the lens (`ISaleAdapter.TargetNotAllowed(next)`): 6529 Stream Editions'
-    ///         deployment serves no federated token, and the federated deployment declares its own
-    ///         `setFederationRegistry`, which never reaches its lens.
+    ///         deployment serves no Independent Stream token, and the Independent Stream deployment
+    ///         declares its own `setIndependentStreamRegistry`, which never reaches its lens.
     /// @param expected Ignored.
     /// @param next The registry asked for.
-    function setFederationRegistry(address expected, address next) external pure;
+    function setIndependentStreamRegistry(address expected, address next) external pure;
 
     /// @notice A sale. Reverts with `UnknownAuction`.
     /// @param saleId The sale ID.

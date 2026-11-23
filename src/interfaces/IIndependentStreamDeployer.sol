@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
-/// @title IFederatedDeployer
-/// @notice The deployer of one federated template version (ADR 0008 §1): the only contract
-///         whose copies of that version the federation registry lists. It deploys its one
+/// @title IIndependentStreamDeployer
+/// @notice The deployer of one Independent Stream template version (ADR 0008 §1): the only contract
+///         whose copies of that version the Independent Stream registry lists. It deploys its one
 ///         creation code with the constructor arguments a caller gives, records every address it
 ///         deployed, and holds no other power.
-interface IFederatedDeployer {
+interface IIndependentStreamDeployer {
     /// @notice The creation code was stored, at construction.
     /// @param creationHash The keccak256 of the creation code.
     /// @param pointers The data contracts (`SSTORE2`) holding it, in order.

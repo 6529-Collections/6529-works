@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { License } from "./types/PackageTypes.sol";
@@ -8,11 +8,11 @@ import { ProductEconomics, WorkTerms } from "./types/EconomicsTypes.sol";
 
 /// @title IEconomicsResolver
 /// @notice The governed economics every product reads (ADR 0001 sections 5, 7 and 8): the
-///         network fee and royalty rate for new works, the terms a work locks at mint, the
-///         currency a sale starting now must lock, and each product's default license.
-/// @dev Products are `PRODUCT_STREAM`, `PRODUCT_EDITIONS` and `PRODUCT_FEDERATED`. The currency
-///      allowlist, per-currency increment floors and default currencies live in the
-///      `IAssetAllowlist`, which this resolver reads; split wallet addresses come from
+///         network fee and royalty rate for new works, the terms a work locks at mint, and
+///         each product's default license.
+/// @dev Products are `PRODUCT_STREAM`, `PRODUCT_EDITIONS` and `PRODUCT_INDEPENDENT`. Sales are
+///      in ETH; the opening bid and increment floor live in the `IAssetAllowlist`, which this
+///      resolver names; split wallet addresses come from
 ///      its `ISplitFactory`. Changes apply to works and sales that start afterwards only: works
 ///      lock their terms at mint and sales lock their currency at start. Every setter is
 ///      governed, non-payable and compare-and-set on a revision counter that each change to the
@@ -43,8 +43,6 @@ interface IEconomicsResolver is IERC165 {
     /// @param revision The museum revision after the change; 1 at deployment.
     event MuseumSet(address previous, address next, uint64 revision);
 
-    /// @notice The currency is not active in the asset allowlist.
-    error CurrencyNotAllowed(address currency);
     /// @notice The product has no economics configured.
     error UnknownProduct(bytes32 product);
     /// @notice Compare-and-set failed: the setting is at revision `actual`, not `expected`.
@@ -86,14 +84,6 @@ interface IEconomicsResolver is IERC165 {
         view
         returns (WorkTerms memory);
 
-    /// @notice The currency a sale of `product` starting now must lock: `requested` itself, or
-    ///         the product's default for `CURRENCY_DEFAULT`. Reverts with `CurrencyNotAllowed`
-    ///         unless the result is active.
-    /// @param product The product identifier; reverts with {UnknownProduct} if not configured.
-    /// @param requested The currency the sale names (ETH is `address(0)`), or `CURRENCY_DEFAULT`.
-    /// @return The active currency the sale locks; never `CURRENCY_DEFAULT`.
-    function resolveCurrency(bytes32 product, address requested) external view returns (address);
-
     /// @notice A product's economics.
     /// @param product The product identifier; reverts with {UnknownProduct} if not configured.
     /// @return The fee recipient, fee share and royalty rate new works lock, both rates out of
@@ -101,7 +91,7 @@ interface IEconomicsResolver is IERC165 {
     function economics(bytes32 product) external view returns (ProductEconomics memory);
     /// @notice A product's network fee recipient (`economics(product).feeRecipient`). Sale
     ///         adapters read it when a sale settles and pay the network's fee there, so a change
-    ///         reaches running sales too (R18); a sale pays the recipient it recorded when this
+    ///         reaches running sales too; a sale pays the recipient it recorded when this
     ///         answers zero.
     /// @param product The product identifier; reverts with {UnknownProduct} if not configured.
     /// @return The fee recipient; zero only while the fee share is zero, and never the revenue
@@ -126,13 +116,11 @@ interface IEconomicsResolver is IERC165 {
     /// @notice The split factory (immutable).
     /// @return The `ISplitFactory` this resolver predicts wallet addresses with.
     function splitFactory() external view returns (address);
-    /// @notice The 6529 Network Museum (ADR 0005; 6529chain D140): the network-held account
-    ///         that receives a 6529 Stream work whose 1/1 auction drew no bids, or that ended
-    ///         unsold after its currency stayed deprecated past the freeze exit, whatever the sale method
-    ///         (owner decision 22), and a work governance rescues from a removed sale adapter
-    ///         (owner decision 20). 6529 Stream reads it when the sale settles and moves the work
-    ///         itself (owner decision 17); another token's unsold work goes to its artist
-    ///         instead. Set at deployment (revision 1) and never zero.
+    /// @notice The 6529 Network Museum (ADR 0005): the network-held account that receives a
+    ///         6529 Stream work whose 1/1 auction drew no bids, and a work governance rescues
+    ///         from a removed sale adapter. 6529 Stream reads it when the
+    ///         sale settles and moves the work itself; another token's unsold work goes to its
+    ///         artist instead. Set at deployment (revision 1) and never zero.
     /// @return The museum's address.
     function museum() external view returns (address);
     /// @notice The revision `setMuseum` compares.

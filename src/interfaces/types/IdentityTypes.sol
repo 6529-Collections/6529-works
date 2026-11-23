@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 /// @notice An artist account's recorded fields (ADR 0001 section 11 "Registry").
 /// @dev `root` is the wallet the account's 6529 consolidation is read from; every wallet

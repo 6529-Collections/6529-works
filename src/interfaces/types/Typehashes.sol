@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 /// @title Typehashes
 /// @notice The EIP-712 domain names and typehashes of the package registry, curation verifier,
-///         work records and artist registry, and every Permit2 witness.
+///         work records and artist registry.
 ///         Implementations use these constants; golden tests in `test/interfaces/` pin their
 ///         values (ADR 0001 section 17 "golden typehash tests"). The statement log and the
 ///         release verifier keep their own domains and typehashes beside their code
@@ -12,8 +12,8 @@ pragma solidity ^0.8.24;
 /// @dev Each signing contract uses the EIP-712 domain `(name, DOMAIN_VERSION, chainid, itself)`.
 ///      Every artist or party signature binds a deadline and either a single-use nonce or a
 ///      work's state hash, except `ACCOUNT_CONSENT`: a collaborator's consent binds only the
-///      contract and what it consents to (for a federated item, the item hash, used once), and
-///      has no deadline. Constants only; nothing here is linked bytecode.
+///      contract and what it consents to (for an Independent Stream item, the item hash, used
+///      once), and has no deadline. Constants only; nothing here is linked bytecode.
 library Typehashes {
     /// @notice The EIP-712 domain version of every v1 contract.
     string internal constant DOMAIN_VERSION = "1";
@@ -70,33 +70,15 @@ library Typehashes {
     ///         domain, `IAccounts.consentDigest`). No deadline and no nonce: the consent holds
     ///         until it is used, or its signing wallet leaves the account.
     bytes32 internal constant ACCOUNT_CONSENT = keccak256("Consent(address subject,bytes32 what)");
-    /// @notice An account consents to an identity the federation registry creates for it
-    ///         (artist registry domain, `registerFederated`).
+    /// @notice An account consents to an identity the Independent Stream registry creates for it
+    ///         (artist registry domain, `registerIndependent`).
     bytes32 internal constant ARTIST_REGISTRATION = keccak256(
         "ArtistRegistration(address account,bytes32 profileId,bytes32 profileDocHash,uint64 deadline)"
     );
-    /// @notice A wallet of the artist's account consents to one federation directory entry
-    ///         (artist registry domain, `listFederatedContract`).
-    bytes32 internal constant FEDERATED_LISTING = keccak256(
-        "FederatedListing(uint256 artistId,address token,uint8 form,address partner,"
+    /// @notice A wallet of the artist's account consents to one Independent Stream directory entry
+    ///         (artist registry domain, `listIndependentContract`).
+    bytes32 internal constant INDEPENDENT_LISTING = keccak256(
+        "IndependentListing(uint256 artistId,address token,uint8 form,address partner,"
         "uint32 feeShare,address feeRecipient,uint64 deadline)"
     );
-
-    // ----- Permit2 witnesses (relayable payment intents, signed in Permit2's own domain) -----
-
-    /// @notice An English-auction bid.
-    bytes32 internal constant BID_WITNESS =
-        keccak256("Bid(uint256 saleId,address recipient,uint256 amount,uint256 deadline)");
-    /// @notice The `witnessTypeString` for `BID_WITNESS`.
-    string internal constant BID_WITNESS_TYPE = "Bid witness)Bid(uint256 saleId,address recipient,"
-        "uint256 amount,uint256 deadline)TokenPermissions(address token,uint256 amount)";
-    /// @notice A start-with-bid; `mintDataHash` is `keccak256(mintData)`, as no sale ID exists yet.
-    bytes32 internal constant START_BID_WITNESS = keccak256(
-        "StartBid(address token,bytes32 mintDataHash,address recipient,uint256 amount,"
-        "uint256 deadline)"
-    );
-    /// @notice The `witnessTypeString` for `START_BID_WITNESS`.
-    string internal constant START_BID_WITNESS_TYPE = "StartBid witness)StartBid(address token,"
-        "bytes32 mintDataHash,address recipient,uint256 amount,uint256 deadline)"
-        "TokenPermissions(address token,uint256 amount)";
 }

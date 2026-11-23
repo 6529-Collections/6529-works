@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 /// @title IItemApprovals
 /// @notice The approval check an edition sale makes at open: whether a curated package is

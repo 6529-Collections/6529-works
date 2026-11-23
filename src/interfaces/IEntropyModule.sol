@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { PackageItem } from "./types/PackageTypes.sol";
@@ -43,16 +43,18 @@ interface IEntropyModule is IERC165 {
     /// @param next The coordinator after the change.
     /// @param codeHash The code hash `next` must keep at every later use.
     event CoordinatorSet(address previous, address next, bytes32 codeHash);
-    /// @notice A seed was requested for a federated contract's content, paid by the requester.
-    ///         The draw is keyed by `key`, which `SeedDelivered` names as its content hash.
-    /// @param token The federated contract.
+    /// @notice A seed was requested for an Independent Stream contract's content, paid by the
+    ///         requester. The draw is keyed by `key`, which `SeedDelivered` names as its content
+    ///         hash.
+    /// @param token The Independent Stream contract.
     /// @param contentHash The work's content hash.
     /// @param key The draw's key: `keccak256(abi.encode(token, contentHash))`.
     /// @param requestId The provider's ID for the request.
-    event FederatedSeedRequested(
+    event IndependentSeedRequested(
         address indexed token, bytes32 indexed contentHash, bytes32 key, uint256 requestId
     );
-    /// @notice The provider of paid federated requests changed (zero: none, federated VRF off).
+    /// @notice The provider of paid Independent Stream requests changed (zero: none, Independent
+    ///         Stream VRF off).
     /// @param previous The provider before the change.
     /// @param next The provider after the change.
     /// @param codeHash The code hash `next` must keep at every later use.
@@ -85,6 +87,9 @@ interface IEntropyModule is IERC165 {
     /// @notice The payment sent is below the provider's quoted price.
     /// @param price The quoted price.
     error InsufficientPayment(uint256 price);
+    /// @notice The caller refused the return of what it paid above the price.
+    /// @param to The caller.
+    error RefundFailed(address to);
 
     /// @notice Links an approved, unconsumed VRF item to its content's draw and requests that
     ///         draw's seed, or adds another request once the content's current wait has passed
@@ -151,27 +156,28 @@ interface IEntropyModule is IERC165 {
     /// @param nextCodeHash The reviewed code hash `next` must have now and at every later use.
     function setCoordinator(address expected, address next, bytes32 nextCodeHash) external;
 
-    /// @notice Requests the seed of a VRF work of a federated contract, keyed by the contract and
-    ///         the work's content hash. The caller pays: `msg.value` must be at least the
-    ///         provider's quoted price (`InsufficientPayment`), and all of it goes to the provider
-    ///         with the request; no network subscription is used. Only a wallet of the contract's
-    ///         artist may request, while the artist registry lists the contract ACTIVE, for an
-    ///         item whose seed policy is VRF with a content hash (`NotRequestable`). One request
-    ///         is outstanding per draw; a repeat follows the same backoff as `requestSeed`. The
-    ///         first delivery is final.
-    /// @param token The federated contract.
+    /// @notice Requests the seed of a VRF work of an Independent Stream contract, keyed by the
+    ///         contract and the work's content hash. The caller pays: `msg.value` must be at least
+    ///         the provider's quoted price (`InsufficientPayment`); exactly the price goes to the
+    ///         provider with the request and the rest returns to the caller (`RefundFailed` if
+    ///         the caller refuses it); no network subscription is used. Only a wallet of the
+    ///         contract's artist may request, while the artist registry lists the contract ACTIVE,
+    ///         for an item whose seed policy is VRF with a content hash (`NotRequestable`). One
+    ///         request is outstanding per draw; a repeat follows the same backoff as `requestSeed`.
+    ///         The first delivery is final.
+    /// @param token The Independent Stream contract.
     /// @param item The item; only its seed policy and content hash are read.
     /// @return requestId The provider's ID for the request.
-    function requestFederatedSeed(address token, PackageItem calldata item)
+    function requestIndependentSeed(address token, PackageItem calldata item)
         external
         payable
         returns (uint256 requestId);
-    /// @notice A federated contract's seed for a content hash.
-    /// @param token The federated contract.
+    /// @notice An Independent Stream contract's seed for a content hash.
+    /// @param token The Independent Stream contract.
     /// @param contentHash The work's content hash.
     /// @return delivered Whether the seed was delivered.
     /// @return seed The seed, zero until delivered.
-    function federatedSeedOf(address token, bytes32 contentHash)
+    function independentSeedOf(address token, bytes32 contentHash)
         external
         view
         returns (bool delivered, bytes32 seed);

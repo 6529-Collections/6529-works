@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 /// @title SaleKind
 /// @notice Sale-kind labels carried by package sale terms and reported by each sale adapter
 ///         (ADR 0001 section 5 "Sale extensibility"). A kind is a `bytes32` label so a new
 ///         adapter needs no change to Core or to the package format.
 /// @dev Constants only; nothing here is linked bytecode.
-///      Adding a sale method (ADR 0005, owner decision 14) needs no new token contract: a new
+///      Adding a sale method (ADR 0005) needs no new token contract: a new
 ///      adapter claims a fresh label, `keccak256("<NAME>")`, and reports it from
 ///      `ISaleAdapter.saleKind()`; packages approved afterwards name it in their terms; and
 ///      governance admits the adapter on each token it may mint (`IMintTarget.setAdmittedMinter`,
@@ -28,40 +28,12 @@ library SaleKind {
     bytes32 internal constant UNIFORM_AUCTION = keccak256("UNIFORM_AUCTION");
 }
 
-/// @notice How a buyer or bidder pays (ADR 0001 section 5 "Asset admission").
-/// @dev DIRECT: ETH sent as `msg.value`, or an ERC-20 the payer approved beforehand.
-///      PERMIT: an EIP-2612 permit (`signature` is the 65-byte `r || s || v`), then a pull.
-///      PERMIT2: a Permit2 `permitWitnessTransferFrom` whose witness (see `Typehashes`) binds the
-///      action, so a relayer can submit it for the payer (the signed payment intent).
-enum PaymentMethod {
-    DIRECT,
-    PERMIT,
-    PERMIT2
-}
-
-/// @notice One payment, pulled with an exact balance-delta check.
-/// @dev `amount` is the exact amount of a bid; a sale method that charges a price only known
-///      at execution defines it as the most the payer will pay. For DIRECT and PERMIT, `payer`
-///      must be `msg.sender`; for PERMIT2 it is
-///      the signer and may differ from `msg.sender`. ETH uses DIRECT with `msg.value == amount`.
-///      `deadline` and `signature` are the permit's; `nonce` is the Permit2 nonce (zero
-///      otherwise). The payer is the bidder or buyer of record: refunds and credits go to it.
-struct Payment {
-    PaymentMethod method;
-    address payer;
-    uint256 amount;
-    uint256 deadline;
-    uint256 nonce;
-    bytes signature;
-}
-
 /// @notice What a token contract tells a sale adapter about a primary sale.
 /// @dev Returned by `IMintTarget.mint` and `IMintTarget.primaryTerms` (which, for a minted 6529
 ///      Stream token, sets only the sale kind, seller, fee and creator; 6529 Stream Editions'
 ///      `mint` sets only the sale kind). `currency` is the item's or edition's currency as
-///      approved: for a 6529 Stream item `CURRENCY_ETH`, an allowlisted ERC-20 or
-///      `CURRENCY_DEFAULT`, which the auction resolves (`IEconomicsResolver.resolveCurrency`) and
-///      locks when the sale starts; for an edition, the sale method's own, opaque to the token
+///      approved: for a 6529 Stream item `CURRENCY_ETH` or `CURRENCY_DEFAULT`, which means
+///      ETH; for an edition, the sale method's own, opaque to the token
 ///      (the edition auction accepts only ETH). `price` is zero: an English auction has none,
 ///      and `EditionTerms` carries none (a priced sale method keeps its price in `params`).
 ///      `params` are the sale method's, as approved. `seller` receives the artist portion (a
@@ -70,7 +42,8 @@ struct Payment {
 ///      artist's active authority, resolved through the artist registry when the terms are read.
 ///      It is zero while a recovery override is pending (`IArtistRegistry.activeAuthorityOf`).
 ///      Under ADR 0005 an unbid 6529 Stream work goes to the 6529 Network Museum
-///      (`IEconomicsResolver.museum`); only a federated work's creator receives an unbid token.
+///      (`IEconomicsResolver.museum`); only an Independent Stream work's creator receives an unbid
+///      token.
 struct PrimaryTerms {
     bytes32 saleKind;
     address currency;
@@ -83,15 +56,15 @@ struct PrimaryTerms {
 }
 
 /// @notice How a 1/1's primary sale ended, as the adapter that minted it reports it to the token
-///         (`IMintTarget.settlePrimary`, owner decision 17), or as governance ended it
-///         (RESCUED, owner decision 28). NONE is never reported: it is the answer of
+///         (`IMintTarget.settlePrimary`), or as governance ended it
+///         (RESCUED). NONE is never reported: it is the answer of
 ///         `IStream.primarySale` before settlement. RESCUED is never reported by an adapter
 ///         either: only 6529 Stream's `rescueToMuseum` records it.
 /// @dev SOLD: a buyer paid a price. UNBID: the sale ended with no bid. FROZEN_OUT: the sale
 ///      ended unsold because its currency stayed frozen (the English auction's 60-day freeze
 ///      exit) or its token was delisted, any standing bid credited back. RESCUED: governance
 ///      moved the work out of a removed adapter's custody before the adapter settled it
-///      (`IStream.rescueToMuseum`, owner decision 20). 6529 Stream moves an UNBID, FROZEN_OUT or
+///      (`IStream.rescueToMuseum`). 6529 Stream moves an UNBID, FROZEN_OUT or
 ///      RESCUED work to the 6529 Network Museum itself. Appended last, so the earlier values
 ///      keep their encodings.
 enum PrimaryOutcome {
@@ -102,15 +75,15 @@ enum PrimaryOutcome {
     RESCUED
 }
 
-/// @notice What a token answers when a 1/1's primary sale settles (`IMintTarget.settlePrimary`,
-///         owner decision 17): the terms the adapter pays by, and where the work went if the
+/// @notice What a token answers when a 1/1's primary sale settles (`IMintTarget.settlePrimary`):
+///         the terms the adapter pays by, and where the work went if the
 ///         token moved it itself.
 /// @dev Static, so the adapter decodes it cheaply. `seller`, `feeRecipient` and `feeShare` are
 ///      as in `PrimaryTerms`. `holder` is nonzero when the token moved the work out of the
 ///      adapter's custody itself: 6529 Stream's museum, for UNBID and FROZEN_OUT. An adapter
 ///      that is left an unsold work reads its creator from `IMintTarget.primaryTerms`. The
 ///      English auction does not trust `holder`: it reads `ownerOf` after the call, so a token
-///      that reports a holder without moving the work still has it delivered (rc.2 CALLS I-2).
+///      that reports a holder without moving the work still has it delivered.
 struct PrimarySettlement {
     address seller;
     address feeRecipient;

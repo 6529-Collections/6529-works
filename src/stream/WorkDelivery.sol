@@ -1,29 +1,30 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessManaged.sol";
 import { ERC165 } from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
-import { IAccounts } from "../interfaces/IAccounts.sol";
-import { IStream } from "../interfaces/IStream.sol";
-import { IWorkDelivery, IWorkLocators } from "../interfaces/IWorkDelivery.sol";
-import { IWorkRecords } from "../interfaces/IWorkRecords.sol";
+import { Facts, Slots } from "../interfaces/core/CoreTypes.sol";
+import { IAccounts } from "../interfaces/core/IAccounts.sol";
+import { ILocators } from "../interfaces/core/ILocators.sol";
+import { IModuleSlots } from "../interfaces/core/IModules.sol";
+import { IStream } from "../interfaces/core/IStream.sol";
+import { IWorkFacts } from "../interfaces/core/IWorkFacts.sol";
+import { IDeliveryHost, IWorkDelivery } from "../interfaces/IWorkDelivery.sol";
 import { Locator, LocatorKind } from "../interfaces/types/ContentTypes.sol";
 import { Limits } from "../interfaces/types/Limits.sol";
 
 /// @title WorkDelivery
-/// @notice The first delivery contract of 6529 Stream: where copies of a work's media are
-///         served from. Append-only, content-addressed locators per media file (the artist's
-///         before finalize, the PLATFORM role's at any time), the storage operator's
-///         preferences among them and its mark on a locator that died (ADR 0001 sections 8 and
-///         10; C21, C33). Replaceable as a whole through
-///         `IWorkRecords.setDelivery`; it has no authority over any fact of a work, and
-///         `IWorkRecords.preferredLocator` checks every answer it gives.
-/// @dev Reads what it needs from the records satellite (open, finalized, on-chain complete,
-///      media membership) and from 6529 Stream (artist, collection) on every call, so it never
-///      holds a stale copy of a fact. Every change asks the records satellite to refresh
-///      metadata (ERC-4906 through 6529 Stream). Every bit of state has a getter, and
-///      `LocatorAdded` names who added each locator, so a successor can carry it over.
-contract WorkDelivery is AccessManaged, ERC165, IWorkLocators {
+/// @notice The first delivery contract of the RECORDS module `WorkRules`: where copies of a
+///         work's media are served from, for every token the module serves. Append-only,
+///         content-addressed locators per media file (the artist's before finalize, the
+///         PLATFORM role's at any time), the storage operator's preferences among them and its
+///         mark on a locator that died. Replaceable as a whole (`IWorkRules.setDelivery`); it
+///         has no authority over any fact of a work.
+/// @dev Reads what it needs on every call (open, finalized, on-chain complete and the media
+///      from `IWorkFacts.factsOf`; the artist and collection from the token), so it never holds
+///      a stale copy of a fact. Every change asks the RECORDS module to emit ERC-4906 through
+///      the token. The renderer checks every answer it prints (`ILocators`).
+contract WorkDelivery is AccessManaged, ERC165, IWorkDelivery {
     uint256 private constant NONE = type(uint256).max;
     /// @dev Locators per file the artist may add, and separately the platform (16 in all).
     uint256 private constant LOCATOR_QUOTA = Limits.MAX_LOCATORS_PER_FILE / 2;
@@ -49,53 +50,58 @@ contract WorkDelivery is AccessManaged, ERC165, IWorkLocators {
 
     /// @inheritdoc IWorkDelivery
     address public immutable records;
-    /// @notice The 6529 Stream core (immutable).
-    address public immutable stream;
     /// @inheritdoc IWorkDelivery
-    address public immutable predecessor;
+    address public immutable facts;
+    /// @inheritdoc IWorkDelivery
+    address public immutable directory;
 
-    /// @inheritdoc IWorkLocators
-    LocatorKind public preferredKind;
-
-    mapping(uint256 collectionId => LocatorKind) private _collectionKinds;
-    mapping(uint256 tokenId => mapping(bytes32 fileId => Locator[])) private _locators;
-    mapping(uint256 tokenId => mapping(bytes32 fileId => uint256 indexPlusOne)) private _filePrefs;
-    mapping(uint256 tokenId => mapping(bytes32 fileId => LocatorCounts)) private _locatorCounts;
-    mapping(uint256 tokenId => mapping(bytes32 fileId => mapping(bytes32 uriHash => bool))) private
-        _locatorUris;
+    mapping(address token => LocatorKind) private _preferredKinds;
+    mapping(address token => mapping(uint256 collectionId => LocatorKind)) private _collectionKinds;
+    mapping(address token => mapping(uint256 tokenId => mapping(bytes32 fileId => Locator[])))
+        private _locators;
+    mapping(address token => mapping(uint256 tokenId => mapping(bytes32 fileId => uint256))) private
+        _filePrefs;
+    mapping(
+        address token => mapping(uint256 tokenId => mapping(bytes32 fileId => LocatorCounts))
+    ) private _locatorCounts;
+    mapping(
+        address token
+            => mapping(uint256 tokenId => mapping(bytes32 fileId => mapping(bytes32 => bool)))
+    ) private _locatorUris;
 
     /// @param authority_ The AccessManager governing this contract.
-    /// @param records_ The records satellite this contract serves.
-    /// @param stream_ The 6529 Stream core.
-    /// @param predecessor_ The delivery contract this one replaces, or zero for the first.
-    constructor(address authority_, address records_, address stream_, address predecessor_)
+    /// @param records_ The RECORDS module this contract serves (`WorkRules`).
+    /// @param facts_ The permanent record contract (`IWorkFacts`).
+    /// @param directory_ The directory, through which the accounts module is found.
+    constructor(address authority_, address records_, address facts_, address directory_)
         AccessManaged(authority_)
     {
         records = records_;
-        stream = stream_;
-        predecessor = predecessor_;
+        facts = facts_;
+        directory = directory_;
     }
 
-    /// @inheritdoc IWorkLocators
+    /// @inheritdoc IWorkDelivery
     /// @dev After finalize the call goes through the PLATFORM role only. A URI already
     ///      registered for the file is refused, compared as exact bytes; the set is shared, so
     ///      whichever side adds a URI first holds it.
-    function addLocator(uint256 tokenId, bytes32 fileId, Locator calldata locator) external {
-        bool finalized = IWorkRecords(records).record(tokenId).finalized;
-        bool byArtist = !finalized && _isArtist(tokenId);
+    function addLocator(address token, uint256 tokenId, bytes32 fileId, Locator calldata locator)
+        external
+    {
+        Facts memory f = _media(token, tokenId, fileId);
+        bool byArtist = !f.finalized && _isArtist(token, tokenId);
         if (!byArtist) _checkCanCall(msg.sender, _msgData());
-        IWorkRecords(records).mediaIndex(tokenId, fileId);
         _checkUri(locator);
-        LocatorCounts storage counts = _locatorCounts[tokenId][fileId];
-        mapping(bytes32 => bool) storage seen = _locatorUris[tokenId][fileId];
+        LocatorCounts storage counts = _locatorCounts[token][tokenId][fileId];
+        mapping(bytes32 => bool) storage seen = _locatorUris[token][tokenId][fileId];
         bytes32 uriHash = keccak256(bytes(locator.uri));
         uint256 used = byArtist ? counts.artist : counts.platform;
         uint256 quota = LOCATOR_QUOTA;
         // After finalize the artist adds none, so the platform may use the artist's unused slots.
-        if (finalized) (used, quota) = (used + counts.artist, Limits.MAX_LOCATORS_PER_FILE);
+        if (f.finalized) (used, quota) = (used + counts.artist, Limits.MAX_LOCATORS_PER_FILE);
         if (used >= quota || seen[uriHash]) revert InvalidLocator();
         seen[uriHash] = true;
-        Locator[] storage list = _locators[tokenId][fileId];
+        Locator[] storage list = _locators[token][tokenId][fileId];
         uint256 index = list.length;
         if (byArtist) {
             ++counts.artist;
@@ -106,51 +112,59 @@ contract WorkDelivery is AccessManaged, ERC165, IWorkLocators {
             ++counts.platform;
         }
         list.push(locator);
-        emit LocatorAdded(tokenId, fileId, index, locator, msg.sender, byArtist);
-        IWorkRecords(records).refreshMetadata(tokenId);
+        emit LocatorAdded(token, tokenId, fileId, index, locator, msg.sender, byArtist);
+        IDeliveryHost(records).refreshMetadata(token, tokenId);
     }
 
-    /// @inheritdoc IWorkLocators
-    function locators(uint256 tokenId, bytes32 fileId) external view returns (Locator[] memory) {
-        if (!IWorkRecords(records).isOpen(tokenId)) revert IWorkRecords.RecordNotOpen(tokenId);
-        return _locators[tokenId][fileId];
+    /// @inheritdoc IWorkDelivery
+    function locators(address token, uint256 tokenId, bytes32 fileId)
+        external
+        view
+        returns (Locator[] memory)
+    {
+        return _locators[token][tokenId][fileId];
     }
 
-    /// @inheritdoc IWorkLocators
-    function locatorCounts(uint256 tokenId, bytes32 fileId)
+    /// @inheritdoc IWorkDelivery
+    function locatorCounts(address token, uint256 tokenId, bytes32 fileId)
         external
         view
         returns (uint256 artist, uint256 platform, uint256 byArtist)
     {
-        LocatorCounts storage c = _locatorCounts[tokenId][fileId];
+        LocatorCounts storage c = _locatorCounts[token][tokenId][fileId];
         return (c.artist, c.platform, c.byArtist);
     }
 
-    /// @inheritdoc IWorkDelivery
+    /// @notice `ILocators.preferredLocator`: the preferred location of one media file of a work.
+    /// @param token The token contract.
+    /// @param tokenId A work with an open record.
+    /// @param fileId One of the work's media files.
+    /// @return location The location.
+    /// @return index The locator's index, or `type(uint256).max` for none or the on-chain copy.
     /// @dev The most specific setting wins: the file's preferred index, then the collection's
-    ///      preferred kind, then the global preferred kind, then the first locator, then the
-    ///      implicit ONCHAIN copy of an on-chain complete work, else the empty locator. Every
-    ///      choice is among the live locators, whoever added them (C33): a dead one is never
-    ///      served, and a file preference naming one is passed over. ONCHAIN matches on the
-    ///      records satellite's stored flag, never a content-store scan.
-    function preferredLocator(uint256 tokenId, bytes32 fileId)
+    ///      preferred kind, then the token's preferred kind, then the first locator, then the
+    ///      on-chain copy of an on-chain complete work, else no locator. Every choice is among
+    ///      the live locators, whoever added them: a dead one is never served, and a file
+    ///      preference naming one is passed over. ONCHAIN follows the flag `IWorkFacts` records.
+    function preferredLocator(address token, uint256 tokenId, bytes32 fileId)
         external
         view
-        returns (Location memory location, uint256 index)
+        returns (ILocators.Location memory location, uint256 index)
     {
-        bool onChain = IWorkRecords(records).record(tokenId).onChainComplete;
-        IWorkRecords(records).mediaIndex(tokenId, fileId);
-        Locator[] storage list = _locators[tokenId][fileId];
+        bool onChain = _media(token, tokenId, fileId).onChainComplete;
+        Locator[] storage list = _locators[token][tokenId][fileId];
         // Bit `i` set for each live locator (at most 16).
-        uint256 live = ((1 << list.length) - 1) & ~uint256(_locatorCounts[tokenId][fileId].dead);
-        index = _filePrefs[tokenId][fileId];
+        uint256 live =
+            ((1 << list.length) - 1) & ~uint256(_locatorCounts[token][tokenId][fileId].dead);
+        index = _filePrefs[token][tokenId][fileId];
         bool found = index != 0 && (live >> (index - 1)) & 1 != 0;
         if (found) index -= 1;
         if (!found) {
-            (,, uint256 collectionId,,,) = IStream(stream).coreOf(tokenId);
-            (found, index) = _firstOfKind(list, live, onChain, _collectionKinds[collectionId]);
+            uint256 collectionId = IStream(token).workOf(tokenId).collectionId;
+            (found, index) =
+                _firstOfKind(list, live, onChain, _collectionKinds[token][collectionId]);
         }
-        if (!found) (found, index) = _firstOfKind(list, live, onChain, preferredKind);
+        if (!found) (found, index) = _firstOfKind(list, live, onChain, _preferredKinds[token]);
         if (!found && live != 0) {
             // The first live locator: the mask's lowest set bit.
             index = 0;
@@ -165,92 +179,132 @@ contract WorkDelivery is AccessManaged, ERC165, IWorkLocators {
             location.kind = uint8(LocatorKind.ONCHAIN);
         } else {
             Locator storage l = list[index];
-            location = Location(uint8(l.kind), l.uri);
+            location = ILocators.Location(uint8(l.kind), l.uri);
         }
     }
 
-    /// @inheritdoc IWorkLocators
-    function setPreferredKind(LocatorKind kind) external restricted {
-        emit PreferredKindSet(preferredKind, kind);
-        preferredKind = kind;
-        IWorkRecords(records).refreshAllMetadata();
+    /// @inheritdoc IWorkDelivery
+    function setPreferredKind(address token, LocatorKind kind) external restricted {
+        emit PreferredKindSet(token, _preferredKinds[token], kind);
+        _preferredKinds[token] = kind;
+        IDeliveryHost(records).refreshAllMetadata(token);
     }
 
-    /// @inheritdoc IWorkLocators
-    function setCollectionPreferredKind(uint256 collectionId, LocatorKind kind)
+    /// @inheritdoc IWorkDelivery
+    function setCollectionPreferredKind(address token, uint256 collectionId, LocatorKind kind)
         external
         restricted
     {
-        // Collection IDs run from 1 to the count and are never removed.
-        if (collectionId == 0 || collectionId > IStream(stream).collectionCount()) {
-            revert IStream.UnknownCollection(collectionId);
+        if (!IStream(token).collectionOf(collectionId).exists) {
+            revert UnknownCollection(token, collectionId);
         }
-        emit CollectionPreferredKindSet(collectionId, _collectionKinds[collectionId], kind);
-        _collectionKinds[collectionId] = kind;
-        IWorkRecords(records).refreshAllMetadata();
+        emit CollectionPreferredKindSet(
+            token, collectionId, _collectionKinds[token][collectionId], kind
+        );
+        _collectionKinds[token][collectionId] = kind;
+        IDeliveryHost(records).refreshAllMetadata(token);
     }
 
-    /// @inheritdoc IWorkLocators
-    function setFilePreference(uint256 tokenId, bytes32 fileId, uint256 index) external restricted {
-        if (index == NONE) IWorkRecords(records).mediaIndex(tokenId, fileId);
-        else _requireLive(tokenId, fileId, index);
-        emit FilePreferenceSet(tokenId, fileId, filePreference(tokenId, fileId), index);
-        _filePrefs[tokenId][fileId] = index == NONE ? 0 : index + 1;
-        IWorkRecords(records).refreshMetadata(tokenId);
+    /// @inheritdoc IWorkDelivery
+    function setFilePreference(address token, uint256 tokenId, bytes32 fileId, uint256 index)
+        external
+        restricted
+    {
+        if (index == NONE) _media(token, tokenId, fileId);
+        else _requireLive(token, tokenId, fileId, index);
+        emit FilePreferenceSet(
+            token, tokenId, fileId, filePreference(token, tokenId, fileId), index
+        );
+        _filePrefs[token][tokenId][fileId] = index == NONE ? 0 : index + 1;
+        IDeliveryHost(records).refreshMetadata(token, tokenId);
     }
 
-    /// @inheritdoc IWorkLocators
-    function markLocatorDead(uint256 tokenId, bytes32 fileId, uint256 index) external restricted {
-        LocatorCounts storage counts = _requireLive(tokenId, fileId, index);
+    /// @inheritdoc IWorkDelivery
+    function markLocatorDead(address token, uint256 tokenId, bytes32 fileId, uint256 index)
+        external
+        restricted
+    {
+        LocatorCounts storage counts = _requireLive(token, tokenId, fileId, index);
         // Below 16: the file holds at most `Limits.MAX_LOCATORS_PER_FILE` locators.
         // forge-lint: disable-next-line(unsafe-typecast)
         counts.dead |= uint16(1 << index);
-        emit LocatorDead(tokenId, fileId, index);
-        IWorkRecords(records).refreshMetadata(tokenId);
+        emit LocatorDead(token, tokenId, fileId, index);
+        IDeliveryHost(records).refreshMetadata(token, tokenId);
     }
 
-    /// @inheritdoc IWorkLocators
-    function deadLocators(uint256 tokenId, bytes32 fileId) external view returns (uint256) {
-        return _locatorCounts[tokenId][fileId].dead;
+    /// @inheritdoc IWorkDelivery
+    function deadLocators(address token, uint256 tokenId, bytes32 fileId)
+        external
+        view
+        returns (uint256)
+    {
+        return _locatorCounts[token][tokenId][fileId].dead;
     }
 
-    /// @inheritdoc IWorkLocators
-    function collectionPreferredKind(uint256 collectionId) external view returns (LocatorKind) {
-        return _collectionKinds[collectionId];
+    /// @inheritdoc IWorkDelivery
+    function preferredKind(address token) external view returns (LocatorKind) {
+        return _preferredKinds[token];
     }
 
-    /// @inheritdoc IWorkLocators
-    function filePreference(uint256 tokenId, bytes32 fileId) public view returns (uint256) {
-        uint256 stored = _filePrefs[tokenId][fileId];
+    /// @inheritdoc IWorkDelivery
+    function collectionPreferredKind(address token, uint256 collectionId)
+        external
+        view
+        returns (LocatorKind)
+    {
+        return _collectionKinds[token][collectionId];
+    }
+
+    /// @inheritdoc IWorkDelivery
+    function filePreference(address token, uint256 tokenId, bytes32 fileId)
+        public
+        view
+        returns (uint256)
+    {
+        uint256 stored = _filePrefs[token][tokenId][fileId];
         return stored == 0 ? NONE : stored - 1;
     }
 
-    /// @notice ERC-165: `IWorkDelivery`, which `IWorkRecords.setDelivery` checks, and
-    ///         `IWorkLocators`.
+    /// @notice ERC-165: `IWorkDelivery` (which `WorkRules.setDelivery` checks) and `ILocators`.
     /// @param interfaceId The interface ID to test.
-    /// @return True for the `IWorkDelivery`, `IWorkLocators` and `IERC165` interface IDs.
+    /// @return True for the `IWorkDelivery`, `ILocators` and `IERC165` interface IDs.
     function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
         return interfaceId == type(IWorkDelivery).interfaceId
-            || interfaceId == type(IWorkLocators).interfaceId
-            || super.supportsInterface(interfaceId);
+            || interfaceId == type(ILocators).interfaceId || super.supportsInterface(interfaceId);
+    }
+
+    // ------------------------------------------------------------------------------ internal
+
+    /// @dev The work's facts, when its record is open and `fileId` is one of its media files.
+    function _media(address token, uint256 tokenId, bytes32 fileId)
+        private
+        view
+        returns (Facts memory f)
+    {
+        f = IWorkFacts(facts).factsOf(token, tokenId);
+        if (!f.opened) revert RecordNotOpen(token, tokenId);
+        for (uint256 i; i < f.media.length; ++i) {
+            if (f.media[i].fileId == fileId) return f;
+        }
+        revert FileNotInWork(token, tokenId, fileId);
     }
 
     /// @dev Whether the caller is a wallet of the work's lead artist account now.
-    function _isArtist(uint256 tokenId) private view returns (bool) {
-        IStream core = IStream(stream);
-        return IAccounts(core.artistRegistry()).isWallet(core.artistOf(tokenId), msg.sender);
+    function _isArtist(address token, uint256 tokenId) private view returns (bool) {
+        address accounts = IModuleSlots(directory).moduleOf(Slots.ACCOUNTS);
+        return IAccounts(accounts).isWallet(IStream(token).workOf(tokenId).artistId, msg.sender);
     }
 
     /// @dev Reverts with `InvalidLocator` unless locator `index` of one of the work's media
     ///      files exists and is not dead; returns the file's counts.
-    function _requireLive(uint256 tokenId, bytes32 fileId, uint256 index)
+    function _requireLive(address token, uint256 tokenId, bytes32 fileId, uint256 index)
         private
         view
         returns (LocatorCounts storage counts)
     {
-        IWorkRecords(records).mediaIndex(tokenId, fileId);
-        counts = _locatorCounts[tokenId][fileId];
-        if (index >= _locators[tokenId][fileId].length || (counts.dead >> index) & 1 != 0) {
+        _media(token, tokenId, fileId);
+        counts = _locatorCounts[token][tokenId][fileId];
+        if (index >= _locators[token][tokenId][fileId].length || (counts.dead >> index) & 1 != 0) {
             revert InvalidLocator();
         }
     }
@@ -287,9 +341,8 @@ contract WorkDelivery is AccessManaged, ERC165, IWorkLocators {
         }
     }
 
-    /// @dev The first live locator of `kind` (`live`, bit `i` for index `i`), or the implicit
-    ///      ONCHAIN one (`NONE`) when the work is on-chain complete. NONE as a kind never
-    ///      matches.
+    /// @dev The first live locator of `kind` (`live`, bit `i` for index `i`), or the on-chain
+    ///      copy (`NONE`) when the work is on-chain complete. NONE as a kind never matches.
     function _firstOfKind(Locator[] storage list, uint256 live, bool onChain, LocatorKind kind)
         private
         view
