@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **Before the merge of the plain core.**
+    - `StreamTerms.lowerFeeShare` accepts one fee recipient, the split ledger's network fee
+      vault, so the share it lowers is always the network's; the seller and the fee recipient
+      cannot be stated the other way round.
+    - `IndependentStreamEditions6529`: while the directory's `INDEPENDENT_STREAM` slot is empty
+      every sale contract reads as removed, so nothing new is sealed. An open edition sale is
+      then voided with full refunds. Editions sealed before, and transfers, are unchanged.
+    - The tokens refuse the zero address as a genesis minter (`InvalidModule`).
+    - `VerifyCore` checks that the governance chain holds exactly the expected epoch-0
+      manifest, not only that it has an entry.
+    - `IndependentEditionAuction.settle` voids an adopted sale delisted while open;
+      `PackageRegistry.preview` reads a zero seed for a VRF item whose seed is not delivered.
 - **Last fixes on the plain core.**
     - `StreamTerms` takes an Independent Stream token's editions partner from the Independent
       Stream module only if the editions contract names the token as its `stream()`.

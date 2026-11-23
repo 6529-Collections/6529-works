@@ -220,8 +220,9 @@ Notes from the reviews of the plain permanent core (November 2026) that were lef
   already in a split vault ([ADR 0010](../adr/0010-plain-permanent-core.md); review C I-6).
 - **Constructor values of the permanent tokens are not logged.** Indexers read the immutables
   (`facts`, `stream`, `directory`, `artistId`) and the names from the contract (review A I-8).
-- **The permanent tokens' constructors do not check their address arguments.** The deployment's
-  self-check reads every one back (`VerifyCore`; review A I-9).
+- **The permanent tokens' constructors do not check their address arguments**, except that a
+  zero genesis minter is refused. The deployment's self-check reads every one back
+  (`VerifyCore`; review A I-9).
 - **The escrow's aged, maturing and recent amounts are rebuilt from two contracts' logs**: the
   escrow's own and the directory's `UnclaimedPeriodSet`, ordered by block and log index; the
   replay test does this (review B-7).
@@ -231,12 +232,27 @@ Notes from the reviews of the plain permanent core (November 2026) that were lef
   on 6529 Stream, seals nothing on 6529 Stream Editions, and mints only editions sealed before
   its removal; an edition auction's settlement of an unsealed sale waits with it. Removing it
   again restores what a removed minter may do.
-- **An empty `INDEPENDENT_STREAM` slot forgets which sale contracts were removed.** The module
-  holds that record. While the slot is empty no Independent Stream token mints or creates an
-  edition, `rescue` and `rebind` wait, and a sale contract the module had removed may again seal
-  an edition it still holds without a seal. A replacement module carries the removals over, so
-  the network replaces the module rather than remove it
+- **An empty `INDEPENDENT_STREAM` slot stops everything new on Independent Stream tokens.**
+  While the slot is empty no Independent Stream token mints or creates an edition, and no sale
+  contract seals one: the editions contract reads every sale contract as removed. An edition
+  sale open at that time is voided with full refunds and its edition stays without a seal. An
+  edition sealed before still mints up to its seal, and transfers ask no module. The module
+  also holds the record of removed sale contracts, so while the slot is empty `rescue` waits and
+  no edition is rebound. A replacement module carries the removals over, so the network
+  replaces the module rather than remove it
   ([Replacing a module](../operations/replacing-modules.md#independent-stream-module-independentstreamregistry)).
+- **`lowerFeeShare` lowers only the share of the split ledger's network fee vault.** The fee
+  recipient it is given must be `SplitLedger.network()`, which is fixed in permanent code, so
+  the seller and the fee recipient cannot be stated the other way round. A work whose royalty
+  vault names another fee recipient keeps its share under this TERMS module.
+- **The English auction's end after an expired dispute pause follows the current `duration`
+  setting.** A pause longer than the maximum counts as resumed; until the next write to the
+  sale stores the end, the views compute it from the setting in force at that moment.
+- **A store is selected for a file in one call.** `WorkRules.setFileStore` checks every chunk
+  of the file against the added store in that call, so an added store cannot be selected for a
+  file too large for one such scan; the file stays served by the content store.
+- **`CoreFactory.create` reports a failed creation as `CreateFailed(salt)`** and does not pass
+  on the constructor's own revert data; the reason is read from a trace of the transaction.
 
 ## Removed and closed IDs
 

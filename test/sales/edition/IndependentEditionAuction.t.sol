@@ -294,6 +294,12 @@ contract IndependentEditionAuctionTest is Test {
         (uint256 won, uint256 refund) = next.claimBid(saleId, bidId, alice);
         assertEq(won, 0);
         assertEq(refund, amount);
+        // The refund is paid once: the whole escrow left the auction, and the bid is gone.
+        assertEq(alice.balance, amount, "refunded in full");
+        assertEq(address(next).balance, 0, "nothing left behind");
+        vm.prank(alice);
+        vm.expectRevert();
+        next.claimBid(saleId, bidId, alice);
     }
 
     /// @dev The same sale, still listed, settles and pays as before.
