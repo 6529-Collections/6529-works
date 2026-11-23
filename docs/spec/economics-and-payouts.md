@@ -99,7 +99,7 @@ changes is only when; the amounts are never more than the money that has itself 
 | --- | --- | --- |
 | ECO-1 | Rates and shares are out of 100,000; the launch royalty 6,529 is exactly 6.529%. | `test_RoyaltyRateIsExact`, `test_LaunchDefaults` |
 | ECO-2 | A product's fee share is below 100,000, its royalty rate at most 100,000, and a nonzero share names a nonzero recipient. | `test_ConstructorEmitsAndValidates`, `test_SetFeeTermsIsCompareAndSet` |
-| ECO-3 | The fee recipient is never the resolver, its dependencies or a recognised protocol contract. | |
+| ECO-3 | The fee recipient is never the resolver, its dependencies or a recognised protocol contract. | `test_FeeRecipientMustBePayable`, `test_FeeRecipient_RefusesSystemContracts`, `test_SetFeeTermsIsCompareAndSet` |
 | ECO-4 | Every governed economics setter is compare-and-set on its own revision. | `test_SetRoyaltyRateIsCompareAndSetOnItsOwnRevision` |
 | ECO-5 | Setters are restricted to their roles and non-payable. | `test_RolesAndDelaysThroughAccessManager`, `check_everyGovernedWrite_needsItsRole` |
 | ECO-6 | Economics changes apply to new works only. | `test_ChangesApplyToNewWorksOnly` |
@@ -143,7 +143,7 @@ changes is only when; the amounts are never more than the money that has itself 
 | ECO-44 | Anyone may mark a payee's share; once the unclaimed period in force has passed since the mark, anyone may send the network what of the marked level is still unreleased, never money that arrived later. | `test_AShareClaimedInTimeIsNotForfeited`, `testFuzz_AMarkNeverTakesLaterMoney`, `test_ARunningMarkCannotBeRestarted` |
 | ECO-45 | Only the aged part of an escrow credit expires, once the unclaimed period in force has passed since it aged; a later deposit never shortens a clock, and moves a window's due time at most to two periods after the window's first deposit; never the network's own credit. | `test_ExpireRefusals`, `test_AStrangersDepositMovesAWindowsDueTimeByLessThanOnePeriod`, `testFuzz_ExpiryGuaranteesUnderAnyInterleaving`, `test_Credits_EscrowAStreamOfCreditsCannotHoldAWindowOpen` |
 | ECO-46 | `unclaimedPeriod` is the network's setting in `StreamDirectory6529` (180 days at launch), changed at once, zero allowed; the ledger and escrow read it when the action is attempted. | `test_UnclaimedPeriod_OneEightyDaysAtDeploymentOnlyTheNetworkSetsIt` |
-| ECO-47 | The escrow's `locked()` is true exactly while it is inside a guarded call. | |
+| ECO-47 | The escrow's `locked()` is true exactly while it is inside a guarded call. | `test_Locked_IsTrueOnlyWhileACallHoldsTheGuard` |
 
 ## Events
 
