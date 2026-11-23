@@ -37,12 +37,13 @@ delay: the wait that applies is the contract's own setting, which the network ch
 | `unusedRoles` | Roles with no selector |
 
 Other files:
-- `sepolia-r1/` to `sepolia-r6/`: each Sepolia round's public inputs (`accounts.json`,
+- `sepolia-r1/` to `sepolia-r7/`: each Sepolia round's public inputs (`accounts.json`,
   `genesis.json`, `deploy.env`, `manifest-epoch0.json`). r1 to r5 were deployed before the
   contracts were renamed and are kept exactly as deployed, with the names of that time
   ([old name to new name](../deployments/11155111/README.md)); r6, deployed on 23 November
-  2026, is the first round of the plain core and uses the current names
-  ([runbook](../script/README.md#sepolia)).
+  2026, is the first round of the plain core and uses the current names, and r7, deployed
+  the same day from the same source with the same Safe and holders, is a second instance
+  whose governance stays as installed ([runbook](../script/README.md#sepolia)).
 - `local/` (git-ignored): the walkthrough's genesis file, written by
   `script/local/make_genesis.py`.
 

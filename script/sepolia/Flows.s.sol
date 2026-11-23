@@ -68,6 +68,10 @@ interface IConsentDigest {
     function consentDigest(address subject, bytes32 what) external view returns (bytes32);
 }
 
+interface IEditionsStream {
+    function stream() external view returns (address);
+}
+
 /// @title Flows
 /// @notice Encodes the flows run on a Sepolia rehearsal of the plain core (ADR 0010; round r6
 ///         on), against the deployment record `FLOWS_RECORD` names (`script/DeployCore.s.sol`
@@ -78,7 +82,8 @@ interface IConsentDigest {
 ///         cancel that voids an edition sale, record opening and finalizing, the VRF request, the
 ///         releases to the artist and the network, and an artist's own Independent Stream 1/1
 ///         contract (deployed from the approved template, listed, one work approved and sold by
-///         the shared English auction).
+///         the shared English auction; its editions contract, listed as its partner, and an edition
+///         master whose edition the Independent Stream edition auction sells).
 /// @dev It holds no key. Only `broadcastB64Chunk` broadcasts, from the script's sender; every
 ///      other entry point reads the live chain (run it with `--rpc-url`) and prints lines for a
 ///      driver to act on:
@@ -175,9 +180,20 @@ contract Flows is Script {
         // finalize, englishState): an artist's Independent Stream contract.
         a.stream = vm.envOr("FLOWS_TOKEN", vm.parseJsonAddress(json, ".Stream6529"));
         a.rules = vm.parseJsonAddress(json, ".WorkRules");
-        a.editions = vm.parseJsonAddress(json, ".StreamEditions6529");
+        // `FLOWS_EDITIONS` names an artist's Independent Stream editions contract: the edition
+        // steps (bid, raise, settle, claim, state) then act on its sales in the Independent Stream
+        // edition auction instead of 6529 Stream Editions' in the uniform edition auction.
+        address independentEditions = vm.envOr("FLOWS_EDITIONS", address(0));
+        a.editions = independentEditions == address(0)
+            ? vm.parseJsonAddress(json, ".StreamEditions6529")
+            : independentEditions;
         a.auction = vm.parseJsonAddress(json, ".EnglishAuction");
-        a.editionAuction = vm.parseJsonAddress(json, ".UniformEditionAuction");
+        a.editionAuction = vm.parseJsonAddress(
+            json,
+            independentEditions == address(0)
+                ? ".UniformEditionAuction"
+                : ".IndependentEditionAuction"
+        );
         a.splits = vm.parseJsonAddress(json, ".SplitFactory");
         a.feeVault = vm.parseJsonAddress(json, ".FeeRecipientVault");
         if (vm.keyExistsJson(json, ".EntropyModule")) {
@@ -742,6 +758,18 @@ contract Flows is Script {
         );
     }
 
+    /// @notice Item `index`'s start as a request file of the reference keeper
+    ///         (`keeper/README.md`, "Start requests"): the mint data with the signed move, and the
+    ///         media list. The keeper sends `SaleStarter.start` with them.
+    function starterRequest(uint256 index, uint256 nonce, uint64 deadline, bytes calldata signature)
+        external
+        view
+    {
+        Addrs memory a = _addrs();
+        _info("mintData", vm.toString(_mintData(a, index, nonce, deadline, signature)));
+        _info("media", vm.toString(abi.encode(_works(a)[index].media)));
+    }
+
     /// @notice `start` of item `index` (anyone sends it).
     function startTx(uint256 index, uint256 nonce, uint64 deadline, bytes calldata signature)
         external
@@ -1202,34 +1230,60 @@ contract Flows is Script {
 
     // ------------------------------------------------------------------ 8. Independent Stream
 
+    /// @dev Which Independent Stream work the `independent*` entry points act on
+    ///      (`FLOWS_INDEPENDENT_WORK`): 0, an original (the default), or 1, an edition master whose
+    ///      edition the Independent Stream edition auction sells.
+    function _independentVariant() internal view returns (uint256 variant) {
+        variant = vm.envOr("FLOWS_INDEPENDENT_WORK", uint256(0));
+        require(variant < 2, "FLOWS_INDEPENDENT_WORK is 0 or 1");
+    }
+
+    /// @dev A label suffix that keeps the two works' transactions apart.
+    function _independentSuffix() internal view returns (string memory) {
+        return _independentVariant() == 0 ? "" : "-master";
+    }
+
     /// @dev The Independent Stream work's two files, both stored whole in the content store: a
     ///      small SVG and its JSON record.
-    function _independentFiles() internal pure returns (File memory media, File memory rec) {
-        media.stored = bytes(
-            "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'>"
-            "<circle cx='5' cy='5' r='4' fill='#c05621'/></svg>"
-        );
+    function _independentFiles() internal view returns (File memory media, File memory rec) {
+        bool master = _independentVariant() == 1;
+        media.stored = master
+            ? bytes(
+                "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'>"
+                "<rect x='1' y='1' width='8' height='8' fill='#2b6cb0'/></svg>"
+            )
+            : bytes(
+                "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'>"
+                "<circle cx='5' cy='5' r='4' fill='#c05621'/></svg>"
+            );
         media.encoding = IContentStore.Encoding.Identity;
         media.mime = "image/svg+xml";
         media.sha = sha256(media.stored);
-        rec.stored = bytes(
-            '{"name":"Flows Independent #1","description":"An Independent Stream work of a Sepolia '
-            'rehearsal.","artists":["r1 Flows Artist"],"year":2026}'
-        );
+        rec.stored = master
+            ? bytes(
+                '{"name":"Flows Independent #2","description":"An Independent Stream edition master '
+                'of a Sepolia rehearsal.","artists":["r1 Flows Artist"],"year":2026}'
+            )
+            : bytes(
+                '{"name":"Flows Independent #1","description":"An Independent Stream work of a Sepolia '
+                'rehearsal.","artists":["r1 Flows Artist"],"year":2026}'
+            );
         rec.encoding = IContentStore.Encoding.Identity;
         rec.mime = "application/json";
         rec.sha = sha256(rec.stored);
     }
 
-    /// @dev The Independent Stream work: an original with no edition, in collection 1 of the
-    ///      artist's own 1/1 contract (its constructor creates that collection).
+    /// @dev The Independent Stream work, in collection 1 of the artist's own 1/1 contract (its
+    ///      constructor creates that collection): an original with no edition, or (work 1) an
+    ///      edition master with an uncapped uniform-price edition in ETH.
     function _independentWork(Addrs memory a) internal view returns (Work memory w) {
         (File memory media, File memory rec) = _independentFiles();
         address lead = _artist();
         w.media = new MediaFile[](1);
         w.media[0] = MediaFile(_fileId(a, media), media.sha, uint8(FileRole.PRIMARY));
         PackageItem memory item;
-        item.kind = uint8(ItemKind.ORIGINAL);
+        bool master = _independentVariant() == 1;
+        item.kind = master ? uint8(ItemKind.EDITION_MASTER) : uint8(ItemKind.ORIGINAL);
         item.collectionId = 1;
         item.contentHash = media.sha;
         item.mediaHash = WorksHashing.mediaHash(w.media);
@@ -1241,7 +1295,8 @@ contract Flows is Script {
         item.license = License("CC0-1.0", a.cc0TextFileId);
         item.seedPolicy = uint8(SeedPolicy.NONE);
         item.sale = SaleTerms(SaleKind.ENGLISH_AUCTION, CURRENCY_ETH, "");
-        item.edition = EditionTerms(0, CURRENCY_ETH, bytes32(0), "");
+        item.edition =
+            EditionTerms(0, CURRENCY_ETH, master ? SaleKind.UNIFORM_AUCTION : bytes32(0), "");
         w.item = item;
     }
 
@@ -1274,8 +1329,8 @@ contract Flows is Script {
     function independentContent() external view {
         Addrs memory a = _addrs();
         (File memory media, File memory rec) = _independentFiles();
-        _storeTx(a, "independent-media", media);
-        _storeTx(a, "independent-record", rec);
+        _storeTx(a, string.concat("independent-media", _independentSuffix()), media);
+        _storeTx(a, string.concat("independent-record", _independentSuffix()), rec);
     }
 
     /// @notice The artist deploys its own Independent Stream 1/1 contract from the approved
@@ -1306,7 +1361,9 @@ contract Flows is Script {
         );
     }
 
-    function _listingSubject(string memory json, address token, uint64 deadline)
+    /// @dev The listing consent's subject for `token`: a 1/1 contract, or (`editions`) an editions
+    ///      contract, whose partner is its `stream()`.
+    function _listingSubject(string memory json, address token, uint64 deadline, bool editions)
         internal
         view
         returns (address module, bytes32 subject)
@@ -1318,7 +1375,13 @@ contract Flows is Script {
         .feeShare;
         subject = IIndependentStreamRegistry(module)
             .listingSubject(
-                token, IIndependentStreamRegistry.Form.ERC721, address(0), share, deadline
+                token,
+                editions
+                    ? IIndependentStreamRegistry.Form.ERC1155
+                    : IIndependentStreamRegistry.Form.ERC721,
+                editions ? IEditionsStream(token).stream() : address(0),
+                share,
+                deadline
             );
     }
 
@@ -1326,11 +1389,80 @@ contract Flows is Script {
     ///         Independent Stream module at the network's current fee share.
     function independentConsent(address token, uint64 deadline) external view {
         Addrs memory a = _addrs();
-        (address module, bytes32 subject) = _listingSubject(_record(), token, deadline);
+        (address module, bytes32 subject) = _listingSubject(_record(), token, deadline, false);
         _sign(
             "consent",
             _acceptanceSigner(a),
             IConsentDigest(a.artists).consentDigest(module, subject)
+        );
+    }
+
+    /// @notice The consent digest for listing the artist's editions contract `token`, the partner
+    ///         of its 1/1 contract.
+    function independentEditionsConsent(address token, uint64 deadline) external view {
+        Addrs memory a = _addrs();
+        (address module, bytes32 subject) = _listingSubject(_record(), token, deadline, true);
+        _sign(
+            "consent",
+            _acceptanceSigner(a),
+            IConsentDigest(a.artists).consentDigest(module, subject)
+        );
+    }
+
+    /// @notice The artist deploys the editions contract of its 1/1 contract `master` from the
+    ///         approved template (`IndependentStreamEditionsDeployer.deploy`). The address is read
+    ///         from a simulated call and printed as `INFO editions`.
+    function independentEditionsDeployTx(bytes32 salt, address master) external {
+        string memory json = _record();
+        address artist = _artist();
+        address deployer = vm.parseJsonAddress(json, ".IndependentStreamEditionsDeployer");
+        bytes memory config = abi.encode(
+            "Flows Independent Editions",
+            "FLOWSINDED",
+            master,
+            vm.parseJsonAddress(json, ".StreamDirectory6529"),
+            uint256(uint160(artist)),
+            artist
+        );
+        vm.prank(artist);
+        address token = IIndependentDeployer(deployer).deploy(salt, config);
+        _info("editions", vm.toString(token));
+        _tx(
+            "independentEditionsDeploy",
+            "artist",
+            deployer,
+            0,
+            abi.encodeCall(IIndependentDeployer.deploy, (salt, config))
+        );
+    }
+
+    /// @notice The artist lists its editions contract `token` (`register`, with the consent
+    ///         signature). Planned only for a contract that is not listed yet.
+    function independentEditionsListTx(address token, uint64 deadline, bytes calldata signature)
+        external
+        view
+    {
+        Addrs memory a = _addrs();
+        _registerTx(a, token, deadline, signature, true);
+    }
+
+    /// @notice `open` of the Independent Stream edition auction beside master `tokenId` of the
+    ///         1/1 contract that `editionsToken` partners (anyone). It creates the edition and
+    ///         deploys the seller and royalty vaults. Run with `FLOWS_INDEPENDENT_WORK=1`.
+    function independentOpenEditionTx(address editionsToken, uint256 tokenId) external view {
+        Addrs memory a = _addrs();
+        require(_independentVariant() == 1, "the edition master is work 1");
+        address adapter = vm.parseJsonAddress(_record(), ".IndependentEditionAuction");
+        _info("saleId", uint256(keccak256(abi.encode(editionsToken, tokenId))).toString());
+        _tx(
+            string.concat("independentOpenEdition-", tokenId.toString()),
+            "any",
+            adapter,
+            0,
+            abi.encodeCall(
+                IUniformEditionAuction.open,
+                (editionsToken, tokenId, abi.encode(_independentWork(a).item))
+            )
         );
     }
 
@@ -1345,11 +1477,11 @@ contract Flows is Script {
         uint24 royaltyRate
     ) external view {
         Addrs memory a = _addrs();
-        address module = _registerTx(a, token, deadline, signature);
+        address module = _registerTx(a, token, deadline, signature, false);
         bytes32 itemHash = WorksHashing.itemHash(_independentWork(a).item);
         _info("itemHash", vm.toString(itemHash));
         _tx(
-            "independentApproveItem",
+            string.concat("independentApproveItem", _independentSuffix()),
             "artist",
             module,
             0,
@@ -1361,26 +1493,30 @@ contract Flows is Script {
 
     /// @dev Plans `register` for `token` unless the module lists it already, so a re-run after a
     ///      failed approval sends only the approval. Returns the Independent Stream module.
-    function _registerTx(Addrs memory a, address token, uint64 deadline, bytes calldata signature)
-        internal
-        view
-        returns (address module)
-    {
+    function _registerTx(
+        Addrs memory a,
+        address token,
+        uint64 deadline,
+        bytes calldata signature,
+        bool editions
+    ) internal view returns (address module) {
         string memory json = _record();
         address artist = _artist();
-        (module,) = _listingSubject(json, token, deadline);
+        (module,) = _listingSubject(json, token, deadline, editions);
         IIndependentStreamRegistry.Status status =
         IIndependentStreamRegistry(module).entry(token).status;
         _info("listingStatus", uint256(status).toString());
         if (status != IIndependentStreamRegistry.Status.NONE) return module;
         IIndependentStreamRegistry.Join memory j;
-        j.deployer = vm.parseJsonAddress(json, ".IndependentStream721Deployer");
+        j.deployer = vm.parseJsonAddress(
+            json, editions ? ".IndependentStreamEditionsDeployer" : ".IndependentStream721Deployer"
+        );
         j.profileId = _profileId(artist);
         j.profileDocHash = _profileDoc(artist);
         j.deadline = deadline;
         j.consent = abi.encodePacked(_acceptanceSigner(a), signature);
         _tx(
-            "independentRegister",
+            editions ? "independentEditionsRegister" : "independentRegister",
             "artist",
             module,
             0,
@@ -1394,7 +1530,7 @@ contract Flows is Script {
         Addrs memory a = _addrs();
         Work memory w = _independentWork(a);
         _tx(
-            "independentStartWithBid",
+            string.concat("independentStartWithBid", _independentSuffix()),
             bidder.toHexString(),
             a.auction,
             amount,
@@ -1415,7 +1551,7 @@ contract Flows is Script {
         Addrs memory a = _addrs();
         Work memory w = _independentWork(a);
         _tx(
-            "independentOpenRecord",
+            string.concat("independentOpenRecord", _independentSuffix()),
             "any",
             a.facts,
             0,

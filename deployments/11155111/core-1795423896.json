@@ -1,0 +1,266 @@
+{
+  "Accounts": "0xF7B677DD78Bf6fDb1d363d104E8323c09A32a68A",
+  "AssetAllowlist": "0x38f9E9c006aD46A1F3b13aab25c01162f8D8d673",
+  "ClaimRouter": "0x8169F53B5eB19c644a22858Bf53B99bEB00C54B4",
+  "ConsolidationAdapter": "0x457F4a5f689576d96909Ebdc8f8c5C3ADEb4Ee09",
+  "ContentStore": "0xDd430324Fa69C65072ed3a4CAB86d8c281b43261",
+  "CoreFactory": "0x4054b73e6e91078728120167BD199BA1fE08Ce7F",
+  "CurationVerifier": "0x92FC0B45979d09b1601f1Fcf494E8084F15e1Dea",
+  "DependencyRegistry": "0x09DE73B156aC7DdFd003Efe2632e61B38B7C7541",
+  "EconomicsResolver": "0xc03FfCeB2B4c1faFda15822B4199c5d3F32697Be",
+  "EnglishAuction": "0xBa74a902fF0E1651302011437878C40C1E763E4D",
+  "EntropyModule": "0xdf5bC7F0F4c5D28B788d173b1Fe04D6911D3bBb3",
+  "FeeRecipientVault": "0x489D47ae67873727852980f6D0c7Df7D6fb342b5",
+  "GovernanceConfigurator": "0xE35b3553EC3cfE4e60409b92CE7ffDDB6643F371",
+  "IndependentEditionAuction": "0x20cB7b4ea5D80b929D3bfF7E3732136bfda9ff09",
+  "IndependentEditionAuctionLens": "0xA83a8D4412b3457DD48451412234ADD763110eEb",
+  "IndependentStream721Deployer": "0xF0989ECb08E259709070aD517017972BA727CFEC",
+  "IndependentStreamEditionsDeployer": "0x5d83ce0f72C5ecCEc4a4Ba6a628614e77c50D97f",
+  "IndependentStreamRegistry": "0xDb9d06305D4f3Fcd45Ad1107fbB34a28c0936B0A",
+  "MuseumVault": "0x80287af3D0F6FA73643bBEE855F72d06831E71F8",
+  "PackageRegistry": "0x10d91fC130226f1F77aEE3c59DFc40E02eD14f99",
+  "Renderer": "0x807066292e58BC0396De2371f72c3C2f3631F15d",
+  "RevenueEscrow": "0x037fD7E71ccb63197AcD45Ed48c8a573894dA19C",
+  "SaleStarter": "0xbAe5c2e40170C214cfC373e6f402503368Ae60b1",
+  "SplitFactory": "0x688C865333e9CcAa4aBe346794BF0295e548BCF7",
+  "StatementLog": "0x7b8f78fE41C2cABbaE23B91512dD56E36f7E3476",
+  "Stream6529": "0xEBD41786FC8f413cC7741789161fEe4B6984c745",
+  "StreamDirectory6529": "0x6a135053F81da7417CBCCbD587cB631c25dB32Ba",
+  "StreamEditions6529": "0x725647BcE8FB66d5C3d91ED1080613597C107356",
+  "StreamTerms": "0xE8074a70261c33D24345668c437a31A572F3379C",
+  "StreamWorkFacts6529": "0xffcB66cE83D3CCBe9FC4C314db3Bfb6e8F5fF2Fd",
+  "UniformEditionAuction": "0x7647183b7525B65724F52F08C67e2505ce25A236",
+  "UniformEditionAuctionLens": "0x982FD3Ea3c81243Ac58d2c2a772e4a05b431785A",
+  "WorkDelivery": "0xcb85c2daBD15184a5F926E437D24FFC1aD24ed4b",
+  "WorkRules": "0xf2a9362edB4aA8E079D749144244F5f36d67D976",
+  "chainId": 11155111,
+  "confirmed": true,
+  "contracts": {
+    "Accounts": {
+      "address": "0xF7B677DD78Bf6fDb1d363d104E8323c09A32a68A",
+      "block": 12194651,
+      "codehash": "0xd366b7a76814221d66d973cbd782b87f2a1de432798060ac397d9dc94d26597b",
+      "creationTx": "0x0939617983faf1a425c85a94ab1171cc32a747f082b44c5989fb6c952ba9fffd"
+    },
+    "AssetAllowlist": {
+      "address": "0x38f9E9c006aD46A1F3b13aab25c01162f8D8d673",
+      "block": 12194652,
+      "codehash": "0xe6c0751dcf7d31055d74467af65d56237870c4c95aa115090cc4b769b4320927",
+      "creationTx": "0xf6cae9deb92318aa1fdc21edb2fa0a8315a5d43b5e3b2c91210ab96c4b88300f"
+    },
+    "ClaimRouter": {
+      "address": "0x8169F53B5eB19c644a22858Bf53B99bEB00C54B4",
+      "block": 12194646,
+      "codehash": "0xc5bf76ae0fa03cc5cf4d73af612504cc3d19b2be9bc8346c363822da48e797c7",
+      "creationTx": "0x7db8250029f4d040d11c9ca17b0d88e7bb0230faec6b17447b040ac1b5db70cc"
+    },
+    "ConsolidationAdapter": {
+      "address": "0x457F4a5f689576d96909Ebdc8f8c5C3ADEb4Ee09",
+      "block": 12194650,
+      "codehash": "0xac30bd22d422a6e9ba5958481e1c772b940da1b03718ec933ccdcc43e505998c",
+      "creationTx": "0xf7f7fd4f366dda59f8956e3d58a83e8215d6858aaabc253ff90ee6a0a96cf5f4"
+    },
+    "ContentStore": {
+      "address": "0xDd430324Fa69C65072ed3a4CAB86d8c281b43261",
+      "block": 12194638,
+      "codehash": "0x5011e3cab7ead62a4e4c259d6209899fcd3593980a3e87d7d40fc500d8d6f4cd",
+      "creationTx": "0x699a21f7ae3fbc35af1f35fb3d3a3108af070ab4be66cdd7bbc5556cb8904f10"
+    },
+    "CoreFactory": {
+      "address": "0x4054b73e6e91078728120167BD199BA1fE08Ce7F",
+      "block": 12194636,
+      "codehash": "0x7643371fd44db241aa1f16e607e03b15757133610b9d08e8bb25fc197394b6a9",
+      "creationTx": "0x3f7d979d628aab12a3d7d18294f64de8a3a506117a693fe2449915d2ca7d29ed"
+    },
+    "CurationVerifier": {
+      "address": "0x92FC0B45979d09b1601f1Fcf494E8084F15e1Dea",
+      "block": 12194654,
+      "codehash": "0xdd2ea8ef6af61e6ddb88ab5eebf633bf55eded45ba9fc182e1e63716dc8760b6",
+      "creationTx": "0x5aae7944b07c2cac88c60f2fc406f420767917694cc6a871c1ec7f1cf6e0b201"
+    },
+    "DependencyRegistry": {
+      "address": "0x09DE73B156aC7DdFd003Efe2632e61B38B7C7541",
+      "block": 12194658,
+      "codehash": "0xa4e06913104e06201f25fdf3b6c6cce08ac2b0c2e43325698778d258b36aeb0f",
+      "creationTx": "0xd1d2211549aff10268e55d5946c62f47b5294eed3758557cb9c139816edce61e"
+    },
+    "EconomicsResolver": {
+      "address": "0xc03FfCeB2B4c1faFda15822B4199c5d3F32697Be",
+      "block": 12194653,
+      "codehash": "0xd2f73f3ecf17ed6f33b51cfdb2596b8ae58bb5715bd014eb2f74ef01bcc86996",
+      "creationTx": "0x30bc53e24f5351aea2a8274433a7df6fd643fd2901df4ea8a73aea869b932276"
+    },
+    "EnglishAuction": {
+      "address": "0xBa74a902fF0E1651302011437878C40C1E763E4D",
+      "block": 12194663,
+      "codehash": "0x61f49c2b61d2b059b46d8ba649177e0918e8972e3ce463faab059775bfe5665c",
+      "creationTx": "0x5c573732c0f5b09745da0054ddc5f231de1eee29539680be6d98c881b680202b"
+    },
+    "EntropyModule": {
+      "address": "0xdf5bC7F0F4c5D28B788d173b1Fe04D6911D3bBb3",
+      "block": 12194656,
+      "codehash": "0x7c3a74703342343779f22eec650294017f51a3243e2f23267d2b2272da84ff99",
+      "creationTx": "0xb3b68508c005b0dba4ccc594149afa85e529d442fcb8a24ed7721e77cdfb11bf"
+    },
+    "FeeRecipientVault": {
+      "address": "0x489D47ae67873727852980f6D0c7Df7D6fb342b5",
+      "block": 12194643,
+      "codehash": "0xfda4a7035ac880770769f9ff67e0cacbea9452469361de25dee7c3cd2ea6c233",
+      "creationTx": "0x7b987d8a3366b84216ecf26d0e7e1643795efcb09dfdc1a09b2954a5fbacc70a"
+    },
+    "GovernanceConfigurator": {
+      "address": "0xE35b3553EC3cfE4e60409b92CE7ffDDB6643F371",
+      "block": 12194637,
+      "codehash": "0x10273c5d88ee7b352fdce30538c3f91627c1fbf3302b1261dcfa03af36200091",
+      "creationTx": "0xc0cc378d5ed357db0e7979cae5a6dfca16043a163bced32a057dce0d884c1f02"
+    },
+    "IndependentEditionAuction": {
+      "address": "0x20cB7b4ea5D80b929D3bfF7E3732136bfda9ff09",
+      "block": 12194670,
+      "codehash": "0x2ecf1f7facd6e9cf651a8ef2e80b07911c362cc43b88fd4db2c8ef3928b27ab5",
+      "creationTx": "0xd16828278bd1050dfb19f5adf9c9f1b240efa5409ebb72360bcc551e16116d1c"
+    },
+    "IndependentEditionAuctionLens": {
+      "address": "0xA83a8D4412b3457DD48451412234ADD763110eEb",
+      "block": 12194669,
+      "codehash": "0xf5075c52c2dfaa59027f4a1af14b351568c3367d662374e94cf5ee8f3196fea5",
+      "creationTx": "0xc8025cdaa3033d33901dc7096215500704eec245463e0ebde88912bf63b2f08a"
+    },
+    "IndependentStream721Deployer": {
+      "address": "0xF0989ECb08E259709070aD517017972BA727CFEC",
+      "block": 12194667,
+      "codehash": "0x6a95c2c8be2d6883d3e884830210dae7aeca542f0f705beb0e63c751a6805578",
+      "creationTx": "0x3925f0277a469b7fbbba87e7bc1b27420155f1afb3088c94cab6e72841fd6741"
+    },
+    "IndependentStreamEditionsDeployer": {
+      "address": "0x5d83ce0f72C5ecCEc4a4Ba6a628614e77c50D97f",
+      "block": 12194668,
+      "codehash": "0x6a95c2c8be2d6883d3e884830210dae7aeca542f0f705beb0e63c751a6805578",
+      "creationTx": "0x277be9b947bb7eba45f0aa3ccb713c432a0dce79f66c94a7686b48b4bccae117"
+    },
+    "IndependentStreamRegistry": {
+      "address": "0xDb9d06305D4f3Fcd45Ad1107fbB34a28c0936B0A",
+      "block": 12194666,
+      "codehash": "0xb81a7c882715f2157a1a1c940d0e42bc2cec20f60d8f0a323c5b69c2fae05b27",
+      "creationTx": "0xd2d62354bf113c59ffa0ee4f79afcc809ea16d25f8eb6c1b48c457f6e0b20904"
+    },
+    "MuseumVault": {
+      "address": "0x80287af3D0F6FA73643bBEE855F72d06831E71F8",
+      "block": 12194644,
+      "codehash": "0xfda4a7035ac880770769f9ff67e0cacbea9452469361de25dee7c3cd2ea6c233",
+      "creationTx": "0x2e5ee316f23a742b28a6fb40c61e46080cb5d23a9ab608da51c14266dbaf8338"
+    },
+    "PackageRegistry": {
+      "address": "0x10d91fC130226f1F77aEE3c59DFc40E02eD14f99",
+      "block": 12194655,
+      "codehash": "0xcb705156c264a04ab60bbda965802e653b7e3ba96f785c5dd27f579218fc28fa",
+      "creationTx": "0xe9403bdef9830ee150a88272074befef3152991e07090cbd1dab686dccf1f098"
+    },
+    "Renderer": {
+      "address": "0x807066292e58BC0396De2371f72c3C2f3631F15d",
+      "block": 12194659,
+      "codehash": "0xacf1f13af4bb5b0de0622e0e7789b5efc32e0ec3b6ab72d4b7b9e0101c52dc6f",
+      "creationTx": "0x2d388b0fb8ff744250ac570d1ba565cb896b5dedc3177e656c0e3254cf7d6c95"
+    },
+    "RevenueEscrow": {
+      "address": "0x037fD7E71ccb63197AcD45Ed48c8a573894dA19C",
+      "block": 12194647,
+      "codehash": "0x7a717dfd989e666ffd9ed4373a8f0077ebe415ea89380140e6f207beeda9c9ac",
+      "creationTx": "0x8a75784f7be0537d202a4794ed7a41946980a1aa1caad1848b5ee806e0648fab"
+    },
+    "SaleStarter": {
+      "address": "0xbAe5c2e40170C214cfC373e6f402503368Ae60b1",
+      "block": 12194671,
+      "codehash": "0x2255576403381983aa0e307a92b4095c6b7f6ba32185862974039c26a58fd8bc",
+      "creationTx": "0x98e151f2d53f72953c1fc8e7ce1774412d6404983849ff701bca5c5988f9a969"
+    },
+    "SplitFactory": {
+      "address": "0x688C865333e9CcAa4aBe346794BF0295e548BCF7",
+      "block": 12194645,
+      "codehash": "0xc510033e274ca0156c61b82aa83084ac179c6e71f0e744e08bd137567f15c2c1",
+      "creationTx": "0x67dead6ce29d7d3df553a01f23f7797b3dd9207831f6057bc38184ae0aed6df5"
+    },
+    "StatementLog": {
+      "address": "0x7b8f78fE41C2cABbaE23B91512dD56E36f7E3476",
+      "block": 12194657,
+      "codehash": "0xbd6ef409b81cf5978d23de38c726ce8ba2826d8d2d12bf961907580ed3dd7339",
+      "creationTx": "0x0fe4d311fedd1a1d40ccf7a096b81dbeddbc38faf49d245434005637b4fc4698"
+    },
+    "Stream6529": {
+      "address": "0xEBD41786FC8f413cC7741789161fEe4B6984c745",
+      "block": 12194648,
+      "codehash": "0xe134811337aa2d1e69f43e73c6d60865edfe9f1d703e35286037628f9cec3465",
+      "creationTx": "0x0911760589f72749030b5e53b764933ee7c1390383ddc643e9144766f33f64a8"
+    },
+    "StreamDirectory6529": {
+      "address": "0x6a135053F81da7417CBCCbD587cB631c25dB32Ba",
+      "block": 12194642,
+      "codehash": "0x209c201ae759c4a703337303cec98cc56845426674d9db429f7889bf30a13994",
+      "creationTx": "0xeb79be3b20fd2d9c396b01a02fe87e4d452c4f4651659d52784996540243a05c"
+    },
+    "StreamEditions6529": {
+      "address": "0x725647BcE8FB66d5C3d91ED1080613597C107356",
+      "block": 12194649,
+      "codehash": "0x1fae03f9f7cf27e7e490dcb6049c1f63bc1eceeefca6cbbd6dc0da4f40ecbf9c",
+      "creationTx": "0xb6e8c232933c995b7cecc761582200813be7ad8d418bfafdbaf8785388ca51c0"
+    },
+    "StreamTerms": {
+      "address": "0xE8074a70261c33D24345668c437a31A572F3379C",
+      "block": 12194662,
+      "codehash": "0x85e96462f86569309117bd734238d40889611a62fb828d441ba626696c077ba7",
+      "creationTx": "0xaf5982dcd4dbac469269a4d84cf6a00189d8bea9b8a98bf528f1449a1679a749"
+    },
+    "StreamWorkFacts6529": {
+      "address": "0xffcB66cE83D3CCBe9FC4C314db3Bfb6e8F5fF2Fd",
+      "block": 12194641,
+      "codehash": "0x8d932017aeb8be7da65dffbf78923a0b6e09384cb001de30c5de68359a411721",
+      "creationTx": "0xad2278517173322e6a3fd5a67beee4fa2aa4b82a90bc87e6fd202a8ea284d897"
+    },
+    "UniformEditionAuction": {
+      "address": "0x7647183b7525B65724F52F08C67e2505ce25A236",
+      "block": 12194665,
+      "codehash": "0x8242f8b1be61d2f59e9f4dc30b1138c03e7129a77343fdb4464de346d40bfb7b",
+      "creationTx": "0x3ed6047c2c8e9f58d0882c2dd3112787164234c0971e8d0f2edd420631a0d540"
+    },
+    "UniformEditionAuctionLens": {
+      "address": "0x982FD3Ea3c81243Ac58d2c2a772e4a05b431785A",
+      "block": 12194664,
+      "codehash": "0x46c5751f3ee10a2fd57d9baa86c1f2700d97488774ea99e7c4826df0b088b145",
+      "creationTx": "0x422374372d0ec554da11c8c6b1fa81d86934b772d677aba2c23108df446dbf24"
+    },
+    "WorkDelivery": {
+      "address": "0xcb85c2daBD15184a5F926E437D24FFC1aD24ed4b",
+      "block": 12194661,
+      "codehash": "0x38df236db1428d4e0a756c66c207ec89a4c08a00a3323ec2352e02864063ee47",
+      "creationTx": "0xd1619fb164857e529451f1d337166a362ef9b382c08b464c34a1a278d8d71cc8"
+    },
+    "WorkRules": {
+      "address": "0xf2a9362edB4aA8E079D749144244F5f36d67D976",
+      "block": 12194660,
+      "codehash": "0x359a91f8b4d4986f98b2fc4f8aaa97ce33f613c6cde3f8c9042bfa3344ca5a05",
+      "creationTx": "0xd8b739f4035b6ebe472695f26ef16d743e263cca030609948f913faad3098562"
+    },
+    "WorksAccessManager": {
+      "address": "0x6aA48E3BBAa0609a7D10b9eD84Ae22ABb8AF5024",
+      "block": 12194637,
+      "codehash": "0xac99ab11bf7c8b558c9c0d711f6f485b97c90d67a325473220c2457a0fd62b4c",
+      "creationTx": "0xc0cc378d5ed357db0e7979cae5a6dfca16043a163bced32a057dce0d884c1f02"
+    }
+  },
+  "delegation": "0x8f86c644f845A077999939C69Bc787662377d915",
+  "deployer": "0x26A3f4505145b5E6164260cc868e50ddd9863697",
+  "endBlock": 12194672,
+  "forkBlock": 12194634,
+  "genesisConfig": "config/sepolia-r7/genesis.json",
+  "genesisSha256": "0x5758b500e789b95879e7bfaa5a231947c2c25f66f7591cb0e10a7abc56727fe1",
+  "instance": "sepolia-r7",
+  "manifest": {
+    "path": "config/sepolia-r7/manifest-epoch0.json",
+    "sha256": "0x5a36abbc54517d2d4f443a9b9968652185ac5638d325024838b3f0e40d9ff775",
+    "uri": "https://raw.githubusercontent.com/6529-Collections/6529-works/main/config/sepolia-r7/manifest-epoch0.json"
+  },
+  "namespace": "0x3d9c5b3f49719a5ed62f4627ddc443fee5f7e9140d34151ae22ed8fe1135d2f8",
+  "sourceCommit": "5de6abaaaba13f04a3fe6b1f572c1f90b8c9db93",
+  "startBlock": 12194636,
+  "timestamp": 1795423896
+}
