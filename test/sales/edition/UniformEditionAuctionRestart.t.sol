@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
+import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
 import { EditionAuctionBase } from "./EditionAuctionBase.sol";
 
 /// @notice The shared edition auction and a 1/1 that is offered again (EA-17 in
@@ -174,6 +175,36 @@ contract UniformEditionAuctionRestartTest is EditionAuctionBase {
         e = ua.endTimes(saleId);
         assertEq(uint8(e.oneOfOneState), uint8(IEnglishAuction.AuctionState.SETTLED));
         assertEq(e.closeAt, firstEnd + CLOSE_OFFSET);
+    }
+
+    /// @dev An English auction that answers the clock in three words, without the restart time,
+    ///      gives no usable answer: no sale opens against it, and an open sale's views report no
+    ///      1/1 state and the end the sale recorded.
+    function test_AThreeWordClockAnswerIsNoUsableAnswer() public {
+        english.set(
+            address(stream),
+            9,
+            IEnglishAuction.AuctionState.ACTIVE,
+            uint64(block.timestamp + 1 days)
+        );
+        PackageItem memory item = _item(9, 0);
+        english.setShortAnswer(true);
+        vm.prank(opener);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IUniformEditionAuction.NoOneOfOneAuction.selector, address(stream), 9
+            )
+        );
+        auction.open(address(editions), 9, _openData(item));
+
+        IUniformEditionAuction.EndTimes memory e = ua.endTimes(saleId);
+        assertEq(uint8(e.oneOfOneState), uint8(IEnglishAuction.AuctionState.NONE));
+        assertEq(e.oneOfOneEnd, firstEnd, "the sale's own recorded end");
+
+        // The same sale opens once the answer has all four words.
+        english.setShortAnswer(false);
+        vm.prank(opener);
+        auction.open(address(editions), 9, _openData(item));
     }
 
     /// @dev A 1/1 never offered again (the answer zero) is followed as before: a later end
