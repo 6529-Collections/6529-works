@@ -156,7 +156,10 @@ RELATION_PARTS = {
 }
 # Split files with a group too slow for one CI job even so: the group runs as this many shards,
 # part k of n taking every n-th mutant of each operator (per contract, in source order) from the
-# k-th. The parts' mutants together are exactly the whole group's. The two edition-auction files
+# k-th. The statements group is cut by source line instead, every n-th line with a statement
+# from the k-th: slither-mutate makes no comment mutant on a line whose revert mutant survived,
+# so both mutants of a line have to run in the same part (`take_line_part`). Either way the
+# parts' mutants together are exactly the whole group's. The two edition-auction files
 # keep nearly all their code in a base contract (`UniformEditionAuctionBase`, about a thousand
 # mutants), which the 23 November 2026 campaign ran in parts of about 45 mutants.
 GROUP_PARTS: dict[str, dict[str, int]] = {
@@ -173,11 +176,17 @@ SUFFICIENT_ROR_ENV = "MUTATION_SUFFICIENT_ROR"
 ROR_PART_ENV = "MUTATION_ROR_PART"
 # "k/n": every other operator makes only part k of n of its mutants (GROUP_PARTS).
 PART_ENV = "MUTATION_PART"
+# The operators cut by source line: the two whose survivors stop later mutants of their line.
+LINE_PARTED = ("RR", "CR")
 
 CATEGORIES = ("revert", "comment", "tweak", "constant")
 SUMMARY = re.compile(r"(Revert|Comment|Tweak) mutants: (\d+) caught of (\d+)", re.IGNORECASE)
 UNCAUGHT = re.compile(r"\[(\w+)\] Line (\d+): '(.*?)' ==> '(.*?)' --> UNCAUGHT", re.S)
 ABORTED = "Test suite fails with mutations, aborting"
+# Logged once slither-mutate has run every mutant of its target. A run that stops before (its
+# first, unmutated test run took longer than --timeout, or the named contract is not in the
+# file) logs nothing of the kind and still exits with 0.
+COMPLETED = "Done mutating"
 TIMED_OUT = "Tests took too long"
 # `uint256 internal constant NAME = 1_000;` (any visibility order), integer literals only.
 CONSTANT = re.compile(
@@ -517,26 +526,61 @@ def _patch_mutators() -> None:
         import slither.tools.mutator.mutators.all_mutators  # noqa: F401  (defines them all)
         from slither.tools.mutator.mutators.abstract_mutator import AbstractMutator
 
-        def in_parts(cls) -> None:
-            make = cls._mutate
-
-            def part_mutate(self) -> dict:
-                result = make(self)
-                for file, patches in list(result.get("patches", {}).items()):
-                    result["patches"][file] = take_part(patches, whole)
-                return result
-
-            cls._mutate = part_mutate
-
         for mutator in AbstractMutator.__subclasses__():
             if mutator is not ROR.ROR:  # ROR has its own parts, by comparison (ROR_PART_ENV)
-                in_parts(mutator)
+                in_parts(mutator, whole)
+
+
+def in_parts(cls, part: tuple[int, int]) -> None:
+    """Makes the operator `cls` generate only part (k, n) of its mutants."""
+    make = cls._mutate
+    by_line = cls.NAME in LINE_PARTED
+
+    def part_mutate(self) -> dict:
+        result = make(self)
+        lines = statement_lines(self) if by_line else []
+        for file, patches in list(result.get("patches", {}).items()):
+            result["patches"][file] = (
+                take_line_part(patches, lines, part) if by_line else take_part(patches, part)
+            )
+        return result
+
+    cls._mutate = part_mutate
 
 
 def take_part(patches: list[dict], part: tuple[int, int]) -> list[dict]:
     """Every n-th patch from the k-th, in source order: part (k, n) of one operator's mutants."""
     ordered = sorted(patches, key=lambda p: (p["start"], p["end"], p["new_string"]))
     return [p for i, p in enumerate(ordered) if i % part[1] == part[0]]
+
+
+def statement_lines(mutator) -> list[int]:
+    """The first line of every statement of the mutated contract in its own file.
+
+    Read from the contract, not from an operator's mutants: slither-mutate leaves out the lines
+    whose revert or comment mutant survived earlier in the same run (`dont_mutate_line`), and
+    which those are differs from part to part.
+    """
+    return [
+        node.source_mapping.lines[0]
+        for function in mutator.contract.functions_and_modifiers_declared
+        for node in function.nodes
+        if node.source_mapping.lines and node.source_mapping.filename.absolute == mutator.in_file
+    ]
+
+
+def take_line_part(patches: list[dict], lines: list[int], part: tuple[int, int]) -> list[dict]:
+    """The patches on every n-th line of `lines` from the k-th: part (k, n) of RR's or CR's mutants.
+
+    slither-mutate runs RR first and makes no CR mutant on a line where an RR mutant survived.
+    Cutting each operator's own list by position would let one part's survivors shift the
+    positions of its CR list only, so a comment mutant could run in two parts or in none. Here a
+    line belongs to one part whatever survived, and every mutant of the line runs in that part:
+    the part skips exactly the comment mutants a run of the whole group skips on its lines.
+    """
+    k, n = part
+    rank = {line: i for i, line in enumerate(sorted(set(lines)))}
+    return [p for p in patches if rank[p["line_number"]] % n == k]
 
 
 def part_of(value: str) -> tuple[int, int] | None:
@@ -697,8 +741,17 @@ def run_slither_mutate(
             result.status = "timeout"
             return
         text = log.read_text(encoding="utf-8", errors="replace")
-        if code != 0 and "Done mutating" not in text:
+        # Every run has to say that it finished: a run that stopped early exits with 0 too, and
+        # read as a result it would count as a target with nothing to mutate. A run that finds
+        # nothing to mutate still logs the line. (An aborted run is told apart in `parse_log`.)
+        if ABORTED not in text and COMPLETED not in text:
             result.status = "error"
+            print(
+                f"[{shard.name}] slither-mutate did not finish {contract or shard.path} (exit "
+                f"code {code}, no `{COMPLETED}` line in {log.as_posix()})",
+                file=sys.stderr,
+                flush=True,
+            )
             return
         run = FileResult(shard.path)
         parse_log(text, run)
