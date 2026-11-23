@@ -626,7 +626,12 @@ class Keeper:
                 continue
             minter = works[token_id]["minter"]
             removed_at = w(self.view("Stream6529", "minterOf(address)", minter), 1)
-            holder = a(self.view("Stream6529", "ownerOf(uint256)", token_id), 0)
+            try:
+                holder = a(self.view("Stream6529", "ownerOf(uint256)", token_id), 0)
+            except Reverted:
+                # Burned with no outcome (its sale was cancelled after a dispute): `workOf` still
+                # answers, nobody holds the token and there is nothing to rescue.
+                continue
             if removed_at and holder.lower() == minter.lower() and now >= removed_at + delay:
                 print(
                     f"due   rescue of work {token_id} from removed minter {minter}"

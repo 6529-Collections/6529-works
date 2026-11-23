@@ -284,6 +284,29 @@ class RescueReportTest(unittest.TestCase):
             self.assertEqual("due   rescue of work 1" in out.getvalue(), due, now)
             self.assertEqual(keeper.sends, [])  # never sent: rescue is the network's action
 
+    def test_ABurnedTokenWithNoOutcomeIsSkipped(self) -> None:
+        # A sale cancelled after a dispute burns its token: `workOf` still answers with no
+        # outcome and `ownerOf` reverts (seen on Sepolia r7). The step goes on to the next work.
+        minter = "0x" + "aa" * 20
+
+        def owner_of(token_id):
+            if token_id == 1:
+                raise k.Reverted("ERC721NonexistentToken(1)")
+            return k.word(minter)
+
+        views = {
+            ("rescueDelay", None): k.word(100),
+            ("workOf", None): _work(),
+            ("minterOf", None): k.word(1) + k.word(1_000),
+            ("ownerOf", None): owner_of,
+        }
+        keeper = FakeKeeper(views, {})
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            keeper.step_rescues({1: {"minter": minter}, 2: {"minter": minter}}, 1_100)
+        self.assertNotIn("due   rescue of work 1", out.getvalue())
+        self.assertIn("due   rescue of work 2", out.getvalue())
+
 
 class AdoptReportTest(unittest.TestCase):
     """An edition the network moved to the edition auction with no sale there is reported; the

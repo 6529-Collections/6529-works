@@ -43,6 +43,13 @@
     ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step independentList -Token <token>
     ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step independentStart -Token <token> -Bidder bidder2 -Amount 20000000000000000
     ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step settle -Token <token> -TokenId 1
+    ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step start -Index 1 -MoveSigner wallet2
+    ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step starterRequest -Index 5 -Out starts/item-5.json
+    ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step independentList -Token <token> -Work 1
+    ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step independentEditionsDeploy -Token <token>
+    ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step independentEditionsList -Editions <editions>
+    ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step independentOpenEdition -Editions <editions> -TokenId 1 -Work 1
+    ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step editionBid -Editions <editions> -TokenId 1 -Bidder bidder3 -EditionStep 30
     ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step prague
 
     The prague step replays each recorded transaction with
@@ -59,7 +66,8 @@ param(
         'claimCredits', 'release', 'forward', 'editionState', 'englishState', 'pause',
         'englishWithdraw', 'outcome', 'cancel', 'send', 'safeCall', 'record', 'prague',
         'report', 'independentContent', 'independentDeploy', 'independentList',
-        'independentStart', 'independentOpenRecord')] [string] $Step,
+        'independentStart', 'independentOpenRecord', 'starterRequest',
+        'independentEditionsDeploy', 'independentEditionsList', 'independentOpenEdition')] [string] $Step,
     [string] $Rpc = 'https://ethereum-sepolia-rpc.publicnode.com',
     # The deployment record, relative to the repository root (script/DeployCore.s.sol writes
     # deployments/11155111/core-<timestamp>.json).
@@ -84,7 +92,7 @@ param(
     [string] $Settler = 'any',
     [string] $Order = $null,
     # claimCredits: which adapter holds the credits (`english` or `edition`).
-    [ValidateSet('english', 'edition')] [string] $Adapter = 'english',
+    [ValidateSet('english', 'edition', 'independentEdition')] [string] $Adapter = 'english',
     # The account that pauses (a pauser key) or the Safe that cancels (the network).
     [string] $Safe = '',
     # An artist's Independent Stream 1/1 contract. The independent* steps need it (after
@@ -95,6 +103,19 @@ param(
     # artist approves the work with, out of 100,000.
     [string] $Salt = 'flows-independent-1',
     [int] $RoyaltyRate = 5000,
+    # The artist's Independent Stream editions contract (after independentEditionsDeploy, which
+    # prints and notes it). independentEditionsList and independentOpenEdition need it; the edition
+    # steps (editionBid, editionRaise, editionSettle, claimBid, claimBidFor, editionState) act on
+    # its sales in the Independent Stream edition auction when it is given.
+    [string] $Editions = '',
+    # Which Independent Stream work the independent* steps act on: 0, an original; 1, an edition
+    # master.
+    [ValidateSet(0, 1)] [int] $Work = 0,
+    # start, starter, startWithBid, starterRequest: the role whose wallet signs the artist's move
+    # when it is not the account's root (a wallet consolidated with the artist, such as wallet2).
+    [string] $MoveSigner = '',
+    # starterRequest: the request file to write for the reference keeper's --starts folder.
+    [string] $Out = '',
     [switch] $ExpectRevert,
     [string] $GasLimit = '500000'
 )
@@ -107,6 +128,9 @@ $Repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $Script = 'script/sepolia/Flows.s.sol:Flows'
 $env:FLOWS_RECORD = $Record
 if ($Token) { $env:FLOWS_TOKEN = $Token } else { Remove-Item Env:FLOWS_TOKEN -ErrorAction SilentlyContinue }
+if ($Editions) { $env:FLOWS_EDITIONS = $Editions } else { Remove-Item Env:FLOWS_EDITIONS -ErrorAction SilentlyContinue }
+$env:FLOWS_INDEPENDENT_WORK = "$Work"
+if ($Out) { $Out = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Out) }
 $Contracts = Get-Content -Raw -Encoding UTF8 (Join-Path $Repo $Record) | ConvertFrom-Json
 # 0.05 gwei and 0.2 gwei by default (cast's own max fee can fall below the priority fee);
 # FLOWS_PRIORITY_FEE and FLOWS_MAX_FEE (wei) override them when Sepolia's base fee is near zero.
@@ -129,7 +153,7 @@ $Accounts = @{
 }
 # Safe -> the owner keystores that sign for it (threshold many), from the genesis holders.
 $SafeSigners = @{
-    '0x54a769fe591c3f47cf83d30b69e576497ce34454' = @('safe-owner-1', 'safe-owner-2')  # the network Safe (r5, r6), 2-of-3
+    '0x54a769fe591c3f47cf83d30b69e576497ce34454' = @('safe-owner-1', 'safe-owner-2')  # the network Safe (r5 to r7), 2-of-3
 }
 $Zero = '0x0000000000000000000000000000000000000000'
 
@@ -417,6 +441,13 @@ function Get-MoveSignature([int]$Item) {
 
 # ---------------------------------------------------------------------------- steps
 
+# The wallet that signs the move (Flows.s.sol reads FLOWS_MOVE_SIGNER): the account's root unless
+# -MoveSigner names a consolidated wallet's role.
+if ($MoveSigner) {
+    if (-not $Accounts.ContainsKey($MoveSigner)) { throw "unknown role for -MoveSigner: $MoveSigner" }
+    $env:FLOWS_MOVE_SIGNER = Get-Address $MoveSigner
+}
+else { Remove-Item Env:FLOWS_MOVE_SIGNER -ErrorAction SilentlyContinue }
 # The curation signer whose approval the package step collects (Flows.s.sol reads FLOWS_SIGNER).
 if ($Step -eq 'package') { $env:FLOWS_SIGNER = Get-Address 'signer' }
 
@@ -452,6 +483,16 @@ switch ($Step) {
         # SaleStarter.start: auction, seller and royalty vaults and record in one transaction.
         Send-Items (Invoke-Plan 'starterTx(uint256,uint256,uint64,bytes)' ((@("$Index") + (Get-MoveSignature $Index))))
     }
+    'starterRequest' {
+        # The same start as `starter`, written as a request file for the reference keeper
+        # (keeper/README.md, "Start requests") instead of being sent: the keeper sends it.
+        if (-not $Out) { throw 'starterRequest needs -Out' }
+        $plan = Invoke-Plan 'starterRequest(uint256,uint256,uint64,bytes)' ((@("$Index") + (Get-MoveSignature $Index)))
+        $request = [ordered]@{ mintData = (Get-Info $plan 'mintData'); media = (Get-Info $plan 'media') }
+        if (-not $request.mintData -or -not $request.media) { throw 'starterRequest: no mint data in the plan' }
+        [IO.File]::WriteAllText($Out, ($request | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
+        Write-Host "wrote $Out"
+    }
     'startWithBid' {
         $bidder = Get-Address $Bidder
         Send-Items (Invoke-Plan 'startWithBidTx(uint256,uint256,uint64,bytes,address,uint256)' `
@@ -465,8 +506,9 @@ switch ($Step) {
     }
     'sync' {
         # Records in WorkFacts that every media file of the work is complete in the content store.
-        $work = if ($Token) { $Token } else { $Contracts.Stream6529 }
-        $data = (Invoke-Cli 'cast' @('calldata', 'markOnChainComplete(address,uint256)', $work, "$TokenId")).Trim()
+        # Not `$work`: PowerShell names are case-insensitive and -Work is a typed parameter.
+        $workToken = if ($Token) { $Token } else { $Contracts.Stream6529 }
+        $data = (Invoke-Cli 'cast' @('calldata', 'markOnChainComplete(address,uint256)', $workToken, "$TokenId")).Trim()
         Send-Planned "markOnChainComplete-$TokenId" 'any' $Contracts.StreamWorkFacts6529 '0' $data | Out-Null
     }
     'finalize' {
@@ -502,7 +544,11 @@ switch ($Step) {
         Send-Items (Invoke-Plan 'claimBidForTx(uint256,uint256)' @("$TokenId", "$BidId"))
     }
     'claimCredits' {
-        $adapterAddress = if ($Adapter -eq 'english') { $Contracts.EnglishAuction } else { $Contracts.UniformEditionAuction }
+        $adapterAddress = switch ($Adapter) {
+            'english' { $Contracts.EnglishAuction }
+            'edition' { $Contracts.UniformEditionAuction }
+            default { $Contracts.IndependentEditionAuction }
+        }
         Send-Items (Invoke-Plan 'claimCreditsTx(address,address)' @($adapterAddress, (Get-Address $Bidder)))
     }
     'release' {
@@ -562,6 +608,27 @@ switch ($Step) {
     'independentStart' {
         if (-not $Token) { throw 'independentStart needs -Token' }
         Send-Items (Invoke-Plan 'independentStartTx(address,address,uint256)' @($Token, (Get-Address $Bidder), $Amount))
+    }
+    'independentEditionsDeploy' {
+        # The artist deploys the editions contract of its 1/1 contract -Token; the address is kept
+        # in the state file (notes.independentEditions) for the steps that take -Editions.
+        if (-not $Token) { throw 'independentEditionsDeploy needs -Token (the 1/1 contract)' }
+        $salt = (Invoke-Cli 'cast' @('keccak', "6529-works/sepolia/flows/independent-editions/$Salt")).Trim()
+        $plan = Invoke-Plan 'independentEditionsDeployTx(bytes32,address)' @($salt, $Token)
+        $deployed = Get-Info $plan 'editions'
+        Send-Items $plan
+        Set-Note 'independentEditions' $deployed
+        Write-Host "Independent Stream editions: $deployed"
+    }
+    'independentEditionsList' {
+        if (-not $Editions) { throw 'independentEditionsList needs -Editions' }
+        $deadline = (Get-Timestamp) + 86400
+        $consent = New-Signature (Get-Sign (Invoke-Plan 'independentEditionsConsent(address,uint64)' @($Editions, "$deadline")) 'consent')
+        Send-Items (Invoke-Plan 'independentEditionsListTx(address,uint64,bytes)' @($Editions, "$deadline", $consent))
+    }
+    'independentOpenEdition' {
+        if (-not $Editions) { throw 'independentOpenEdition needs -Editions' }
+        Send-Items (Invoke-Plan 'independentOpenEditionTx(address,uint256)' @($Editions, "$TokenId"))
     }
     'independentOpenRecord' {
         if (-not $Token) { throw 'independentOpenRecord needs -Token' }
