@@ -303,6 +303,12 @@ class ShardTest(unittest.TestCase):
             finally:
                 mt._run_logged = real
             self.assertEqual(result.status, "ok")
+            # The build is cleaned between the two runs (the second would read the records the
+            # first run's mutants left), in the default profile, and not before the first.
+            self.assertEqual([cmd[-2:] for cmd, _ in seen].index(["forge", "clean"]), 1)
+            self.assertIsNone(seen[1][1])
+            self.assertEqual(len(seen), 3)
+            seen = [seen[0], seen[2]]
             named = [cmd[cmd.index("--contract-names") + 1] for cmd, _ in seen]
             self.assertEqual(named, ["ThingBase", "Thing"])
             # A part of another group than relations reaches every operator but ROR.
@@ -325,7 +331,7 @@ class ShardTest(unittest.TestCase):
             "INFO:Slither-Mutate:Zero Revert mutants analyzed\n"
         )
 
-        def status(logs: list[str]) -> tuple[str, int]:
+        def status(logs: list[str], clean: int = 0) -> tuple[str, int]:
             with tempfile.TemporaryDirectory() as d:
                 root = Path(d)
                 source = root / "src" / "x" / "Thing.sol"
@@ -334,6 +340,8 @@ class ShardTest(unittest.TestCase):
                 texts = iter(logs)
 
                 def run(cmd, log, timeout=None, env=None):
+                    if cmd == ["forge", "clean"]:
+                        return clean
                     log.write_text(next(texts), encoding="utf-8")
                     return 0
 
@@ -347,7 +355,8 @@ class ShardTest(unittest.TestCase):
                 finally:
                     mt._run_logged = real
                 if result.status == "error":
-                    self.assertIn("did not finish Thing", err.getvalue())
+                    want = "`forge clean` before Thing failed" if clean else "did not finish Thing"
+                    self.assertIn(want, err.getvalue())
                 return result.status, result.mutants
 
         # The first target's 34 mutants would pass a floor on their own.
@@ -355,6 +364,8 @@ class ShardTest(unittest.TestCase):
         self.assertEqual(status([finished, ""]), ("error", 34))
         # A target that finished with nothing to mutate is fine.
         self.assertEqual(status([finished, nothing_to_mutate]), ("ok", 34))
+        # The second target is not run on a build that could not be cleaned.
+        self.assertEqual(status([finished, nothing_to_mutate], clean=1), ("error", 34))
         # A file that is not `ok` fails the floor check by name, whatever its rate.
         failed = mt.FileResult("src/x/Thing.sol", status="error")
         failed.total["tweak"] = failed.caught["tweak"] = 34

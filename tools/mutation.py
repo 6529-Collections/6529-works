@@ -698,6 +698,26 @@ def _run_logged(
             raise
 
 
+def _clean_build(out: Path, contract: str | None, shard: Shard, deadline: Deadline) -> bool:
+    """`forge clean` in the default profile, before a later target of the same file.
+
+    slither-mutate reads the file's build once, when it starts, and every mutant it then
+    compiles leaves its own build record behind (`--skip-clean` keeps them). A second run in the
+    same checkout would read a mutant's record against the restored source and stop on source
+    offsets past the end of the file. The lite build the tests use is left alone.
+    """
+    log = out / f"forge-clean-{contract or 'file'}.log"
+    code = _run_logged(["forge", "clean"], log, timeout=deadline.cap(600))
+    if code != 0 and not deadline.passed:
+        print(
+            f"[{shard.name}] `forge clean` before {contract or shard.path} failed (exit code "
+            f"{code}, {log.as_posix()})",
+            file=sys.stderr,
+            flush=True,
+        )
+    return code == 0
+
+
 def run_slither_mutate(
     root: Path, shard: Shard, out: Path, timeout: int, result: FileResult, deadline: Deadline
 ) -> None:
@@ -711,8 +731,11 @@ def run_slither_mutate(
     original = source.read_bytes()
     # One run per contract of the file (`mutation_targets`); a file with only the contract named
     # like it runs once, with slither-mutate's own choice.
-    for contract in mutation_targets(original.decode("utf-8"), stem):
+    for index, contract in enumerate(mutation_targets(original.decode("utf-8"), stem)):
         campaign = out / "campaign" / contract if contract else out / "campaign"
+        if index and not _clean_build(out, contract, shard, deadline):
+            result.status = "timeout" if deadline.passed else "error"
+            return
         cmd = _self(
             "slither-mutate",
             shard.path,
