@@ -63,7 +63,24 @@ contract EditionsTest is EditionsFixture {
         assertFalse(editions.supportsInterface(0xffffffff));
     }
 
+    /// An ID that sorts below every supported one is not supported: each is matched exactly.
+    function test_SupportsInterface_NothingBelowTheSupportedIds() public view {
+        assertFalse(editions.supportsInterface(bytes4(0)));
+        assertFalse(editions.supportsInterface(0x00000001));
+    }
+
     // ------------------------------------------------------------------ create
+
+    function test_Create_AcceptsARateOfExactlyTheDenominatorAndNotOneMore() public {
+        uint256 id = _sell(1, collector);
+        sale.createEdition(address(editions), id, 10, ROYALTY, 100_000);
+        assertEq(editions.editionOf(id).royaltyRate, 100_000);
+        (, uint256 amount) = editions.royaltyInfo(id, 7 ether);
+        assertEq(amount, 7 ether);
+        uint256 second = _sell(2, collector);
+        vm.expectRevert(IEditions.InvalidRoyalty.selector);
+        sale.createEdition(address(editions), second, 10, ROYALTY, 100_001);
+    }
 
     function test_Create_RefusesAZeroReceiverWithANonzeroRate() public {
         uint256 id = _sell(1, collector);
@@ -543,6 +560,16 @@ contract EditionsTest is EditionsFixture {
         assertEq(amount, 7 ether);
     }
 
+    function test_SetRoyalty_AZeroReceiverWithAZeroRateClearsTheRoyalty() public {
+        uint256 id = _edition(1, 10);
+        vm.expectEmit(address(editions));
+        emit IEditions.RoyaltySet(id, address(0), 0);
+        terms.setEditionRoyalty(address(editions), id, address(0), 0);
+        (address receiver, uint256 amount) = editions.royaltyInfo(id, 1 ether);
+        assertEq(receiver, address(0));
+        assertEq(amount, 0);
+    }
+
     function testFuzz_RoyaltyInfo_ExactForAnyPrice(uint256 price, uint24 rate) public {
         rate = uint24(bound(rate, 0, 100_000));
         uint256 id = _sell(1, collector);
@@ -573,6 +600,14 @@ contract EditionsTest is EditionsFixture {
         vm.prank(stranger);
         vm.expectRevert(abi.encodeWithSelector(IEditions.NotMetadataSource.selector, stranger));
         editions.emitMetadataUpdate(1, 1);
+    }
+
+    /// Only equal IDs are one update: a range is logged as given, descending included.
+    function test_EmitMetadataUpdate_ADescendingRangeIsLoggedAsARange() public {
+        vm.expectEmit(address(editions));
+        emit IEditions.BatchMetadataUpdate(9, 1);
+        vm.prank(address(terms));
+        editions.emitMetadataUpdate(9, 1);
     }
 
     function test_Uri_TheMastersRendererDrawsIt() public {

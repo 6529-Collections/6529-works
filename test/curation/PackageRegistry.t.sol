@@ -202,6 +202,28 @@ contract PackageRegistryTest is CurationBase {
         );
     }
 
+    /// @dev The economics resolver must be code that declares `IEconomicsResolver`: an account
+    ///      with no code and a contract that declares another interface are both refused.
+    function test_constructor_rejectsBadEconomics() public {
+        address eoa = makeAddr("eoa");
+        ICurationVerifier v = ICurationVerifier(address(verifier));
+        bytes32 vh = address(verifier).codehash;
+        address dir = address(
+            new StreamDirectory6529(
+                address(manager), address(artists), address(0), address(0), address(0)
+            )
+        );
+        bytes32 cc0 = keccak256("cc0 text file");
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
+        new PackageRegistry(address(manager), v, vh, dir, IEconomicsResolver(eoa), address(0), cc0);
+        vm.expectRevert(
+            abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(entropy))
+        );
+        new PackageRegistry(
+            address(manager), v, vh, dir, IEconomicsResolver(address(entropy)), address(0), cc0
+        );
+    }
+
     // -------------------------------------------------------------------- caller binding
 
     bytes32 internal constant STREAM_NAME = "STREAM";
@@ -236,6 +258,22 @@ contract PackageRegistryTest is CurationBase {
         vm.prank(admin);
         vm.expectRevert(abi.encodeWithSelector(IPackageRegistry.AlreadyBound.selector, STREAM_NAME));
         registry.bindStream(s2);
+    }
+
+    /// @dev The Stream's facts must name exactly the registry's CC0 text: a text file ID just
+    ///      below it and one just above it are both refused.
+    function test_bindStream_refusesALowerOrHigherCc0Text() public {
+        PackageRegistry fresh = _newRegistry();
+        uint256 cc0 = uint256(fresh.cc0TextFileId());
+        address facts = IStream(stream).facts();
+        for (uint256 other = cc0 - 1; other <= cc0 + 1; other += 2) {
+            vm.mockCall(facts, abi.encodeWithSignature("cc0TextFileId()"), abi.encode(other));
+            vm.prank(admin);
+            vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, stream));
+            fresh.bindStream(stream);
+        }
+        vm.clearMockedCalls();
+        assertEq(fresh.stream(), address(0));
     }
 
     /// @dev A binding must answer ERC-165 for the core `IStream`, so a wrong address cannot be
@@ -1027,6 +1065,35 @@ contract PackageRegistryTest is CurationBase {
         assertFalse(registry.isMoveNonceUsed(id, 0));
     }
 
+    /// @dev An artist's first 255 nonces (0 to 254) share the bitmap word the identity-creating
+    ///      acceptance already wrote: spending nonce 254 writes the slot nonce 0 writes, and
+    ///      nonce 255 is the first to write another slot.
+    function test_revokeMove_first255NoncesShareOneSlot() public {
+        _ready(SHA_A);
+        // Find the slot with a revoke, then undo the revoke: the word must hold the acceptance's
+        // sentinel (the top bit) and no nonce before any nonce is spent.
+        uint256 beforeAnyRevoke = vm.snapshotState();
+        bytes32 first = _slotWrittenByRevoke(0);
+        assertTrue(vm.revertToState(beforeAnyRevoke), "state restored");
+        assertFalse(registry.isMoveNonceUsed(_id(lead), 0), "no nonce spent yet");
+        assertEq(
+            vm.load(address(registry), first), bytes32(uint256(1) << 255), "the acceptance wrote it"
+        );
+        assertEq(_slotWrittenByRevoke(0), first, "nonce 0 writes that word");
+        assertEq(_slotWrittenByRevoke(254), first, "nonce 254 is in the first word");
+        assertNotEq(_slotWrittenByRevoke(255), first, "nonce 255 opens the second word");
+    }
+
+    /// @dev The one registry slot a `revokeMove` of the lead's `nonce` writes.
+    function _slotWrittenByRevoke(uint256 nonce) internal returns (bytes32) {
+        vm.record();
+        vm.prank(lead);
+        registry.revokeMove(_id(lead), nonce);
+        (, bytes32[] memory writes) = vm.accesses(address(registry));
+        assertEq(writes.length, 1, "one slot written");
+        return writes[0];
+    }
+
     function test_revokeMove_onlyCurrentAuthority() public {
         _ready(SHA_A);
         vm.prank(collab);
@@ -1107,6 +1174,25 @@ contract PackageRegistryTest is CurationBase {
             stream, _request(root, item, new bytes32[](0), _move(leadKey, root, _hash(item), 0))
         );
         assertEq(f.seed, keccak256("vrf"));
+    }
+
+    /// @dev An ARTIST item is quoted with the artist's own seed, the seed `authorize` then
+    ///      answers.
+    function test_preview_anArtistItemQuotesItsSeed() public {
+        PackageItem memory item = _item(lead, SHA_A);
+        item.seedPolicy = uint8(SeedPolicy.ARTIST);
+        item.seed = keccak256("artist seed");
+        bytes32 root = WorksHashing.leaf(_hash(item));
+        _register(root);
+        _accept(root, leadKey);
+        MoveAuthorization memory move = _move(leadKey, root, _hash(item), 0);
+        (MintFacts memory f, MintTerms memory t) =
+            registry.preview(stream, _request(root, item, new bytes32[](0), move));
+        assertEq(f.seed, keccak256("artist seed"));
+        assertEq(f.seedPolicy, uint8(SeedPolicy.ARTIST));
+        assertEq(t.creator, lead);
+        (MintFacts memory rec,) = _authorize(root, item, new bytes32[](0), move);
+        assertEq(rec.seed, f.seed, "the quote and the mint facts agree");
     }
 
     /// @dev Kinds, seed policies and party roles are open `uint8`s in the package types; the
@@ -1453,6 +1539,70 @@ contract PackageRegistryTest is CurationBase {
         stub.set(ProductEconomics(address(0), 1, 5000));
         vm.expectRevert(IPackageRegistry.InvalidWorkTerms.selector);
         registry.preview(stream, abi.encode(StreamMintRequest(root, item, new bytes32[](0), none)));
+    }
+
+    /// @dev The request's length check passes from 160 bytes (the head of a `StreamMintRequest`):
+    ///      one byte less is `InvalidMintRequest`, while 160 bytes that hold no item get past it
+    ///      and are refused by the decoder's bounds check, with no error data.
+    function test_preview_requestLengthBoundary() public {
+        bytes memory head = abi.encode(uint256(32), bytes32(0), uint256(0), uint256(0), uint256(0));
+        assertEq(head.length, 160);
+        bytes memory tooShort = new bytes(159);
+        tooShort[31] = 0x20;
+        vm.expectRevert(IPackageRegistry.InvalidMintRequest.selector);
+        registry.preview(stream, tooShort);
+        (bool ok, bytes memory ret) =
+            address(registry).staticcall(abi.encodeCall(IMintPolicy.preview, (stream, head)));
+        assertFalse(ok, "no item in the request");
+        assertEq(ret.length, 0, "past the length check: refused by the decoder");
+    }
+
+    /// @dev A CC0 item must name exactly the deployment's CC0 text: a text file ID just below
+    ///      it and one just above it are both `InvalidLicenseId`.
+    function test_invalidItem_cc0TextBelowOrAboveTheDeployments() public {
+        PackageItem memory item = _item(lead, SHA_A);
+        MoveAuthorization memory none;
+        uint256 cc0 = uint256(registry.cc0TextFileId());
+        for (uint256 other = cc0 - 1; other <= cc0 + 1; other += 2) {
+            item.license.textFileId = bytes32(other);
+            vm.expectRevert(IPackageRegistry.InvalidLicenseId.selector);
+            registry.preview(stream, _request(bytes32(0), item, new bytes32[](0), none));
+        }
+    }
+
+    /// @dev Only CC0 is tied to the deployment's CC0 text: any other licence is quoted with a
+    ///      text of its own, whether its licence key sorts below the CC0 key or above it.
+    function test_preview_nonCc0LicencesMayNameAnyText() public {
+        (bytes32 root, PackageItem memory item, MoveAuthorization memory move) = _ready(SHA_A);
+        string[8] memory ids = [
+            "MIT",
+            "Apache-2.0",
+            "CC-BY-4.0",
+            "CC-BY-NC-4.0",
+            "GPL-3.0-only",
+            "BSD-3-Clause",
+            "MPL-2.0",
+            "Unlicense"
+        ];
+        bytes32[2] memory texts = [bytes32(uint256(1)), bytes32(type(uint256).max)];
+        uint256 above;
+        uint256 below;
+        for (uint256 i; i < ids.length; ++i) {
+            item.license.spdxId = ids[i];
+            for (uint256 d; d < 2; ++d) {
+                item.license.textFileId = texts[d];
+                (MintFacts memory f,) =
+                    registry.preview(stream, _request(root, item, new bytes32[](0), move));
+                assertEq(f.itemHash, _hash(item));
+            }
+            if (WorksHashing.licenseKey(ids[i]) > WorksHashing.CC0_LICENSE_KEY) {
+                ++above;
+            } else {
+                ++below;
+            }
+        }
+        assertGt(above, 0, "a licence key above the CC0 key was quoted");
+        assertGt(below, 0, "a licence key below the CC0 key was quoted");
     }
 
     // ------------------------------------------------------- acceptPackage: registry answer

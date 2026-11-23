@@ -749,6 +749,31 @@ contract ContentStoreSourceTest is PermanenceBase {
         assertEq(store.firstMissing(fileId, 2, 4, address(mock)), 4);
     }
 
+    /// @dev The store's own chunks are checked from its records, never by a call to itself:
+    ///      naming the store as the source makes no `chunkData` call.
+    function test_Source_TheStoreItselfIsCheckedWithoutACall() public {
+        _uploadAll(chunks);
+        vm.expectCall(address(store), abi.encodeWithSelector(IChunkStore.chunkData.selector), 0);
+        assertEq(store.firstMissing(fileId, 0, 4, address(store)), 4);
+    }
+
+    /// @dev Each answer's buffer is released before the next chunk is checked, so the cost of a
+    ///      range grows with its chunk count and not with the square of it: 64 chunks cost less
+    ///      than five times 16 (held buffers would make it about nine times).
+    function test_Source_ARangeCheckKeepsMemoryAtOneChunk() public {
+        ContentStore other = new ContentStore();
+        (bytes32 hash,) = other.writeChunk(_data(CHUNK, 32));
+        bytes32[] memory same = new bytes32[](64);
+        for (uint256 i; i < same.length; ++i) {
+            same[i] = hash;
+        }
+        bytes32 id = store.registerManifest(same, 64 * CHUNK, IDENTITY, HTML, DIGEST);
+        assertEq(store.firstMissing(id, 0, 64, address(other)), 64, "all served");
+        uint256 gas16 = _gasOf(abi.encodeCall(store.firstMissing, (id, 0, 16, address(other))));
+        uint256 gas64 = _gasOf(abi.encodeCall(store.firstMissing, (id, 0, 64, address(other))));
+        assertLt(gas64, 5 * gas16, "memory grew with the range");
+    }
+
     /// @dev The store copies at most one chunk's ABI encoding of a source's answer: a source
     ///      that answers with a megabyte serves nothing, and the check costs the copy of no more
     ///      than that bound (without the bound it would copy the whole answer).

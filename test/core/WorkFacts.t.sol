@@ -249,6 +249,17 @@ contract WorkFactsTest is RulesFixture {
         assertEq(vm.getRecordedLogs().length, 0);
     }
 
+    /// The token logs an ERC-4906 update when its work becomes on-chain complete.
+    function test_MarkOnChainComplete_TheTokenLogsAMetadataUpdate() public {
+        (uint256 id,) = _open(1);
+        vm.expectEmit(address(facts));
+        emit IWorkFacts.OnChainComplete(b, id);
+        vm.expectEmit(b);
+        emit IERC4906.MetadataUpdate(id);
+        vm.prank(stranger);
+        facts.markOnChainComplete(b, id);
+    }
+
     // -------------------------------------------------------------- the RECORDS module
 
     function test_ModuleCalls_OnlyTheTokensRecordsModule() public {

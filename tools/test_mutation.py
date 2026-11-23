@@ -14,6 +14,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 _SPEC = importlib.util.spec_from_file_location("mutation", Path(__file__).with_name("mutation.py"))
 mt = importlib.util.module_from_spec(_SPEC)
@@ -100,6 +101,7 @@ class ShardTest(unittest.TestCase):
                 else len(mt.FULL_SPLIT_GROUPS) if f in mt.FULL_SPLIT_FILES
                 else 1
             ) + mt.RELATION_PARTS.get(f, 1) - 1
+            expected += sum(n - 1 for n in mt.GROUP_PARTS.get(f, {}).values())
             self.assertEqual(len(mine), expected, f)
             # Every file gets the CONST pass exactly once.
             self.assertEqual(sum(s.constants for s in mine), 1, f)
@@ -149,9 +151,119 @@ class ShardTest(unittest.TestCase):
             # Every comparison, by its position in ROR's visit order, falls in exactly one part.
             for ordinal in range(500):
                 self.assertEqual(sum(ordinal % s.part[1] == s.part[0] for s in ror), 1)
-        # Every other shard is a whole file's shard.
+        # Every other shard is a whole file's shard, or a part of a group in GROUP_PARTS.
         self.assertTrue(all(s.part is None for s in shards.values()
-                            if s.path not in mt.RELATION_PARTS or s.mutators != "ROR"))
+                            if s.path not in mt.GROUP_PARTS
+                            and (s.path not in mt.RELATION_PARTS or s.mutators != "ROR")))
+
+    def test_group_parts_split_a_group_into_disjoint_parts_with_one_const_pass(self) -> None:
+        shards = mt.shards(ROOT)
+        self.assertTrue(mt.GROUP_PARTS)
+        for f, groups in mt.GROUP_PARTS.items():
+            self.assertIn(f, mt.SPLIT_FILES | mt.FULL_SPLIT_FILES)
+            self.assertNotIn(f, mt.RELATION_PARTS)
+            for group, n in groups.items():
+                base = f"{mt._module(f)}-{Path(f).stem}-{group}"
+                mine = [shards[f"{base}-{k + 1}-of-{n}"] for k in range(n)]
+                self.assertNotIn(base, shards)  # no unparted shard beside the parts
+                self.assertEqual([s.part for s in mine], [(k, n) for k in range(n)])
+                # CONST runs once, with the first statements part.
+                self.assertEqual([s.constants for s in mine],
+                                 [group == "statements" and k == 0 for k in range(n)])
+        # The parts of one operator's mutants are disjoint and together the whole list.
+        patches = [{"start": 9 - i, "end": 20, "new_string": str(i)} for i in range(10)]
+        parts = [mt.take_part(patches, (k, 3)) for k in range(3)]
+        self.assertEqual(sorted(p["start"] for part in parts for p in part), list(range(10)))
+        self.assertEqual([p["start"] for p in parts[0]], [0, 3, 6, 9])  # in source order
+
+    def test_statement_parts_together_are_the_whole_group_when_a_revert_mutant_survives(
+        self,
+    ) -> None:
+        # slither-mutate runs RR, then CR, and makes no CR mutant on a line where an RR mutant
+        # survived. Eleven statements on lines 10 to 20; the revert mutant of line 10 survives.
+        lines = list(range(10, 21))
+        survives = {10}
+
+        def patch(line: int, new: str) -> dict:
+            return {"start": line * 100, "end": line * 100 + 9, "new_string": new,
+                    "line_number": line}
+
+        def node(line: int | None, file: str = "Thing.sol") -> SimpleNamespace:
+            mapping = SimpleNamespace(
+                lines=[] if line is None else [line], filename=SimpleNamespace(absolute=file)
+            )
+            return SimpleNamespace(source_mapping=mapping)
+
+        # A statement of an inherited file and a node without lines are not counted.
+        nodes = [node(n) for n in lines] + [node(3, "Base.sol"), node(None)]
+        contract = SimpleNamespace(
+            functions_and_modifiers_declared=[SimpleNamespace(nodes=nodes)]
+        )
+
+        def operators() -> tuple[type, type]:
+            class Fake:
+                def __init__(self, dont_mutate_line: list[int]) -> None:
+                    self.contract = contract
+                    self.in_file = "Thing.sol"
+                    self.dont_mutate_line = dont_mutate_line
+
+                def _mutate(self) -> dict:
+                    made = [patch(n, self.NEW) for n in lines if n not in self.dont_mutate_line]
+                    return {"patches": {"Thing.sol": made}} if made else {}
+
+            return (type("RR", (Fake,), {"NAME": "RR", "NEW": "revert()"}),
+                    type("CR", (Fake,), {"NAME": "CR", "NEW": "//"}))
+
+        def campaign(part: tuple[int, int] | None) -> list[tuple[str, int]]:
+            """The mutants one slither-mutate run tests, as (operator, line)."""
+            rr, cr = operators()
+            if part:
+                mt.in_parts(rr, part)
+                mt.in_parts(cr, part)
+            dont_mutate: list[int] = []  # one list for the run, as in slither-mutate
+            ran = []
+            for operator in (rr, cr):
+                made = operator(dont_mutate)._mutate().get("patches", {}).get("Thing.sol", [])
+                for p in made:
+                    ran.append((operator.NAME, p["line_number"]))
+                    if operator.NAME == "RR" and p["line_number"] in survives:
+                        dont_mutate.append(p["line_number"])
+            return ran
+
+        self.assertEqual(mt.statement_lines(operators()[0]([])), lines)
+        whole = campaign(None)
+        self.assertEqual(len(whole), 11 + 10)
+        self.assertNotIn(("CR", 10), whole)
+        for n in (2, 3, 10, 11, 12):
+            merged = [m for k in range(n) for m in campaign((k, n))]
+            self.assertEqual(sorted(merged), sorted(whole), n)  # none twice, none left out
+        # Both mutants of a line run in the same part, and the parts are even.
+        tenth = [campaign((k, 10)) for k in range(10)]
+        self.assertEqual(tenth[0], [("RR", 10), ("RR", 20), ("CR", 20)])
+        self.assertEqual(tenth[1], [("RR", 11), ("CR", 11)])
+        # Cut by position in each operator's own list, the same run has line 11's comment mutant
+        # in two parts (the first part's list starts at line 11, the second's at line 10) and
+        # line 20's in none.
+        by_position = []
+        for k in range(10):
+            cr_lines = [n for n in lines if not (n in survives and lines.index(n) % 10 == k)]
+            by_position += [p["line_number"]
+                            for p in mt.take_part([patch(n, "//") for n in cr_lines], (k, 10))]
+        self.assertEqual(by_position.count(11), 2)
+        self.assertNotIn(20, by_position)
+
+    def test_take_line_part_cuts_by_line_and_keeps_every_patch_of_a_line_together(self) -> None:
+        patches = [{"line_number": n, "new_string": s} for n in (7, 7, 9, 30, 31) for s in "ab"]
+        lines = [31, 7, 9, 9, 30, 12]  # line 12 has a statement and no patch
+        parts = [mt.take_line_part(patches, lines, (k, 2)) for k in range(2)]
+        # Lines 7, 12 and 31 are the first, third and fifth: part 0. Lines 9 and 30: part 1.
+        self.assertEqual([p["line_number"] for p in parts[0]], [7, 7, 7, 7, 31, 31])
+        self.assertEqual([p["line_number"] for p in parts[1]], [9, 9, 30, 30])
+        with self.assertRaises(KeyError):  # a patch on a line without a statement: not dropped
+            mt.take_line_part([{"line_number": 99}], lines, (0, 2))
+
+    def test_only_the_statement_operators_are_cut_by_line(self) -> None:
+        self.assertEqual(set(mt.LINE_PARTED), set(mt.SPLIT_GROUPS["statements"].split(",")))
 
     def test_ror_part_reads_k_of_n(self) -> None:
         self.assertIsNone(mt.ror_part(""))
@@ -159,6 +271,120 @@ class ShardTest(unittest.TestCase):
         for bad in ("4/4", "-1/3"):
             with self.assertRaises(mt.MutationError):
                 mt.ror_part(bad)
+
+    def test_a_file_with_another_contract_is_mutated_once_per_contract(self) -> None:
+        # slither-mutate alone would mutate only the contract named like the file.
+        both = "abstract contract ThingBase {}\n// contract Gone {}\ncontract Thing is ThingBase {}\n"
+        self.assertEqual(mt.mutation_targets(both, "Thing"), ["ThingBase", "Thing"])
+        self.assertEqual(mt.mutation_targets("contract Thing {}\n", "Thing"), [None])
+        self.assertEqual(mt.mutation_targets("library Other {}\n", "Thing"), ["Other"])
+        self.assertEqual(mt.mutation_targets("interface IThing {}\n", "Thing"), [None])
+        modules = (ROOT / "src" / "core" / "Modules.sol").read_text(encoding="utf-8")
+        self.assertEqual(mt.mutation_targets(modules, "Modules"), ["ModuleSlots", "Modules"])
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            source = root / "src" / "x" / "Thing.sol"
+            source.parent.mkdir(parents=True)
+            source.write_bytes(both.encode("utf-8"))
+            seen = []
+
+            def record(cmd, log, timeout=None, env=None):
+                seen.append((cmd, env))
+                log.write_text("INFO:Slither-Mutate:Done mutating.\n", encoding="utf-8")
+                return 0
+
+            real = mt._run_logged
+            mt._run_logged = record
+            try:
+                shard = mt.Shard("x-Thing-operators-2-of-3", "src/x/Thing.sol", "test/x/**",
+                                 "AOR,LOR,UOR", False, (1, 3))
+                result = mt.FileResult(shard.path)
+                mt.run_slither_mutate(root, shard, root, 60, result, mt.Deadline(None))
+            finally:
+                mt._run_logged = real
+            self.assertEqual(result.status, "ok")
+            # The build is cleaned between the two runs (the second would read the records the
+            # first run's mutants left), in the default profile, and not before the first.
+            self.assertEqual([cmd[-2:] for cmd, _ in seen].index(["forge", "clean"]), 1)
+            self.assertIsNone(seen[1][1])
+            self.assertEqual(len(seen), 3)
+            seen = [seen[0], seen[2]]
+            named = [cmd[cmd.index("--contract-names") + 1] for cmd, _ in seen]
+            self.assertEqual(named, ["ThingBase", "Thing"])
+            # A part of another group than relations reaches every operator but ROR.
+            self.assertEqual([env[mt.PART_ENV] for _, env in seen], ["1/3", "1/3"])
+            self.assertEqual([env[mt.ROR_PART_ENV] for _, env in seen], ["", ""])
+            self.assertTrue((root / "slither-mutate-ThingBase.log").is_file())
+
+    def test_a_target_that_did_not_finish_fails_the_shard_whatever_the_exit_code(self) -> None:
+        # slither-mutate exits with 0 when its first test run outlasts --timeout: no mutant ran.
+        both = "abstract contract ThingBase {}\ncontract Thing is ThingBase {}\n"
+        finished = LOG.replace("Thing", "ThingBase")
+        early = (
+            "INFO:Slither-Mutate:Timing tests..\n"
+            "INFO:Slither-Mutate:Provided timeout 60 is too short for tests that run in 75 "
+            "seconds\n"
+        )
+        nothing_to_mutate = (
+            "INFO:Slither-Mutate:Mutating contract Thing\n"
+            "INFO:Slither-Mutate:Done mutating Thing.\n"
+            "INFO:Slither-Mutate:Zero Revert mutants analyzed\n"
+        )
+
+        def status(logs: list[str], clean: int = 0) -> tuple[str, int]:
+            with tempfile.TemporaryDirectory() as d:
+                root = Path(d)
+                source = root / "src" / "x" / "Thing.sol"
+                source.parent.mkdir(parents=True)
+                source.write_bytes(both.encode("utf-8"))
+                texts = iter(logs)
+
+                def run(cmd, log, timeout=None, env=None):
+                    if cmd == ["forge", "clean"]:
+                        return clean
+                    log.write_text(next(texts), encoding="utf-8")
+                    return 0
+
+                real = mt._run_logged
+                mt._run_logged = run
+                try:
+                    shard = mt.Shard("x-Thing", "src/x/Thing.sol", "test/x/**", None, True)
+                    result = mt.FileResult(shard.path)
+                    with contextlib.redirect_stderr(io.StringIO()) as err:
+                        mt.run_slither_mutate(root, shard, root, 60, result, mt.Deadline(None))
+                finally:
+                    mt._run_logged = real
+                if result.status == "error":
+                    want = (
+                        "`forge clean` before Thing failed" if clean
+                        else "an operator failed for Thing" if mt.MUTATOR_FAILED in logs[-1]
+                        else "did not finish Thing"
+                    )
+                    self.assertIn(want, err.getvalue())
+                return result.status, result.mutants
+
+        # The first target's 34 mutants would pass a floor on their own.
+        self.assertEqual(status([finished, early]), ("error", 34))
+        self.assertEqual(status([finished, ""]), ("error", 34))
+        # A target that finished with nothing to mutate is fine.
+        self.assertEqual(status([finished, nothing_to_mutate]), ("ok", 34))
+        # A run that finished after one of its operators raised lacks that operator's mutants
+        # (slither-mutate logs the failure and counts none for it): not a result either.
+        failed_operator = (
+            "INFO:Slither-Mutate:Mutating contract Thing\n"
+            "ERROR:Slither-Mutate:CR mutator failed in Thing: 99\n" + LOG.split("\n", 2)[2]
+        )
+        self.assertIn(mt.COMPLETED, failed_operator)
+        self.assertEqual(status([finished, failed_operator]), ("error", 34))
+        # The second target is not run on a build that could not be cleaned.
+        self.assertEqual(status([finished, nothing_to_mutate], clean=1), ("error", 34))
+        # A file that is not `ok` fails the floor check by name, whatever its rate.
+        failed = mt.FileResult("src/x/Thing.sol", status="error")
+        failed.total["tweak"] = failed.caught["tweak"] = 34
+        with tempfile.TemporaryDirectory() as d:
+            floors = Path(d) / "floors.json"
+            floors.write_text(json.dumps({"files": {"src/x/Thing.sol": 50}}), encoding="utf-8")
+            self.assertEqual(mt.check_floors([failed], floors), ["src/x/Thing.sol: error"])
 
     def test_a_relations_part_reaches_slither_mutate_through_the_environment(self) -> None:
         with tempfile.TemporaryDirectory() as d:
@@ -179,9 +405,10 @@ class ShardTest(unittest.TestCase):
                 for part, want in (((1, 3), "1/3"), (None, "")):
                     shard = mt.Shard("x-Thing-relations", "src/x/Thing.sol", "test/x/**",
                                      "ROR", False, part)
-                    mt.run_slither_mutate(
-                        root, shard, root, 60, mt.FileResult(shard.path), mt.Deadline(None)
-                    )
+                    with contextlib.redirect_stderr(io.StringIO()):
+                        mt.run_slither_mutate(
+                            root, shard, root, 60, mt.FileResult(shard.path), mt.Deadline(None)
+                        )
                     self.assertEqual(seen[-1][1][mt.ROR_PART_ENV], want)
                     self.assertIn("ROR", seen[-1][0])
             finally:

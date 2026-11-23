@@ -18,6 +18,7 @@ import {
     ConsolidationSourceMock,
     PullOnlyPayeeMock
 } from "../mocks/identity/IdentityWorksMocks.sol";
+import { YesToEveryInterface } from "../mocks/identity/AccountsMutationMocks.sol";
 import { AccountsFixture } from "./AccountsFixture.sol";
 
 /// @notice The accounts module: accounts (every consolidated wallet acts for the account), the
@@ -52,6 +53,49 @@ contract AccountsTest is AccountsFixture {
         vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.UnboundCaller.selector, stranger));
         vm.prank(stranger);
         registry.register(stranger, PROFILE, PROFILE_DOC);
+    }
+
+    function test_Register_LogsTheNewAccount() public {
+        vm.expectEmit(address(registry));
+        emit IArtistRegistry.ArtistRegistered(
+            uint160(outsider), ArtistIdentity(outsider, outsider, PROFILE, PROFILE_DOC)
+        );
+        _register(outsider);
+    }
+
+    /// @dev A wallet another account's pending change reserves as its next root cannot be
+    ///      registered as an account of its own.
+    function test_Register_RefusesARootAPendingChangeReserves() public {
+        _stage(artistKey, _identity(wallet, payout));
+        assertEq(registry.reservedFor(wallet), artistId);
+        vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.AccountTaken.selector, wallet));
+        _register(wallet);
+        assertEq(registry.artistIdOf(wallet), 0);
+    }
+
+    /// @dev Only a pending replacement stops the account: while its own change waits, the root
+    ///      and every consolidated wallet still act for it.
+    function test_OwnChange_TheAccountStillActsWhileItsOwnChangeWaits() public {
+        _stage(artistKey, _identity(wallet, payout));
+        assertTrue(registry.isWallet(artistId, artist), "the root");
+        assertTrue(registry.isWallet(artistId, wallet), "a consolidated wallet");
+        assertEq(registry.activeAuthorityOf(artistId), artist);
+        bytes32 digest = keccak256("message");
+        assertEq(registry.requireSigned(artistId, digest, _proof(walletKey, digest)), wallet);
+    }
+
+    /// @dev Documents current behaviour; it is not a requirement. The payout check refuses a
+    ///      contract that declares a network contract's interface, and reads declarations the
+    ///      way ERC-165 defines them: a contract answering true to every probe, `0xffffffff`
+    ///      included, does not implement ERC-165, so nothing it answers counts and it is
+    ///      accepted like any other contract. The check guards an account against naming a
+    ///      known network contract as its own payout by mistake; an account that names a
+    ///      contract like this one affects only its own payouts. A stricter check that refused
+    ///      it would be just as acceptable: change this test with the check.
+    function test_OwnChange_CurrentBehaviour_APayoutAnsweringTrueToEveryProbeIsAccepted() public {
+        address odd = address(new YesToEveryInterface());
+        _stage(artistKey, _identity(artist, odd));
+        assertEq(registry.pendingChange(artistId).next.payout, odd);
     }
 
     // ----------------------------------------------------------------- accounts
