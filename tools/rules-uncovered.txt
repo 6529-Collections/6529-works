@@ -102,12 +102,4 @@ GV-22 removed The one-shot bind steps are gone; genesis modules and minters are 
 
 # Live rules whose row and code differ. Each needs a decision, a new wording or a code change,
 # before it can name a test.
-AUC-14 uncovered the row lists a fee recipient and a creator check that the start does not make (the fee recipient is checked by the economics resolver)
-AUC-15 uncovered the row says the settings are locked at start; the auction reads them when a bid is placed
-PROP-AUC-1 uncovered the row says the fee is the floor; the seller's part rounds down and the fee takes the remainder
-GV-20 uncovered IndependentStreamRegistry.setEntropyModule stores its dependency without a code check; the other setters are tested
-ENT-20 uncovered the row says all of msg.value goes to the wrapper; the module forwards the quote and returns the rest
-EA-19 uncovered the row allows abandon once the 1/1 is finished; a sale whose 1/1 settled is never abandoned
-IND-56 uncovered the row allows abandon once the 1/1 is closed; a sale whose 1/1 settled is never abandoned
-IND-58 uncovered the row says the views show the 1/1 as it is; the sale's views report it cancelled
-IND-67 uncovered the row says the 1/1 contract joins after its editions; the module lists the 1/1 contract first
+IND-56 uncovered the row allows abandon once the 1/1 is closed; a sale whose 1/1 settled is never abandoned (EA-19). Kept open pending a decision on its wording

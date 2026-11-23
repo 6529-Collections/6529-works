@@ -75,8 +75,11 @@ The auction is replaceable; its numbers below are compiled or governed values of
 - **Settle and claim.** Settlement pays `count × price` once: the seller and the network, a
   refused payout to the escrow. Each winner claims, minting its copies and refunding the rest.
   The supply is sealed at the count sold.
-- **Abandon.** From 21 days after the close, anyone may abandon a sale that paid nothing once the
-  1/1 is settled or cancelled; it refunds every bid and seals the edition at zero.
+- **Abandon.** From 21 days after the close, anyone may abandon a sale that paid nothing and has
+  nothing to settle against: its 1/1 was cancelled, or the 1/1's auction has no sale for it or
+  gives no usable answer. It refunds every bid and seals the edition at zero. A sale whose 1/1
+  is running, paused, ended or settled is never abandoned: anyone settles the ended 1/1, then
+  the sale. An adopted sale that runs on its own is settled by anyone after its close.
 - **Credits.** A refund that cannot be pushed is a credit. Only money that has itself waited the
   unclaimed period in force (180 days at launch) may go to the network; a third party's
   `claimBidFor` never puts a fresh refund on an old clock. The rule is the one both auctions share
@@ -96,7 +99,7 @@ The auction is replaceable; its numbers below are compiled or governed values of
 | ED-1 | Only an active minter creates an edition, for an existing master, once; the edition's minter is that caller. | `test_Edition_CreateMintSealAndTheSealNeverGrows` |
 | ED-2 | An edition's ID is its master's token ID; an edition is created at most once. | `test_Create_StoresTheEditionAndLogsIt`, `test_Create_RefusesAMissingOrBurnedMaster`, `test_Create_OnceOnlyEvenByAnotherMinter` |
 | ED-3 | Retired: one edition per master (ED-2) makes a separate content check unnecessary. | |
-| ED-4 | Edition terms: a nonzero sale kind and at most 64 bytes of params, checked by the sale contract. | `test_invalidItem_masterEditionTerms`, `test_invalidItem_masterEditionTermsSharedRule`, `test_Open_ChecksTheItem` |
+| ED-4 | Edition terms: a nonzero sale kind and at most 64 bytes of params (`EditionRules.isValid`), checked by the package registry when it admits the master. The sale contract checks the terms of its own kind when it opens: the uniform auction takes its own kind, ETH and empty params. | `test_invalidItem_masterEditionTerms`, `test_invalidItem_masterEditionTermsSharedRule`, `test_Open_ChecksTheItem` |
 | ED-5 | Only the edition's own minter mints, a nonzero amount. | `test_Edition_CreateMintSealAndTheSealNeverGrows` |
 | ED-6 | Copies minted never exceed the maximum; burns never free room. | `test_Mint_UpToTheCapExactlyAndNotOneMore`, `testFuzz_Mint_NeverPassesTheMaximum`, `test_Burn_AHolderBurnsItsOwnCopiesAndTheyStillCount` |
 | ED-7 | Royalty receiver and rate are set at creation and changed only by the TERMS module. | `test_Create_StoresTheEditionAndLogsIt`, `test_SetRoyalty_OnlyTheTermsModule`, `test_HostileTerms_ReachesOnlyRoyaltiesAndMetadata` |
@@ -126,9 +129,9 @@ The auction is replaceable; its numbers below are compiled or governed values of
 | EA-16 | Claims are never blocked or re-entered; only money that has itself waited the unclaimed period in force goes from a credit to the network. | `test_Claims_RejectAndCredit` |
 | EA-17 | Every edition sale closes exactly 15 minutes after its 1/1's final end (compiled in the auction). | `test_Window_FifteenMinutesAfterTheOneOfOne` |
 | EA-18 | `setLimits` is compare-and-set within bounds; payout gas only rises. | `test_SetLimits_CompareAndSetBoundsAndEvent` |
-| EA-19 | From 21 days after the close, anyone may abandon a sale that paid nothing once the 1/1 is finished; it refunds every bid and seals the edition at zero. | |
+| EA-19 | From 21 days after the close, anyone may abandon a sale that paid nothing and has nothing to settle against: its 1/1 was cancelled, or the 1/1's auction has no sale for it or gives no usable answer. It refunds every bid and seals the edition at zero. A sale whose 1/1 answers that it is running, paused, ended or settled is never abandoned, however late: anyone settles the ended 1/1 and then the sale. An adopted sale that runs on its own is never abandoned either: anyone settles it after its close. | `test_Abandon_TheFixedWaitThenVoidAndSealAtZero`, `test_Abandon_ACancelledMaster`, `test_Abandon_AMalformedAnswerCountsAsARefusal`, `test_Abandon_ABrokenEnglishAuction`, `test_Abandon_NeverWhileTheOneOfOneAnswersUsably`, `test_Abandon_NeverAPaidSale`, `test_Abandon_AScanInProgressWhoseOneOfOneStoppedAnswering`, `test_Abandon_TheAdapterRefusesALensThatAnswersEarly`, `test_Adopt_AfterRebind_RunsOnItsOwnAndSettlesWithoutTheOneOfOne` |
 | EA-20 | No payment reaches an undeployed wallet: `open` deploys the split wallets first. | `test_PayoutGas_IsTheGovernedFigure` |
-| EA-21 | After a network `rebind`, the new auction may `adopt` an edition whose minter is itself and open its sale. | `test_Adopt_AfterRebind_RunsOnItsOwnAndSettlesWithoutTheOneOfOne`, `test_Adopt_TheNetworkOnly`, `test_Adopt_RefusesAnEditionThatIsNotItsOwn`, `test_Rebind_TheNetworkMovesAnUnsoldEditionAndTheNewAdapterSellsIt` |
+| EA-21 | After a network `rebind`, the network may have the new auction `adopt` an edition whose minter is that auction, with no copy minted and no seal, and open its sale. If the master's sale already has an outcome, the adopted sale runs on its own and settles without the 1/1. | `test_Adopt_AfterRebind_RunsOnItsOwnAndSettlesWithoutTheOneOfOne`, `test_Adopt_TheNetworkOnly`, `test_Adopt_RefusesAnEditionThatIsNotItsOwn`, `test_Rebind_TheNetworkMovesAnUnsoldEditionAndTheNewAdapterSellsIt` |
 
 ## Events
 
@@ -144,4 +147,5 @@ The auction is replaceable; its numbers below are compiled or governed values of
 | The edition's sale contract was removed before it minted or sealed | The edition waits | The network rebinds it after `rebindDelay`; the new auction adopts it. |
 | The sale contract was removed after sealing | Winners still claim | None needed. |
 | The 1/1 is cancelled | The edition sale is void; bids refunded | None needed. |
-| Nobody settles | The sale waits | Anyone settles; after 21 days anyone may abandon a sale that paid nothing. |
+| Nobody settles | The sale waits | Anyone settles the 1/1 and then the sale. |
+| The 1/1's auction has no sale for the master or stops answering | The sale cannot settle | From 21 days after the close anyone may abandon a sale that paid nothing: every bid is refunded. |

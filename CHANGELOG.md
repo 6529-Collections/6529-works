@@ -20,12 +20,20 @@
   campaign's was 87.7% of 1,134; two survivors were not re-checked, so a lower bound), floor 85.
   One comment mutant the campaign's parts never ran survived there and has a test now
   (`test_Settle_AResumedScanKeepsTheDemandAlreadyCounted`).
+- **Rule rows brought in line with the code.** Eight of the nine rules left in
+  `tools/rules-uncovered.txt` are reworded to say what the contracts do and now name the tests
+  that pin it: AUC-14, AUC-15, PROP-AUC-1, GV-20, ENT-20, EA-19, IND-58 and IND-67. IND-56
+  stays listed until a decision on it is made. Stale wording is corrected in other rows
+  (AUC-27, AUC-32, AUC-40, WS-11, WS-40, ED-4, EA-21, IND-42, IND-44, IND-45, IND-70, IND-71,
+  ENT-17, PROP-ED-1, PROP-GAS-1) and in the limitations register (LIM-GAS-1, LIM-ID-21,
+  LIM-EA-18, LIM-ENT-8). Documentation only: no contract and no test changed.
 - **Rule tests on the plain core.** 146 rules of the specification and properties of the
   invariant catalogue that named no test since the plain-core restructuring name their tests
   again: existing suites where they already pin the rule, and 62 new tests where they did not
   (the English auction, disputes, the records and delivery modules, the edition auction, the
-  Independent Stream module and its sales, the entropy module's setters). Nine rules stay in
-  `tools/rules-uncovered.txt` because their row and the code differ; each entry says how. No
+  Independent Stream module and its sales, the entropy module's setters). Nine rules stayed in
+  `tools/rules-uncovered.txt` because their row and the code differed (eight are settled by the
+  entry above). No
   contract changed.
 - **Sepolia round r6.** The plain core is deployed on Sepolia (testnet only) from `main` at
   `2aac8579`, read back with `VerifyCore` and verified on Sourcify
