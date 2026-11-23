@@ -25,15 +25,15 @@ is the [uploader](../../tools/content/README.md).
 | Caller | Calls | Rules |
 | --- | --- | --- |
 | Anyone (artist, platform, collector, uploader) | `writeChunk`, `linkChunk`, `registerManifest`, `registerManifestList`, `attestBase64`, `attestComplete`, in any order | WS-24 to WS-27, WS-29, WS-31, WS-50, WS-51, WS-55 |
-| Anyone; `WorkRecords`; the renderer | `fileInfo`, `sha256Of`, `isComplete`, `completeThrough`, `firstMissing`, `missingChunks`, `readChunk`, `chunkData`, `read`, `isBase64Attested` | WS-28, WS-30, WS-52, WS-53, WS-55 |
+| Anyone; `StreamWorkFacts6529`; the renderer | `fileInfo`, `sha256Of`, `isComplete`, `completeThrough`, `firstMissing`, `missingChunks`, `readChunk`, `chunkData`, `read`, `isBase64Attested` | WS-28, WS-30, WS-52, WS-53, WS-55 |
 | Governance | `DependencyRegistry.register`, `deprecate` | WS-34, WS-35; [role matrix](../../docs/audit/roles.md#dependencyregistry) |
-| `Stream.tokenURI`, `Editions.uri` (through `rendererOf`); anyone by `eth_call` | `Renderer.tokenURI(token, id)`, `fullTokenURI(token, id)` | RND-1 to RND-27 |
+| `Stream6529.tokenURI`, `StreamEditions6529.uri` (through `rendererOf`); anyone by `eth_call` | `Renderer.tokenURI(token, id)`, `fullTokenURI(token, id)` | RND-1 to RND-27 |
 
 The upload flow is under [Upload and register a file](../../docs/spec/works-and-storage.md#upload-and-register-a-file),
 and what the renderer reads, in order, under
 [Inside the renderer](../../docs/spec/rendering-and-tokenuri.md#inside-the-renderer).
 Integrators start at [Reading a work](../../docs/integrators/reading-a-work.md) and
-[Storage](../../docs/integrators/storage.md).
+[Storage](../../docs/spec/works-and-storage.md).
 
 ## Developer notes
 
@@ -49,20 +49,29 @@ Integrators start at [Reading a work](../../docs/integrators/reading-a-work.md) 
 - **Large reads are superlinear.** Every touched chunk is read in full and checked against its
   keccak256; on-chain callers read chunk by chunk or in ranges of a few hundred KiB.
 - **Renderer reads.** Every external read uses `BoundedCall.tryReadAll` with no compiled gas
-  figure, since a finalized work pins its renderer, possibly for good. A work's facts come only
-  from Stream's native views and `extsload` (in `_native`), never its fallback (RND-22).
+  figure, since a finalized work pins its renderer, possibly for good. A work is read only
+  through plain views: `IStream.workOf` and `collectionOf`, `IEditions.stream()` for an edition
+  (its ID is the master's token ID), and `IWorkFacts.factsOf` once (record file, media, license,
+  on-chain flag; the seed is `Work.seed`). A failed read of these fails the call, except the
+  collection name, which is then no name.
+- **The renderer owns the locator check.** It asks the token's RECORDS module for its delivery
+  contract and that for `ILocators.preferredLocator`, and prints a URI only if the answer is a
+  canonical encoding of a kind other than NONE and ONCHAIN with 1 to `Limits.MAX_URI_BYTES`
+  bytes of printable ASCII other than space, `"` and `\`. Anything else, a revert included, is
+  "no locator"; running short of gas still reverts (`RendererHostile.t.sol`,
+  `RendererCore.t.sol`).
 - **The 8M budget is a joint bound** (RND-26). Raising any record cap or the preview bound
   (`PREVIEW_LIMIT`, `Limits.MAX_PREVIEW_BYTES`), or changing `JsonScan`, `JsonEscape`, `Utf8`,
   `HtmlScript` or the read path, means rerunning
   [`RendererGas.t.sol`](../../test/content/renderer/RendererGas.t.sol) and
-  [`TokenUriBudget.t.sol`](../../test/integration/TokenUriBudget.t.sol); the margin is small.
+  `TokenUriBudget.t.sol`; the margin is small.
 - **`window.works` is a public API.** Finalized works pin their renderer, so version 1's fields
   never change meaning; a change needs a new `v` and a new renderer.
 - **Behavior is owned by the spec:** piecewise writes and links (WS-50, WS-51), bounded source
   answers (WS-52), open encoding ids (WS-54), degraded versus reverting metadata (RND-9,
   RND-16), and the part-count limit (RND-26, LIM-CNT-22).
 - **Bytecode: `Renderer` is the second-tightest contract**, barely under EIP-170 (current
-  margin in the [audit scope](../../docs/audit/scope.md#content-and-rendering)). New features
+  margin in the [audit scope](../../docs/audit/scope.md#modules)). New features
   belong in a later renderer, which works pin per work.
 - **Tests:** `forge test --match-path 'test/content/**'`: the store, the dependency registry,
   the renderer and the uploader's golden and CID vectors. Halmos proofs of `Base64Validator`,

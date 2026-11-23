@@ -2,18 +2,19 @@
 pragma solidity ^0.8.24;
 
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
+import { Slots } from "src/interfaces/core/CoreTypes.sol";
 import { ArtistIdentity } from "src/interfaces/types/IdentityTypes.sol";
-import { FederationRegistryStub } from "../mocks/identity/IdentityWorksMocks.sol";
+import { IndependentStreamRegistryStub } from "../mocks/identity/IdentityWorksMocks.sol";
 import { PreApprovedWallet } from "../mocks/identity/PermanenceMocks.sol";
 import { SignatureReverts } from "test/helpers/SignatureReverts.sol";
-import { IdentityFixture } from "./IdentityFixture.sol";
+import { AccountsFixture } from "./AccountsFixture.sol";
 
 /// @notice Signature-scheme agility: a wallet of an account can be any contract account. The
 ///         pre-approved-message route (the account approves a digest on chain, then answers
 ///         ERC-1271 from storage, whatever the signature bytes) lets an account adopt any future
 ///         signature scheme it verifies itself, with no change to the registry. Shown for a
 ///         deployed wallet and for an EIP-7702 delegated account.
-contract SignatureAgilityTest is IdentityFixture {
+contract SignatureAgilityTest is AccountsFixture {
     PreApprovedWallet internal smart;
     uint256 internal smartId;
     uint256 internal constant EOA_KEY = 0xE7702;
@@ -85,17 +86,16 @@ contract SignatureAgilityTest is IdentityFixture {
         assertEq(registry.changeNonce(id), 2);
     }
 
-    /// @dev Consent to an identity created by the federation registry works the same way.
-    function test_7702Account_ConsentsToAFederatedIdentityByPreApproval() public {
-        address federation = address(new FederationRegistryStub());
-        vm.prank(admin);
-        registry.bindFederationRegistry(federation);
+    /// @dev Consent to an identity created by the Independent Stream registry works the same way.
+    function test_7702Account_ConsentsToAIndependentIdentityByPreApproval() public {
+        address independentStream = address(new IndependentStreamRegistryStub());
+        directory.setModule(Slots.INDEPENDENT_STREAM, independentStream);
         uint64 deadline = uint64(block.timestamp + 1 days);
         bytes32 digest = registry.registrationDigest(eoa, PROFILE, PROFILE_DOC, deadline);
         vm.prank(eoa);
         PreApprovedWallet(eoa).approve(digest);
-        vm.prank(federation);
-        registry.registerFederated(eoa, PROFILE, PROFILE_DOC, deadline, "");
+        vm.prank(independentStream);
+        registry.registerIndependent(eoa, PROFILE, PROFILE_DOC, deadline, "");
         assertEq(registry.authorityOf(uint160(eoa)), eoa);
     }
 }

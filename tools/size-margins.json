@@ -1,3 +1,6 @@
 {
+  "floors": {
+    "src/core/": 3000
+  },
   "exempt": {}
 }

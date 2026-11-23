@@ -1,13 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { console2 } from "forge-std/console2.sol";
-import { Vm, VmSafe } from "forge-std/Vm.sol";
 import { IERC5267 } from "@openzeppelin/contracts/interfaces/IERC5267.sol";
-import { Base64 } from "@openzeppelin/contracts/utils/Base64.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
-import { Role, Statement } from "src/interfaces/IStatementLog.sol";
+import { Statement } from "src/interfaces/IStatementLog.sol";
 import { FileRole, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import { HASH_SHA256, HashRef } from "src/interfaces/types/HashRef.sol";
@@ -24,47 +21,40 @@ import {
     SeedPolicy,
     StreamMintRequest
 } from "src/interfaces/types/PackageTypes.sol";
-import { Payment, PaymentMethod, SaleKind } from "src/interfaces/types/SaleTypes.sol";
+import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
-import { StateGrowth } from "../helpers/StateGrowth.sol";
-import { WorksDeployment } from "./WorksDeployment.sol";
-import { IStream } from "src/interfaces/IStream.sol";
-import { IStreamViews } from "src/interfaces/IStreamViews.sol";
+import { CoreIntegrationBase } from "./CoreIntegrationBase.sol";
 
-/// @notice Actors, package building, signatures and sale helpers shared by the end-to-end flows.
+/// @notice Actors, package building, signatures, content and sale helpers shared by the
+///         end-to-end suites on the plain-core stack.
 /// @dev Every helper drives the real contracts the way an off-chain tool or a wallet would: it
 ///      signs EIP-712 digests read from the contracts, builds sorted-pair Merkle trees over
-///      `WorksHashing.leaf(itemHash)` (checked against OpenZeppelin `MerkleProof` in
-///      `Helpers.t.sol`) and submits ordinary transactions.
-abstract contract IntegrationBase is WorksDeployment {
+///      `WorksHashing.leaf(itemHash)` and submits ordinary transactions.
+abstract contract IntegrationBase is CoreIntegrationBase {
     /// @dev A package item with the media list its `mediaHash` commits to.
     struct Work {
         PackageItem item;
         MediaFile[] media;
     }
 
-    /// @dev EIP-7825 (Fusaka): no transaction may carry more than 2^24 gas.
-    uint256 internal constant TX_GAS_CAP = 1 << 24;
-    /// @dev ADR 0003 and ADR 0004: a steady-state start, as a whole transaction in Prague gas.
-    uint256 internal constant START_BUDGET = 350_000;
-    /// @dev EIP-2929: the first access to an account costs 2,600, a warm one 100.
-    uint256 internal constant COLD_ACCOUNT_SURCHARGE = 2500;
-    uint256 internal constant TOKEN_URI_BUDGET = 8_000_000;
-    /// @dev The selector of `Error(string)`, what a failed `require` with a message reverts with.
-    bytes4 internal constant ERROR_STRING = 0x08c379a0;
+    /// @dev The English auction's genesis configuration (`DeployCore.auctionConfig`).
+    uint32 internal constant AUCTION_DURATION = 24 hours;
+    uint32 internal constant EXTENSION_WINDOW = 15 minutes;
+    /// @dev The ETH opening bid the genesis wiring sets (`setOpeningBid`).
+    uint256 internal constant OPENING_BID = 0.05 ether;
+    /// @dev The compiled finalize notice of `WorkRules`.
+    uint256 internal constant FINALIZE_NOTICE = 14 days;
 
     mapping(address account => uint256 pk) internal keyOf;
-    /// @dev Read by `_requireCooling`.
-    uint256 private _coolProbe = 1;
     mapping(uint256 artistId => uint256 nonce) internal nextMoveNonce;
     uint256 internal collectionId;
     uint256 private _salt;
     /// @dev Packages kept across calls (memory cannot outlive a call), by root.
     mapping(bytes32 root => Work[]) private _packages;
 
-    function setUp() public virtual {
-        _deployWorks();
+    function setUp() public virtual override {
+        super.setUp();
         keyOf[signer1] = signer1Pk;
         keyOf[signer2] = signer2Pk;
         vm.prank(platform);
@@ -94,8 +84,7 @@ abstract contract IntegrationBase is WorksDeployment {
         return keccak256(abi.encode("6529 profile document", account));
     }
 
-    /// @dev The EIP-712 digest of `structHash` in `target`'s own domain (read with EIP-5267), as
-    ///      a wallet computes it for a contract that exposes no digest helper.
+    /// @dev The EIP-712 digest of `structHash` in `target`'s own domain (read with EIP-5267).
     function _typedDigest(address target, bytes32 structHash) internal view returns (bytes32) {
         (, string memory name, string memory version, uint256 chainId, address verifying,,) =
             IERC5267(target).eip712Domain();
@@ -129,6 +118,20 @@ abstract contract IntegrationBase is WorksDeployment {
         );
     }
 
+    /// @dev A work by `lead` whose primary file is `stored` (uploaded and complete).
+    function _storedWork(
+        address lead,
+        bytes memory stored,
+        IContentStore.Encoding encoding,
+        bytes32 sha,
+        string memory name
+    ) internal returns (Work memory w) {
+        bytes32 fileId = _upload(stored, encoding, "image/png", sha);
+        w.media = new MediaFile[](1);
+        w.media[0] = MediaFile(fileId, sha, uint8(FileRole.PRIMARY));
+        w.item = _item(lead, collectionId, sha, w.media, _record(name));
+    }
+
     function _item(
         address lead,
         uint256 collection,
@@ -149,6 +152,37 @@ abstract contract IntegrationBase is WorksDeployment {
         item.seedPolicy = uint8(SeedPolicy.NONE);
         item.sale = SaleTerms(SaleKind.ENGLISH_AUCTION, CURRENCY_ETH, "");
         item.edition = EditionTerms(0, address(0), bytes32(0), "");
+    }
+
+    /// @dev Turns `w` into an edition master with `maxCount` copies sold by the uniform edition
+    ///      auction (call before publishing: the item hash changes).
+    function _asMaster(Work memory w, uint32 maxCount) internal pure returns (Work memory) {
+        w.item.kind = uint8(ItemKind.EDITION_MASTER);
+        w.item.edition = EditionTerms(maxCount, CURRENCY_ETH, SaleKind.UNIFORM_AUCTION, "");
+        return w;
+    }
+
+    /// @dev Adds `collaborator` as a party and a payee with `share` of 100,000 (the lead keeps
+    ///      the rest), payees in ascending artist ID. Call before publishing.
+    function _withCollaborator(Work memory w, address collaborator, uint32 share)
+        internal
+        pure
+        returns (Work memory)
+    {
+        Party[] memory parties = new Party[](2);
+        parties[0] = w.item.parties[0];
+        parties[1] = Party(collaborator, uint8(PartyRole.COLLABORATOR));
+        w.item.parties = parties;
+        ISplitWallet.Payee[] memory payees = new ISplitWallet.Payee[](2);
+        payees[0] =
+            ISplitWallet.Payee(uint256(uint160(parties[0].account)), address(0), 100_000 - share);
+        payees[1] = ISplitWallet.Payee(uint256(uint160(collaborator)), address(0), share);
+        // The ledger takes payees in ascending artist ID.
+        if (payees[0].artistId > payees[1].artistId) {
+            (payees[0], payees[1]) = (payees[1], payees[0]);
+        }
+        w.item.payees = payees;
+        return w;
     }
 
     /// @dev Uploads a valid descriptive record (one `Identity` chunk of JSON).
@@ -225,8 +259,7 @@ abstract contract IntegrationBase is WorksDeployment {
         works[0] = w;
     }
 
-    /// @dev Keeps `works` under `root` in storage, field by field (Solidity cannot copy nested
-    ///      struct arrays from memory to storage).
+    /// @dev Keeps `works` under `root` in storage, field by field.
     function _keep(bytes32 root, Work[] memory works) internal {
         Work[] storage list = _packages[root];
         for (uint256 i; i < works.length; ++i) {
@@ -296,8 +329,8 @@ abstract contract IntegrationBase is WorksDeployment {
         PartyAcceptance memory a = PartyAcceptance(
             account, _profileId(account), _profileDoc(account), uint64(block.timestamp + 1 days)
         );
-        uint256 id = artists.artistIdOf(account);
-        address signer = id == 0 ? account : artists.authorityOf(id);
+        uint256 id = accounts.artistIdOf(account);
+        address signer = id == 0 ? account : accounts.authorityOf(id);
         bytes memory signature =
             abi.encodePacked(signer, _sign(signer, registry.acceptanceDigest(root, a)));
         registry.acceptPackage(root, a, signature);
@@ -324,9 +357,9 @@ abstract contract IntegrationBase is WorksDeployment {
         returns (bytes memory)
     {
         PackageItem memory item = works[index].item;
-        uint256 artistId = artists.artistIdOf(item.parties[0].account);
+        uint256 artistId = accounts.artistIdOf(item.parties[0].account);
         return _mintDataSignedBy(
-            root, works, index, artists.authorityOf(artistId), nextMoveNonce[artistId]++
+            root, works, index, accounts.authorityOf(artistId), nextMoveNonce[artistId]++
         );
     }
 
@@ -354,68 +387,32 @@ abstract contract IntegrationBase is WorksDeployment {
         returns (uint256 saleId, uint256 tokenId)
     {
         saleId = auction.start(address(stream), _mintData(root, works, index));
-        tokenId = IStream(address(stream)).totalMinted();
+        tokenId = stream.totalMinted();
         assertEq(saleId, auction.saleIdOf(address(stream), tokenId), "sale ID");
+        assertEq(auction.auction(saleId).tokenId, tokenId, "token ID");
     }
 
-    // ------------------------------------------------------------------ an ERC-20 currency
-
-    /// @dev The test ERC-20's increment floor once admitted.
-    uint256 internal constant USD_FLOOR = 1e16;
-
-    /// @dev Admits the test ERC-20 (`usd`), a 14-day FUNDS_SETTER action. ETH is never
-    ///      deprecated (`IAssetAllowlist.EthNotDeprecable`), so the currency-freeze tests sell
-    ///      in this token.
-    function _admitUsd() internal {
-        _govern(
-            hotAdmin,
-            address(allowlist),
-            abi.encodeCall(allowlist.admitAsset, (address(usd), 0, USD_FLOOR))
+    /// @dev Starts item `index` through `SaleStarter`: vaults deployed and the record opened in
+    ///      the same transaction.
+    function _startAndOpen(bytes32 root, Work[] memory works, uint256 index)
+        internal
+        returns (uint256 saleId, uint256 tokenId)
+    {
+        saleId = starter.start(
+            auction, address(stream), _mintData(root, works, index), works[index].media
         );
+        tokenId = auction.auction(saleId).tokenId;
     }
 
-    /// @dev The network deprecates the test ERC-20 (no delay); returns when.
-    function _deprecateUsd() internal returns (uint256 frozenAt) {
-        _govern(
-            hotAdmin, address(allowlist), abi.encodeCall(allowlist.deprecateAsset, (address(usd)))
-        );
-        frozenAt = block.timestamp;
-    }
-
-    /// @dev Governance re-admits the test ERC-20 (14 days, and not before 14 days after its
-    ///      deprecation).
-    function _readmitUsd() internal {
-        (,, uint64 revision) = allowlist.assetConfig(address(usd));
-        _govern(
-            hotAdmin,
-            address(allowlist),
-            abi.encodeCall(allowlist.admitAsset, (address(usd), revision, USD_FLOOR))
-        );
-    }
-
-    /// @dev `works`, priced in the test ERC-20.
-    function _inUsd(Work[] memory works) internal view returns (Work[] memory) {
-        for (uint256 i; i < works.length; ++i) {
-            works[i].item.sale.currency = address(usd);
-        }
-        return works;
-    }
-
-    /// @dev A direct ERC-20 bid of `amount` by `bidder`, who is minted and approves it first.
-    function _usdBid(uint256 saleId, address bidder, uint256 amount) internal {
-        usd.mint(bidder, amount);
-        vm.startPrank(bidder);
-        usd.approve(address(auction), amount);
-        auction.bid(saleId, address(0), Payment(PaymentMethod.DIRECT, bidder, amount, 0, 0, ""));
-        vm.stopPrank();
+    /// @dev Opens the record of `tokenId` (anyone may, with the item and its media).
+    function _open(uint256 tokenId, Work memory w) internal {
+        facts.open(address(stream), tokenId, w.item, w.media);
     }
 
     function _ethBid(uint256 saleId, address bidder, uint256 amount) internal {
         vm.deal(bidder, bidder.balance + amount);
         vm.prank(bidder);
-        auction.bid{ value: amount }(
-            saleId, address(0), Payment(PaymentMethod.DIRECT, bidder, amount, 0, 0, "")
-        );
+        auction.bid{ value: amount }(saleId, address(0));
     }
 
     function _settleAtEnd(uint256 saleId) internal {
@@ -455,10 +452,88 @@ abstract contract IntegrationBase is WorksDeployment {
         );
     }
 
+    // ------------------------------------------------------------------ content
+
+    /// @dev Uploads `stored` in `CHUNK_SIZE` chunks and registers its manifest. `sha` is the
+    ///      decoded media's SHA-256 (the store does not recompute it).
+    function _upload(
+        bytes memory stored,
+        IContentStore.Encoding encoding,
+        string memory mime,
+        bytes32 sha
+    ) internal returns (bytes32 fileId) {
+        bytes32[] memory hashes = _writeChunks(stored);
+        fileId = store.registerManifest(hashes, stored.length, uint8(encoding), mime, sha);
+    }
+
+    /// @dev Registers the manifest of `stored` without uploading any chunk.
+    function _registerOnly(
+        bytes memory stored,
+        IContentStore.Encoding encoding,
+        string memory mime,
+        bytes32 sha
+    ) internal returns (bytes32 fileId) {
+        fileId = store.registerManifest(
+            _chunkHashes(stored), stored.length, uint8(encoding), mime, sha
+        );
+    }
+
+    function _writeChunks(bytes memory stored) internal virtual returns (bytes32[] memory hashes) {
+        uint256 size = store.CHUNK_SIZE();
+        hashes = new bytes32[]((stored.length + size - 1) / size);
+        for (uint256 i; i < hashes.length; ++i) {
+            (hashes[i],) = store.writeChunk(_slice(stored, i * size, size));
+        }
+    }
+
+    function _chunkHashes(bytes memory stored) internal view returns (bytes32[] memory hashes) {
+        uint256 size = store.CHUNK_SIZE();
+        hashes = new bytes32[]((stored.length + size - 1) / size);
+        for (uint256 i; i < hashes.length; ++i) {
+            hashes[i] = keccak256(_slice(stored, i * size, size));
+        }
+    }
+
+    function _storeText(bytes memory text, string memory mime) internal returns (bytes32) {
+        return _upload(text, IContentStore.Encoding.Identity, mime, sha256(text));
+    }
+
+    function _slice(bytes memory data, uint256 from, uint256 max)
+        internal
+        pure
+        returns (bytes memory out)
+    {
+        uint256 n = data.length - from < max ? data.length - from : max;
+        out = new bytes(n);
+        for (uint256 i; i < n; ++i) {
+            out[i] = data[from + i];
+        }
+    }
+
+    /// @dev `n` pseudo-random bytes.
+    function _bytes(uint256 n, uint256 seed) internal pure returns (bytes memory out) {
+        out = new bytes(n);
+        for (uint256 i; i < n; i += 32) {
+            bytes32 word = keccak256(abi.encode(seed, i));
+            for (uint256 j; j < 32 && i + j < n; ++j) {
+                out[i + j] = word[j];
+            }
+        }
+    }
+
+    /// @dev Runs the permissionless base64 attestation to completion, bounded.
+    function _attestAll(bytes32 fileId) internal {
+        uint256 calls = store.MAX_CHUNKS() / 48 + 1;
+        for (uint256 i; i < calls; ++i) {
+            if (store.attestBase64(fileId, 48)) return;
+        }
+        revert("attestBase64 did not complete");
+    }
+
     // ------------------------------------------------------------------ assertions
 
     /// @dev An integration finding still open: `call` (an external `check_*` function of this
-    ///      contract asserting the intended behavior) must fail, with the custom error `reason`
+    ///      contract asserting the intended behaviour) must fail, with the custom error `reason`
     ///      when it is nonzero, so an unrelated failure cannot pass for the finding. When the
     ///      finding is fixed this fails, and the check becomes a regular test.
     function _expectFailure(bytes memory call, bytes4 reason, string memory finding) internal {
@@ -482,389 +557,5 @@ abstract contract IntegrationBase is WorksDeployment {
             if (same) return true;
         }
         return false;
-    }
-
-    // ------------------------------------------------------------------ gas
-
-    uint256[4] internal base64Sizes = [uint256(32_768), 65_536, 131_072, 262_144];
-    uint256[2] internal identitySizes = [uint256(32_768), 65_536];
-
-    /// @dev `n` pseudo-random bytes.
-    function _bytes(uint256 n, uint256 seed) internal pure returns (bytes memory out) {
-        out = new bytes(n);
-        for (uint256 i; i < n; i += 32) {
-            bytes32 word = keccak256(abi.encode(seed, i));
-            for (uint256 j; j < 32 && i + j < n; ++j) {
-                out[i + j] = word[j];
-            }
-        }
-    }
-
-    /// @dev A work by `lead` whose primary file is `stored` (uploaded and complete).
-    function _storedWork(
-        address lead,
-        bytes memory stored,
-        IContentStore.Encoding encoding,
-        bytes32 sha,
-        string memory name
-    ) internal returns (Work memory w) {
-        bytes32 fileId = _upload(stored, encoding, "image/png", sha);
-        w.media = new MediaFile[](1);
-        w.media[0] = MediaFile(fileId, sha, uint8(FileRole.PRIMARY));
-        w.item = _item(lead, collectionId, sha, w.media, _record(name));
-    }
-
-    /// @dev The `tokenURI` gas matrix (ADR 0001 section 8, ADR 0003): one work per row, sold,
-    ///      opened, attested and synced on-chain, then `Stream.tokenURI` measured from a cold
-    ///      start through the whole path (Stream, WorkRecords, the renderer, the content store,
-    ///      the statement log). Rows: 32, 64, 128 and 256 KiB of base64-stored media, and 32 and
-    ///      64 KiB of identity media. Each row must fit 8M Prague gas (with the cold-account
-    ///      surcharge, see `_measureGrowth`), inline exactly when the renderer's cost-weighted
-    ///      threshold allows it, and create no state.
-    function _tokenUriMatrix(address lead, address reader) internal {
-        Work[] memory works = new Work[](6);
-        for (uint256 i; i < 4; ++i) {
-            bytes memory media = _bytes(base64Sizes[i] / 4 * 3, i);
-            works[i] = _storedWork(
-                lead,
-                bytes(Base64.encode(media)),
-                IContentStore.Encoding.Base64,
-                sha256(media),
-                string.concat("Base64 ", vm.toString(base64Sizes[i]))
-            );
-        }
-        for (uint256 i; i < 2; ++i) {
-            bytes memory media = _bytes(identitySizes[i], 10 + i);
-            works[4 + i] = _storedWork(
-                lead,
-                media,
-                IContentStore.Encoding.Identity,
-                sha256(media),
-                string.concat("Identity ", vm.toString(identitySizes[i]))
-            );
-        }
-        bytes32 root = _publish(works);
-        uint256[] memory ids = new uint256[](6);
-        for (uint256 i; i < 6; ++i) {
-            (, ids[i]) = _start(root, works, i);
-            records.openRecord(ids[i], works[i].item, works[i].media);
-            if (i < 4) _attestAll(works[i].media[0].fileId);
-            records.syncOnChain(ids[i], 0, type(uint256).max);
-        }
-        // Every gas figure first: none can be measured after a state-diff recording. Each view
-        // is called once before it is measured, so every account it reaches is warm and the
-        // cold-account surcharge below applies to all of them.
-        uint256[] memory used = new uint256[](6);
-        for (uint256 i; i < 6; ++i) {
-            bool inlined = _contains(stream.tokenURI(ids[i]), "data:image/png;base64,");
-            // Base64 inlines up to the 256 KiB threshold; identity media counts eight times, so
-            // 32 KiB inlines and 64 KiB falls back to its locator.
-            assertEq(inlined, i != 5, string.concat(_matrixLabel(i), ": inline as expected"));
-            (, used[i]) =
-                _measure(reader, address(stream), abi.encodeCall(stream.tokenURI, (ids[i])), 0);
-        }
-        console2.log("Stream.tokenURI Prague gas, cold (stored bytes of the primary file)");
-        for (uint256 i; i < 6; ++i) {
-            StateGrowth.Growth memory growth =
-                _growth(reader, address(stream), abi.encodeCall(stream.tokenURI, (ids[i])), 0);
-            // ADR 0004: a view creates no state.
-            assertEq(growth.slots + growth.accounts, 0, "tokenURI creates no state");
-            used[i] += COLD_ACCOUNT_SURCHARGE * growth.coldAccounts.length;
-            console2.log(_matrixLabel(i), used[i]);
-            assertLe(used[i], TOKEN_URI_BUDGET, _matrixLabel(i));
-        }
-    }
-
-    function _matrixLabel(uint256 i) internal view returns (string memory) {
-        return i < 4
-            ? string.concat("  base64   ", vm.toString(base64Sizes[i]))
-            : string.concat("  identity ", vm.toString(identitySizes[i - 4]));
-    }
-
-    /// @dev Calldata gas: the EIP-2028 price and the EIP-7623 floor.
-    function _calldataGas(bytes memory data)
-        internal
-        pure
-        returns (uint256 standard, uint256 floor)
-    {
-        uint256 zeros;
-        for (uint256 i; i < data.length; ++i) {
-            if (data[i] == 0) ++zeros;
-        }
-        uint256 nonzero = data.length - zeros;
-        standard = zeros * 4 + nonzero * 16;
-        floor = (zeros + nonzero * 4) * 10;
-    }
-
-    /// @dev The whole transaction: intrinsic, calldata (or its floor) and measured execution.
-    function _txGas(bytes memory data, uint256 execution) internal pure returns (uint256 total) {
-        (uint256 standard, uint256 floor) = _calldataGas(data);
-        total = 21_000 + standard + execution;
-        if (21_000 + floor > total) total = 21_000 + floor;
-    }
-
-    /// @dev Every account whose storage `_coolAll` cools: the deployed contracts, the 6529
-    ///      delegation contract, Permit2 and the test ERC-20. A report that measures calls into
-    ///      other accounts (split wallets) adds them.
-    function _cooled() internal view virtual returns (address[] memory all) {
-        address[25] memory list = [
-            address(store),
-            address(dependencies),
-            address(consolidation),
-            address(artists),
-            address(releaseVerifier),
-            address(splitFactory),
-            address(allowlist),
-            address(economics),
-            address(escrow),
-            address(verifier),
-            address(registry),
-            address(statements),
-            address(renderer),
-            address(entropy),
-            address(stream),
-            address(records),
-            address(delivery),
-            address(editions),
-            address(auction),
-            address(editionAuction),
-            editionAuction.lens(),
-            address(manager),
-            address(delegation),
-            PERMIT2,
-            address(usd)
-        ];
-        all = new address[](list.length);
-        for (uint256 i; i < list.length; ++i) {
-            all[i] = list[i];
-        }
-    }
-
-    /// @dev Cools the storage of every account in `_cooled`, as at the start of a new
-    ///      transaction, and checks that cooling works. Foundry 1.7.1's `vm.cool` cools storage
-    ///      slots but not the accounts themselves: `_measureGrowth` adds the cold-account cost.
-    function _coolAll() internal {
-        address[] memory all = _cooled();
-        for (uint256 i; i < all.length; ++i) {
-            vm.cool(all[i]);
-        }
-        _requireCooling();
-    }
-
-    /// @dev Fails when `vm.cool` does not cool. Once a state-diff recording has run in a test,
-    ///      Foundry 1.7.1 prices every account and slot as warm for the rest of that test (even
-    ///      after a state revert), so a later measurement would come out tens of thousands of
-    ///      gas low. The probe is a word of this contract's own storage: cooled, its next read
-    ///      must cost the cold price (2,100) again.
-    function _requireCooling() internal {
-        uint256 warmed = _coolProbe;
-        vm.cool(address(this));
-        uint256 before = gasleft();
-        uint256 cooled = _coolProbe;
-        uint256 used = before - gasleft();
-        require(
-            used > 2000 && warmed == cooled,
-            "vm.cool did not cool: measure gas before any state-diff recording in the test"
-        );
-    }
-
-    /// @dev Calls `target` with `data` as `from` (and `value`) with every contract's storage
-    ///      cooled, and returns the whole-transaction gas: 21,000, the calldata (or its
-    ///      EIP-7623 floor) and the called frame's own execution gas before refunds
-    ///      (`vm.lastCallGas`), which is what a transaction to `target` executes: its target is
-    ///      warm and its value is free. A revert bubbles up. The accounts the call reaches are
-    ///      priced as warm or cold as this test left them; `_measureGrowth` corrects that.
-    function _measure(address from, address target, bytes memory data, uint256 value)
-        internal
-        returns (uint256 total, uint256 execution)
-    {
-        vm.deal(from, from.balance + value);
-        _coolAll();
-        vm.prank(from);
-        (bool ok, bytes memory reason) = target.call{ value: value }(data);
-        execution = _lastCallGasUsed();
-        _bubble(ok, reason);
-        total = _txGas(data, execution);
-    }
-
-    /// @dev Which accounts of `_probeSet` are warm at this point of the test: an account the
-    ///      test function touched earlier is warm, one touched only in `setUp` (a separate
-    ///      transaction) or never is cold.
-    struct Warmth {
-        address[] accounts;
-        bool[] warm;
-    }
-
-    /// @dev Every account a measured call may reach besides its sender and target, whose warmth
-    ///      `_measureGrowth` probes: by default the contracts `_coolAll` cools, the network fee
-    ///      recipient, the museum and the English auction's lens (no storage to cool, but an
-    ///      account a view call reaches). A report adds its actors and wallets. Computed from a
-    ///      snapshot, so the calls it makes warm nothing.
-    function _probeSet() internal virtual returns (address[] memory accounts) {
-        address[] memory cooled = _cooled();
-        accounts = new address[](cooled.length + 3);
-        for (uint256 i; i < cooled.length; ++i) {
-            accounts[i] = cooled[i];
-        }
-        accounts[cooled.length] = networkFee;
-        accounts[cooled.length + 1] = museum;
-        accounts[cooled.length + 2] = auction.lens();
-    }
-
-    /// @dev Probes the warmth of every account in `_probeSet`, then restores the state (and
-    ///      with it the warmth). Must run before any state-diff recording in the test.
-    function _warmth() internal returns (Warmth memory w) {
-        uint256 snapshot = vm.snapshotState();
-        w.accounts = _probeSet();
-        vm.revertToState(snapshot);
-        w.warm = new bool[](w.accounts.length);
-        for (uint256 i; i < w.accounts.length; ++i) {
-            w.warm[i] = _isWarm(w.accounts[i]);
-        }
-        vm.revertToStateAndDelete(snapshot);
-    }
-
-    /// @dev Whether `account` is warm: its first `EXTCODESIZE` costs 100, not 2,600.
-    function _isWarm(address account) internal view returns (bool) {
-        uint256 size;
-        uint256 before = gasleft();
-        assembly ("memory-safe") {
-            size := extcodesize(account)
-        }
-        uint256 used = before - gasleft();
-        return used < 1000 && size != type(uint256).max;
-    }
-
-    /// @dev How many of `cold` (the accounts a real transaction reaches cold) the measured run
-    ///      priced warm. Each must have been probed, so none is counted twice or missed.
-    function _warmButCold(Warmth memory w, address[] memory cold)
-        internal
-        view
-        returns (uint256 n)
-    {
-        for (uint256 i; i < cold.length; ++i) {
-            uint256 k;
-            while (k < w.accounts.length && w.accounts[k] != cold[i]) ++k;
-            if (k == w.accounts.length) {
-                revert(
-                    string.concat(
-                        "the call reached an account _probeSet does not probe: ",
-                        vm.getLabel(cold[i])
-                    )
-                );
-            }
-            if (w.warm[k]) ++n;
-        }
-    }
-
-    /// @dev The Prague gas of a real transaction, and the state it creates (ADR 0004).
-    ///      - **Gas:** `_measure`, plus 2,500 (EIP-2929: 2,600 cold against 100 warm) for each
-    ///        account that a real transaction reaches cold (`StateGrowth`'s cold accounts) but
-    ///        the measured run reached warm, because the test had touched it earlier. Foundry
-    ///        cannot cool accounts; `_warmth` finds which were warm.
-    ///      - **Growth:** the new storage slots and new accounts, counted by `StateGrowth`.
-    ///      The call runs twice from one snapshot: measured first, then recorded, since nothing
-    ///      can be measured or probed after a recording (`_requireCooling`). The recorded run's
-    ///      state, the same as the measured run's, is the one that remains.
-    function _measureGrowth(address from, address target, bytes memory data, uint256 value)
-        internal
-        returns (uint256 total, uint256 execution, StateGrowth.Growth memory growth)
-    {
-        Warmth memory w = _warmth();
-        uint256 preCall = vm.snapshotState();
-        (, execution) = _measure(from, target, data, value);
-        vm.revertToStateAndDelete(preCall);
-        growth = _growth(from, target, data, value);
-        execution += COLD_ACCOUNT_SURCHARGE * _warmButCold(w, growth.coldAccounts);
-        total = _txGas(data, execution);
-    }
-
-    /// @dev The state growth and cold accounts of calling `target` with `data` as `from` (and
-    ///      `value`), from a state diff recorded around the call alone. A revert bubbles up.
-    ///      Checks that every account whose storage the call reached is one `_coolAll` cools,
-    ///      so no measured slot was left warm.
-    function _growth(address from, address target, bytes memory data, uint256 value)
-        internal
-        returns (StateGrowth.Growth memory growth)
-    {
-        vm.deal(from, from.balance + value);
-        uint256 preCall = vm.snapshotState();
-        vm.prank(from);
-        vm.startStateDiffRecording();
-        (bool ok, bytes memory reason) = target.call{ value: value }(data);
-        Vm.AccountAccess[] memory accesses = vm.stopAndReturnStateDiff();
-        _bubble(ok, reason);
-        _requireCooled(accesses);
-        growth = StateGrowth.count(accesses, preCall, from, target);
-        vm.deleteStateSnapshot(preCall);
-    }
-
-    /// @dev Every account whose storage the recorded call reached is cooled by `_coolAll`, or
-    ///      was created by the call (its storage starts cold).
-    function _requireCooled(Vm.AccountAccess[] memory accesses) internal view {
-        address[] memory cooled = _cooled();
-        for (uint256 i; i < accesses.length; ++i) {
-            Vm.StorageAccess[] memory sa = accesses[i].storageAccesses;
-            for (uint256 j; j < sa.length; ++j) {
-                if (_listed(cooled, sa[j].account) || _createdBy(accesses, sa[j].account)) {
-                    continue;
-                }
-                revert(
-                    string.concat(
-                        "measured storage that _coolAll does not cool: ", vm.toString(sa[j].account)
-                    )
-                );
-            }
-        }
-    }
-
-    function _listed(address[] memory list, address account) internal pure returns (bool) {
-        for (uint256 i; i < list.length; ++i) {
-            if (list[i] == account) return true;
-        }
-        return false;
-    }
-
-    function _createdBy(Vm.AccountAccess[] memory accesses, address account)
-        internal
-        pure
-        returns (bool)
-    {
-        for (uint256 i; i < accesses.length; ++i) {
-            if (
-                accesses[i].kind == VmSafe.AccountAccessKind.Create
-                    && accesses[i].account == account
-            ) return true;
-        }
-        return false;
-    }
-
-    /// @dev `vm.lastCallGas().gasTotalUsed`, read by hand: the pinned forge-std declares a sixth
-    ///      `Gas` field (`gasStateUsed`) that Foundry 1.7.1 does not return yet, so the typed
-    ///      call fails to decode. The layout is checked, so a drift fails instead of reading the
-    ///      wrong field: five or six words, a used gas below the frame's limit and the cap, and
-    ///      limit = used + remaining.
-    function _lastCallGasUsed() internal view returns (uint256 used) {
-        (bool ok, bytes memory ret) =
-            address(vm).staticcall(abi.encodeWithSignature("lastCallGas()"));
-        require(ok && (ret.length == 160 || ret.length == 192), "lastCallGas: layout");
-        uint256 limit;
-        uint256 remaining;
-        assembly ("memory-safe") {
-            limit := mload(add(ret, 0x20))
-            used := mload(add(ret, 0x40))
-            remaining := mload(add(ret, 0xa0))
-        }
-        require(used != 0 && used < TX_GAS_CAP && limit == used + remaining, "lastCallGas: values");
-    }
-
-    /// @dev Runs the permissionless base64 attestation to completion, bounded: each call checks
-    ///      48 chunks, so a file of at most `MAX_CHUNKS` needs few calls.
-    function _attestAll(bytes32 fileId) internal {
-        uint256 calls = store.MAX_CHUNKS() / 48 + 1;
-        for (uint256 i; i < calls; ++i) {
-            if (store.attestBase64(fileId, 48)) return;
-        }
-        revert("attestBase64 did not complete");
     }
 }

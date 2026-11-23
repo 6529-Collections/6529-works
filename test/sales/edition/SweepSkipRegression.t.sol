@@ -23,7 +23,6 @@ contract SweepSkipRegressionTest is EditionAuctionBase {
         assertTrue(c.rationed);
         assertEq(c.step, 10);
         _closeOneOfOne(saleId);
-        editions.setExists(ID, true);
         // Anyone settles first, with an order that skips departure 1 (position 0).
         uint256[] memory skip = new uint256[](1);
         skip[0] = 0;
@@ -90,7 +89,6 @@ contract SweepSkipRegressionTest is EditionAuctionBase {
         uint256[] memory order = ua.settlementOrder(saleId);
         assertEq(order.length, 200);
         _closeOneOfOne(saleId);
-        editions.setExists(ID, true);
         address one = makeAddr("settlerOne");
         address two = makeAddr("settlerTwo");
         uint256 balance = address(auction).balance;
@@ -129,6 +127,5 @@ contract SweepSkipRegressionTest is EditionAuctionBase {
         _raise(saleId, 2, 11); // departure 0: position 2
         _raise(saleId, 1, 11); // departure 1: position 0
         _closeOneOfOne(saleId);
-        editions.setExists(ID, true);
     }
 }

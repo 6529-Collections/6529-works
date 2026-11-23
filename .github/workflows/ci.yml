@@ -41,7 +41,7 @@ jobs:
         run: python -m tools.test_gen_role_matrix
 
       - name: Role matrix
-        # docs/audit/roles.md must be generated from config/genesis.example.json.
+        # docs/audit/roles.md must be generated from config/genesis.core.example.json.
         run: python tools/gen_role_matrix.py --check
 
       - name: Docs facts checker unit tests
@@ -66,6 +66,14 @@ jobs:
         # docs/audit/invariants.md names a test that exists; a rule without one must be listed
         # in tools/rules-uncovered.txt, which can only shrink.
         run: python tools/check_rules.py --uncovered
+
+      - name: Comment code checker unit tests
+        run: python -m tools.test_check_comment_codes
+
+      - name: Comment codes
+        # Comments in src/ and script/ cite only spec rule, invariant and limitation IDs, ADRs,
+        # EIPs and repository names, never internal reference codes.
+        run: python tools/check_comment_codes.py src script
 
       - name: Sepolia manifest writer unit tests
         # script/sepolia/make_manifest.py builds the manifest's `safes` from the new genesis.
@@ -179,7 +187,7 @@ jobs:
 
       - name: Real-data vectors and event topics
         # test/fixtures/real/ must be what tools/make_vectors.py writes from the pinned Museum
-        # records and the compiled ABIs (the replay suites require every listed event).
+        # records and the compiled ABIs of the permanent contracts.
         run: python tools/make_vectors.py --check
 
       - name: Vector generator unit tests
@@ -194,7 +202,8 @@ jobs:
         run: python -m tools.test_check_budgets
 
       - name: Genesis configuration
-        # config/genesis.example.json against forge's method IDs and every restricted function.
+        # config/genesis.core.example.json against forge's method IDs and every restricted
+        # function.
         run: python tools/check_genesis.py
 
       - name: Genesis checker unit tests
@@ -251,10 +260,14 @@ jobs:
     runs-on: ubuntu-latest
     # ADR 0001 budget: every CI job finishes in under 15 minutes.
     timeout-minutes: 15
-    # `forge test` in six parallel parts that together run every test exactly once:
-    # everything but the invariant tests, the economics invariants (the longest suite, in two parts by test), the
-    # four campaigns of the November 2026 testing build, the auction invariants, and the other invariants (the Medusa
-    # harnesses' Forge runners among them). Each part builds incrementally from the cached compiler output.
+    # `forge test` in seven parallel parts that together run every test exactly once:
+    # everything but the invariant tests, the economics invariants (the longest suite, in two
+    # parts by test), the token, vault and signer invariants, the auction invariants, the
+    # lifecycle invariants on the whole deployed stack, and the other invariants (the Medusa
+    # harnesses' Forge runners among them). 68 invariant tests on 22 November 2026. Each part builds
+    # incrementally from the cached compiler output. Recount when invariant suites are added:
+    #   forge test --list --match-test "^invariant" --json
+    # and check that each listed test matches exactly one filter below.
     strategy:
       fail-fast: false
       matrix:
@@ -265,12 +278,14 @@ jobs:
             filter: --match-test ^invariant_(Dust|Escrow|Intermediaries|Marks|Observed) --match-contract ^EconomicsInvariant
           - name: economics invariants, releases
             filter: --match-test ^invariant_(Recipients|Released|Wallet) --match-contract ^EconomicsInvariant
-          - name: testing-build invariants
-            filter: --match-test ^invariant --match-contract ^(WorkDelivery|GovernedVault|FederatedState|CurationSigner)Invariant
+          - name: core, vault and signer invariants
+            filter: --match-test ^invariant --match-contract ^(StreamCore|IndependentStream|GovernedVault|CurationSigner)Invariant
           - name: auction invariants
             filter: --match-test ^invariant --match-contract ^(Auction|EditionAuction)
+          - name: lifecycle invariants
+            filter: --match-test ^invariant --match-contract ^(StreamLifecycle|StreamStates)Invariant
           - name: other invariants
-            filter: --match-test ^invariant --no-match-contract ^((Economics|WorkDelivery|GovernedVault|FederatedState|CurationSigner)Invariant|Auction|EditionAuction)
+            filter: --match-test ^invariant --no-match-contract ^((Economics|StreamCore|IndependentStream|GovernedVault|CurationSigner|StreamLifecycle|StreamStates)Invariant|Auction|EditionAuction)
 
     steps:
       - name: Checkout
@@ -411,7 +426,8 @@ jobs:
 
       - name: Walkthrough
         # script/local/walkthrough.sh: deploys on a fresh Anvil node with its test accounts,
-        # accepts the network, runs Verify and sells one work end to end; any failure fails it.
+        # accepts the network, runs VerifyCore, sells one work and an edition end to end, sells an
+        # Independent Stream work and swaps a module; any failure fails it.
         run: bash script/local/walkthrough.sh
 
   contracts:

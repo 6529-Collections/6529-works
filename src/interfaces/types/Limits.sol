@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 /// @title Limits
 /// @notice Bounds on every user-supplied array or blob the interfaces accept. Each bound keeps

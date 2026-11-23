@@ -120,24 +120,6 @@ contract NonCanonicalTrueToken is MockERC20("Two", "TWO") {
     }
 }
 
-/// @dev `transfer` records the gas it was given and reverts unless that is at least `need`, so a
-///      test can calibrate `need` to the full allowance and then detect any starvation.
-contract GasCheckingToken is MockERC20("Gas", "GAS") {
-    uint256 public need;
-    uint256 public seen;
-
-    function setNeed(uint256 need_) external {
-        need = need_;
-    }
-
-    function transfer(address to, uint256 amount) public override returns (bool) {
-        uint256 g = gasleft();
-        seen = g;
-        require(g >= need, "starved");
-        return super.transfer(to, amount);
-    }
-}
-
 /// @dev USDT-style: `transfer` and `transferFrom` move funds but return no data while `silent`.
 contract NoReturnToken is MockERC20("NoReturn", "NRT") {
     bool public silent = true;
@@ -239,27 +221,6 @@ abstract contract BlocklistTokenBase is MockERC20("Blocklist", "USDB") {
 /// @dev USDC-style: transfers from or to a blocked address revert.
 contract BlocklistToken is BlocklistTokenBase { }
 
-/// @dev `transferFrom` never spends the allowance, so an approval survives the pull.
-contract StickyAllowanceToken is BlocklistTokenBase {
-    function transferFrom(address from, address to, uint256 amount) public override returns (bool) {
-        _transfer(from, to, amount);
-        return true;
-    }
-}
-
-/// @dev `transfer` burns more gas than a payer's direct-route allowance; `transferFrom` is cheap.
-contract GasHungryToken is MockERC20("Hungry", "HGT") {
-    uint256 public constant BURN = 400_000;
-
-    /// @dev Burns `BURN` gas before moving funds. Given less, it runs out of gas (no underflow:
-    ///      `start - gasleft()` only grows); given more, it succeeds.
-    function transfer(address to, uint256 amount) public override returns (bool) {
-        uint256 start = gasleft();
-        while (start - gasleft() < BURN) { }
-        return super.transfer(to, amount);
-    }
-}
-
 /// @dev Calls `hookTarget` with `hookData` after every transfer and records the outcome, like an
 ///      ERC-777 hook. Used to prove reentry through a token callback is blocked.
 contract CallbackToken is MockERC20("Callback", "CBT") {
@@ -285,6 +246,13 @@ contract CallbackToken is MockERC20("Callback", "CBT") {
 contract MockArtistResolver is IArtistPayoutResolver {
     mapping(uint256 => address) public payout;
     bool public down;
+    /// @dev `IDirectory.unclaimedPeriod`, which the split ledger reads at a forfeit (the
+    ///      Directory's launch value by default).
+    uint48 public unclaimedPeriod = 180 days;
+
+    function setUnclaimedPeriod(uint48 next) external {
+        unclaimedPeriod = next;
+    }
 
     function set(uint256 artistId, address account) external {
         payout[artistId] = account;

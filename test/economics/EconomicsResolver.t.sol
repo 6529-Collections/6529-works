@@ -14,7 +14,7 @@ import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import {
     CURRENCY_DEFAULT,
     PRODUCT_EDITIONS,
-    PRODUCT_FEDERATED,
+    PRODUCT_INDEPENDENT,
     PRODUCT_STREAM,
     ProductEconomics,
     WorkTerms
@@ -54,9 +54,9 @@ contract EconomicsResolverTest is EconomicsBase {
     function test_LaunchDefaults() public view {
         _assertEconomics(_econ(PRODUCT_STREAM), network, 25_000, 6_529);
         _assertEconomics(_econ(PRODUCT_EDITIONS), network, 25_000, 6_529);
-        _assertEconomics(_econ(PRODUCT_FEDERATED), network, 10_000, 6_529);
+        _assertEconomics(_econ(PRODUCT_INDEPENDENT), network, 10_000, 6_529);
         assertEq(econ.networkFeeRecipient(PRODUCT_STREAM), network);
-        bytes32[3] memory products = [PRODUCT_STREAM, PRODUCT_EDITIONS, PRODUCT_FEDERATED];
+        bytes32[3] memory products = [PRODUCT_STREAM, PRODUCT_EDITIONS, PRODUCT_INDEPENDENT];
         for (uint256 i; i < 3; ++i) {
             License memory license = econ.defaultLicense(products[i]);
             assertEq(license.spdxId, "CC0-1.0");
@@ -119,8 +119,6 @@ contract EconomicsResolverTest is EconomicsBase {
         econ.revisions(UNKNOWN);
         vm.expectRevert(unknown);
         econ.newWorkTerms(UNKNOWN, _artistPayees());
-        vm.expectRevert(unknown);
-        econ.resolveCurrency(UNKNOWN, ETH);
         vm.expectRevert(unknown);
         econ.setFeeTerms(UNKNOWN, 1, network, 1);
         vm.expectRevert(unknown);
@@ -224,21 +222,21 @@ contract EconomicsResolverTest is EconomicsBase {
         License memory custom = License("LicenseRef-6529-Custom+1.0", keccak256("custom text"));
         vm.expectEmit(true, false, false, true, address(econ));
         emit IEconomicsResolver.DefaultLicenseSet(
-            PRODUCT_FEDERATED, License("CC0-1.0", CC0_TEXT), custom, 2
+            PRODUCT_INDEPENDENT, License("CC0-1.0", CC0_TEXT), custom, 2
         );
-        econ.setDefaultLicense(PRODUCT_FEDERATED, 1, custom);
-        assertEq(econ.defaultLicense(PRODUCT_FEDERATED).spdxId, custom.spdxId);
+        econ.setDefaultLicense(PRODUCT_INDEPENDENT, 1, custom);
+        assertEq(econ.defaultLicense(PRODUCT_INDEPENDENT).spdxId, custom.spdxId);
         assertEq(econ.defaultLicense(PRODUCT_STREAM).spdxId, "CC0-1.0");
         vm.expectRevert(abi.encodeWithSelector(IEconomicsResolver.RevisionMismatch.selector, 1, 2));
-        econ.setDefaultLicense(PRODUCT_FEDERATED, 1, custom);
+        econ.setDefaultLicense(PRODUCT_INDEPENDENT, 1, custom);
 
         string[4] memory bad = ["", "CC0 1.0", "GPL/2.0", string(new bytes(65))];
         for (uint256 i; i < bad.length; ++i) {
             vm.expectRevert(IEconomicsResolver.InvalidLicense.selector);
-            econ.setDefaultLicense(PRODUCT_FEDERATED, 2, License(bad[i], CC0_TEXT));
+            econ.setDefaultLicense(PRODUCT_INDEPENDENT, 2, License(bad[i], CC0_TEXT));
         }
         vm.expectRevert(IEconomicsResolver.InvalidLicense.selector);
-        econ.setDefaultLicense(PRODUCT_FEDERATED, 2, License("MIT", bytes32(0)));
+        econ.setDefaultLicense(PRODUCT_INDEPENDENT, 2, License("MIT", bytes32(0)));
     }
 
     /// @dev A default license whose key is CC0 names the CC0 text the resolver was deployed
@@ -278,10 +276,10 @@ contract EconomicsResolverTest is EconomicsBase {
         for (uint256 i; i < longest.length; ++i) {
             longest[i] = "a";
         }
-        econ.setDefaultLicense(PRODUCT_FEDERATED, 1, License(string(longest), CC0_TEXT));
+        econ.setDefaultLicense(PRODUCT_INDEPENDENT, 1, License(string(longest), CC0_TEXT));
         vm.expectRevert(IEconomicsResolver.InvalidLicense.selector);
         econ.setDefaultLicense(
-            PRODUCT_FEDERATED, 2, License(string(bytes.concat(longest, "a")), CC0_TEXT)
+            PRODUCT_INDEPENDENT, 2, License(string(bytes.concat(longest, "a")), CC0_TEXT)
         );
     }
 
@@ -465,31 +463,6 @@ contract EconomicsResolverTest is EconomicsBase {
 
     // ------------------------------------------------------------------ currency
 
-    function test_ResolveCurrencyThroughTheAllowlist() public {
-        MockERC20 usdc = new MockERC20("USD Coin", "USDC");
-        assertEq(econ.resolveCurrency(PRODUCT_STREAM, ETH), ETH);
-        vm.expectRevert(
-            abi.encodeWithSelector(IEconomicsResolver.CurrencyNotAllowed.selector, address(usdc))
-        );
-        econ.resolveCurrency(PRODUCT_EDITIONS, address(usdc));
-        vm.expectRevert(
-            abi.encodeWithSelector(IEconomicsResolver.CurrencyNotAllowed.selector, CURRENCY_DEFAULT)
-        );
-        econ.resolveCurrency(PRODUCT_STREAM, CURRENCY_DEFAULT);
-
-        allowlist.setDefaultCurrency(PRODUCT_STREAM, 0, ETH);
-        assertEq(econ.resolveCurrency(PRODUCT_STREAM, CURRENCY_DEFAULT), ETH);
-        allowlist.admitAsset(address(usdc), 0, 1e6);
-        allowlist.setDefaultCurrency(PRODUCT_EDITIONS, 0, address(usdc));
-        assertEq(econ.resolveCurrency(PRODUCT_EDITIONS, CURRENCY_DEFAULT), address(usdc));
-        assertEq(econ.resolveCurrency(PRODUCT_EDITIONS, address(usdc)), address(usdc));
-        allowlist.deprecateAsset(address(usdc));
-        vm.expectRevert(
-            abi.encodeWithSelector(IEconomicsResolver.CurrencyNotAllowed.selector, address(usdc))
-        );
-        econ.resolveCurrency(PRODUCT_EDITIONS, CURRENCY_DEFAULT);
-    }
-
     // ------------------------------------------------------------------ new work terms
 
     /// @dev The terms are exactly the wallets the split factory deploys for the payee lists the
@@ -522,11 +495,11 @@ contract EconomicsResolverTest is EconomicsBase {
         assertEq(bob.balance, 0.15 ether);
         assertEq(artistPayout.balance, 0.6 ether);
 
-        WorkTerms memory fed = econ.newWorkTerms(PRODUCT_FEDERATED, payees);
-        assertEq(fed.seller, t.seller);
-        assertEq(fed.feeShare, 10_000);
+        WorkTerms memory ind = econ.newWorkTerms(PRODUCT_INDEPENDENT, payees);
+        assertEq(ind.seller, t.seller);
+        assertEq(ind.feeShare, 10_000);
         assertEq(
-            fed.royaltyReceiver,
+            ind.royaltyReceiver,
             factory.walletFor(Splits.royaltyPayees(t.seller, network, 10_000), bytes32(0))
         );
     }

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { StreamContentMock } from "test/mocks/curation/StreamContentMock.sol";
-import { IMintPolicy } from "src/interfaces/IMintPolicy.sol";
+import { MintFacts, MintTerms } from "src/interfaces/core/CoreTypes.sol";
+import { IStream } from "src/interfaces/core/IStream.sol";
 import { StreamMintRequest } from "src/interfaces/types/PackageTypes.sol";
 import { Eip712CurationVerifier } from "src/curation/Eip712CurationVerifier.sol";
 import { PackageRegistry } from "src/curation/PackageRegistry.sol";
@@ -18,16 +18,17 @@ import {
 import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { CurationArtistRegistryMock } from "test/mocks/curation/CurationArtistRegistryMock.sol";
-import { CurationBase, CurationHelpers } from "./CurationBase.sol";
+import { CurationBase, CurationHelpers, PolicyMinter } from "./CurationBase.sol";
 import { HandlerReach } from "../helpers/HandlerReach.sol";
 
-/// @dev An exact model of the registry, driven the way Stream, Editions, artists, relayers, the
-///      guardian and outsiders would. Twenty items by three artists: items 0-9 form package A,
-///      6-15 package B (6-9 are in both), and 16-19 belong to no package; items `i` and `i + 8`
-///      declare the same content hash. A third root C starts unregistered. Each action predicts
-///      its outcome from the ghost state (root status, membership, proofs, keys, spent nonces,
-///      content slots, releases, callers) before calling; an unexpected success or failure sets
-///      a flag the invariants check, and the ghost state advances only on success.
+/// @dev An exact model of the registry as 6529 Stream's mint policy, driven through the real
+///      Stream the way its sale contract, artists, relayers, the network and outsiders would.
+///      Twenty items by three artists: items 0-9 form package A, 6-15 package B (6-9 are in
+///      both), and 16-19 belong to no package; items `i` and `i + 8` declare the same content
+///      hash. A third root C starts unregistered. Each action predicts its outcome from the ghost
+///      state (root status, membership, proofs, keys, spent nonces, live and burned tokens per
+///      content, releases, barred items, callers) before calling; an unexpected success or
+///      failure sets a flag the invariants check, and the ghost state advances only on success.
 contract CurationHandler is CurationHelpers {
     uint256 internal constant ITEMS = 20;
     uint256 internal constant PACKAGED = 16;
@@ -42,8 +43,8 @@ contract CurationHandler is CurationHelpers {
     PackageRegistry internal registry;
     Eip712CurationVerifier internal verifier;
     CurationArtistRegistryMock internal artists;
+    PolicyMinter internal minter;
     address internal stream;
-    address internal editions;
     address internal guardian;
     address internal admin;
     uint256 internal signerKey;
@@ -62,27 +63,34 @@ contract CurationHandler is CurationHelpers {
     mapping(bytes32 root => uint8) public statusOf;
     mapping(uint256 artist => mapping(uint256 nonce => bool)) public spent;
     mapping(bytes32 itemHash => uint256) public consumeCount;
-    mapping(bytes32 itemHash => bool) public released;
-    mapping(bytes32 sha => bytes32) public streamItemOf;
-    /// @dev The artist the latest release of each content hash named (its first account's ID).
-    mapping(bytes32 sha => uint256) public releasedTo;
+    mapping(bytes32 itemHash => bool) public barred;
+    /// @dev The token last minted with each content hash, whether it is live, and its item.
+    mapping(bytes32 sha => uint256) public tokenOf;
+    mapping(bytes32 sha => bool) public live;
+    mapping(uint256 tokenId => bytes32) public itemOfToken;
+    /// @dev The latest release of each content hash: the burned token and the artist named.
+    mapping(bytes32 sha => uint256) public releaseToken;
+    mapping(bytes32 sha => uint256) public releaseBeneficiary;
     bool public unexpectedSuccess;
     bool public unexpectedFailure;
     uint256 public consumed;
     uint256 public releases;
+    uint256 public burns;
 
     constructor(
         PackageRegistry registry_,
         Eip712CurationVerifier verifier_,
         uint256 signerKey_,
         CurationArtistRegistryMock artists_,
-        address[4] memory actors // stream, editions, guardian, admin
+        PolicyMinter minter_,
+        address[3] memory actors // stream, guardian, admin
     ) {
         registry = registry_;
         verifier = verifier_;
         signerKey = signerKey_;
         artists = artists_;
-        (stream, editions, guardian, admin) = (actors[0], actors[1], actors[2], actors[3]);
+        minter = minter_;
+        (stream, guardian, admin) = (actors[0], actors[1], actors[2]);
         for (uint256 a; a < ARTISTS; ++a) {
             originalKey[a] = 0xD00 + a;
             currentKey[a] = originalKey[a];
@@ -93,7 +101,6 @@ contract CurationHandler is CurationHelpers {
         }
         for (uint256 i; i < ITEMS; ++i) {
             PackageItem memory item = _item(accounts[i % ARTISTS], shas[i % MEDIA]);
-            item.collectionId = i;
             item.mediaHash = keccak256(abi.encode("media list", i));
             if (i % 2 == 1) {
                 item.kind = uint8(ItemKind.EDITION_MASTER);
@@ -122,15 +129,16 @@ contract CurationHandler is CurationHelpers {
         uint256 nonce;
         bytes32 root;
         bytes32 sha;
-        address caller;
+        bool byMinter;
         uint64 deadline;
         bool proofValid;
+        bool contentOk;
         bool expected;
     }
 
     /// @dev A start, honest or not. Each fault fires a quarter of the time: any root instead of
     ///      one listing the item, a wrong proof, a stale key, an expired deadline, or a caller
-    ///      that is not the bound Stream; spent nonces and used content arise on their own.
+    ///      that is not a minter; spent nonces and used content arise on their own.
     function consume(
         uint256 itemSeed,
         uint256 nonceSeed,
@@ -138,7 +146,6 @@ contract CurationHandler is CurationHelpers {
         uint8 faults,
         uint8 callerSeed
     ) external {
-        // Faults key on residue 1, so the fuzzer's favourite edge values (0, 255) stay honest.
         bool stale = faults % 4 == 1;
         bool wrongProof = (faults >> 2) % 4 == 1;
         bool expired = (faults >> 4) % 4 == 1;
@@ -146,41 +153,41 @@ contract CurationHandler is CurationHelpers {
         t.i = bound(itemSeed, 0, ITEMS - 1);
         t.a = t.i % ARTISTS;
         t.nonce = bound(nonceSeed, 0, NONCES - 1);
-        // Mostly a root that lists the item (orphans have none, so they try A).
         uint256 r = rootSeed % 4 == 1
             ? rootSeed % 3
             : (t.i >= 10 && t.i < PACKAGED) || (t.i >= 6 && t.i < 10 && rootSeed % 2 == 1) ? 1 : 0;
         t.root = roots[r];
         t.sha = shas[t.i % MEDIA];
-        t.caller = callerSeed % 4 != 1 ? stream : (callerSeed % 8 == 1 ? editions : admin);
+        t.byMinter = callerSeed % 4 != 1;
         t.deadline = expired ? 0 : type(uint64).max;
         uint256 p = wrongProof ? (t.i + 1) % ITEMS : t.i;
         bool member = (r == 0 && t.i < 10) || (r == 1 && t.i >= 6 && t.i < PACKAGED);
         t.proofValid = member && p == t.i;
         bytes32[] memory proof = r == 0 ? proofA[p] : r == 1 ? proofB[p] : new bytes32[](0);
         uint256 key = stale ? originalKey[t.a] : currentKey[t.a];
-        t.expected = t.caller == stream && statusOf[t.root] == APPROVED && t.proofValid
-            && streamItemOf[t.sha] == 0 && !released[itemHashes[t.i]] && key == currentKey[t.a]
-            && !expired && !spent[t.a][t.nonce]
-            && (releasedTo[t.sha] == 0 || releasedTo[t.sha] == uint160(accounts[t.a]));
+        uint256 prior = tokenOf[t.sha];
+        t.contentOk = prior == 0
+            || (!live[t.sha]
+                && releaseToken[t.sha] == prior
+                && !barred[itemHashes[t.i]]
+                && releaseBeneficiary[t.sha] == uint160(accounts[t.a]));
+        t.expected = t.byMinter && statusOf[t.root] == APPROVED && t.proofValid
+            && key == currentKey[t.a] && !expired && !spent[t.a][t.nonce] && t.contentOk;
         MoveAuthorization memory move =
             _signedMove(key, t.root, itemHashes[t.i], t.nonce, t.deadline);
         PackageItem memory item = abi.decode(encodedItems[t.i], (PackageItem));
         try this.mintAs(
-            t.caller,
-            IMintPolicy.MintContext(
-                t.caller, address(_policyStub), address(0), address(_policyStub)
-            ),
-            abi.encode(StreamMintRequest(t.root, item, proof, move))
+            t.byMinter, abi.encode(StreamMintRequest(t.root, item, proof, move))
         ) returns (
-            IMintPolicy.MintRecord memory rec
+            bytes32 itemHash, uint256 tokenId
         ) {
-            bytes32 itemHash = rec.itemHash;
             if (!t.expected || itemHash != itemHashes[t.i]) {
                 unexpectedSuccess = true;
             }
             ++consumeCount[itemHash];
-            streamItemOf[t.sha] = itemHash;
+            tokenOf[t.sha] = tokenId;
+            live[t.sha] = true;
+            itemOfToken[tokenId] = itemHash;
             spent[t.a][t.nonce] = true;
             ++consumed;
         } catch {
@@ -200,34 +207,50 @@ contract CurationHandler is CurationHelpers {
         return MoveAuthorization(nonce, deadline, _pf(key, _sig(key, digest)));
     }
 
-    /// @dev Stream mints through its stand-in, which applies Stream's content rule (AUC-44);
-    ///      any other caller calls the registry itself.
-    function mintAs(address caller, IMintPolicy.MintContext calldata c, bytes calldata request)
+    /// @dev Stream's sale contract mints through the policy; any other caller asks the policy
+    ///      itself (as the admin).
+    function mintAs(bool byMinter, bytes calldata request)
         external
-        returns (IMintPolicy.MintRecord memory)
+        returns (bytes32 itemHash, uint256 tokenId)
     {
         require(msg.sender == address(this), "self only");
-        if (caller == stream) {
-            return StreamContentMock(stream).mintThrough(registry, c, request);
+        if (byMinter) {
+            MintFacts memory f;
+            (f,, tokenId) = minter.mint(address(registry), stream, request);
+            return (f.itemHash, tokenId);
         }
-        vm.prank(caller);
-        return registry.authorize(c, request);
+        vm.prank(admin);
+        (MintFacts memory g,) = registry.authorize(stream, request);
+        return (g.itemHash, 0);
     }
 
-    /// @dev Stream's dispute-burn path, honest or not, or a caller that is not Stream. The
-    ///      release names one of the artists (by its first account's ID).
-    function release(uint256 shaSeed, uint256 itemSeed, bool honest, uint8 callerSeed) external {
+    /// @dev An upheld dispute burns the live token of a content hash, held unsold by the sale
+    ///      contract; with no live token the burn is refused.
+    function burn(uint256 shaSeed) external {
         bytes32 sha = shas[bound(shaSeed, 0, MEDIA - 1)];
-        bytes32 itemHash = honest ? streamItemOf[sha] : itemHashes[bound(itemSeed, 0, ITEMS - 1)];
-        address caller = callerSeed % 4 == 1 ? editions : stream;
-        bool expected = itemHash != 0 && streamItemOf[sha] == itemHash;
-        uint256 beneficiary = uint160(accounts[(itemSeed >> 8) % ARTISTS]);
-        caller; // Stream holds releases since AUC-44: the stand-in plays Stream's part.
-        try StreamContentMock(stream).release(sha, itemHash, beneficiary, address(artists)) {
+        bool expected = live[sha];
+        try minter.burn(stream, tokenOf[sha]) {
             if (!expected) unexpectedSuccess = true;
-            streamItemOf[sha] = 0;
-            releasedTo[sha] = beneficiary;
-            released[itemHash] = true;
+            live[sha] = false;
+            ++burns;
+        } catch {
+            if (expected) unexpectedFailure = true;
+        }
+    }
+
+    /// @dev The network's release of a burned token's content, honest or not, or by a caller
+    ///      that is not the network. The release names one of the artists.
+    function release(uint256 shaSeed, uint256 tokenSeed, bool honest, bool byGuardian) external {
+        bytes32 sha = shas[bound(shaSeed, 0, MEDIA - 1)];
+        uint256 tokenId = honest ? tokenOf[sha] : bound(tokenSeed, 0, 6);
+        uint256 beneficiary = uint160(accounts[(tokenSeed >> 8) % ARTISTS]);
+        bool expected = byGuardian && tokenId != 0 && tokenOf[sha] == tokenId && !live[sha];
+        vm.prank(byGuardian ? guardian : admin);
+        try registry.releaseContent(stream, tokenId, sha, beneficiary) {
+            if (!expected) unexpectedSuccess = true;
+            releaseToken[sha] = tokenId;
+            releaseBeneficiary[sha] = beneficiary;
+            barred[itemOfToken[tokenId]] = true;
             ++releases;
         } catch {
             if (expected) unexpectedFailure = true;
@@ -259,7 +282,7 @@ contract CurationHandler is CurationHelpers {
         artists.recover(uint256(uint160(accounts[a])), vm.addr(currentKey[a]));
     }
 
-    /// @dev Rarely, the guardian (or, wrongly, the admin) revokes A, B or the unregistered C.
+    /// @dev Rarely, the network (or, wrongly, the admin) revokes A, B or the unregistered C.
     function revokePackage(uint8 rootSeed, bool byGuardian, uint8 gate) external {
         if (gate % 16 != 7) return;
         bytes32 root = roots[rootSeed % 3];
@@ -305,18 +328,12 @@ contract CurationHandler is CurationHelpers {
         }
     }
 
-    /// @dev Bindings are one-shot: no later call by anyone may rebind.
-    function rebind(bool editionsSlot, bool byAdmin) external {
+    /// @dev The Stream binding is one-shot: no later call by anyone may rebind.
+    function rebind(bool byAdmin) external {
         vm.prank(byAdmin ? admin : guardian);
-        if (editionsSlot) {
-            try registry.bindEditions(editions) {
-                unexpectedSuccess = true;
-            } catch { }
-        } else {
-            try registry.bindStream(stream) {
-                unexpectedSuccess = true;
-            } catch { }
-        }
+        try registry.bindStream(stream) {
+            unexpectedSuccess = true;
+        } catch { }
     }
 
     // ------------------------------------------------------------------------ helpers
@@ -361,9 +378,9 @@ contract PackageRegistryInvariantTest is CurationBase {
     function setUp() public override {
         super.setUp();
         handler = new CurationHandler(
-            registry, verifier, signerKey1, artists, [stream, editions, guardian, admin]
+            registry, verifier, signerKey1, artists, minter, [stream, guardian, admin]
         );
-        bytes4[] memory selectors = new bytes4[](8);
+        bytes4[] memory selectors = new bytes4[](9);
         selectors[0] = CurationHandler.consume.selector;
         selectors[1] = CurationHandler.release.selector;
         selectors[2] = CurationHandler.revokeMove.selector;
@@ -372,13 +389,15 @@ contract PackageRegistryInvariantTest is CurationBase {
         selectors[5] = CurationHandler.registerLate.selector;
         selectors[6] = CurationHandler.acceptLate.selector;
         selectors[7] = CurationHandler.rebind.selector;
+        selectors[8] = CurationHandler.burn.selector;
         targetSelector(FuzzSelector({ addr: address(handler), selectors: selectors }));
         targetContract(address(handler));
     }
 
     /// @dev Nothing the model forbids ever succeeds: revoked or unregistered roots, foreign or
-    ///      wrong proofs, stale keys, spent or revoked nonces, expired moves, used or released
-    ///      content, unbound callers, rebinding.
+    ///      wrong proofs, stale keys, spent or revoked nonces, expired moves, live or burned and
+    ///      unreleased content, a barred item, the wrong beneficiary, callers that are not a
+    ///      minter or not the network, rebinding.
     function invariant_noUnexpectedSuccess() public view {
         assertFalse(handler.unexpectedSuccess());
     }
@@ -388,21 +407,30 @@ contract PackageRegistryInvariantTest is CurationBase {
         assertFalse(handler.unexpectedFailure());
     }
 
-    /// @dev An item is consumed at most once, a released item never again, an orphan never.
+    /// @dev An item mints at most once, a barred item never again, an orphan never; the barred
+    ///      set matches the model.
     function invariant_itemConsumedAtMostOnce() public view {
         for (uint256 i; i < 20; ++i) {
             bytes32 h = handler.itemHashes(i);
             assertLe(handler.consumeCount(h), 1);
-            assertEq(registry.isReleased(h), handler.released(h));
+            assertEq(registry.isBarred(h), handler.barred(h));
             if (i >= 16) assertEq(handler.consumeCount(h), 0);
         }
     }
 
-    /// @dev Each content hash has at most one live item per product, recorded exactly.
+    /// @dev Stream's last token per content hash, the consumed item and the release match the
+    ///      model exactly.
     function invariant_contentRecordsMatch() public view {
         for (uint256 m; m < 8; ++m) {
             bytes32 sha = handler.shas(m);
-            assertEq(registry.consumedItemOf(sha), handler.streamItemOf(sha));
+            uint256 t = handler.tokenOf(sha);
+            assertEq(IStream(stream).tokenOfContent(sha), t);
+            bool released = t != 0 && handler.releaseToken(sha) == t;
+            bytes32 expected = t == 0 || released ? bytes32(0) : handler.itemOfToken(t);
+            assertEq(registry.consumedItemOf(sha), expected);
+            assertEq(
+                registry.releasedTo(stream, sha), released ? handler.releaseBeneficiary(sha) : 0
+            );
         }
     }
 
@@ -421,13 +449,13 @@ contract PackageRegistryInvariantTest is CurationBase {
         }
     }
 
-    /// @notice Handler self-test: each action both succeeds (writing the registry, Stream's
-    ///         content stand-in or the artist registry) and, where the model has a forbidden
-    ///         case, is refused there; rebinding only ever reaches a refusal. Then every
-    ///         invariant holds on the state the drive left.
+    /// @notice Handler self-test: each action both succeeds (writing the registry, Stream or
+    ///         the artist registry) and, where the model has a forbidden case, is refused there;
+    ///         rebinding only ever reaches a refusal. Then every invariant holds on the state the
+    ///         drive left.
     function test_HandlerPathsReachState() public {
         uint8 wr = HandlerReach.WRITES | HandlerReach.REFUSED;
-        HandlerReach.Expect[] memory e = new HandlerReach.Expect[](8);
+        HandlerReach.Expect[] memory e = new HandlerReach.Expect[](9);
         e[0] = HandlerReach.Expect(CurationHandler.consume.selector, wr);
         e[1] = HandlerReach.Expect(CurationHandler.release.selector, wr);
         e[2] = HandlerReach.Expect(CurationHandler.revokeMove.selector, wr);
@@ -436,13 +464,15 @@ contract PackageRegistryInvariantTest is CurationBase {
         e[5] = HandlerReach.Expect(CurationHandler.registerLate.selector, wr);
         e[6] = HandlerReach.Expect(CurationHandler.acceptLate.selector, wr);
         e[7] = HandlerReach.Expect(CurationHandler.rebind.selector, HandlerReach.REFUSED);
+        e[8] = HandlerReach.Expect(CurationHandler.burn.selector, wr);
         HandlerReach.covers(targetSelectors()[0].selectors, e);
         address[] memory sut = new address[](3);
         sut[0] = address(registry);
         sut[1] = stream;
         sut[2] = address(artists);
-        HandlerReach.check(e, HandlerReach.drive(address(handler), e, sut, 160, 1));
+        HandlerReach.check(e, HandlerReach.drive(address(handler), e, sut, 200, 1));
         assertGt(handler.consumed(), 0);
+        assertGt(handler.burns(), 0);
         assertGt(handler.releases(), 0);
         invariant_noUnexpectedSuccess();
         invariant_noUnexpectedFailure();

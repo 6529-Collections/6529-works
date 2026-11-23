@@ -1,18 +1,5 @@
 [
   {
-    "id": "0x6faf3090",
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "asset",
-        "type": "address"
-      }
-    ],
-    "name": "EscrowAllowanceLeft",
-    "signature": "EscrowAllowanceLeft(address)",
-    "type": "error"
-  },
-  {
     "id": "0x9700e103",
     "inputs": [
       {

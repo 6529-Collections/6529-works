@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { StreamEditions6529 } from "src/core/StreamEditions6529.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
 import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
@@ -11,40 +12,51 @@ import { GasBurnerWallet } from "../../mocks/sales/SaleMocks.sol";
 import { EditionAuctionBase } from "./EditionAuctionBase.sol";
 
 /// @notice The gas rule on the edition auction's reads whose refusal has a meaning (EA-20): the
-///         1/1's clock at `open` and in the abandonment check, and 6529 Stream's settlement
-///         record in it. Each dependency is wrapped in a `Burner` costing 1x to 100x its base:
-///         the outcome never changes with the multiple, and running short reverts with
-///         `BoundedCallShortfall(burner)`, never reads as a missing 1/1 or an unsettled master.
-///         The payout gas is the governed figure.
+///         1/1's clock at `open` and in the abandonment check. Each dependency is wrapped in a
+///         `Burner` costing 1x to 100x its base: the outcome never changes with the multiple,
+///         and running short reverts with `BoundedCallShortfall(burner)`, never reads as a
+///         missing or finished 1/1. The payout gas is the governed figure.
 contract UniformEditionAuctionGasRuleTest is EditionAuctionBase, GasRuleAssertions {
     uint256 internal constant BASE = 20_000;
     Burner internal clockBurner;
     Burner internal streamBurner;
     UniformEditionAuction internal wrapped;
+    /// @dev 6529 Stream Editions over the wrapped master.
+    StreamEditions6529 internal wEditions;
     address internal alice = makeAddr("alice");
 
     function setUp() public override {
         super.setUp();
         clockBurner = new Burner(address(english), BASE);
         streamBurner = new Burner(address(stream), BASE);
-        editions.setStream(address(streamBurner));
+        wEditions = new StreamEditions6529(
+            address(manager), address(streamBurner), address(this), address(0), new address[](0)
+        );
         address l = address(
             new UniformEditionAuctionLens(
-                address(editions), address(streamBurner), address(clockBurner), address(escrow)
+                address(wEditions),
+                address(streamBurner),
+                address(clockBurner),
+                address(escrow),
+                address(directory),
+                address(economics),
+                address(stream)
             )
         );
         wrapped = new UniformEditionAuction(
             address(manager),
             address(escrow),
-            address(editions),
+            address(directory),
+            address(wEditions),
             address(clockBurner),
             l,
             l.codehash,
             defaultConfig(),
             defaultLimits()
         );
-        wrapped.setTarget(address(editions), true);
-        editions.admit(address(wrapped), true);
+        wrapped.setTarget(address(wEditions), true);
+        wEditions.setModuleDelay(0);
+        wEditions.addMinter(address(wrapped));
         english.set(
             address(streamBurner),
             ID,
@@ -55,7 +67,7 @@ contract UniformEditionAuctionGasRuleTest is EditionAuctionBase, GasRuleAssertio
 
     function _openData() internal returns (bytes memory) {
         PackageItem memory item = _item(ID, 0);
-        return abi.encodeCall(wrapped.open, (address(editions), ID, _openData(item)));
+        return abi.encodeCall(wrapped.open, (address(wEditions), ID, _openData(item)));
     }
 
     /// @dev At 1x the clock read is too cheap to be the call that runs short (a later plain call
@@ -71,8 +83,8 @@ contract UniformEditionAuctionGasRuleTest is EditionAuctionBase, GasRuleAssertio
         _assertShortfallNeverAnswers(clockBurner, opener, address(wrapped), data);
     }
 
-    /// @dev A stuck master past the delay: the abandonment check reads the clock and 6529
-    ///      Stream's record forwarding all gas.
+    /// @dev A sale whose 1/1 was cancelled, past the wait: the abandonment check reads the clock
+    ///      forwarding all gas.
     function _stuckSale() internal returns (uint256 saleId) {
         vm.prank(opener);
         (bool ok, bytes memory ret) = address(wrapped).call(_openData());
@@ -81,7 +93,7 @@ contract UniformEditionAuctionGasRuleTest is EditionAuctionBase, GasRuleAssertio
         english.set(
             address(streamBurner),
             ID,
-            IEnglishAuction.AuctionState.SETTLED,
+            IEnglishAuction.AuctionState.CANCELLED,
             uint64(block.timestamp + 1 days)
         );
         vm.warp(block.timestamp + 400 days);
@@ -90,7 +102,7 @@ contract UniformEditionAuctionGasRuleTest is EditionAuctionBase, GasRuleAssertio
     function test_GasRule_AbandonReadsTheClock() public {
         uint256 saleId = _stuckSale();
         streamBurner.burnerSetBase(0);
-        bytes memory data = abi.encodeCall(wrapped.abandon, (saleId, abi.encode(_item(ID, 0))));
+        bytes memory data = abi.encodeCall(wrapped.abandon, (saleId));
         Outcome memory o = _assertSameAtEveryMultiple(clockBurner, alice, address(wrapped), data);
         assertTrue(o.ok, "abandoned at every multiple");
         _assertShortfallNeverAnswers(clockBurner, alice, address(wrapped), data);
@@ -98,23 +110,24 @@ contract UniformEditionAuctionGasRuleTest is EditionAuctionBase, GasRuleAssertio
         _assertShortfallNeverAnswers(clockBurner, alice, address(wrapped), data);
     }
 
-    /// @dev The 1/1 settled but 6529 Stream's record unsettled: a starved record read must never
-    ///      read as "unsettled" (which would allow the abandonment).
-    function test_GasRule_AbandonReadsStreamsRecord() public {
+    /// @dev A settled 1/1 is refused at every multiple: a starved clock read must never read as
+    ///      a refusal (which would allow the abandonment).
+    function test_GasRule_AbandonRefusedForASettledOneOfOneAtEveryMultiple() public {
         uint256 saleId = _stuckSale();
-        clockBurner.burnerSetBase(0);
-        bytes memory data = abi.encodeCall(wrapped.abandon, (saleId, abi.encode(_item(ID, 0))));
-        Outcome memory o = _assertSameAtEveryMultiple(streamBurner, alice, address(wrapped), data);
-        assertTrue(o.ok);
-        _assertShortfallNeverAnswers(streamBurner, alice, address(wrapped), data);
-        // Settled in Stream (and the edition created): refused at every multiple.
-        stream.setSettled(ID, true);
-        editions.setExists(ID, true);
-        o = _assertSameAtEveryMultiple(streamBurner, alice, address(wrapped), data);
+        english.set(
+            address(streamBurner),
+            ID,
+            IEnglishAuction.AuctionState.SETTLED,
+            uint64(block.timestamp - 300 days)
+        );
+        streamBurner.burnerSetBase(0);
+        bytes memory data = abi.encodeCall(wrapped.abandon, (saleId));
+        Outcome memory o = _assertSameAtEveryMultiple(clockBurner, alice, address(wrapped), data);
         assertFalse(o.ok);
         assertEq(
             o.data, abi.encodeWithSelector(IUniformEditionAuction.NotAbandonable.selector, saleId)
         );
+        _assertShortfallNeverAnswers(clockBurner, alice, address(wrapped), data);
     }
 
     /// @dev The payout gas is the governed figure: a seller wallet that needs more than it is
@@ -147,7 +160,6 @@ contract UniformEditionAuctionGasRuleTest is EditionAuctionBase, GasRuleAssertio
             uint64(block.timestamp + 1 days)
         );
         vm.warp(ua.endTimes(second).endTime);
-        editions.setExists(8, true);
         auction.settle(second, new uint256[](0));
         assertEq(makeAddr("payeeInner").balance, sellerPart, "400,000: paid directly");
         assertEq(escrow.owed(address(payee), address(0)), sellerPart, "nothing more escrowed");

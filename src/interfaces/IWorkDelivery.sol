@@ -1,68 +1,63 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 import { Locator, LocatorKind } from "./types/ContentTypes.sol";
 
+/// @title IDeliveryHost
+/// @notice What a delivery contract asks of the RECORDS module that serves it (`WorkRules`):
+///         to emit ERC-4906 metadata updates through the token, which accepts them only from
+///         its RECORDS module.
+interface IDeliveryHost {
+    /// @notice The caller is not the module's delivery contract.
+    error NotDelivery(address caller);
+
+    /// @notice Emits ERC-4906 for one work (and its edition, if any). The delivery contract
+    ///         only.
+    /// @param token The token contract.
+    /// @param tokenId The token.
+    function refreshMetadata(address token, uint256 tokenId) external;
+
+    /// @notice Emits ERC-4906 for every token of `token` minted so far. The delivery contract
+    ///         only.
+    /// @param token The token contract.
+    function refreshAllMetadata(address token) external;
+}
+
 /// @title IWorkDelivery
-/// @notice What the permanent `IWorkRecords` asks of a delivery contract, and what every
-///         delivery contract owes its successors. A delivery contract decides where copies of a
-///         work's media are served from (locators, kinds, preferences); it is replaceable under
-///         the slow governance class (`IWorkRecords.setDelivery`) and has no authority over any
-///         fact: media, hashes, records, licenses, rates, powers, pins or completeness.
-/// @dev `IWorkRecords.preferredLocator` forwards to `preferredLocator` here with all the gas
-///      the EIP-150 rule allows and checks the answer (fail-soft, see there), so pinned
-///      renderers keep working across replacements.
+/// @notice A delivery contract (replaceable, `IWorkRules.delivery()`): where copies of a work's
+///         media are served from (it also implements `ILocators`). Keyed by token contract, so one delivery contract serves every
+///         token its RECORDS module serves. It has no authority over any fact of a work: media,
+///         records, licenses, rates, pins and completeness live in `IWorkFacts`.
+/// @dev The renderer reads `preferredLocator` (`ILocators`) and decides itself what it prints:
+///      printable ASCII without `"` and `\`, at most `Limits.MAX_URI_BYTES`, ONCHAIN only for a
+///      work `IWorkFacts` records as on-chain complete; anything else, a revert included, is
+///      "no locator". This contract checks the grammar of each URI when it is added.
 ///
-///      Obligations of a successor (checked by review and the governance delay, not by code):
-///      - it names the contract it replaces as `predecessor()` (`setDelivery` refuses
-///        otherwise), so the chain of delivery contracts is on-chain and every predecessor's
-///        state stays readable;
-///      - it keeps serving every locator a predecessor registered for a work, reading the
-///        predecessor's state (`IWorkLocators.locators`, `locatorCounts`, the preferences) for
-///        files it holds nothing of its own for, or importing it, so no artist's locator is
-///        lost; a successor that drops a predecessor's locators must say so in its governance
-///        proposal;
-///      - it never answers ONCHAIN for a work that is not on-chain complete, nor a URI that is
-///        not a copy of the file asked for.
+///      The first delivery contract keeps append-only, content-addressed locators per media
+///      file (the artist's before finalize, the PLATFORM role's at any time), the storage
+///      operator's preferences among them (per token, per collection, per file) and its mark on
+///      a locator that died. Every bit of state has a getter and every change an event naming
+///      who made it, so a successor or an indexer can rebuild it.
+///
+///      Obligations of a successor (checked by review and the network's waiting period, not by
+///      code): it keeps serving every locator the contract it replaces registered, reading or
+///      importing that contract's state (rebuildable from its events); it never answers ONCHAIN
+///      for a work that is not on-chain complete, nor a URI that is not a copy of the file asked
+///      for. This contract is the first: it reads no predecessor, so a successor of the same
+///      code starts empty and the network must import the locators before installing it.
 interface IWorkDelivery {
-    /// @notice A locator as `IWorkRecords` passes it on: a kind label and a URI. The ABI is that
-    ///         of `Locator` (kinds 0 to 3 are `LocatorKind`'s NONE, ARWEAVE, IPFS and ONCHAIN);
-    ///         a future delivery contract may use other kind values, which are passed through.
+    /// @notice A served location, the same ABI as `ILocators.Location` (kinds 0 to 3 are
+    ///         `LocatorKind`). Kept here for readers that name it through this interface.
+    /// @param kind The locator kind.
+    /// @param uri The URI; empty for kinds 0 and 3.
     struct Location {
         uint8 kind;
         string uri;
     }
 
-    /// @notice The records satellite this delivery contract serves.
-    /// @return The `IWorkRecords` contract.
-    function records() external view returns (address);
-    /// @notice The delivery contract this one replaces, or zero for the first.
-    /// @return The predecessor.
-    function predecessor() external view returns (address);
-    /// @notice The locator `tokenURI` serves for a media file of a work.
-    /// @param tokenId A work with an open record.
-    /// @param fileId One of the work's media files.
-    /// @return locator The chosen locator: kind NONE and an empty URI for none, kind ONCHAIN
-    ///         and an empty URI for the on-chain copy.
-    /// @return index Its index in this contract's list for the file, or `type(uint256).max`
-    ///         for none and for the on-chain copy.
-    function preferredLocator(uint256 tokenId, bytes32 fileId)
-        external
-        view
-        returns (Location memory locator, uint256 index);
-}
-
-/// @title IWorkLocators
-/// @notice The first delivery contract of 6529 Stream (`WorkDelivery`): append-only locators
-///         per media file, registered by the artist before finalize and by the PLATFORM role at
-///         any time, the storage operator's preferences among them, and the storage operator's
-///         mark on a locator that no longer serves (dead, never served again). Replaceable as a
-///         whole.
-/// @dev Every bit of state has a getter and every change an event naming who made it, so a
-///      successor or an indexer can rebuild it without calls into history.
-interface IWorkLocators is IWorkDelivery {
     /// @notice A locator was appended for one media file of a work.
-    /// @param tokenId The work's token ID.
+    /// @param token The token contract.
+    /// @param tokenId The token.
     /// @param fileId The media file the locator names a copy of.
     /// @param index The locator's index among the file's locators, from 0.
     /// @param locator The locator added.
@@ -70,6 +65,7 @@ interface IWorkLocators is IWorkDelivery {
     /// @param byArtist True when a wallet of the work's artist account added it (before
     ///        finalize), false for the PLATFORM role.
     event LocatorAdded(
+        address indexed token,
         uint256 indexed tokenId,
         bytes32 indexed fileId,
         uint256 index,
@@ -77,97 +73,158 @@ interface IWorkLocators is IWorkDelivery {
         address addedBy,
         bool byArtist
     );
-    /// @notice The global preferred locator kind was set (emitted even when it is unchanged).
+    /// @notice A token's preferred locator kind was set (emitted even when unchanged).
+    /// @param token The token contract.
     /// @param previous The kind before the call.
     /// @param next The kind after the call (NONE when cleared).
-    event PreferredKindSet(LocatorKind previous, LocatorKind next);
+    event PreferredKindSet(address indexed token, LocatorKind previous, LocatorKind next);
     /// @notice A collection's preferred locator kind was set (emitted even when unchanged).
-    /// @param collectionId The 6529 Stream collection ID.
+    /// @param token The token contract.
+    /// @param collectionId The collection.
     /// @param previous The kind before the call.
     /// @param next The kind after the call (NONE when cleared).
     event CollectionPreferredKindSet(
-        uint256 indexed collectionId, LocatorKind previous, LocatorKind next
+        address indexed token, uint256 indexed collectionId, LocatorKind previous, LocatorKind next
     );
-    /// @notice A file's preferred locator index was set (emitted even when unchanged;
-    ///         `type(uint256).max` means none).
-    /// @param tokenId The work's token ID.
+    /// @notice A file's preferred locator index was set (`type(uint256).max` means none).
+    /// @param token The token contract.
+    /// @param tokenId The token.
     /// @param fileId The media file.
     /// @param previous The index before the call.
     /// @param next The index after the call.
     event FilePreferenceSet(
-        uint256 indexed tokenId, bytes32 indexed fileId, uint256 previous, uint256 next
+        address indexed token,
+        uint256 indexed tokenId,
+        bytes32 indexed fileId,
+        uint256 previous,
+        uint256 next
     );
-    /// @notice The storage operator marked a locator dead (C21): it is never served again.
-    /// @param tokenId The work's token ID.
+    /// @notice The storage operator marked a locator dead: it is never served again.
+    /// @param token The token contract.
+    /// @param tokenId The token.
     /// @param fileId The media file.
     /// @param index The locator's index among the file's locators.
-    event LocatorDead(uint256 indexed tokenId, bytes32 indexed fileId, uint256 index);
+    event LocatorDead(
+        address indexed token, uint256 indexed tokenId, bytes32 indexed fileId, uint256 index
+    );
 
     /// @notice The locator kind is NONE or ONCHAIN, the URI is not a content address of its kind
-    ///         (see `Locator`) or is already registered for the file, or the caller's quota for
-    ///         the file is used up; or an index names no locator, or a dead one.
+    ///         or is already registered for the file, or the caller's quota for the file is used
+    ///         up; or an index names no locator, or a dead one.
     error InvalidLocator();
+    /// @notice The work has no open record in `IWorkFacts`.
+    error RecordNotOpen(address token, uint256 tokenId);
+    /// @notice The file is not one of the work's media files.
+    error FileNotInWork(address token, uint256 tokenId, bytes32 fileId);
+    /// @notice The collection does not exist in the token contract.
+    error UnknownCollection(address token, uint256 collectionId);
 
-    /// @notice Appends an ARWEAVE or IPFS locator for one of a work's media files. Callable by
-    ///         the artist until finalize, and by the PLATFORM role at any time. The URI must be a
-    ///         content address with nothing after it (`Locator`). Before finalize each side has
-    ///         half of `Limits.MAX_LOCATORS_PER_FILE` (8); after it only PLATFORM adds, up to the
-    ///         whole 16. A URI already registered for the file is refused.
+    /// @notice The RECORDS module this delivery contract serves.
+    /// @return The module (`IWorkRules`).
+    function records() external view returns (address);
+
+    /// @notice The permanent record contract read for each work's facts.
+    /// @return The `IWorkFacts` contract.
+    function facts() external view returns (address);
+
+    /// @notice The directory, through which the accounts module is found.
+    /// @return The `IDirectory` contract.
+    function directory() external view returns (address);
+
+    /// @notice Appends an ARWEAVE or IPFS locator for one of a work's media files. A wallet of
+    ///         the lead artist's account until finalize; the PLATFORM role at any time. Before
+    ///         finalize each side has half of `Limits.MAX_LOCATORS_PER_FILE`; after it only the
+    ///         platform adds, up to the whole limit. A URI already registered for the file is
+    ///         refused.
+    /// @param token The token contract.
     /// @param tokenId A work with an open record.
-    /// @param fileId One of the work's media files (`IWorkRecords.FileNotInWork` otherwise).
+    /// @param fileId One of the work's media files.
     /// @param locator The ARWEAVE or IPFS locator of a copy of that file.
-    function addLocator(uint256 tokenId, bytes32 fileId, Locator calldata locator) external;
+    function addLocator(address token, uint256 tokenId, bytes32 fileId, Locator calldata locator)
+        external;
+
     /// @notice A file's registered locators, in registration order.
-    /// @param tokenId A work with an open record.
-    /// @param fileId Any file ID; one that is not in the work has none.
+    /// @param token The token contract.
+    /// @param tokenId Any token.
+    /// @param fileId Any file ID.
     /// @return The file's locators.
-    function locators(uint256 tokenId, bytes32 fileId) external view returns (Locator[] memory);
+    function locators(address token, uint256 tokenId, bytes32 fileId)
+        external
+        view
+        returns (Locator[] memory);
+
     /// @notice How many locators the artist and the platform added for a file, and which.
-    /// @param tokenId Any token ID.
+    /// @param token The token contract.
+    /// @param tokenId Any token.
     /// @param fileId Any file ID.
     /// @return artist The artist's count.
     /// @return platform The platform's count.
     /// @return byArtist Bit `i` set when the artist added the locator at index `i`.
-    function locatorCounts(uint256 tokenId, bytes32 fileId)
+    function locatorCounts(address token, uint256 tokenId, bytes32 fileId)
         external
         view
         returns (uint256 artist, uint256 platform, uint256 byArtist);
-    /// @notice Sets the global preferred kind (NONE clears it). STORAGE_OPERATOR role.
-    /// @param kind The new global preferred kind.
-    function setPreferredKind(LocatorKind kind) external;
-    /// @notice Sets a collection's preferred kind (NONE clears it). STORAGE_OPERATOR role.
-    /// @param collectionId An existing 6529 Stream collection (`IStream.UnknownCollection`
-    ///        otherwise).
+
+    /// @notice Sets a token's preferred kind (NONE clears it). The STORAGE_OPERATOR role.
+    /// @param token The token contract.
+    /// @param kind The new preferred kind.
+    function setPreferredKind(address token, LocatorKind kind) external;
+
+    /// @notice Sets a collection's preferred kind (NONE clears it). The STORAGE_OPERATOR role.
+    /// @param token The token contract.
+    /// @param collectionId An existing collection of the token.
     /// @param kind The collection's new preferred kind.
-    function setCollectionPreferredKind(uint256 collectionId, LocatorKind kind) external;
+    function setCollectionPreferredKind(address token, uint256 collectionId, LocatorKind kind)
+        external;
+
     /// @notice Sets a file's preferred locator index (`type(uint256).max` clears it), which must
-    ///         be registered and live. STORAGE_OPERATOR role.
+    ///         be registered and live. The STORAGE_OPERATOR role.
+    /// @param token The token contract.
     /// @param tokenId A work with an open record.
     /// @param fileId One of the work's media files.
-    /// @param index An index into the file's live locators (`InvalidLocator` otherwise), or
-    ///        `type(uint256).max`.
-    function setFilePreference(uint256 tokenId, bytes32 fileId, uint256 index) external;
-    /// @notice Marks a file's locator dead, for good: it is never served again, whoever added it,
-    ///         and its URI stays registered (not added again). STORAGE_OPERATOR role.
+    /// @param index An index into the file's live locators, or `type(uint256).max`.
+    function setFilePreference(address token, uint256 tokenId, bytes32 fileId, uint256 index)
+        external;
+
+    /// @notice Marks a file's locator dead, for good: it is never served again, whoever added
+    ///         it, and its URI stays registered. The STORAGE_OPERATOR role.
+    /// @param token The token contract.
     /// @param tokenId A work with an open record.
     /// @param fileId One of the work's media files.
-    /// @param index An index into the file's live locators (`InvalidLocator` otherwise).
-    function markLocatorDead(uint256 tokenId, bytes32 fileId, uint256 index) external;
+    /// @param index An index into the file's live locators.
+    function markLocatorDead(address token, uint256 tokenId, bytes32 fileId, uint256 index) external;
+
     /// @notice A file's dead locators.
-    /// @param tokenId Any token ID.
+    /// @param token The token contract.
+    /// @param tokenId Any token.
     /// @param fileId Any file ID.
     /// @return Bit `i` set when the locator at index `i` is dead.
-    function deadLocators(uint256 tokenId, bytes32 fileId) external view returns (uint256);
-    /// @notice The global preferred kind.
+    function deadLocators(address token, uint256 tokenId, bytes32 fileId)
+        external
+        view
+        returns (uint256);
+
+    /// @notice A token's preferred kind.
+    /// @param token The token contract.
     /// @return The kind, or NONE when unset.
-    function preferredKind() external view returns (LocatorKind);
+    function preferredKind(address token) external view returns (LocatorKind);
+
     /// @notice A collection's preferred kind.
-    /// @param collectionId Any collection ID.
+    /// @param token The token contract.
+    /// @param collectionId Any collection.
     /// @return The kind, or NONE when unset.
-    function collectionPreferredKind(uint256 collectionId) external view returns (LocatorKind);
+    function collectionPreferredKind(address token, uint256 collectionId)
+        external
+        view
+        returns (LocatorKind);
+
     /// @notice A file's preferred locator index, or `type(uint256).max`.
-    /// @param tokenId Any token ID.
+    /// @param token The token contract.
+    /// @param tokenId Any token.
     /// @param fileId Any file ID.
     /// @return The index into the file's locators, or `type(uint256).max` when unset.
-    function filePreference(uint256 tokenId, bytes32 fileId) external view returns (uint256);
+    function filePreference(address token, uint256 tokenId, bytes32 fileId)
+        external
+        view
+        returns (uint256);
 }

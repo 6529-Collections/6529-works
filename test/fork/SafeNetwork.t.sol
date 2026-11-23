@@ -3,253 +3,236 @@ pragma solidity ^0.8.24;
 
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
-import { Roles } from "src/governance/Roles.sol";
-import { WorksAccessManager } from "src/governance/WorksAccessManager.sol";
-import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
-import { IStream } from "src/interfaces/IStream.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
-import { GovernedVault } from "src/economics/GovernedVault.sol";
 import { DeployGuards } from "script/DeployGuards.sol";
+import { IGovernedVault } from "src/economics/interfaces/IGovernedVault.sol";
+import { Roles } from "src/governance/Roles.sol";
+import { Outcome, Slots } from "src/interfaces/core/CoreTypes.sol";
+import { IDirectory } from "src/interfaces/core/IDirectory.sol";
+import { IMintPolicy } from "src/interfaces/core/IMintPolicy.sol";
+import { IModuleSlots, IModules } from "src/interfaces/core/IModules.sol";
+import { IStream } from "src/interfaces/core/IStream.sol";
+import { MockRenderer } from "../mocks/core/CoreMocks.sol";
 import { ISafe, SafeForkBase } from "./SafeForkBase.sol";
 
-/// @notice The network as a real 2-of-3 Safe v1.4.1 on a mainnet fork: genesis proposes it and
-///         it accepts by a Safe transaction; it schedules and executes delayed actions through
-///         the deployed `WorksAccessManager`, in `MultiSendCallOnly` batches; it acts at once in
-///         the no-delay class (the curation signer kill, unpausing the auction); a brake Safe
-///         delays one of its operations; and it hands the network over to a second Safe.
-/// @dev Gated by `FORK_MAINNET_RPC` (see `SafeForkBase`). Every Safe transaction that is
-///      expected to fail is also replayed as a prank of the Safe where the reason matters, so
-///      the test names the exact revert the Safe hit.
+/// @notice The network as a real 2-of-3 Safe v1.4.1 on a mainnet fork, governing the deployed
+///         plain-core stack by Safe transactions: it proposes a module and anyone activates it
+///         once `moduleDelay()` has passed; it removes a minter at once and rescues the unsold
+///         work that minter held once `rescueDelay()` has passed; it changes three settings in
+///         one `MultiSendCallOnly` batch (a failing call reverts the whole batch); it schedules
+///         and executes a 3-day setter through the manager; and it hands the network to a
+///         second Safe, which accepts by a Safe transaction. Planted faults: a transaction
+///         signed by one owner reaches nothing, and an owner key calling the core directly is
+///         refused.
+/// @dev Gated by `FORK_MAINNET_RPC` (see `CoreForkBase`). A refused Safe transaction is also
+///      repeated as a prank of the Safe where the reason matters, so the test names the exact
+///      revert the Safe hit (the Safe itself reverts with "GS013").
 contract SafeNetworkForkTest is SafeForkBase {
     address internal artist;
+    address internal stranger = makeAddr("stranger");
 
     function setUp() public override {
         super.setUp();
-        if (!forked) return;
         artist = _actor("safeForkArtist");
     }
 
-    /// @dev GV-1, GV-2, GV-4, GV-11, GV-13: the genesis Safe transaction made the Safe the
-    ///      network with every class delay, the configurator kept nothing, and readback of the
-    ///      genesis configuration passes against the Safe.
-    function test_SafeAcceptedTheNetworkAtGenesis() public onFork {
+    /// @notice The genesis made the Safe the network of the deployed stack; the deploy guards
+    ///         accept it as a bare canonical Safe; its owner keys hold no role.
+    function test_SafeNetwork_HoldsTheNetwork() public view {
         assertEq(manager.network(), address(networkSafe));
         assertEq(manager.pendingNetwork(), address(0));
-        assertEq(networkSafe.nonce(), 1, "one Safe transaction: acceptNetwork");
-        _assertClass(Roles.NETWORK, 0);
-        _assertClass(Roles.PARAMETER_SETTER, Roles.DELAY_24H);
-        _assertClass(Roles.FUNDS_SETTER, Roles.DELAY_3D);
-        _assertClass(Roles.SUCCESSOR_SETTER, Roles.DELAY_7D);
-        _assertClass(Roles.ADMIN, Roles.DELAY_7D);
-        (bool isAdmin,) = manager.hasRole(Roles.ADMIN, address(configurator));
-        assertFalse(isAdmin, "the configurator renounced");
-        configurator.verify(_genesisConfig());
-        // The deploy script's holder guard accepts this Safe as the network.
+        (bool member, uint32 delay) = manager.hasRole(Roles.NETWORK, address(networkSafe));
+        assertTrue(member);
+        assertEq(delay, 0, "core functions: no role delay");
         (address[] memory singletons, bytes32[] memory codehashes) =
             DeployGuards.canonicalSafeSingletons();
         DeployGuards.requireBareSafe("network", address(networkSafe), singletons, codehashes);
         DeployGuards.requireSafe("network", address(networkSafe));
-        // The Safe's owners are not the network: only the Safe is.
         address[] memory owners = networkSafe.getOwners();
+        assertEq(owners.length, 3);
         for (uint256 i; i < owners.length; ++i) {
-            (bool member,) = manager.hasRole(Roles.FUNDS_SETTER, owners[i]);
-            assertFalse(member, "an owner key holds no network role");
+            (bool ownerMember,) = manager.hasRole(Roles.NETWORK, owners[i]);
+            assertFalse(ownerMember, "an owner key holds no network role");
         }
     }
 
-    /// @dev GV-2, ECO-4, ECO-37, ECO-41: one Safe transaction schedules two 3-day setters (the
-    ///      museum and the fee vault's destination); executing early is refused; after the
-    ///      delay one Safe transaction executes both, compare-and-set on their revisions.
-    function test_SafeSchedulesAndExecutesTwoFundsSettersInOneBatch() public onFork {
-        GovernedVault feeVault = GovernedVault(payable(networkFee));
-        ISafe nextMuseum = _newSafe("next museum");
-        address nextFee = address(_newSafe("next network fee"));
-        bytes memory museumCall =
-            abi.encodeCall(economics.setMuseum, (economics.museumRevision(), address(nextMuseum)));
-        bytes memory feeCall =
-            abi.encodeCall(feeVault.setDestination, (feeVault.destinationRevision(), nextFee));
+    /// @notice The Safe proposes a renderer for Stream; activation is refused before the
+    ///         module delay in force, then anyone activates it.
+    function test_SafeNetwork_ProposesAModuleAndAnyoneActivatesItAfterTheDelay() public {
+        address next = address(new MockRenderer());
+        _safeCall(
+            networkSafe,
+            address(stream),
+            abi.encodeCall(IModuleSlots.proposeModule, (Slots.RENDERER, next))
+        );
+        uint48 readyAt = stream.pendingModule(Slots.RENDERER).readyAt;
+        assertEq(readyAt, block.timestamp + stream.moduleDelay(), "the delay in force");
+        assertGt(stream.moduleDelay(), 0);
 
-        SafeCall[] memory batch = new SafeCall[](2);
-        batch[0] = _scheduleCall(address(economics), museumCall);
-        batch[1] = _scheduleCall(address(feeVault), feeCall);
-        assertTrue(_safeBatch(networkSafe, batch, THRESHOLD), "schedule both");
-        uint48 ready = uint48(block.timestamp + Roles.DELAY_3D);
-        assertEq(manager.getSchedule(_opId(networkSafe, address(economics), museumCall)), ready);
-        assertEq(manager.getSchedule(_opId(networkSafe, address(feeVault), feeCall)), ready);
+        vm.warp(readyAt - 1);
+        vm.expectRevert(
+            abi.encodeWithSelector(IModuleSlots.ModuleNotReady.selector, Slots.RENDERER)
+        );
+        vm.prank(stranger);
+        stream.activateModule(Slots.RENDERER);
 
-        batch[0] = _executeCall(address(economics), museumCall);
-        batch[1] = _executeCall(address(feeVault), feeCall);
-        vm.warp(ready - 1);
-        uint256 nonceBefore = networkSafe.nonce();
-        assertFalse(_safeBatch(networkSafe, batch, THRESHOLD), "not ready");
-        assertEq(networkSafe.nonce(), nonceBefore, "a refused transaction spends no Safe nonce");
-
-        vm.warp(ready);
-        assertTrue(_safeBatch(networkSafe, batch, THRESHOLD), "execute both");
-        assertEq(economics.museum(), address(nextMuseum));
-        assertEq(economics.museumRevision(), 2);
-        assertEq(feeVault.destination(), nextFee);
-        assertEq(feeVault.destinationRevision(), 2);
+        vm.warp(readyAt);
+        vm.prank(stranger);
+        stream.activateModule(Slots.RENDERER);
+        assertEq(stream.moduleOf(Slots.RENDERER), next);
     }
 
-    /// @dev ECO-4, GV-17: a batch whose second call carries a stale revision reverts whole:
-    ///      neither setter changes, both operations stay scheduled, and the Safe nonce stands.
-    function test_StaleRevisionRevertsTheWholeBatch() public onFork {
-        GovernedVault feeVault = GovernedVault(payable(networkFee));
-        address nextFee = address(_newSafe("next network fee"));
-        bytes memory feeCall =
-            abi.encodeCall(feeVault.setDestination, (feeVault.destinationRevision(), nextFee));
-        uint64 stale = economics.museumRevision() + 1;
-        bytes memory museumCall = abi.encodeCall(economics.setMuseum, (stale, nextFee));
-
-        SafeCall[] memory batch = new SafeCall[](2);
-        batch[0] = _scheduleCall(address(feeVault), feeCall);
-        batch[1] = _scheduleCall(address(economics), museumCall);
-        assertTrue(_safeBatch(networkSafe, batch, THRESHOLD), "scheduling checks no arguments");
-        vm.warp(block.timestamp + Roles.DELAY_3D);
-
-        batch[0] = _executeCall(address(feeVault), feeCall);
-        batch[1] = _executeCall(address(economics), museumCall);
+    /// @notice Planted fault: the same proposal signed by one of the three owners is refused
+    ///         by the Safe ("GS020") and nothing is announced.
+    function test_SafeNetwork_OneSignatureIsRefused() public {
+        address next = address(new MockRenderer());
+        bytes memory call = abi.encodeCall(IModuleSlots.proposeModule, (Slots.RENDERER, next));
         uint256 nonceBefore = networkSafe.nonce();
-        assertFalse(_safeBatch(networkSafe, batch, THRESHOLD), "the stale call fails the batch");
+        vm.expectRevert(bytes("GS020"));
+        this.execSafeExternal(networkSafe, address(stream), 0, call, CALL, 1);
         assertEq(networkSafe.nonce(), nonceBefore);
-        assertEq(feeVault.destination(), address(feeSafe), "the good call rolled back too");
-        assertEq(economics.museum(), museum);
-        assertGt(manager.getSchedule(_opId(networkSafe, address(feeVault), feeCall)), 0);
-        assertGt(manager.getSchedule(_opId(networkSafe, address(economics), museumCall)), 0);
-        // The reason: the resolver's own compare-and-set.
-        vm.prank(address(networkSafe));
-        vm.expectRevert(
-            abi.encodeWithSelector(IEconomicsResolver.RevisionMismatch.selector, stale, stale - 1)
-        );
-        manager.execute(address(economics), museumCall);
+        assertEq(stream.pendingModule(Slots.RENDERER).readyAt, 0, "nothing announced");
     }
 
-    /// @dev GV-2: a delayed setter called by the Safe directly, not through the manager, is
-    ///      refused by the target (OpenZeppelin `AccessManaged` asks the manager to consume a
-    ///      scheduled operation, and there is none), so the delay cannot be skipped. A stranger
-    ///      is refused outright.
-    function test_DelayedSetterCalledDirectlyIsRefused() public onFork {
-        uint64 revision = economics.museumRevision();
-        bytes memory call = abi.encodeCall(economics.setMuseum, (revision, address(feeSafe)));
-        assertFalse(_safeCall(networkSafe, address(economics), call));
-        assertEq(economics.museum(), museum);
-        bytes32 op = _opId(networkSafe, address(economics), call);
-        vm.prank(address(networkSafe));
+    /// @notice Planted fault: an owner key of the Safe calling the core directly is refused;
+    ///         only the Safe is the network.
+    function test_SafeNetwork_AnOwnerKeyCallingDirectlyIsRefused() public {
+        address owner = _ownerOf(networkSafe, 0);
+        address next = address(new MockRenderer());
         vm.expectRevert(
-            abi.encodeWithSelector(IAccessManager.AccessManagerNotScheduled.selector, op)
+            abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, owner)
         );
-        economics.setMuseum(revision, address(feeSafe));
-        vm.prank(address(feeSafe));
+        vm.prank(owner);
+        stream.proposeModule(Slots.RENDERER, next);
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, owner)
+        );
+        vm.prank(owner);
+        stream.removeMinter(address(auction));
+        assertTrue(stream.isMinter(address(auction)));
+    }
+
+    /// @notice The Safe removes the English auction as a minter at once: no new work starts.
+    ///         The unsold work it held is not rescuable before `rescueDelay()` has passed since
+    ///         the removal; then the Safe rescues it to the museum Safe.
+    function test_SafeNetwork_RemovesAMinterAndRescuesAfterTheRescueDelay() public {
+        Work[] memory works = new Work[](2);
+        works[0] = _work(artist, collectionId);
+        works[1] = _work(artist, collectionId);
+        bytes32 root = _publish(works);
+        (, uint256 tokenId) = _start(root, works, 0);
+        assertEq(stream.ownerOf(tokenId), address(auction));
+
+        _safeCall(
+            networkSafe, address(stream), abi.encodeCall(IModules.removeMinter, (address(auction)))
+        );
+        uint256 removedAt = block.timestamp;
+        assertFalse(stream.isMinter(address(auction)));
+        bytes memory next = _mintData(root, works, 1);
         vm.expectRevert(
             abi.encodeWithSelector(
-                IAccessManaged.AccessManagedUnauthorized.selector, address(feeSafe)
+                IMintPolicy.NotSaleContract.selector, address(stream), address(auction)
             )
         );
-        economics.setMuseum(revision, address(feeSafe));
-    }
+        auction.start(address(stream), next);
 
-    /// @dev A transaction signed by one owner of the 2-of-3 network Safe reaches nothing.
-    function test_OneSignatureIsRefused() public onFork {
-        bytes memory call =
-            abi.encodeCall(economics.setMuseum, (economics.museumRevision(), address(feeSafe)));
-        SafeCall[] memory batch = new SafeCall[](1);
-        batch[0] = _scheduleCall(address(economics), call);
-        assertFalse(_safeBatch(networkSafe, batch, 1));
-        assertEq(manager.getSchedule(_opId(networkSafe, address(economics), call)), 0);
-    }
-
-    /// @dev CUR-17, CUR-23, CUR-24, GV-2: the signer kill as one no-delay MultiSend batch,
-    ///      `disableSigner` and `killSignerApprovals`, called on the targets directly. A
-    ///      package the signer registered before stops being live and its item cannot start.
-    function test_SignerKillBatchActsAtOnce() public onFork {
-        Work[] memory works = _one(_work(artist, collectionId));
-        bytes32 root = _publish(works);
-        bytes32 itemHash = WorksHashing.itemHash(works[0].item);
-        assertTrue(registry.isApprovedItem(root, itemHash, _proofOf(works, 0)));
-        bytes memory mintData = _mintData(root, works, 0);
-
-        SafeCall[] memory batch = new SafeCall[](2);
-        batch[0] = SafeCall(address(verifier), 0, abi.encodeCall(verifier.disableSigner, (signer1)));
-        batch[1] =
-            SafeCall(address(registry), 0, abi.encodeCall(registry.killSignerApprovals, (signer1)));
-        uint256 start = block.timestamp;
-        assertTrue(_safeBatch(networkSafe, batch, THRESHOLD), "the kill batch");
-        assertEq(block.timestamp, start, "no delay");
-        assertTrue(verifier.isDisabled(signer1));
-        assertFalse(verifier.isSignerActive(signer1));
-        assertFalse(registry.isApprovedItem(root, itemHash, _proofOf(works, 0)), "killed");
-        vm.expectRevert();
-        auction.start(address(stream), mintData);
-        // The other signer still approves new packages.
-        assertTrue(verifier.isSignerActive(signer2));
-    }
-
-    /// @dev GV-21, GV-3: a pauser key stops new auctions at once; the network Safe resumes
-    ///      them at once (`unpause` is NETWORK, no delay), after which a start succeeds.
-    function test_PauserStopsAndSafeResumesAtOnce() public onFork {
-        Work[] memory works = _one(_work(artist, collectionId));
-        bytes32 root = _publish(works);
-        vm.prank(guardian1);
-        auction.pause();
-        bytes memory mintData = _mintData(root, works, 0);
-        vm.expectRevert();
-        auction.start(address(stream), mintData);
-
-        assertTrue(_safeCall(networkSafe, address(auction), abi.encodeCall(auction.unpause, ())));
-        auction.start(address(stream), mintData);
-        assertEq(stream.ownerOf(_totalMinted()), address(auction), "started");
-    }
-
-    /// @dev GV-5, GV-6: the network Safe sets a brake Safe (7 days); the brake Safe delays one
-    ///      scheduled network operation once; it runs only after the brake's extra 7 days.
-    function test_BrakeSafeDelaysAScheduledSafeOperation() public onFork {
-        ISafe brakeSafe = _newSafe("brake");
-        _safeGovern(
-            networkSafe, address(manager), abi.encodeCall(manager.setBrake, (address(brakeSafe)))
+        bytes memory rescue = abi.encodeCall(IStream.rescue, (tokenId, address(museumDestination)));
+        vm.warp(removedAt + stream.rescueDelay() - 1);
+        _safeCallFails(
+            networkSafe,
+            address(stream),
+            rescue,
+            abi.encodeWithSelector(IStream.NotRescuable.selector, tokenId)
         );
-        assertEq(manager.brake(), address(brakeSafe));
 
-        bytes memory call =
-            abi.encodeCall(economics.setMuseum, (economics.museumRevision(), address(feeSafe)));
+        vm.warp(removedAt + stream.rescueDelay());
+        _safeCall(networkSafe, address(stream), rescue);
+        assertEq(stream.ownerOf(tokenId), address(museumDestination));
+        assertEq(uint8(stream.workOf(tokenId).outcome), uint8(Outcome.RESCUED));
+    }
+
+    /// @notice One MultiSend batch changes the rescue delay, the Editions module delay and the
+    ///         unclaimed period at once; a batch with one failing call changes nothing.
+    function test_SafeNetwork_ChangesSettingsInOneBatch() public {
+        SafeCall[] memory batch = new SafeCall[](3);
+        batch[0] =
+            SafeCall(address(stream), 0, abi.encodeCall(IStream.setRescueDelay, (uint48(30 days))));
+        batch[1] = SafeCall(
+            address(editions), 0, abi.encodeCall(IModuleSlots.setModuleDelay, (uint48(10 days)))
+        );
+        batch[2] = SafeCall(
+            address(directory), 0, abi.encodeCall(IDirectory.setUnclaimedPeriod, (uint48(1 days)))
+        );
+        _safeBatch(networkSafe, batch);
+        assertEq(stream.rescueDelay(), 30 days);
+        assertEq(editions.moduleDelay(), 10 days);
+        assertEq(directory.unclaimedPeriod(), 1 days);
+
+        // The third call announces a module without code: the whole batch reverts.
+        batch[0] =
+            SafeCall(address(stream), 0, abi.encodeCall(IStream.setRescueDelay, (uint48(1 days))));
+        batch[1] = SafeCall(
+            address(directory), 0, abi.encodeCall(IDirectory.setUnclaimedPeriod, (uint48(2 days)))
+        );
+        batch[2] = SafeCall(
+            address(stream),
+            0,
+            abi.encodeCall(IModuleSlots.proposeModule, (Slots.RENDERER, stranger))
+        );
+        uint256 nonceBefore = networkSafe.nonce();
+        vm.expectRevert(bytes("GS013"));
+        this.execSafeExternal(
+            networkSafe, MULTI_SEND_CALL_ONLY, 0, _multiSend(batch), DELEGATECALL, THRESHOLD
+        );
+        assertEq(networkSafe.nonce(), nonceBefore);
+        assertEq(stream.rescueDelay(), 30 days, "the good calls rolled back too");
+        assertEq(directory.unclaimedPeriod(), 1 days);
+        assertEq(stream.pendingModule(Slots.RENDERER).readyAt, 0);
+    }
+
+    /// @notice A 3-day setter (the fee vault's destination): one batch schedules it through the
+    ///         manager; executing early is refused, through the manager or by calling the vault
+    ///         directly; after the delay it runs.
+    function test_SafeNetwork_SchedulesAndExecutesADelayedSetter() public {
+        ISafe nextFee = _newSafe("next network fee");
+        bytes memory call = abi.encodeCall(
+            IGovernedVault.setDestination, (feeVault.destinationRevision(), address(nextFee))
+        );
         SafeCall[] memory batch = new SafeCall[](1);
-        batch[0] = _scheduleCall(address(economics), call);
-        assertTrue(_safeBatch(networkSafe, batch, THRESHOLD));
-        bytes32 op = _opId(networkSafe, address(economics), call);
+        batch[0] = _scheduleCall(address(feeVault), call);
+        _safeBatch(networkSafe, batch);
+        bytes32 op = _opId(networkSafe, address(feeVault), call);
         uint48 ready = manager.getSchedule(op);
-        assertTrue(_safeCall(brakeSafe, address(manager), abi.encodeCall(manager.brakeOnce, (op))));
-        assertEq(manager.notBefore(op), ready + Roles.BRAKE_DELAY);
+        (, uint32 delay) = manager.canCall(address(networkSafe), address(feeVault), bytes4(call));
+        assertEq(ready, block.timestamp + delay);
+        assertEq(delay, Roles.DELAY_3D);
 
-        bytes memory exec = abi.encodeCall(manager.execute, (address(economics), call));
+        bytes memory exec = abi.encodeCall(manager.execute, (address(feeVault), call));
+        vm.warp(ready - 1);
+        _safeCallFails(
+            networkSafe,
+            address(manager),
+            exec,
+            abi.encodeWithSelector(IAccessManager.AccessManagerNotReady.selector, op)
+        );
+        // A direct call consumes the same scheduled operation, so it waits as long.
+        _safeCallFails(
+            networkSafe,
+            address(feeVault),
+            call,
+            abi.encodeWithSelector(IAccessManager.AccessManagerNotReady.selector, op)
+        );
+
         vm.warp(ready);
-        assertFalse(_safeCall(networkSafe, address(manager), exec), "braked");
-        vm.prank(address(networkSafe));
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                WorksAccessManager.BrakeNotElapsed.selector, op, ready + Roles.BRAKE_DELAY
-            )
-        );
-        manager.execute(address(economics), call);
-        assertFalse(
-            _safeCall(brakeSafe, address(manager), abi.encodeCall(manager.brakeOnce, (op))),
-            "once per operation"
-        );
-
-        vm.warp(ready + Roles.BRAKE_DELAY);
-        assertTrue(_safeCall(networkSafe, address(manager), exec));
-        assertEq(economics.museum(), address(feeSafe));
+        _safeCall(networkSafe, address(manager), exec);
+        assertEq(feeVault.destination(), address(nextFee));
+        assertEq(manager.getSchedule(op), 0, "consumed");
     }
 
-    /// @dev GV-1, GV-4: the network Safe proposes a second Safe (7 days); one signature of the
-    ///      successor cannot accept; two do. From then on the old Safe holds nothing and its
-    ///      pending operation cannot run, while the new Safe governs.
-    function test_HandoverToASecondSafe() public onFork {
+    /// @notice The Safe proposes a second Safe (the ADMIN class delay); one signature of the
+    ///         successor cannot accept, a Safe transaction of two does. The old Safe then holds
+    ///         nothing; the new one governs at once.
+    function test_SafeNetwork_HandsOverToASecondSafe() public {
         ISafe successor = _newSafe("successor network");
-        bytes memory pending =
-            abi.encodeCall(economics.setMuseum, (economics.museumRevision(), address(feeSafe)));
-        SafeCall[] memory batch = new SafeCall[](1);
-        batch[0] = _scheduleCall(address(economics), pending);
-        assertTrue(_safeBatch(networkSafe, batch, THRESHOLD));
         _safeGovern(
             networkSafe,
             address(manager),
@@ -259,42 +242,24 @@ contract SafeNetworkForkTest is SafeForkBase {
         assertEq(manager.network(), address(networkSafe), "nothing changes before acceptance");
 
         bytes memory accept = abi.encodeCall(manager.acceptNetwork, ());
-        assertFalse(_execSafe(successor, address(manager), 0, accept, CALL, 1), "one signature");
-        assertTrue(_safeCall(successor, address(manager), accept));
+        vm.expectRevert(bytes("GS020"));
+        this.execSafeExternal(successor, address(manager), 0, accept, CALL, 1);
+        _safeCall(successor, address(manager), accept);
         assertEq(manager.network(), address(successor));
         assertEq(manager.pendingNetwork(), address(0));
-        (bool oldMember,) = manager.hasRole(Roles.FUNDS_SETTER, address(networkSafe));
+        (bool oldMember,) = manager.hasRole(Roles.NETWORK, address(networkSafe));
         assertFalse(oldMember, "the old Safe holds nothing");
 
-        // The old Safe's scheduled operation, now ready, cannot run.
-        bytes memory exec = abi.encodeCall(manager.execute, (address(economics), pending));
-        assertFalse(_safeCall(networkSafe, address(manager), exec));
-        vm.prank(address(networkSafe));
-        vm.expectRevert(
+        bytes memory setting = abi.encodeCall(IStream.setRescueDelay, (uint48(1 days)));
+        _safeCallFails(
+            networkSafe,
+            address(stream),
+            setting,
             abi.encodeWithSelector(
-                IAccessManager.AccessManagerUnauthorizedCall.selector,
-                address(networkSafe),
-                address(economics),
-                IEconomicsResolver.setMuseum.selector
+                IAccessManaged.AccessManagedUnauthorized.selector, address(networkSafe)
             )
         );
-        manager.execute(address(economics), pending);
-        assertEq(economics.museum(), museum);
-
-        // The new Safe governs at the same class delays.
-        _safeGovern(successor, address(economics), pending);
-        assertEq(economics.museum(), address(feeSafe));
-    }
-
-    // ------------------------------------------------------------------ helpers
-
-    function _assertClass(uint64 role, uint32 delay) internal view {
-        (bool member, uint32 d) = manager.hasRole(role, address(networkSafe));
-        assertTrue(member, "the Safe holds the network role");
-        assertEq(d, delay, "the class delay");
-    }
-
-    function _totalMinted() internal view returns (uint256) {
-        return IStream(address(stream)).totalMinted();
+        _safeCall(successor, address(stream), setting);
+        assertEq(stream.rescueDelay(), 1 days);
     }
 }

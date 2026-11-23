@@ -101,8 +101,6 @@ contract EconomicsHandler is Test {
     mapping(address asset => uint256) public paidOut;
     /// @notice The model's escrow credits per key.
     mapping(address target => mapping(address asset => uint256)) public ghostOwed;
-    /// @notice Tokens left with the payer by payments the model expected to revert.
-    mapping(address asset => uint256) public payerResidue;
     /// @notice How often each outcome occurred, to show the campaign is not vacuous.
     mapping(bytes32 => uint256) public outcomes;
     /// @notice The replacement the non-wallet target (`toggle`) consented to, or zero (MONEY-2).
@@ -281,46 +279,20 @@ contract EconomicsHandler is Test {
 
     // ------------------------------------------------------------------ money in
 
-    function pay(uint256 targetSeed, uint256 assetSeed, uint256 amount) external {
+    /// @dev A sale payment: ETH to the wallet, or to its escrow credit when the wallet refuses.
+    function pay(uint256 targetSeed, uint256 amount) external {
         address target = _target(targetSeed);
-        address asset = assets[assetSeed % 3];
-        amount = amount % 7 == 0 ? 0 : bound(amount, 1, asset == ETH ? 50 ether : 1e24);
-        bool expectEscrow;
-        bytes memory expected;
-        if (amount != 0) {
-            if (asset == ETH) {
-                expectEscrow = target == address(toggle) && !toggle.open();
-            } else if (asset == address(usdc)) {
-                expectEscrow = usdc.blocked(target);
-            } else if (amount * fee.feeBps() / 10_000 != 0) {
-                expected =
-                    abi.encodeWithSelector(TokenTransfer.TokenBalanceMismatch.selector, asset);
-            }
-        }
-        if (asset == ETH) vm.deal(address(payer), address(payer).balance + amount);
-        else BlocklistToken(asset).mint(address(payer), amount);
-        (bool ok, bytes memory ret) = address(payer)
-            .call(
-                asset == ETH
-                    ? abi.encodeCall(PaymentHarness.payETH, (target, amount, 50_000))
-                    : abi.encodeCall(PaymentHarness.payERC20, (target, asset, amount))
-            );
-        if (expected.length != 0) {
-            assertFalse(ok, "payment should revert");
-            assertEq(ret, expected, "payment error");
-            payerResidue[asset] += amount;
-            ++outcomes["pay.reverted"];
-            return;
-        }
-        assertTrue(ok, "payment reverted");
-        assertEq(abi.decode(ret, (bool)), expectEscrow, "payment route");
+        amount = amount % 7 == 0 ? 0 : bound(amount, 1, 50 ether);
+        bool expectEscrow = amount != 0 && target == address(toggle) && !toggle.open();
+        vm.deal(address(payer), address(payer).balance + amount);
+        assertEq(payer.payETH(target, amount, 50_000), expectEscrow, "payment route");
         if (amount == 0) return;
         if (expectEscrow) {
-            _ghostCredit(target, asset, amount);
+            _ghostCredit(target, ETH, amount);
             ++outcomes["pay.escrow"];
         } else {
-            if (target == network) networkOther[asset] += amount;
-            else if (target != address(toggle)) received[target][asset] += amount;
+            if (target == network) networkOther[ETH] += amount;
+            else if (target != address(toggle)) received[target][ETH] += amount;
             ++outcomes["pay.direct"];
         }
     }

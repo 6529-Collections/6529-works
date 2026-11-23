@@ -1,62 +1,46 @@
 # Integrator guide
 
-For marketplaces, wallets, indexers, analytics and front ends that read 6529 Works or send
-transactions to it.
+For marketplaces, wallets, indexers and front ends that read 6529 Works or send transactions to
+it. Start with the [overview](../overview.md) for the shape of the system.
 
 > Pre-audit. See the [project status](../../README.md#status).
 
-The current Sepolia rehearsal, r4, runs `main` at `1e7022b` (the rc.2 candidate, with the
-uniform edition auction), verified on Sourcify; the superseded r3 and r2 run the earlier
-`e5fe78c` and `400f96d`, so build their ABIs from those commits. There is no
-mainnet deployment, and interfaces may still change before the audit.
+There is no mainnet deployment, and interfaces may change before an audit. The next Sepolia
+round, r6, will run this design ([Addresses](addresses.md)).
 
 ## The pages
 
 | Page | Read it to |
 | --- | --- |
-| [Reading a work](reading-a-work.md) | Show a work: `tokenURI` and `uri`, the JSON fields, inline and locator media, editions, licenses, dispute statements, royalties, declarations and convention statements |
-| [Events and indexing](events-and-indexing.md) | Index the protocol: every event of every contract, and how to rebuild each entity's state from logs |
-| [Addresses](addresses.md) | Find the deployed contracts: Sepolia r4 now, mainnet later |
-| [ABIs and interface IDs](abis-and-interface-ids.md) | Get the ABIs, detect contracts with ERC-165, and recompute the EIP-712 digests and protocol hashes |
-| [Buying, bidding, settling and claiming](buying-bidding-settling.md) | Send transactions: start and bid on auctions, settle as a keeper, buy editions, claim credits and payouts, with the errors to handle and gas notes |
-| [Storage](storage.md) | Fetch and verify a work's bytes: the content store, Arweave and IPFS locators, and the uploader |
+| [Reading a work](reading-a-work.md) | Show a work: `tokenURI` and `uri`, the JSON, media, editions, licenses, disputes, royalties |
+| [Events and indexing](events-and-indexing.md) | Index the protocol and rebuild state from logs |
+| [Buying, bidding, settling and claiming](buying-bidding-settling.md) | Start and bid on auctions, settle as a keeper, buy editions, claim |
+| [ABIs and interface IDs](abis-and-interface-ids.md) | Get the ABIs, detect contracts with ERC-165, recompute digests and hashes |
+| [Addresses](addresses.md) | Find the deployed contracts |
 
-Beside the pages:
-
-| Directory | What it holds |
-| --- | --- |
-| [`abi/`](../../abi/) | The exported ABIs of every deployable contract and public interface, with a manifest of interface IDs and hashes ([how to use them](abis-and-interface-ids.md#the-exported-abis)) |
-| [`examples/`](../../examples/README.md) | Short Foundry examples of the common jobs (reading a work, bidding, starting, settling, edition sales, split releases, indexing, the federation directory), run by every `forge test` |
-| [`keeper/`](../../keeper/README.md) | A reference keeper for the permissionless steps (start, open, settle, create, abandon, finalize, expire, forfeit), tested on a local anvil chain; reference code, not production software |
+Beside the pages: [`abi/`](../../abi/) (exported ABIs), [`examples/`](../../examples/README.md)
+(short Foundry examples of the common jobs), [`keeper/`](../../keeper/README.md) (a reference
+keeper for the permissionless steps), and [`tools/content/`](../../tools/content/README.md) (the
+uploader and byte verifier).
 
 ## Five things to know first
 
-1. **One contract per product.** Every Stream work is a token of one ERC-721; every edition is
-   a token of one ERC-1155, and its ID equals its master's Stream token ID.
-2. **Metadata is on-chain JSON.** `tokenURI` returns `data:application/json;utf8,…`, built by
-   a renderer from the work's record. A finalized work's renderer is pinned, so its output
-   format never changes. Call it with a generous gas allowance: its bounded reads need about
-   1.07M gas available even when the call uses far less, and the worst case uses about 7.8M
-   ([reading a work](reading-a-work.md)).
-3. **Events tell you when to refresh.** ERC-4906 `MetadataUpdate` and `BatchMetadataUpdate`
-   mark every metadata change, on works and on their editions.
-4. **Most actions are permissionless.** Anyone may start an auction, bid, settle, create an
-   edition once its master has settled, open a record, upload content, flush the escrow and
-   release a fixed payee's share.
-5. **Money moves by pull.** Outbid bidders, buyers who overpay, and winners whose wallets
-   refuse the NFT get a credit or a pending delivery to collect, never a push that can fail.
+1. **One permanent contract per product.** Every Stream work is a token of one ERC-721; every
+   edition is a token of one ERC-1155 with its master's token ID. Ownership and transfers never
+   depend on any other contract.
+2. **Facts are plain views.** `workOf` on the token and `factsOf` on `StreamWorkFacts6529` give
+   everything fixed about a work. `royaltyInfo` is two storage reads.
+3. **Metadata is on-chain JSON**, built by a renderer. A finalized work's renderer is pinned.
+   Call `tokenURI` with a generous gas allowance.
+4. **Most actions are permissionless**: start, bid, settle, open a record, upload content, flush
+   the escrow, release a fixed payee.
+5. **Money moves by pull.** Outbid bidders get a credit; a winner whose wallet refuses the NFT
+   gets a pending delivery.
 
 ## Conventions
 
-- Rates use a denominator of 100,000; 6.529% is 6,529.
-- `address(0)` as a currency is ETH.
-- Gas figures are Prague gas unless they say Sepolia; Sepolia runs Glamsterdam, which prices
-  new state far higher ([ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md)). Estimate on
-  the target chain.
-
-## Related
-
-- The [specification](../spec/README.md) has the rules behind every call.
-- The [glossary](../glossary.md) defines the terms.
-- The [role and permission matrix](../audit/roles.md) lists every governed setting and its
-  delay, which tells you how much notice a change gives.
+- Rates are out of 100,000; 6.529% is 6,529.
+- Sales are in ETH only.
+- Gas figures are Prague gas unless they say Sepolia; estimate on the target chain.
+- The network's waiting periods are settings you can read (`moduleDelay`, `rescueDelay`,
+  `rebindDelay`, `unclaimedPeriod`); do not hard-code them.

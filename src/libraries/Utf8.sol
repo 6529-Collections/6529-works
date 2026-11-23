@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 /// @title Utf8
 /// @notice RFC 3629 UTF-8 validation, whole-buffer or streamed across chunks.
-/// @dev Rejects overlong forms (C0, C1, E0 80-9F, F0 80-8F), UTF-16 surrogates (ED A0-BF),
-///      code points above U+10FFFF (F4 90-BF, F5-FF), stray continuation bytes and truncated
-///      sequences. Ported from 6529Stream PR #744's `StreamStaticText.isValidUtf8` (word-skip over
-///      ASCII) and `StreamScriptBundles._utf8` (state carried across chunk boundaries).
+/// @dev Rejects overlong forms (0xC0 and 0xC1 lead bytes, E0 80-9F, F0 80-8F), UTF-16
+///      surrogates (ED A0-BF), code points above U+10FFFF (F4 90-BF, F5-FF), stray continuation
+///      bytes and truncated sequences. Ported from 6529Stream's `StreamStaticText.isValidUtf8`
+///      (word-skip over ASCII) and `StreamScriptBundles._utf8` (state carried across chunk
+///      boundaries).
 ///
 ///      Each code point is checked from one word load. ASCII is skipped a word at a time (a short
 ///      run bytewise, so text that alternates does not pay for a word each time), and every

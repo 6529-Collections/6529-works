@@ -1,0 +1,450 @@
+[
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "authority_",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "splitFactory_",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "stream_",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "editions_",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "directory_",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "constructor"
+  },
+  {
+    "id": "0xc2f31e5e",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "authority",
+        "type": "address"
+      }
+    ],
+    "name": "AccessManagedInvalidAuthority",
+    "signature": "AccessManagedInvalidAuthority(address)",
+    "type": "error"
+  },
+  {
+    "id": "0xaf77169d",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "caller",
+        "type": "address"
+      },
+      {
+        "internalType": "uint32",
+        "name": "delay",
+        "type": "uint32"
+      }
+    ],
+    "name": "AccessManagedRequiredDelay",
+    "signature": "AccessManagedRequiredDelay(address,uint32)",
+    "type": "error"
+  },
+  {
+    "id": "0x068ca9d8",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "caller",
+        "type": "address"
+      }
+    ],
+    "name": "AccessManagedUnauthorized",
+    "signature": "AccessManagedUnauthorized(address)",
+    "type": "error"
+  },
+  {
+    "id": "0xe267d88f",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "editions",
+        "type": "address"
+      }
+    ],
+    "name": "InvalidEditions",
+    "signature": "InvalidEditions(address,address)",
+    "type": "error"
+  },
+  {
+    "id": "0xe8cdd5bd",
+    "inputs": [],
+    "name": "InvalidFeeShare",
+    "signature": "InvalidFeeShare()",
+    "type": "error"
+  },
+  {
+    "id": "0xe92b1bb8",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "caller",
+        "type": "address"
+      }
+    ],
+    "name": "NotRecordsModule",
+    "signature": "NotRecordsModule(address,address)",
+    "type": "error"
+  },
+  {
+    "id": "0x1ddcd034",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      }
+    ],
+    "name": "UnknownWork",
+    "signature": "UnknownWork(address,uint256)",
+    "type": "error"
+  },
+  {
+    "anonymous": false,
+    "id": "0x2f658b440c35314f52658ea8a740e05b284cdc84dc9ae01e891f21b8933e7cad",
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "authority",
+        "type": "address"
+      }
+    ],
+    "name": "AuthorityUpdated",
+    "signature": "AuthorityUpdated(address)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x13d4a5549a80baa8324606bc90162adbf093ce50fa2503562674f0922e5d8fe8",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "editions",
+        "type": "address"
+      }
+    ],
+    "name": "EditionsSet",
+    "signature": "EditionsSet(address,address)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x49e5ebea2aa2c1872dee48dfdae2fd7748c45f330b1b62140e5f1ac969b50c39",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint32",
+        "name": "previous",
+        "type": "uint32"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint32",
+        "name": "share",
+        "type": "uint32"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "receiver",
+        "type": "address"
+      }
+    ],
+    "name": "FeeShareLowered",
+    "signature": "FeeShareLowered(address,uint256,uint32,uint32,address)",
+    "type": "event"
+  },
+  {
+    "id": "0xbf7e214f",
+    "inputs": [],
+    "name": "authority",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "authority()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xc41c2f24",
+    "inputs": [],
+    "name": "directory",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "directory()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xf3fe85ea",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      }
+    ],
+    "name": "editionsOf",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "editions",
+        "type": "address"
+      }
+    ],
+    "signature": "editionsOf(address)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x8fb36037",
+    "inputs": [],
+    "name": "isConsumingScheduledOp",
+    "outputs": [
+      {
+        "internalType": "bytes4",
+        "name": "",
+        "type": "bytes4"
+      }
+    ],
+    "signature": "isConsumingScheduledOp()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xbbbf7a80",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      }
+    ],
+    "name": "lockRoyaltyRate",
+    "outputs": [],
+    "signature": "lockRoyaltyRate(address,uint256)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0xeb3dbf88",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "seller",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "feeRecipient",
+        "type": "address"
+      },
+      {
+        "internalType": "uint32",
+        "name": "currentShare",
+        "type": "uint32"
+      },
+      {
+        "internalType": "uint32",
+        "name": "newShare",
+        "type": "uint32"
+      }
+    ],
+    "name": "lowerFeeShare",
+    "outputs": [],
+    "signature": "lowerFeeShare(address,uint256,address,address,uint32,uint32)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x7a9e5e4b",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "newAuthority",
+        "type": "address"
+      }
+    ],
+    "name": "setAuthority",
+    "outputs": [],
+    "signature": "setAuthority(address)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0xf6bf7f67",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "editions",
+        "type": "address"
+      }
+    ],
+    "name": "setEditions",
+    "outputs": [],
+    "signature": "setEditions(address,address)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x51571c2a",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint24",
+        "name": "rate",
+        "type": "uint24"
+      }
+    ],
+    "name": "setRoyaltyRate",
+    "outputs": [],
+    "signature": "setRoyaltyRate(address,uint256,uint24)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x5720babb",
+    "inputs": [],
+    "name": "splitFactory",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "splitFactory()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x6f2a6791",
+    "inputs": [],
+    "name": "stream",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "stream()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xec4427a1",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "editions",
+        "type": "address"
+      }
+    ],
+    "name": "tokenOfEditions",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      }
+    ],
+    "signature": "tokenOfEditions(address)",
+    "stateMutability": "view",
+    "type": "function"
+  }
+]

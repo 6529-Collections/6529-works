@@ -18,12 +18,22 @@
       },
       {
         "internalType": "address",
-        "name": "artistRegistry_",
+        "name": "directory_",
+        "type": "address"
+      },
+      {
+        "internalType": "contract IEconomicsResolver",
+        "name": "economics_",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "entropyModule_",
         "type": "address"
       },
       {
         "internalType": "bytes32",
-        "name": "artistRegistryCodeHash",
+        "name": "cc0TextFileId_",
         "type": "bytes32"
       }
     ],
@@ -180,31 +190,9 @@
   {
     "inputs": [
       {
-        "components": [
-          {
-            "internalType": "address",
-            "name": "adapter",
-            "type": "address"
-          },
-          {
-            "internalType": "address",
-            "name": "economics",
-            "type": "address"
-          },
-          {
-            "internalType": "address",
-            "name": "entropyModule",
-            "type": "address"
-          },
-          {
-            "internalType": "address",
-            "name": "splitFactory",
-            "type": "address"
-          }
-        ],
-        "internalType": "struct IMintPolicy.MintContext",
-        "name": "context",
-        "type": "tuple"
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
       },
       {
         "internalType": "bytes",
@@ -219,6 +207,11 @@
           {
             "internalType": "bytes32",
             "name": "itemHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "contentHash",
             "type": "bytes32"
           },
           {
@@ -242,18 +235,23 @@
             "type": "uint8"
           },
           {
-            "internalType": "uint32",
+            "internalType": "bytes32",
+            "name": "seed",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "address",
+            "name": "royaltyReceiver",
+            "type": "address"
+          },
+          {
+            "internalType": "uint24",
             "name": "royaltyRate",
-            "type": "uint32"
+            "type": "uint24"
           },
           {
             "internalType": "bytes32",
             "name": "packageRoot",
-            "type": "bytes32"
-          },
-          {
-            "internalType": "bytes32",
-            "name": "contentHash",
             "type": "bytes32"
           },
           {
@@ -267,14 +265,26 @@
             "type": "bytes32"
           },
           {
+            "internalType": "address",
+            "name": "seller",
+            "type": "address"
+          }
+        ],
+        "internalType": "struct MintFacts",
+        "name": "facts",
+        "type": "tuple"
+      },
+      {
+        "components": [
+          {
             "internalType": "bytes32",
             "name": "saleKind",
             "type": "bytes32"
           },
           {
-            "internalType": "address",
-            "name": "currency",
-            "type": "address"
+            "internalType": "bytes",
+            "name": "params",
+            "type": "bytes"
           },
           {
             "internalType": "address",
@@ -295,15 +305,10 @@
             "internalType": "address",
             "name": "creator",
             "type": "address"
-          },
-          {
-            "internalType": "bytes",
-            "name": "params",
-            "type": "bytes"
           }
         ],
-        "internalType": "struct IMintPolicy.MintRecord",
-        "name": "r",
+        "internalType": "struct MintTerms",
+        "name": "terms",
         "type": "tuple"
       }
     ],
@@ -318,22 +323,22 @@
         "type": "address"
       }
     ],
-    "name": "bindEditions",
+    "name": "bindStream",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
   },
   {
-    "inputs": [
+    "inputs": [],
+    "name": "cc0TextFileId",
+    "outputs": [
       {
-        "internalType": "address",
-        "name": "target",
-        "type": "address"
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
       }
     ],
-    "name": "bindStream",
-    "outputs": [],
-    "stateMutability": "nonpayable",
+    "stateMutability": "view",
     "type": "function"
   },
   {
@@ -357,10 +362,23 @@
   },
   {
     "inputs": [],
-    "name": "editions",
+    "name": "directory",
     "outputs": [
       {
         "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "economics",
+    "outputs": [
+      {
+        "internalType": "contract IEconomicsResolver",
         "name": "",
         "type": "address"
       }
@@ -412,6 +430,19 @@
     "type": "function"
   },
   {
+    "inputs": [],
+    "name": "entropyModule",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "inputs": [
       {
         "internalType": "bytes32",
@@ -430,6 +461,25 @@
       }
     ],
     "name": "isApprovedItem",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "itemHash",
+        "type": "bytes32"
+      }
+    ],
+    "name": "isBarred",
     "outputs": [
       {
         "internalType": "bool",
@@ -467,25 +517,6 @@
       }
     ],
     "name": "isMoveNonceUsed",
-    "outputs": [
-      {
-        "internalType": "bool",
-        "name": "",
-        "type": "bool"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "bytes32",
-        "name": "itemHash",
-        "type": "bytes32"
-      }
-    ],
-    "name": "isReleased",
     "outputs": [
       {
         "internalType": "bool",
@@ -575,31 +606,9 @@
   {
     "inputs": [
       {
-        "components": [
-          {
-            "internalType": "address",
-            "name": "adapter",
-            "type": "address"
-          },
-          {
-            "internalType": "address",
-            "name": "economics",
-            "type": "address"
-          },
-          {
-            "internalType": "address",
-            "name": "entropyModule",
-            "type": "address"
-          },
-          {
-            "internalType": "address",
-            "name": "splitFactory",
-            "type": "address"
-          }
-        ],
-        "internalType": "struct IMintPolicy.MintContext",
-        "name": "context",
-        "type": "tuple"
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
       },
       {
         "internalType": "bytes",
@@ -613,18 +622,80 @@
         "components": [
           {
             "internalType": "bytes32",
-            "name": "saleKind",
+            "name": "itemHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "contentHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "uint256",
+            "name": "artistId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "collectionId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint8",
+            "name": "kind",
+            "type": "uint8"
+          },
+          {
+            "internalType": "uint8",
+            "name": "seedPolicy",
+            "type": "uint8"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "seed",
             "type": "bytes32"
           },
           {
             "internalType": "address",
-            "name": "currency",
+            "name": "royaltyReceiver",
             "type": "address"
           },
           {
-            "internalType": "uint256",
-            "name": "price",
-            "type": "uint256"
+            "internalType": "uint24",
+            "name": "royaltyRate",
+            "type": "uint24"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "packageRoot",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "mediaHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "recordFileId",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "address",
+            "name": "seller",
+            "type": "address"
+          }
+        ],
+        "internalType": "struct MintFacts",
+        "name": "facts",
+        "type": "tuple"
+      },
+      {
+        "components": [
+          {
+            "internalType": "bytes32",
+            "name": "saleKind",
+            "type": "bytes32"
           },
           {
             "internalType": "bytes",
@@ -652,7 +723,7 @@
             "type": "address"
           }
         ],
-        "internalType": "struct PrimaryTerms",
+        "internalType": "struct MintTerms",
         "name": "terms",
         "type": "tuple"
       }
@@ -686,6 +757,39 @@
   {
     "inputs": [
       {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "contentHash",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint256",
+        "name": "beneficiary",
+        "type": "uint256"
+      }
+    ],
+    "name": "releaseContent",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
         "internalType": "bytes32",
         "name": "contentHash",
         "type": "bytes32"
@@ -695,7 +799,7 @@
     "outputs": [
       {
         "internalType": "uint256",
-        "name": "artistId",
+        "name": "",
         "type": "uint256"
       }
     ],
@@ -747,6 +851,24 @@
       }
     ],
     "name": "setAuthority",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "expected",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "next",
+        "type": "address"
+      }
+    ],
+    "name": "setEntropyModule",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
@@ -872,8 +994,58 @@
   },
   {
     "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes32",
+        "name": "contentHash",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "beneficiary",
+        "type": "uint256"
+      }
+    ],
+    "name": "ContentReleased",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
     "inputs": [],
     "name": "EIP712DomainChanged",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "previous",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "next",
+        "type": "address"
+      }
+    ],
+    "name": "EntropyModuleSet",
     "type": "event"
   },
   {
@@ -1094,18 +1266,13 @@
     "inputs": [
       {
         "internalType": "bytes32",
-        "name": "product",
-        "type": "bytes32"
-      },
-      {
-        "internalType": "bytes32",
         "name": "contentHash",
         "type": "bytes32"
       },
       {
-        "internalType": "bytes32",
-        "name": "claimedBy",
-        "type": "bytes32"
+        "internalType": "uint256",
+        "name": "burnedTokenId",
+        "type": "uint256"
       }
     ],
     "name": "ContentUsed",
@@ -1257,6 +1424,22 @@
   {
     "inputs": [
       {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "caller",
+        "type": "address"
+      }
+    ],
+    "name": "NotSaleContract",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
         "internalType": "bytes32",
         "name": "packageRoot",
         "type": "bytes32"
@@ -1339,12 +1522,12 @@
   {
     "inputs": [
       {
-        "internalType": "address",
-        "name": "caller",
-        "type": "address"
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
       }
     ],
-    "name": "UnboundCaller",
+    "name": "UnknownArtist",
     "type": "error"
   }
 ]

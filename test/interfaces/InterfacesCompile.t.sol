@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import { Test } from "forge-std/Test.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IArtistPayoutResolver } from "../../src/economics/interfaces/IArtistPayoutResolver.sol";
-import { IAccounts } from "../../src/interfaces/IAccounts.sol";
+import { IAccounts } from "../../src/interfaces/core/IAccounts.sol";
 import { IArtistRegistry, IConsolidationSource } from "../../src/interfaces/IArtistRegistry.sol";
 import { IItemApprovals } from "../../src/interfaces/IItemApprovals.sol";
 import { IArtistRoleResolver } from "../../src/interfaces/IArtistRoleResolver.sol";
@@ -15,22 +15,19 @@ import {
 } from "../../src/interfaces/ICurationVerifier.sol";
 import { IDependencyRegistry } from "../../src/interfaces/IDependencyRegistry.sol";
 import { IEconomicsResolver } from "../../src/interfaces/IEconomicsResolver.sol";
-import { IEditions } from "../../src/interfaces/IEditions.sol";
+import { IEditions } from "../../src/interfaces/core/IEditions.sol";
 import { IEnglishAuction } from "../../src/interfaces/IEnglishAuction.sol";
 import { IEnglishAuctionClock } from "../../src/interfaces/IEnglishAuctionClock.sol";
 import { IEnglishAuctionRefusal } from "../../src/interfaces/IEnglishAuctionRefusal.sol";
 import { IEntropyModule } from "../../src/interfaces/IEntropyModule.sol";
-import { IFederationRegistry } from "../../src/interfaces/IFederationRegistry.sol";
-import { IMintTarget } from "../../src/interfaces/IMintTarget.sol";
+import { IIndependentStreamRegistry } from "../../src/interfaces/IIndependentStreamRegistry.sol";
 import { IPackageRegistry } from "../../src/interfaces/IPackageRegistry.sol";
 import { IRenderer } from "../../src/interfaces/IRenderer.sol";
 import { ISaleAdapter } from "../../src/interfaces/ISaleAdapter.sol";
 import { IStatementLog } from "../../src/interfaces/IStatementLog.sol";
-import { IStream } from "../../src/interfaces/IStream.sol";
-import { IStreamExtension } from "../../src/interfaces/IStreamExtension.sol";
+import { IStream } from "../../src/interfaces/core/IStream.sol";
 import { IUniformEditionAuction } from "../../src/interfaces/IUniformEditionAuction.sol";
 import { IWorkPowers } from "../../src/interfaces/IWorkPowers.sol";
-import { IWorkRecords } from "../../src/interfaces/IWorkRecords.sol";
 import { Limits } from "../../src/interfaces/types/Limits.sol";
 import { SaleKind } from "../../src/interfaces/types/SaleTypes.sol";
 
@@ -40,15 +37,11 @@ import { SaleKind } from "../../src/interfaces/types/SaleTypes.sol";
 /// @dev An ID covers the functions an interface declares itself, not inherited ones.
 contract InterfacesCompileTest is Test {
     function test_interfaceIds() public pure {
-        assertEq(type(IMintTarget).interfaceId, bytes4(0xba4ae536), "IMintTarget");
-        assertEq(type(IStream).interfaceId, bytes4(0xced242c8), "IStream");
-        assertEq(type(IStreamExtension).interfaceId, bytes4(0x1b9217b1), "IStreamExtension");
-        assertEq(type(IWorkRecords).interfaceId, bytes4(0x5a8252d9), "IWorkRecords");
-        assertEq(type(IWorkPowers).interfaceId, bytes4(0xbd18229c), "IWorkPowers");
-        assertEq(type(IEditions).interfaceId, bytes4(0x566c4b4c), "IEditions");
-        assertEq(type(ISaleAdapter).interfaceId, bytes4(0x312dc1e1), "ISaleAdapter");
-        // `setConfig` takes the refusal delay and gas (AUC-39, AUC-40).
-        assertEq(type(IEnglishAuction).interfaceId, bytes4(0xeb1a95c7), "IEnglishAuction");
+        assertEq(type(IStream).interfaceId, bytes4(0xe38078e5), "IStream");
+        assertEq(type(IWorkPowers).interfaceId, bytes4(0xf2f560e3), "IWorkPowers");
+        assertEq(type(IEditions).interfaceId, bytes4(0xb4dad938), "IEditions");
+        assertEq(type(ISaleAdapter).interfaceId, bytes4(0xd15ddb3f), "ISaleAdapter");
+        assertEq(type(IEnglishAuction).interfaceId, bytes4(0x54df3713), "IEnglishAuction");
         // An integration view, never reported through ERC-165.
         assertEq(type(IEnglishAuctionClock).interfaceId, bytes4(0x968c7b07), "IEnglishAuctionClock");
         // The refusal exit (AUC-38), never reported through ERC-165.
@@ -56,38 +49,32 @@ contract InterfacesCompileTest is Test {
             type(IEnglishAuctionRefusal).interfaceId, bytes4(0x625761b5), "IEnglishAuctionRefusal"
         );
         assertEq(
-            type(IUniformEditionAuction).interfaceId, bytes4(0xcced0690), "IUniformEditionAuction"
+            type(IUniformEditionAuction).interfaceId, bytes4(0x327daaaf), "IUniformEditionAuction"
         );
         // Errors only: no function, so the ID is zero and nothing reports it.
         assertEq(type(ICurationVerifier).interfaceId, bytes4(0x492733ca), "ICurationVerifier");
         assertEq(
             type(ICurationSignerVerifier).interfaceId, bytes4(0x9f12d97a), "ICurationSignerVerifier"
         );
-        assertEq(type(IPackageRegistry).interfaceId, bytes4(0x7bdc9b1d), "IPackageRegistry");
+        assertEq(type(IPackageRegistry).interfaceId, bytes4(0xfecfa933), "IPackageRegistry");
         assertEq(type(IContentStore).interfaceId, bytes4(0xe5a30736), "IContentStore");
         assertEq(type(IDependencyRegistry).interfaceId, bytes4(0xe5338d57), "IDependencyRegistry");
         assertEq(type(IRenderer).interfaceId, bytes4(0xa772216d), "IRenderer");
-        assertEq(type(IEconomicsResolver).interfaceId, bytes4(0x9ba8ecb3), "IEconomicsResolver");
+        assertEq(type(IEconomicsResolver).interfaceId, bytes4(0xf67d097b), "IEconomicsResolver");
         assertEq(type(IStatementLog).interfaceId, bytes4(0xbb5574c7), "IStatementLog");
         assertEq(type(IArtistRoleResolver).interfaceId, bytes4(0x3074ca00), "IArtistRoleResolver");
         assertEq(
             type(IArtistPayoutResolver).interfaceId, bytes4(0x9b2c1793), "IArtistPayoutResolver"
         );
-        assertEq(type(IArtistRegistry).interfaceId, bytes4(0xe379ec77), "IArtistRegistry");
-        assertEq(type(IAccounts).interfaceId, bytes4(0x9f87c239), "IAccounts");
+        assertEq(type(IArtistRegistry).interfaceId, bytes4(0x1bec3945), "IArtistRegistry");
+        assertEq(type(IAccounts).interfaceId, bytes4(0xc27b4543), "IAccounts");
         assertEq(type(IItemApprovals).interfaceId, bytes4(0x881b19aa), "IItemApprovals");
         assertEq(type(IConsolidationSource).interfaceId, bytes4(0x42129132), "IConsolidationSource");
-        assertEq(type(IEntropyModule).interfaceId, bytes4(0xa8a2a007), "IEntropyModule");
-        assertEq(type(IFederationRegistry).interfaceId, bytes4(0x279a77ec), "IFederationRegistry");
-    }
-
-    /// @dev The mint surface stays small: four adapter calls plus the admitted-minter mapping.
-    function test_mintTargetIsMinimal() public pure {
+        assertEq(type(IEntropyModule).interfaceId, bytes4(0x549d75c9), "IEntropyModule");
         assertEq(
-            type(IMintTarget).interfaceId,
-            IMintTarget.mint.selector ^ IMintTarget.primaryTerms.selector
-                ^ IMintTarget.burn.selector ^ IMintTarget.isAdmittedMinter.selector
-                ^ IMintTarget.setAdmittedMinter.selector ^ IMintTarget.settlePrimary.selector
+            type(IIndependentStreamRegistry).interfaceId,
+            bytes4(0x74a7e21a),
+            "IIndependentStreamRegistry"
         );
     }
 
@@ -103,7 +90,7 @@ contract InterfacesCompileTest is Test {
             IERC165(IEconomicsResolver(a)),
             IERC165(IPackageRegistry(a)),
             IERC165(ISaleAdapter(a)),
-            IERC165(IFederationRegistry(a)),
+            IERC165(IIndependentStreamRegistry(a)),
             IERC165(IArtistRoleResolver(a))
         ];
         for (uint256 i; i < installable.length; ++i) {

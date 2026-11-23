@@ -1,0 +1,33 @@
+{
+  "structs": {},
+  "variables": [
+    {
+      "contract": "StreamTerms",
+      "label": "_authority",
+      "offset": 0,
+      "slot": 0,
+      "type": "address"
+    },
+    {
+      "contract": "StreamTerms",
+      "label": "_consumingSchedule",
+      "offset": 20,
+      "slot": 0,
+      "type": "bool"
+    },
+    {
+      "contract": "StreamTerms",
+      "label": "_editionsOf",
+      "offset": 0,
+      "slot": 1,
+      "type": "mapping(address => address)"
+    },
+    {
+      "contract": "StreamTerms",
+      "label": "_tokenOfEditions",
+      "offset": 0,
+      "slot": 2,
+      "type": "mapping(address => address)"
+    }
+  ]
+}

@@ -4,20 +4,22 @@ pragma solidity ^0.8.24;
 import { Vm } from "forge-std/Vm.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { IStatementLog, Role, Statement } from "src/interfaces/IStatementLog.sol";
+import { Facts } from "src/interfaces/core/CoreTypes.sol";
 import { FileRole, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { HashRef } from "src/interfaces/types/HashRef.sol";
-import { IntegrationBase } from "../integration/IntegrationBase.sol";
+import { ReplayBase } from "./ReplayBase.sol";
 
-/// @notice A real work end to end (WS-27, WS-51, WS-54, DSP-1, DSP-10): the 6529 Network Museum's
-///         record of Vera Molnár and Martin Grasser, *Themes and Variations #210* (6529NM-W-0029),
-///         at a pinned Museum commit (`test/fixtures/real/museum-work.json`, written by
-///         `tools/make_vectors.py` from the Museum's own CC0 records). Its record goes into the
-///         content store with the uploader's layout, its display image is registered by the
-///         digests the Museum's file gives, the work is minted through a curated sale, opened
-///         and finalized, and `tokenURI` shows the record; a curator's catalogue statement cites
-///         the Museum record by its own envelope digest. Every ID and hash is checked against
-///         the value Python computed independently.
-contract RealVectorsTest is IntegrationBase {
+/// @notice A real work end to end on the deployed stack: the 6529 Network Museum's record of Vera
+///         Molnár and Martin Grasser, *Themes and Variations #210* (6529NM-W-0029), at a pinned
+///         Museum commit (`test/fixtures/real/museum-work.json`, written by `tools/make_vectors.py`
+///         from the Museum's own CC0 records). Its record goes into the content store with the
+///         uploader's layout, its display image is registered by the digests the Museum's file
+///         gives, the work is minted through a curated sale, its record opened in
+///         `StreamWorkFacts6529` and finalized through the rules module, and `tokenURI` shows the
+///         record; a curator's catalogue statement cites the Museum record by its own envelope
+///         digest. Every ID and hash is checked against the value Python computed independently,
+///         and every permanent contract's indexer replays the whole run.
+contract RealVectorsTest is ReplayBase {
     string internal constant PATH = "test/fixtures/real/museum-work.json";
     bytes32 internal constant ENTRY_DOMAIN = keccak256("6529.works.StatementLog.entry.v1");
 
@@ -47,7 +49,7 @@ contract RealVectorsTest is IntegrationBase {
     }
 
     /// @dev The display image's manifest, registered from the Museum file's digests (its bytes
-    ///      stay off-chain, the default): the same file ID as Python's (WS-54).
+    ///      stay off-chain, the default): the same file ID as Python's.
     function _registerMedia() internal returns (bytes32 fileId, bytes32 sha) {
         bytes32[] memory chunks = vm.parseJsonBytes32Array(json, ".media.chunkHashes");
         uint256 length = vm.parseJsonUint(json, ".media.length");
@@ -62,7 +64,7 @@ contract RealVectorsTest is IntegrationBase {
         assertFalse(store.isComplete(fileId), "off-chain until uploaded");
     }
 
-    function test_MuseumWorkMintsOpensFinalizesAndRenders() public {
+    function test_RealVectors_MuseumWorkMintsOpensFinalizesAndRenders() public {
         bytes32 recordId = _uploadRecord();
         (bytes32 mediaId, bytes32 sha) = _registerMedia();
         Work memory w;
@@ -72,29 +74,32 @@ contract RealVectorsTest is IntegrationBase {
         Work[] memory works = _one(w);
         bytes32 root = _publish(works);
         uint256 tokenId = _sell(root, works, 0, collector, 1 ether);
-        records.openRecord(tokenId, w.item, w.media);
-        bytes32 state = records.workStateHash(tokenId);
+        _open(tokenId, w);
+        bytes32 state = rules.workStateHash(address(stream), tokenId);
         vm.prank(artist);
-        records.finalize(tokenId, state);
+        rules.finalize(address(stream), tokenId, state);
 
-        assertEq(records.record(tokenId).recordFileId, recordId);
-        assertTrue(records.record(tokenId).finalized);
-        assertEq(records.mediaOf(tokenId)[0].sha256Hash, sha, "the Museum image's digest");
-        (,,,,, uint32 rate) = stream.coreOf(tokenId);
-        assertGt(rate, 0);
+        Facts memory f = facts.factsOf(address(stream), tokenId);
+        assertEq(f.recordFileId, recordId, "the Museum record");
+        assertTrue(f.finalized, "finalized");
+        assertEq(f.renderer, address(renderer), "the renderer pinned");
+        assertEq(f.media[0].fileId, mediaId, "the Museum image");
+        assertEq(store.sha256Of(f.media[0].fileId), sha, "the Museum image's digest");
+        assertGt(stream.workOf(tokenId).royaltyRate, 0);
         string memory uri = stream.tokenURI(tokenId);
         string[] memory fragments = vm.parseJsonStringArray(json, ".tokenUriFragments");
         assertEq(fragments.length, 6);
         for (uint256 i; i < fragments.length; ++i) {
             assertTrue(_contains(uri, fragments[i]), string.concat("tokenURI lacks ", fragments[i]));
         }
+        _sync();
     }
 
     /// @dev A curator's catalogue entry about the Museum subject, citing the Museum record by its
     ///      own envelope digest (keccak256 of the canonical payload, checked by the generator).
     ///      The entry hash the log emits is rebuilt from the event's fields and Python's
-    ///      statement hash (DSP-10), so the generator and the contract hash the same statement.
-    function test_CatalogueStatementMatchesTheGoldenHash() public {
+    ///      statement hash, so the generator and the contract hash the same statement.
+    function test_RealVectors_CatalogueStatementMatchesTheGoldenHash() public {
         Statement memory s = Statement(
             address(0),
             uint256(vm.parseJsonBytes32(json, ".museumRecord.subjectId")),
@@ -110,7 +115,7 @@ contract RealVectorsTest is IntegrationBase {
             bytes32(0)
         );
         assertEq(s.content.digest, vm.parseJsonBytes32(json, ".museumRecord.contentDigest"));
-        vm.recordLogs();
+        _sync();
         vm.prank(curator);
         bytes32 entryHash = statements.appendCurator(s);
         Vm.Log[] memory logs = vm.getRecordedLogs();
@@ -143,5 +148,8 @@ contract RealVectorsTest is IntegrationBase {
         assertTrue(found, "no StatementAppended");
         (uint64 count,) = statements.chainOf(address(0), s.id);
         assertEq(count, 1);
+        // The statement log's indexer recomputes the same entry hash from the log.
+        _apply(logs);
+        statementsIdx.assertMatches();
     }
 }

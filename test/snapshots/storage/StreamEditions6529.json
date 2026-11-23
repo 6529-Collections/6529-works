@@ -1,0 +1,169 @@
+{
+  "structs": {
+    "struct Edition": [
+      {
+        "label": "minter",
+        "offset": 0,
+        "slot": 0,
+        "type": "address"
+      },
+      {
+        "label": "maxSupply",
+        "offset": 20,
+        "slot": 0,
+        "type": "uint40"
+      },
+      {
+        "label": "minted",
+        "offset": 25,
+        "slot": 0,
+        "type": "uint40"
+      },
+      {
+        "label": "supplySealed",
+        "offset": 30,
+        "slot": 0,
+        "type": "bool"
+      },
+      {
+        "label": "royaltyReceiver",
+        "offset": 0,
+        "slot": 1,
+        "type": "address"
+      },
+      {
+        "label": "royaltyRate",
+        "offset": 20,
+        "slot": 1,
+        "type": "uint24"
+      }
+    ],
+    "struct Minter": [
+      {
+        "label": "activeFrom",
+        "offset": 0,
+        "slot": 0,
+        "type": "uint48"
+      },
+      {
+        "label": "removedAt",
+        "offset": 6,
+        "slot": 0,
+        "type": "uint48"
+      },
+      {
+        "label": "firstActiveFrom",
+        "offset": 12,
+        "slot": 0,
+        "type": "uint48"
+      }
+    ],
+    "struct PendingModule": [
+      {
+        "label": "module",
+        "offset": 0,
+        "slot": 0,
+        "type": "address"
+      },
+      {
+        "label": "readyAt",
+        "offset": 20,
+        "slot": 0,
+        "type": "uint48"
+      }
+    ]
+  },
+  "variables": [
+    {
+      "contract": "StreamEditions6529",
+      "label": "_balances",
+      "offset": 0,
+      "slot": 0,
+      "type": "mapping(uint256 => mapping(address => uint256))"
+    },
+    {
+      "contract": "StreamEditions6529",
+      "label": "_operatorApprovals",
+      "offset": 0,
+      "slot": 1,
+      "type": "mapping(address => mapping(address => bool))"
+    },
+    {
+      "contract": "StreamEditions6529",
+      "label": "_uri",
+      "offset": 0,
+      "slot": 2,
+      "type": "string"
+    },
+    {
+      "contract": "StreamEditions6529",
+      "label": "rebindDelay",
+      "offset": 0,
+      "slot": 3,
+      "type": "uint48"
+    },
+    {
+      "contract": "StreamEditions6529",
+      "label": "owner",
+      "offset": 6,
+      "slot": 3,
+      "type": "address"
+    },
+    {
+      "contract": "StreamEditions6529",
+      "label": "contractURI",
+      "offset": 0,
+      "slot": 4,
+      "type": "string"
+    },
+    {
+      "contract": "StreamEditions6529",
+      "label": "_editions",
+      "offset": 0,
+      "slot": 5,
+      "type": "mapping(uint256 => struct Edition)"
+    },
+    {
+      "contract": "StreamEditions6529",
+      "label": "_authority",
+      "offset": 0,
+      "slot": 6,
+      "type": "address"
+    },
+    {
+      "contract": "StreamEditions6529",
+      "label": "_consumingSchedule",
+      "offset": 20,
+      "slot": 6,
+      "type": "bool"
+    },
+    {
+      "contract": "StreamEditions6529",
+      "label": "moduleDelay",
+      "offset": 21,
+      "slot": 6,
+      "type": "uint48"
+    },
+    {
+      "contract": "StreamEditions6529",
+      "label": "_modules",
+      "offset": 0,
+      "slot": 7,
+      "type": "mapping(bytes32 => address)"
+    },
+    {
+      "contract": "StreamEditions6529",
+      "label": "_pending",
+      "offset": 0,
+      "slot": 8,
+      "type": "mapping(bytes32 => struct PendingModule)"
+    },
+    {
+      "contract": "StreamEditions6529",
+      "label": "_minters",
+      "offset": 0,
+      "slot": 9,
+      "type": "mapping(address => struct Minter)"
+    }
+  ]
+}

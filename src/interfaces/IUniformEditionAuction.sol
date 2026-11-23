@@ -1,33 +1,57 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 import { IEnglishAuction } from "./IEnglishAuction.sol";
 import { ISaleAdapter } from "./ISaleAdapter.sol";
 
 /// @title IUniformEditionAuction
 /// @notice The uniform-price edition auction: how 6529 Stream Editions sells an edition (ADR
-///         0005; 6529chain D138-D141). One auction per edition decides both how many copies
+///         0005). One auction per edition decides both how many copies
 ///         exist and their one price, so the number is never fixed in advance and nothing is
 ///         left unsold. It runs alongside the edition master's 1/1 English auction and closes
-///         exactly 15 minutes after the 1/1 finally closes (a fixed value, R20). Anyone bids a
+///         exactly 15 minutes after the 1/1 finally closes (a fixed value). Anyone bids a
 ///         quantity at a price step; bids are public, fully escrowed in ETH, and can be raised
-///         but never lowered or withdrawn, also while the 1/1 is paused (R21). At the close, revenue(k) is
-///         k times the k-th highest unit bid; the result is the largest k whose revenue is at
-///         least (100% - margin) of the highest, at most the creator's optional cap. Every winner
-///         pays the lowest winning step's price, every other unit is refunded in full, and
-///         exactly k copies are minted, as winners claim. The network fee (25% at launch) is the
-///         share the edition's economics locked at open, rounded up (the seller's part rounds
-///         down), paid to the recipient the economics resolver names at settlement (R18).
+///         but never lowered or withdrawn, also while the 1/1 is paused. At the close,
+///         revenue(k) is k times the k-th highest unit bid; the result is the largest k whose
+///         revenue is at least (100% - margin) of the highest, at most the creator's optional
+///         cap. Every winner pays the lowest winning step's price, every other unit is refunded
+///         in full, and exactly k copies are minted, as winners claim. The network fee (25% at
+///         launch) is the share the edition's economics locked at open, rounded up (the seller's
+///         part rounds down), paid to the recipient the economics resolver names at settlement.
 /// @dev Sales are keyed like the English auction's: `saleId = saleIdOf(token, id)`, the edition
 ///      contract and edition ID (for 6529 Stream Editions, the master's 6529 Stream token ID), so
-///      one adapter can serve every listed token and, from v1.1, federated linked pairs. The
-///      adapter is one admitted minter among any others governance admits (owner decision 14):
-///      nothing in the tokens makes it the only one. `saleKind()` is `SaleKind.UNIFORM_AUCTION`.
+///      one adapter can serve every listed token and Independent Stream pairs. The adapter is one
+///      minter of the edition contract among any others the network adds; `open` creates the
+///      edition (`IEditions.create`), which makes this adapter its only minter. `saleKind()` is
+///      `SaleKind.UNIFORM_AUCTION`.
+///
+///      The edition contract is permanent and holds only the supply; this adapter holds the
+///      edition creation rules: at `open` it checks the master's item against the master token
+///      (`IStream.itemHashOf`, `IStream.workOf(id).kind == 1`), computes the seller, the fee
+///      share and the royalty receiver from the economics resolver, deploys the split wallets,
+///      and creates the edition with the master's royalty rate. It stores the seller and the fee
+///      share itself. If the network removes this adapter, the winners of a sale it sealed
+///      before the removal still claim (a removed minter mints only editions it sealed before
+///      its removal, and seals nothing). A sale it had not sealed is voided with full refunds
+///      and its edition stays without a seal; the network can move that edition to another
+///      adapter (`IEditions.rebind`, once `rebindDelay` has passed since the removal), which
+///      opens its sale with `adopt` or closes it with `closeEdition`.
+///
+///      Credits (claimable ETH, from `claimBidFor`). Only money that has itself waited the
+///      unclaimed period expires to the network (`expireCredit`). The period is the network's
+///      setting `IDirectory.unclaimedPeriod()`, read when an expiry is attempted. An account's
+///      credit is a total and one batch of it, `aged`, with the time `since` that batch started
+///      waiting: every wei in the batch arrived no later than `since`. The first credit to an
+///      empty account starts a batch with itself. Later credits join the total but never the
+///      batch, so nobody, by crediting an account, can shorten or postpone the batch's clock. An
+///      expiry takes only the batch, once the period has passed since `since`, and starts a new
+///      batch with the rest of the total from that moment. The account's own claim takes
+///      everything.
 ///
 ///      Ladder. Steps are 0-based indices into `StepLadder`'s prices under the sale's locked
 ///      `AuctionConfig`. A step's live units are the units of the bids sitting on it now.
 ///
-///      Timing (D140, D141). `open` is permissionless from the 1/1 auction's start (the keeper
+///      Timing. `open` is permissionless from the 1/1 auction's start (the keeper
 ///      batches it with the start) until the edition close. The 1/1 is the English auction sale
 ///      `IEnglishAuction.saleIdOf(master, id)`, where `master` is the token's
 ///      `IEditions.stream()`. Bids are accepted while `block.timestamp < endTime`, where
@@ -38,7 +62,7 @@ import { ISaleAdapter } from "./ISaleAdapter.sol";
 ///      min(block.timestamp + softWindow, backstop)` with `backstop = closeAt + maxExtension`,
 ///      a hard close. While the 1/1 is PAUSED for a dispute, bids and raises are accepted
 ///      whatever the time and do not move `softEnd`; a resumed 1/1 runs at least its governed
-///      duration, and the edition close follows it. Bids stay firm during the pause (R21). A
+///      duration, and the edition close follows it. Bids stay firm during the pause. A
 ///      CANCELLED 1/1 (an upheld dispute) voids the sale: nothing is minted or paid, and every
 ///      bid is refunded in full. A bid reads the 1/1 live only within `softWindow` of the close (or
 ///      later), so a bid placed earlier, after the cancel but before the sale is voided, can
@@ -46,14 +70,14 @@ import { ISaleAdapter } from "./ISaleAdapter.sol";
 ///      (read live) is already false. Any `settle` call voids the sale at once. Editions sell
 ///      whether or not the 1/1 drew bids; no edition bids means no copies.
 ///
-///      Clearing (D138). Scanning used steps from the top, step s is a candidate of
+///      Clearing. Scanning used steps from the top, step s is a candidate of
 ///      `k_s = min(D_s, cap)` copies at `price(s)`, `D_s` being the live units at or above s;
 ///      the scan stops once the units strictly above a step reach the cap. `bestRevenue` (R*)
 ///      is the highest candidate revenue; the result is the lowest-priced candidate with
 ///      `revenue * 100,000 >= bestRevenue * (100,000 - marginShare)`. This equals the per-unit
 ///      definition (golden vectors in `test/fixtures/edition-auction/clearing.json`).
 ///
-///      The cut step (owner decision 1). Without a cap no step is split. When a cap binds
+///      The cut step. Without a cap no step is split. When a cap binds
 ///      inside the clearing step, its units fill in arrival order (price-time priority): a bid's
 ///      `position` there is the step's entered units before it, counted in units that only
 ///      increase; a raise rejoins at the back of its new step; a raise out of a step leaves a
@@ -76,7 +100,7 @@ interface IUniformEditionAuction is ISaleAdapter {
         VOID
     }
 
-    /// @notice The governed parameters (D86), locked into each sale when it opens (ADR 0005).
+    /// @notice The governed parameters, locked into each sale when it opens (ADR 0005).
     ///         The close offset is not one of them: every sale closes 15 minutes after its 1/1.
     /// @param basePrice The price of step 0, in wei (0.0001 ETH at launch).
     /// @param stepsPerDecade Steps per tenfold rise: 24, 48, 96 or 192 (48 at launch).
@@ -113,7 +137,7 @@ interface IUniformEditionAuction is ISaleAdapter {
     /// @param terms The parameters locked at open.
     /// @param seller The artist-portion split wallet, locked at open.
     /// @param feeRecipient The network fee recipient settlement would pay now: the economics
-    ///        resolver's, or the edition's recorded one when the resolver names none (R18).
+    ///        resolver's, or the one it named at open when it names none.
     /// @param feeShare The network share of revenue, out of 100,000, locked at open.
     /// @param openedAt When the sale opened.
     /// @param bidCount Bids placed so far; bid IDs run from 1 to `bidCount`.
@@ -183,7 +207,7 @@ interface IUniformEditionAuction is ISaleAdapter {
     ///        `count` is zero.
     /// @param revenue `count * price`.
     /// @param networkFee `revenue - floor(revenue * (100,000 - feeShare) / 100,000)`: the
-    ///        seller's part rounds down and the network takes the rest (R18).
+    ///        seller's part rounds down and the network takes the rest.
     /// @param bestRevenue R*, the highest candidate revenue.
     /// @param rationed Whether the cap binds inside the clearing step.
     /// @param cutUnits The clearing step's winning units (all of them unless rationed).
@@ -349,6 +373,22 @@ interface IUniformEditionAuction is ISaleAdapter {
     ///         the edition at zero: `IEditions.EditionSupplySealed(id, 0)`).
     /// @param saleId The sale ID.
     event AuctionVoided(uint256 indexed saleId);
+    /// @notice The network closed, with a seal at the copies it had (zero for one with none),
+    ///         an edition moved to this adapter that
+    ///         has no sale here (`closeEdition`).
+    /// @param saleId The sale ID the edition would have had.
+    /// @param token The edition contract.
+    /// @param id The edition ID.
+    event EditionClosed(uint256 indexed saleId, address indexed token, uint256 id);
+    /// @notice The network opened the sale of an edition moved to this adapter (`adopt`).
+    /// @param saleId The sale ID.
+    /// @param token The edition contract.
+    /// @param id The edition ID.
+    /// @param runsOnItsOwn True when the master's sale already had an outcome, so the sale
+    ///        runs for `ADOPTED_RUN` from now and does not follow the 1/1.
+    event EditionAdopted(
+        uint256 indexed saleId, address indexed token, uint256 indexed id, bool runsOnItsOwn
+    );
     /// @notice A bid was claimed: its copies minted and its refund paid or credited.
     /// @param saleId The sale ID.
     /// @param bidId The bid's ID.
@@ -399,17 +439,14 @@ interface IUniformEditionAuction is ISaleAdapter {
     /// @notice The sale cannot settle yet: its end has not passed, or the 1/1 is neither
     ///         SETTLED nor CANCELLED.
     error SettlementNotReady(uint256 saleId);
-    /// @notice Copies were sold but the edition does not exist yet (`IEditions.createEdition`
-    ///         is permissionless once the master has settled).
-    error EditionNotCreated(address token, uint256 id);
     /// @notice The settlement order is wrong at `index`: a departure index out of range, or a
     ///         position not above the previous one.
     error InvalidSettlementOrder(uint256 index);
     /// @notice A configuration or limits outside the bounds `setConfig` and `setLimits` document.
     error InvalidConfig();
-    /// @notice The sale cannot be abandoned: it has paid or settled, its 1/1 is not settled yet,
-    ///         its master settled and its edition exists (it settles as usual), or 21 days have
-    ///         not passed since its close.
+    /// @notice The sale cannot be abandoned: it has paid or settled, its 1/1 auction still
+    ///         answers that it is active, paused, ended or settled (the sale then settles as
+    ///         usual), it was adopted, or 21 days have not passed since its close.
     error NotAbandonable(uint256 saleId);
     /// @notice A time that does not fit the 32-bit clocks the sale stores: a soft end or a 1/1
     ///         end at or past 2^32 seconds (7 February 2106). The adapter must be replaced before
@@ -423,33 +460,67 @@ interface IUniformEditionAuction is ISaleAdapter {
     /// @return The sale ID, whether or not that sale exists.
     function saleIdOf(address token, uint256 id) external pure returns (uint256);
 
-    /// @notice Opens the sale of edition `id` on `token`. Permissionless, from the 1/1
-    ///         auction's start until the edition close; refused while the adapter is paused
-    ///         (`SalePaused`). Locks the creator's cap, the current `config()`, and the economics:
-    ///         for 6529 Stream Editions, `IEconomicsResolver.newWorkTerms(PRODUCT_EDITIONS,
-    ///         item.payees)`, or the economics an existing edition recorded. Binds the edition
-    ///         to this adapter first (`IEditions.bindMinter`, ADR 0005 section 6), so an edition
-    ///         another adapter sells refuses the open with that token's `MinterMismatch`. Emits
-    ///         `AuctionOpened` and `ISaleAdapter.SaleStarted` (price: step 0's; end time:
-    ///         `closeAt`). Reverts with `TargetNotAllowed` for a token that is not served,
-    ///         `NoOneOfOneAuction`, `AuctionExists`, `BiddingClosed` after the close, and
-    ///         `InvalidSaleTerms` when the terms do not match or are not this kind's.
+    /// @notice Opens the sale of edition `id` on `token` and creates the edition. Permissionless,
+    ///         from the 1/1 auction's start until the edition close; refused while the adapter is
+    ///         paused (`SalePaused`). Locks the creator's cap, the current `config()`, and the
+    ///         economics: for 6529 Stream Editions, `IEconomicsResolver.newWorkTerms(
+    ///         PRODUCT_EDITIONS,
+    ///         item.payees)`; for an Independent Stream pair, the Independent Stream module's fee
+    ///         share for the token (`IIndependentStreamGate.feeShareOf`). Creates the edition
+    ///         (`IEditions.create(id, cap, royaltyReceiver, the master's royalty rate)`), which
+    ///         makes this adapter its only minter, so an edition that already exists refuses the
+    ///         open (`IEditions.EditionExists`). Emits `AuctionOpened` and
+    ///         `ISaleAdapter.SaleStarted` (price: step 0's; end time: `closeAt`). Reverts with
+    ///         `TargetNotAllowed` for a token that is not served, `NoOneOfOneAuction`,
+    ///         `AuctionExists`, `BiddingClosed` after the close, and `InvalidSaleTerms` when the
+    ///         terms do not match or are not this kind's.
     /// @param token A served edition contract.
     /// @param id The edition ID (the master's token ID).
     /// @param data Token-specific terms. For 6529 Stream Editions: `abi.encode(PackageItem item,
     ///        bytes32 packageRoot, bytes32[] proof)`: the master's EDITION_MASTER item, whose
     ///        `WorksHashing.itemHash` must equal the item hash 6529 Stream stored for `id`
-    ///        (`IStream.coreOf`), and the package it was approved in, which must still be
-    ///        approved and contain the item (`IItemApprovals.isApprovedItem` of 6529 Stream's
-    ///        package registry, C23: a revoked package or a disabled signer opens no sale; a sale
-    ///        already open is untouched). For a federated pair: `abi.encode(PackageItem item)`.
-    ///        The edition terms must name `SaleKind.UNIFORM_AUCTION` and `CURRENCY_ETH`, their
-    ///        `maxCount` is the cap, and their params are empty. Before locking anything, `open`
-    ///        deploys the seller's and the royalty receiver's split wallets if they have no code
-    ///        (`ISplitFactory.createWallet`), so no payment from this sale, and no royalty on its
-    ///        copies, can reach an undeployed wallet.
+    ///        (`IStream.itemHashOf`, with `workOf(id).kind` 1), and the package it was approved in, which must still be
+    ///        approved and contain the item (`IItemApprovals.isApprovedItem` of the package
+    ///        registry the lens names: a revoked package or a disabled signer opens no sale; a sale
+    ///        already open is untouched). For an Independent Stream pair:
+    ///        `abi.encode(PackageItem item)`. The edition terms must name
+    ///        `SaleKind.UNIFORM_AUCTION` and `CURRENCY_ETH`, their `maxCount` is the cap, and their
+    ///        params are empty. Before locking anything, `open` deploys the seller's and the
+    ///        royalty receiver's split wallets if they have no code (`ISplitFactory.createWallet`),
+    ///        so no payment from this sale, and no royalty on its copies, can reach an undeployed
+    ///        wallet.
     /// @return saleId `saleIdOf(token, id)`.
     function open(address token, uint256 id, bytes calldata data) external returns (uint256 saleId);
+
+    /// @notice Opens the sale of an edition the network moved to this adapter
+    ///         (`IEditions.rebind`): one whose minter is this adapter, with no copies and no
+    ///         seal. The network only (an AccessManager role), so the network chooses when the
+    ///         moved sale runs. Checks the item and locks the cap, the configuration and the
+    ///         economics as `open` does, and deploys the seller's split wallet; the edition's
+    ///         royalty receiver and rate stay as they are (the TERMS module's). If the master's
+    ///         sale is still running, the sale follows the 1/1 as an opened one does; once the
+    ///         master's sale has an outcome (`IStream.workOf(id).outcome` is not NONE), the sale
+    ///         runs on its own: it closes `ADOPTED_RUN` plus 15 minutes after the adoption, with
+    ///         the usual soft close, and settles without reading the 1/1. Emits
+    ///         `EditionAdopted`, `AuctionOpened` and `ISaleAdapter.SaleStarted`. Reverts as
+    ///         `open` does, and with `InvalidSaleTerms` for an edition this adapter does not
+    ///         mint, that has copies or a seal, or whose maximum is below the item's cap (or,
+    ///         for an uncapped item, below `type(uint40).max`), which the sale could never seal.
+    /// @param token A served edition contract.
+    /// @param id The edition ID.
+    /// @param data As for `open`.
+    /// @return saleId `saleIdOf(token, id)`.
+    function adopt(address token, uint256 id, bytes calldata data) external returns (uint256 saleId);
+
+    /// @notice Closes an edition the network moved to this adapter that has no sale here and
+    ///         will not be sold, such as one whose master's sale was cancelled (`adopt` refuses
+    ///         it): seals it at the copies it already has (`IEditions.seal`; zero for an edition
+    ///         with none), so it gets no further copies for good. The network only. Reverts with
+    ///         `AuctionExists` if a sale of it was opened here, and as `IEditions.seal` does for
+    ///         an edition this adapter does not mint, or that has a seal.
+    /// @param token The edition contract.
+    /// @param id The edition ID.
+    function closeEdition(address token, uint256 id) external;
 
     /// @notice Places a bid of `quantity` units at `step`, paying exactly
     ///         `quantity * stepPrice(saleId, step)` as `msg.value`. Anyone, while bidding is open
@@ -477,11 +548,13 @@ interface IUniformEditionAuction is ISaleAdapter {
     ///         runs in calls of bounded gas, each advancing it: a call scans a bounded number of
     ///         the book's words (a wide book takes several calls), and the call that finishes the
     ///         scan clears the book, stores the result and pays the revenue: the network fee to
-    ///         the recipient the economics resolver names then (the edition's recorded one when it
+    ///         the recipient the economics resolver names then (the one it named at open when it
     ///         names none) and the rest to the seller, each through the revenue escrow if
     ///         refused; it emits `AuctionCleared` and `ISaleAdapter.SaleSettled` (buyer and
-    ///         recipient zero, quantity the count). Copies sold need the edition to exist
-    ///         (`EditionNotCreated`). When the cap binds inside the clearing step, that call and
+    ///         recipient zero, quantity the count), and seals the edition at the count. If the
+    ///         network has moved the edition to another adapter meanwhile (`IEditions.rebind`,
+    ///         possible only while it has no copies and no seal), the sale is void instead and
+    ///         every bid is refunded in full. When the cap binds inside the clearing step, that call and
     ///         the next ones sweep a bounded number of the step's departures each. Each settler
     ///         (`msg.sender`) sweeps on its own: `order` is the rest of the caller's sweep,
     ///         departure indexes (`departures(saleId, step)`) whose positions strictly increase
@@ -499,7 +572,7 @@ interface IUniformEditionAuction is ISaleAdapter {
     /// @return settled Whether the sale is now SETTLED or VOID.
     function settle(uint256 saleId, uint256[] calldata order) external returns (bool settled);
 
-    /// @notice Claims a bid: mints its copies to `to` (`IMintTarget.mint`) and sends its refund
+    /// @notice Claims a bid: mints its copies to `to` (`IEditions.mint`) and sends its refund
     ///         to `to`, then deletes it. The bidder only, once the sale is SETTLED or VOID (a
     ///         void sale refunds the whole escrow and mints nothing).
     /// @param saleId The sale ID.
@@ -514,7 +587,8 @@ interface IUniformEditionAuction is ISaleAdapter {
 
     /// @notice Claims a bid for its bidder: mints its copies to the bidder and credits its
     ///         refund to the bidder's `claimable` ETH (`ISaleAdapter.Credited`). Permissionless,
-    ///         once the sale is SETTLED or VOID. A bidder whose ERC-1155 hook refuses the copies
+    ///         once the sale is SETTLED or VOID. The refund joins the bidder's credit total but
+    ///         never a batch already waiting, so a caller cannot put it on an older clock. A bidder whose ERC-1155 hook refuses the copies
     ///         claims with `claimBid` to another address.
     /// @param saleId The sale ID.
     /// @param bidId The bid's ID.
@@ -524,10 +598,12 @@ interface IUniformEditionAuction is ISaleAdapter {
         external
         returns (uint256 unitsWon, uint256 refund);
 
-    /// @notice Sends `account`'s claimable ETH to the network's fee recipient (the economics
-    ///         resolver's, read now) once 180 days have passed since it went from zero (R12;
-    ///         `CreditNotExpired` before). Permissionless; an unclaimed bid becomes a credit
-    ///         through `claimBidFor`. Emits `Claimed` with that recipient as `to`.
+    /// @notice Sends the batch of `account`'s claimable ETH that has waited the unclaimed
+    ///         period (`IDirectory.unclaimedPeriod()`, read now) to the network's fee recipient
+    ///         (the economics resolver's, read now); `CreditNotExpired` before. Only that batch
+    ///         moves; the rest of the credit starts a new batch now. Permissionless; an unclaimed
+    ///         bid becomes a credit through `claimBidFor`. Emits `Claimed` with that recipient as
+    ///         `to`.
     /// @param account The credited account.
     /// @param currency `CURRENCY_ETH`; any other currency has nothing to send.
     /// @return amount The wei sent.
@@ -553,34 +629,28 @@ interface IUniformEditionAuction is ISaleAdapter {
     /// @param next The new payout gas, within the bounds above (`InvalidConfig`).
     function setLimits(uint256 expected, uint256 next) external;
 
-    /// @notice Finishes a sale whose 1/1 has settled but whose edition sale cannot complete on
-    ///         its own (R16). Permissionless, from 21 days after the sale's scheduled close (its
-    ///         1/1's final end plus the fixed 15 minutes; a soft-close extension of the edition
-    ///         sale does not move it. A fixed value: the number is the guarantee to bidders), while the sale has paid nothing (OPEN, or
-    ///         SETTLING with its scan in progress), once its 1/1 auction is no longer ACTIVE,
-    ///         PAUSED or ENDED (a 1/1 auction that does not answer counts as finished). Then:
-    ///         - the master's primary sale is settled in its token and the edition does not exist
-    ///           yet: the call creates the edition from `item` (`createEdition`), and `settle`
-    ///           completes the sale as usual, copies minted to the winners;
-    ///         - the master's sale never completed (cancelled, refused or burned): the sale is
-    ///           void, every bid refunded in full, and the edition sealed at zero
-    ///           (`IEditions.sealSupply(id, 0)`; `AuctionVoided`).
-    ///         Reverts with `UnknownAuction`, `NotAbandonable` (too early, the 1/1 not settled,
-    ///         or the edition already exists, so `settle` completes it), or
-    ///         `InvalidAuctionState` for a sale that has paid.
+    /// @notice Voids a sale that cannot complete on its own because its 1/1 auction no longer
+    ///         gives an answer settlement can use: it refuses to answer, answers malformed,
+    ///         has no such sale, or reports it cancelled. Permissionless, from 21 days after the
+    ///         sale's scheduled close (its 1/1's final end plus the fixed 15 minutes; a
+    ///         soft-close extension of the edition sale does not move it), while the sale has
+    ///         paid nothing (OPEN, or SETTLING with its scan in progress). The sale is void,
+    ///         every bid refunded in full, and the edition sealed at zero (`IEditions.seal(id,
+    ///         0)`; `AuctionVoided`), so an edition whose master was burned stays created with
+    ///         a zero seal. Reverts with `UnknownAuction`, `NotAbandonable` (too early, the 1/1
+    ///         still answers active, paused, ended or settled, so `settle` completes the sale, or
+    ///         the sale was adopted), or `InvalidAuctionState` for a sale that has paid.
     /// @param saleId The sale ID.
-    /// @param item `abi.encode(PackageItem)` of the master's EDITION_MASTER item; read only when
-    ///        the edition is created.
-    function abandon(uint256 saleId, bytes calldata item) external;
+    function abandon(uint256 saleId) external;
 
-    /// @notice Whether `abandon(saleId, item)` would act now, and from when (answered by the
-    ///         lens). Reverts with `UnknownAuction`.
+    /// @notice Whether `abandon(saleId)` would act now, and from when (answered by the lens).
+    ///         Reverts with `UnknownAuction`.
     /// @param saleId The sale ID.
     /// @return ok Whether the sale can be abandoned now.
     /// @return abandonAt The earliest time it can be, from what is known now: its scheduled
     ///         close (its 1/1's final end plus 15 minutes, not moved by a soft-close extension)
-    ///         plus 21 days; zero while its 1/1 is unsettled, when its edition exists with its master
-    ///         settled, or when the sale is not OPEN.
+    ///         plus 21 days; zero while its 1/1 auction answers in a way settlement can use, for
+    ///         an adopted sale, or when the sale is not OPEN.
     function abandonable(uint256 saleId) external view returns (bool ok, uint256 abandonAt);
 
     /// @notice The governed parameters new sales lock.

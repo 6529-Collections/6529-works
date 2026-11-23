@@ -2,10 +2,10 @@
 pragma solidity ^0.8.24;
 
 import { Test } from "forge-std/Test.sol";
-import { ArtistRegistry } from "src/identity/ArtistRegistry.sol";
+import { Accounts } from "src/identity/Accounts.sol";
 import { ArtistIdentity } from "src/interfaces/types/IdentityTypes.sol";
 import { DelegationManagementMock } from "../mocks/identity/DelegationManagementMock.sol";
-import { IdentityFixture } from "./IdentityFixture.sol";
+import { AccountsFixture } from "./AccountsFixture.sol";
 import { HandlerReach } from "../helpers/HandlerReach.sol";
 
 /// @notice Drives one account through consolidations made and revoked in either direction, root
@@ -14,7 +14,7 @@ contract AccountsHandler is Test {
     uint256 internal constant POOL = 5;
     address internal constant ALL = 0x8888888888888888888888888888888888888888;
 
-    ArtistRegistry internal immutable registry;
+    Accounts internal immutable registry;
     DelegationManagementMock internal immutable delegation;
     address internal immutable network;
     uint256 public immutable artistId;
@@ -27,7 +27,7 @@ contract AccountsHandler is Test {
     uint256 public moves;
 
     constructor(
-        ArtistRegistry registry_,
+        Accounts registry_,
         DelegationManagementMock delegation_,
         address network_,
         uint256 artistId_,
@@ -104,7 +104,7 @@ contract AccountsHandler is Test {
 /// @notice Invariant: `requireSigned` passes exactly for the wallets that belong to the account
 ///         now (its root, or a wallet in a live two-way consolidation with the root), and never
 ///         for a wallet outside it or while it is frozen.
-contract AccountsInvariantTest is IdentityFixture {
+contract AccountsInvariantTest is AccountsFixture {
     AccountsHandler internal handler;
     uint256[5] internal pool = [uint256(0xA1), 0xB2, 0xB3, 0xB4, 0xB5];
 

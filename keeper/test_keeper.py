@@ -37,6 +37,7 @@ sys.modules[_SPEC.name] = k  # before exec: @dataclass resolves annotations thro
 _SPEC.loader.exec_module(k)
 
 REQUIRED = os.environ.get("KEEPER_E2E_REQUIRE") == "1"
+PERIOD = 180 * 86400  # the launch value of Directory.unclaimedPeriod(), as a test input
 DAY = 86400
 ZERO = "0x" + "00" * 20
 
@@ -81,6 +82,7 @@ class FakeKeeper(k.Keeper):
         self.c["FeeRecipientVault"] = "0x" + "fe" * 20
         self._views, self._logs, self.sends = views, logs, []
         self._views.setdefault(("MAX_CONTINUE_CLAIMS", None), k.word(8))
+        self._views.setdefault(("unclaimedPeriod", None), k.word(PERIOD))
 
     def view(self, contract, signature, *args):
         """The table's answer for (name, last argument), else for (name, None); a callable
@@ -162,13 +164,187 @@ class MarkRuleTest(unittest.TestCase):
         return [name for name, _ in keeper.sends]
 
     def test_AReachedMarkIsReplaced(self) -> None:
-        self.assertEqual(self._run(released=100, now=1_000 + k.MARK_EXPIRY), ["mark"])
+        self.assertEqual(self._run(released=100, now=1_000 + PERIOD), ["mark"])
 
     def test_APendingMatureMarkIsForfeited(self) -> None:
-        self.assertEqual(self._run(released=60, now=1_000 + k.MARK_EXPIRY), ["forfeit"])
+        self.assertEqual(self._run(released=60, now=1_000 + PERIOD), ["forfeit"])
 
     def test_APendingYoungMarkKeepsItsClock(self) -> None:
-        self.assertEqual(self._run(released=60, now=1_000 + k.MARK_EXPIRY - 1), [])
+        self.assertEqual(self._run(released=60, now=1_000 + PERIOD - 1), [])
+
+    def test_TheNetworksCurrentPeriodDecides(self) -> None:
+        # The period is the network's setting, read on every run: a shorter one forfeits sooner.
+        seller, network = "0x" + "11" * 20, "0x" + "fe" * 20
+        payees = k.royalty_payees(seller, network, 25_000)
+        views = {
+            ("markOf", 0): k.word(100) + k.word(1_000),
+            ("released", 0): k.word(60),
+            ("unclaimedPeriod", None): k.word(10),
+        }
+        keeper = FakeKeeper(views, {"WalletCreated": [_wallet_log(payees)]})
+        keeper.step_marks(1_010, mark=False)
+        self.assertEqual([name for name, _ in keeper.sends], ["forfeit"])
+
+
+def _work(outcome: int = 0, receiver: str = ZERO) -> bytes:
+    """`Stream6529.workOf`: eleven words; the outcome is word 6, the royalty receiver word 7."""
+    words = [0] * 11
+    words[6] = outcome
+    words[7] = int(receiver, 16)
+    return b"".join(k.word(x) for x in words)
+
+
+def _facts(opened: bool, finalized: bool = False, on_chain: bool = False) -> bytes:
+    """`StreamWorkFacts6529.factsOf`: an offset, then the struct head (opened is word 3)."""
+    head = [0, 0, 0, int(opened), int(finalized), int(on_chain)] + [0] * 5
+    return k.word(32) + b"".join(k.word(x) for x in head)
+
+
+class ExpireRuleTest(unittest.TestCase):
+    """Only money that has itself waited the unclaimed period in force goes to the network: the
+    English auction's `expiresAt`, the edition auction's `creditOf` (total, aged, since) with
+    `StreamDirectory6529.unclaimedPeriod()`, and the escrow's `expirableAt`."""
+
+    def _sends(self, aged: int, since: int, now: int, period: int = PERIOD) -> list[str]:
+        account = "0x" + "00" * 12 + "ab" * 20
+        log = {"topics": ["0x0", account, account], "data": "0x"}
+        views = {
+            ("unclaimedPeriod", None): k.word(period),
+            ("creditOf", None): k.word(5) + k.word(aged) + k.word(since),
+            ("expiresAt", None): k.word(since + period if aged else 0),
+            ("expirableAt", None): k.word(aged if aged and now >= since + period else 0),
+        }
+        keeper = FakeKeeper(views, {"Credited": [log]})
+        for name in ("EnglishAuction", "UniformEditionAuction", "RevenueEscrow"):
+            keeper.c[name] = name
+        keeper.step_expire(now)
+        return [name for name, _ in keeper.sends]
+
+    def test_AnAgedCreditPastThePeriodExpires(self) -> None:
+        sends = self._sends(aged=3, since=1_000, now=1_000 + PERIOD)
+        self.assertEqual(sends, ["expireCredit", "expireCredit", "expire"])
+
+    def test_ACreditBeforeThePeriodWaits(self) -> None:
+        self.assertEqual(self._sends(aged=3, since=1_000, now=1_000 + PERIOD - 1), [])
+
+    def test_MoneyThatIsNotAgedNeverExpires(self) -> None:
+        self.assertEqual(self._sends(aged=0, since=1_000, now=1_000 + 10 * PERIOD), [])
+
+    def test_TheNetworksCurrentPeriodDecides(self) -> None:
+        sends = self._sends(aged=3, since=1_000, now=1_010, period=10)
+        self.assertEqual(sends, ["expireCredit", "expireCredit", "expire"])
+
+    def test_TheEditionAuctionExpiresInEth(self) -> None:
+        account = "0x" + "00" * 12 + "ab" * 20
+        views = {("creditOf", None): k.word(5) + k.word(5) + k.word(0)}
+        keeper = FakeKeeper(views, {})
+        keeper.c["UniformEditionAuction"] = "UniformEditionAuction"
+        keeper.logs = lambda contract, sig: (
+            [{"topics": ["0x0", account]}] if contract == "UniformEditionAuction" else []
+        )
+        keeper.step_expire(PERIOD)
+        (name, args), = keeper.sends
+        self.assertEqual((name, args[1]), ("expireCredit", k.ETH))
+
+
+class AttestTest(unittest.TestCase):
+    def _sends(self, complete: set[int]) -> list[str]:
+        media = k.Dyn(k.word(2) + k.word(1) + k.word(0) + k.word(0) + k.word(2) + k.word(0) + k.word(1))
+        views = {
+            ("factsOf", None): _facts(opened=True),
+            ("isComplete", None): lambda f: k.word(int(int.from_bytes(f, "big") in complete)),
+        }
+        keeper = FakeKeeper(views, {})
+        keeper.c["Stream6529"] = "0x" + "57" * 20
+        keeper.step_attest({1: {}}, {1: (k.Dyn(b""), media)})
+        return [name for name, _ in keeper.sends]
+
+    def test_AttestsEachIncompleteFileFirst(self) -> None:
+        self.assertEqual(self._sends(complete={1}), ["attestComplete"])
+
+    def test_MarksTheWorkOnceEveryFileIsComplete(self) -> None:
+        self.assertEqual(self._sends(complete={1, 2}), ["markOnChainComplete"])
+
+
+class RescueReportTest(unittest.TestCase):
+    def test_ReportsOnlyOnceTheNetworksRescuePeriodHasPassed(self) -> None:
+        minter = "0x" + "aa" * 20
+        views = {
+            ("rescueDelay", None): k.word(100),
+            ("workOf", None): _work(),
+            ("minterOf", None): k.word(1) + k.word(1_000),  # removed at t = 1,000
+            ("ownerOf", None): k.word(minter),
+        }
+        works = {1: {"minter": minter}}
+        for now, due in ((1_099, False), (1_100, True)):
+            keeper = FakeKeeper(dict(views), {})
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                keeper.step_rescues(works, now)
+            self.assertEqual("due   rescue of work 1" in out.getvalue(), due, now)
+            self.assertEqual(keeper.sends, [])  # never sent: rescue is the network's action
+
+
+class AdoptReportTest(unittest.TestCase):
+    """An edition the network moved to the edition auction with no sale there is reported; the
+    adoption itself is the network's action."""
+
+    def _out(self, moved_to: str, open_already: bool) -> str:
+        adapter = "0x" + "ed" * 20
+        log = {"topics": ["0x0", hex(7), "0x" + "00" * 32, "0x" + "00" * 12 + moved_to[2:]]}
+        keeper = FakeKeeper({("saleIdOf", None): k.word(1)}, {"EditionRebound": [log]})
+        keeper.c.update(UniformEditionAuction=adapter, StreamEditions6529="0x" + "e1" * 20)
+        keeper.rpc = type("R", (), {"ok": lambda self, to, data, sender: open_already})()
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            keeper.step_adopt()
+        self.assertEqual(keeper.sends, [])
+        return out.getvalue()
+
+    def test_AMovedEditionWithNoSaleIsReported(self) -> None:
+        self.assertIn("due   adopt of edition 7", self._out("0x" + "ed" * 20, False))
+
+    def test_AnAdoptedEditionIsNot(self) -> None:
+        self.assertEqual(self._out("0x" + "ed" * 20, True), "")
+
+    def test_AnEditionMovedElsewhereIsNot(self) -> None:
+        self.assertEqual(self._out("0x" + "99" * 20, False), "")
+
+
+class RoyaltyVaultTest(unittest.TestCase):
+    """A missing royalty vault is deployed when the sale's fee terms derive the work's receiver,
+    and only reported otherwise."""
+
+    def _sends(self, derived: bool) -> list[str]:
+        seller, fee, receiver = "0x" + "11" * 20, "0x" + "fe" * 20, "0x" + "77" * 20
+        views = {
+            ("workOf", None): _work(receiver=receiver),
+            ("isWallet", None): lambda w: k.word(int(w.lower() == seller)),
+            ("saleIdOf", None): k.word(9),
+            ("auction", None): k.word(0) * 3 + k.word(25_000),
+            ("networkFeeRecipient", None): k.word(fee),
+            ("walletFor", None): k.word(receiver if derived else "0x" + "33" * 20),
+        }
+        keeper = FakeKeeper(views, {})
+        keeper.c.update(Stream6529="0x" + "57" * 20, EnglishAuction="ea", EconomicsResolver="er")
+        with contextlib.redirect_stdout(io.StringIO()):
+            keeper.ensure_vaults(1, None, {"seller": seller})
+        return [(name, args[0]) for name, args in keeper.sends]
+
+    def test_ADerivedReceiverIsDeployed(self) -> None:
+        payees = k.royalty_payees("0x" + "11" * 20, "0x" + "fe" * 20, 25_000)
+        self.assertEqual(self._sends(derived=True), [("createWallet", payees)])
+
+    def test_AReceiverTheTermsDoNotDeriveIsOnlyReported(self) -> None:
+        self.assertEqual(self._sends(derived=False), [])
+
+
+class RecordTest(unittest.TestCase):
+    def test_BothRecordShapesAreRead(self) -> None:
+        flat = {"chainId": 31337, "Stream6529": "0x" + "57" * 20, "startBlock": 0}
+        nested = {"contracts": {"Stream6529": {"address": "0x" + "57" * 20}}}
+        self.assertEqual(k.contracts_of(flat), {"Stream6529": "0x" + "57" * 20})
+        self.assertEqual(k.contracts_of(nested), {"Stream6529": "0x" + "57" * 20})
 
 
 def _item(kind: int, content: bytes) -> k.Dyn:
@@ -182,36 +358,57 @@ class WorkGuardTest(unittest.TestCase):
         stream = "0x" + "57" * 20
         sale = {"topics": ["0x0", hex(1), "0x" + "00" * 12 + stream[2:], hex(2)], "data": "0x"}
         keeper = FakeKeeper({}, {"SaleStarted": [sale]})
-        keeper.c["Stream"] = stream
+        keeper.c["Stream6529"] = stream
         items = {2: (_item(k.EDITION_MASTER, k.word(7)), k.Dyn(b""))}
         keeper.step_open({1: {"root": k.word(0), "content": k.word(9)}}, items)
         self.assertEqual(keeper.sends, [])
 
     def test_ABurnedWorkDoesNotStopTheVaultsStep(self) -> None:
-        # primaryTerms reverts for a burned work (UnknownWork); the later work still gets its vaults.
-        def terms(token_id, _data):
+        # workOf reverts for a burned work; the later work still gets its seller vault.
+        def work(token_id):
             if token_id == 1:
-                raise k.Reverted("UnknownWork(1)")
-            return k.word(0) * 5 + k.word("0x" + "11" * 20) + k.word("0x" + "fe" * 20) + k.word(25_000)
+                raise k.Reverted("ERC721NonexistentToken(1)")
+            return _work()
 
-        views = {("primaryTerms", None): terms, ("walletFor", None): k.word(0x99), ("isWallet", None): k.word(0)}
-        keeper = FakeKeeper(views, {})
-        works = {t: {"root": k.word(0), "content": k.word(t)} for t in (1, 2)}
-        keeper.step_vaults(works, {})
-        self.assertEqual([name for name, _ in keeper.sends], ["createWallet"])
+        keeper = FakeKeeper({("workOf", None): work, ("isWallet", None): k.word(0)}, {})
+        seller = "0x" + "11" * 20
+        works = {t: {"root": k.word(0), "content": k.word(t), "seller": seller} for t in (1, 2)}
+        items = {t: (_item(0, k.word(t)), k.Dyn(b"")) for t in (1, 2)}
+        keeper.step_vaults(works, items)
+        self.assertEqual(keeper.sends, [("createWallet", (k.item_payees(items[2][0]), 0))])
 
     def test_StartFinishesTheNewestWorkWithTheRequestsContent(self) -> None:
         # Work 1 was burned and its content released; work 2 re-minted it, started directly.
         content = k.word(7)
         keeper = FakeKeeper(
-            {("consumedItemOf", None): k.word(1), ("isOpen", None): lambda t: k.word(1 if t == 1 else 0)},
+            {
+                ("tokenOfContent", None): k.word(2),
+                ("workOf", None): _work(),
+                ("factsOf", None): lambda _token, t: _facts(opened=t == 1),
+            },
             {},
         )
+        keeper.c["Stream6529"] = "0x" + "57" * 20
         keeper.starts = [{"name": "r", "content": content, "payees": None, "item": b"", "media": b""}]
-        keeper.ensure_vaults = lambda token_id, payees: None
+        keeper.ensure_vaults = lambda token_id, payees, minted: None
         keeper.step_start({1: {"content": content}, 2: {"content": content}})
         (name, args), = keeper.sends
-        self.assertEqual((name, args[0]), ("openRecord", 2))
+        self.assertEqual((name, args[1]), ("open", 2))
+
+    def test_ABurnedTokensContentIsStartedAgain(self) -> None:
+        # tokenOfContent still names token 1, but it is burned: the request is started anew.
+        def work(_t):
+            raise k.Reverted("ERC721NonexistentToken(1)")
+
+        keeper = FakeKeeper({("tokenOfContent", None): k.word(1), ("workOf", None): work}, {})
+        for name in ("Stream6529", "EnglishAuction", "SaleStarter"):
+            keeper.c[name] = "0x" + "57" * 20
+        keeper.starts = [
+            {"name": "r", "content": k.word(7), "payees": None, "item": b"", "media": k.Dyn(b""),
+             "mintData": b""}
+        ]
+        keeper.step_start({})
+        self.assertEqual([name for name, _ in keeper.sends], ["start"])
 
 
 class SignaturesTest(unittest.TestCase):
@@ -284,7 +481,8 @@ def _free_port() -> int:
 
 
 def _build_fixture() -> Path:
-    """Runs the Foundry fixture once and writes genesis.json, deployment.json and starts/."""
+    """Runs the Foundry fixture once and writes genesis.json, deployment.json, chunk1.json and
+    starts/."""
     global _tmp
     _tmp = tempfile.TemporaryDirectory()
     out = Path(_tmp.name)
@@ -304,8 +502,12 @@ def _build_fixture() -> Path:
         if name == "deployment":
             record = json.loads(body)
             (out / "deployment.json").write_text(body, encoding="utf-8")
-        else:
+        elif name.startswith("start"):
             (out / "starts" / f"{name}.json").write_text(body, encoding="utf-8")
+        else:
+            (out / f"{name}.json").write_text(body, encoding="utf-8")
+    if record is None:
+        raise AssertionError("the keeper fixture logged no deployment:\n" + run.stdout[-3000:])
     state = json.loads((out / "state.json").read_text(encoding="utf-8"))
     genesis = {
         "config": {"chainId": 31337},
@@ -357,7 +559,8 @@ class Chain:
                     raise
                 time.sleep(0.2)
         record = json.loads((_fixture / "deployment.json").read_text(encoding="utf-8"))
-        self.c = {name: v["address"] for name, v in record["contracts"].items()}
+        self.c = k.contracts_of(record)
+        self.network = record["Network"]
         self.keeper_address = self.accounts[1]
 
     def close(self) -> None:
@@ -417,18 +620,28 @@ class Chain:
 
     def sale(self, token_id: int) -> int:
         sig = "saleIdOf(address,uint256)"
-        return k.w(self.view("EnglishAuction", sig, self.c["Stream"], token_id), 0)
+        return k.w(self.view("EnglishAuction", sig, self.c["Stream6529"], token_id), 0)
 
     def edition_sale(self, token_id: int) -> int:
         sig = "saleIdOf(address,uint256)"
-        return k.w(self.view("UniformEditionAuction", sig, self.c["Editions"], token_id), 0)
+        return k.w(self.view("UniformEditionAuction", sig, self.c["StreamEditions6529"], token_id), 0)
+
+    def opened(self, token_id: int) -> dict[str, bool]:
+        data = self.view("StreamWorkFacts6529", "factsOf(address,uint256)", self.c["Stream6529"], token_id)
+        head = data[k.w(data, 0) :]
+        return {"opened": bool(k.w(head, 3)), "finalized": bool(k.w(head, 4)),
+                "onChain": bool(k.w(head, 5))}
+
+    def seller(self, token_id: int) -> str:
+        return k.a(self.view("EnglishAuction", "auction(uint256)", self.sale(token_id)), 2)
+
+    def is_wallet(self, wallet: str) -> bool:
+        return k.w(self.view("SplitFactory", "isWallet(address)", wallet), 0) == 1
 
     def eth_bid(self, bidder: str, token_id: int) -> int:
         sale = self.sale(token_id)
         amount = k.w(self.view("EnglishAuction", "minimumBid(uint256)", sale), 0)
-        payment = k.Dyn(k.encode(0, bidder, amount, 0, 0, k.blob(b"")))
-        sig = "bid(uint256,address,(uint8,address,uint256,uint256,uint256,bytes))"
-        self.send(bidder, "EnglishAuction", sig, sale, ZERO, payment, value=amount)
+        self.send(bidder, "EnglishAuction", "bid(uint256,address)", sale, bidder, value=amount)
         return amount
 
 
@@ -443,19 +656,31 @@ class _E2E(unittest.TestCase):
 class FullSaleTest(_E2E):
     def test_AFullSaleRunByTheKeeper(self) -> None:
         ch = self.chain
-        alice, bob = ch.accounts[2], ch.accounts[3]
+        alice, bob, stranger = ch.accounts[2], ch.accounts[3], ch.accounts[6]
 
         # Run 1: both works start through SaleStarter, with their vaults and records, and the
-        # edition master's edition sale opens.
+        # edition master's edition sale opens (creating the edition). Work 1's media is stored;
+        # work 2's chunk is not written yet, so only work 1 is marked complete on chain.
         out = ch.keeper()
         self.assertIn("sent  start start0 through SaleStarter", out)
         self.assertIn("sent  start start1 through SaleStarter", out)
         self.assertIn("sent  open the edition sale of work 1", out)
+        self.assertIn("sent  mark work 1 complete on chain", out)
+        self.assertNotIn("mark work 2 complete", out)
         for token_id in (1, 2):
-            self.assertEqual(k.w(ch.view("WorkRecords", "isOpen(uint256)", token_id), 0), 1)
-            terms = ch.view("Stream", "primaryTerms(uint256,bytes)", token_id, k.blob(b""))
-            self.assertEqual(k.w(ch.view("SplitFactory", "isWallet(address)", k.a(terms, 5)), 0), 1)
+            self.assertTrue(ch.opened(token_id)["opened"])
+            self.assertTrue(ch.is_wallet(ch.seller(token_id)))
+            receiver = k.a(ch.view("Stream6529", "workOf(uint256)", token_id), 7)
+            self.assertTrue(ch.is_wallet(receiver), "royalty vault deployed by SaleStarter")
+        minter = k.a(ch.view("StreamEditions6529", "editionOf(uint256)", 1), 0)
+        self.assertEqual(minter, ch.c["UniformEditionAuction"].lower(), "the open created it")
         self.assertIn("done: 0 sent", ch.keeper(), "nothing more is due")
+
+        # The missing chunk arrives; the next run marks work 2 complete.
+        chunk = json.loads((_fixture / "chunk1.json").read_text("utf-8"))["data"]
+        ch.send(stranger, "ContentStore", "writeChunk(bytes)", k.blob(bytes.fromhex(chunk[2:])))
+        self.assertIn("sent  mark work 2 complete on chain", ch.keeper())
+        self.assertTrue(ch.opened(2)["onChain"])
 
         # Bids: Alice is outbid by Bob on the master's 1/1; both bid for copies.
         first = ch.eth_bid(alice, 1)
@@ -470,57 +695,70 @@ class FullSaleTest(_E2E):
         # Nothing is due before the end.
         self.assertIn("done: 0 sent", ch.keeper())
 
-        # Run 2, after the 1/1s end and the edition close: settle both 1/1s, create the
-        # edition, settle the edition sale.
+        # Run 2, after the 1/1s end and the edition close: settle both 1/1s and the edition
+        # sale, which seals the edition at the count sold.
         ch.warp(DAY + 16 * 60)
         out = ch.keeper()
         for line in (
             "settle 1/1 sale of token 1",
             "settle 1/1 sale of token 2",
-            "createEdition 1",
             "settle edition sale of edition 1",
         ):
             self.assertIn("sent  " + line, out)
-        self.assertEqual(k.a(ch.view("Stream", "ownerOf(uint256)", 1), 0), bob.lower())
+        self.assertEqual(k.a(ch.view("Stream6529", "ownerOf(uint256)", 1), 0), bob.lower())
         status = k.w(ch.view("UniformEditionAuction", "auction(uint256)", sale), 4)
         self.assertEqual(status, k.EA_SETTLED)
+        edition = ch.view("StreamEditions6529", "editionOf(uint256)", 1)
+        self.assertEqual((k.w(edition, 1), k.w(edition, 3)), (3, 1), "sealed at three copies")
         self.assertIn("done: 0 sent", ch.keeper(), "a second run finds nothing due")
+
+        # A stranger pushes Alice's edition claim: her copies are minted to her and the
+        # difference to the clearing price is credited to her in the edition auction.
+        ch.send(stranger, "UniformEditionAuction", "claimBidFor(uint256,uint256)", sale, 1)
+        edition_credit = k.w(ch.view("UniformEditionAuction", "creditOf(address)", alice), 0)
+        self.assertGreater(edition_credit, 0)
 
         # A release: a marketplace pays work 1's royalty; the keeper pushes the seller wallet's
         # share through the ClaimRouter, which pays the network its share in the same call,
         # and leaves the network's own index out of the batch.
-        receiver = k.a(ch.view("Stream", "royaltyInfo(uint256,uint256)", 1, 10**18), 0)
+        receiver = k.a(ch.view("Stream6529", "royaltyInfo(uint256,uint256)", 1, 10**18), 0)
         ch.pay(alice, receiver, 10**17)
-        terms = ch.view("Stream", "primaryTerms(uint256,bytes)", 1, k.blob(b""))
-        seller, fee = k.a(terms, 5), self.chain.c["FeeRecipientVault"]
+        seller, fee = ch.seller(1), ch.c["FeeRecipientVault"]
+        fee_share = k.w(ch.view("EnglishAuction", "auction(uint256)", ch.sale(1)), 3)
         seller_before, fee_before = ch.balance(seller), ch.balance(fee)
         out = ch.keeper("--release", "--steps", "")
         self.assertIn("sent  push", out)
         self.assertGreater(ch.balance(seller), seller_before)
-        self.assertEqual(ch.balance(fee) - fee_before, 10**17 * k.w(terms, 7) // 100_000)
+        self.assertEqual(ch.balance(fee) - fee_before, 10**17 * fee_share // 100_000)
         self.assertEqual(ch.balance(receiver), 0, "the royalty wallet is empty")
 
-        # Credits: Alice's outbid credit, unclaimed for 180 days, goes to the network.
-        credit = ch.view("EnglishAuction", "claimable(address,address)", alice, ZERO)
-        self.assertEqual(k.w(credit, 0), first)
-        ch.warp(181 * DAY)
-        out = ch.keeper()
-        self.assertIn(f"sent  expire {alice.lower()}'s credit on EnglishAuction", out)
-        self.assertEqual(k.w(ch.view("EnglishAuction", "claimable(address,address)", alice, ZERO), 0), 0)
+        # Credits: Alice's outbid credit on the 1/1 and her edition refund, unclaimed for the
+        # network's unclaimed period, go to the network; the period is read from the chain.
+        self.assertEqual(k.w(ch.view("EnglishAuction", "claimable(address)", alice), 0), first)
+        period = k.w(ch.view("StreamDirectory6529", "unclaimedPeriod()"), 0)
+        ch.warp(period - 2 * DAY)
+        self.assertIn("done: 0 sent", ch.keeper("--steps", "expire"), "not due yet")
+        ch.warp(2 * DAY)
+        out = ch.keeper("--steps", "expire")
+        self.assertIn(f"sent  expire {alice.lower()}'s aged credit on EnglishAuction", out)
+        self.assertIn(f"sent  expire {alice.lower()}'s aged credit on UniformEditionAuction", out)
+        self.assertEqual(k.w(ch.view("EnglishAuction", "claimable(address)", alice), 0), 0)
+        self.assertEqual(k.w(ch.view("UniformEditionAuction", "creditOf(address)", alice), 0), 0)
 
-        # Finalize: with --notice the keeper records the notice; 14 days later it finalizes.
+        # Finalize: with --notice the keeper records the notice; after the notice it finalizes.
         out = ch.keeper("--notice", "--steps", "")
         self.assertIn("sent  record the finalize notice of work 1", out)
         self.assertIn("done: 0 sent", ch.keeper("--steps", "finalize"), "not due yet")
-        ch.warp(14 * DAY)
+        notice = k.w(ch.view("WorkRules", "FINALIZE_NOTICE()"), 0)
+        ch.warp(notice)
         self.assertIn("sent  finalize work 1", ch.keeper("--steps", "finalize"))
-        self.assertEqual(k.w(ch.view("WorkRecords", "record(uint256)", 1), 4), 1, "finalized")
+        self.assertTrue(ch.opened(1)["finalized"])
 
-        # Marks: with --mark the keeper marks the artist's unclaimed sale proceeds; 180 days
-        # later it forfeits them to the network.
+        # Marks: with --mark the keeper marks the artist's unclaimed sale proceeds; after the
+        # unclaimed period it forfeits them to the network.
         out = ch.keeper("--mark", "--steps", "")
         self.assertIn("sent  mark payee 0 of", out)
-        ch.warp(181 * DAY)
+        ch.warp(period + 1)
         fee_before = ch.balance(fee)
         self.assertIn("sent  forfeit payee 0 of", ch.keeper("--steps", "forfeit"))
         self.assertGreater(ch.balance(fee), fee_before)
@@ -530,14 +768,15 @@ class AlreadyDoneTest(_E2E):
     def _start_directly(self, index: int) -> None:
         raw = json.loads((_fixture / "starts" / f"start{index}.json").read_text("utf-8"))
         mint = bytes.fromhex(raw["mintData"][2:])
-        stream, anyone = self.chain.c["Stream"], self.chain.accounts[5]
+        stream, anyone = self.chain.c["Stream6529"], self.chain.accounts[5]
         self.chain.send(anyone, "EnglishAuction", "start(address,bytes)", stream, k.blob(mint))
 
     def test_SomeoneStartedFirst(self) -> None:
         ch = self.chain
         self._start_directly(1)  # the original, work 1 on chain: no vaults, no record
-        terms = ch.view("Stream", "primaryTerms(uint256,bytes)", 1, k.blob(b""))
-        self.assertEqual(k.w(ch.view("SplitFactory", "isWallet(address)", k.a(terms, 5)), 0), 0)
+        receiver = k.a(ch.view("Stream6529", "workOf(uint256)", 1), 7)
+        self.assertFalse(ch.is_wallet(ch.seller(1)))
+        self.assertFalse(ch.is_wallet(receiver))
         # The keeper holds only that request: SaleStarter is not tried for it (it would revert);
         # its vaults and record are finished with the permissionless calls instead.
         with tempfile.TemporaryDirectory() as d:
@@ -546,23 +785,21 @@ class AlreadyDoneTest(_E2E):
             self.assertNotIn("start start1", out)
             self.assertIn("sent  createWallet seller vault of work 1", out)
             self.assertIn("sent  createWallet royalty vault of work 1", out)
-            self.assertIn("sent  openRecord 1 (started by someone else)", out)
-            self.assertEqual(k.w(ch.view("WorkRecords", "isOpen(uint256)", 1), 0), 1)
+            self.assertIn("sent  open the record of work 1 (started by someone else)", out)
+            self.assertTrue(ch.opened(1)["opened"])
+            self.assertTrue(ch.is_wallet(receiver))
             self.assertIn("done: 0 sent", ch.keeper(starts=Path(d)))
         # With every request, it starts the other work through SaleStarter as usual.
         self.assertIn("sent  start start0 through SaleStarter", ch.keeper())
 
-    def test_SomeoneElseSettledAndCreated(self) -> None:
+    def test_SomeoneElseSettled(self) -> None:
         ch = self.chain
         ch.keeper()  # starts both, opens the edition sale
         ch.warp(DAY + 16 * 60)
         stranger = ch.accounts[6]
         ch.send(stranger, "EnglishAuction", "settle(uint256)", ch.sale(1))
-        request = k.load_request(_fixture / "starts" / "start0.json")
-        ch.send(stranger, "Editions", f"createEdition(uint256,{k.ITEM})", 1, request["item"])
         out = ch.keeper()
         self.assertNotIn("settle 1/1 sale of token 1", out)
-        self.assertNotIn("createEdition 1", out)
         self.assertIn("sent  settle 1/1 sale of token 2", out)
         self.assertIn("sent  settle edition sale of edition 1", out)
 
@@ -583,7 +820,23 @@ class AlreadyDoneTest(_E2E):
         out = ch.keeper("--dry-run")
         self.assertIn("plan  start start0 through SaleStarter", out)
         self.assertEqual(ch.block(), before)
-        self.assertEqual(k.w(ch.view("Stream", "totalMinted()"), 0), 0)
+        self.assertEqual(k.w(ch.view("Stream6529", "totalMinted()"), 0), 0)
+
+
+class NetworkActionsTest(_E2E):
+    def test_ARescueIsReportedOnceTheNetworksRescuePeriodHasPassed(self) -> None:
+        # The network removes the English auction as a minter while work 1 is unsold in its
+        # custody. The keeper reports the rescue (the network's action) only after the
+        # network's rescue period, read from the chain, and never sends it.
+        ch = self.chain
+        ch.keeper("--steps", "start")
+        ch.send(ch.network, "Stream6529", "removeMinter(address)", ch.c["EnglishAuction"])
+        delay = k.w(ch.view("Stream6529", "rescueDelay()"), 0)
+        self.assertNotIn("due   rescue of work 1", ch.keeper("--steps", "rescues"))
+        ch.warp(delay)
+        out = ch.keeper("--steps", "rescues")
+        self.assertIn("due   rescue of work 1", out)
+        self.assertIn("done: 0 sent", out)
 
 
 if __name__ == "__main__":

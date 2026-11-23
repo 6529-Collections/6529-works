@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 import { IChunkStore } from "../interfaces/IChunkStore.sol";
 import { IContentStore } from "../interfaces/IContentStore.sol";
@@ -83,12 +83,19 @@ contract ContentStore is IContentStore {
         bool done;
     }
 
+    /// @dev A linked chunk, one storage slot: `length` is the chunk's length in bytes and `parts`
+    ///      the number of stored parts it is assembled from (never zero in a link that exists).
+    struct Link {
+        uint64 length;
+        uint32 parts;
+    }
+
     mapping(bytes32 fileId => File) private _files;
     mapping(bytes32 fileId => Attestation) private _attestation;
     /// @inheritdoc IContentStore
     mapping(bytes32 chunkHash => address) public chunkPointer;
-    /// @dev A linked chunk: its length in the low 64 bits, its part count above them.
-    mapping(bytes32 chunkHash => uint256) private _linked;
+    /// @dev Each linked chunk; all zero when the chunk is not linked.
+    mapping(bytes32 chunkHash => Link) private _linked;
     /// @dev The pointers of a linked chunk's parts, in order.
     mapping(bytes32 chunkHash => mapping(uint256 index => address)) private _partAt;
     /// @inheritdoc IContentStore
@@ -124,9 +131,11 @@ contract ContentStore is IContentStore {
         }
         hash = keccak256(data);
         if (chunkPointer[hash] != address(0)) return hash;
-        uint256 held = _linked[hash] >> 64;
+        uint256 held = _linked[hash].parts;
         if (held != 0 && held <= n) return hash;
-        _linked[hash] = (n << 64) | total;
+        // Both fit: `total` is at most CHUNK_SIZE and `n` at most MAX_PARTS.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        _linked[hash] = Link({ length: uint64(total), parts: uint32(n) });
         for (uint256 i; i < n; ++i) {
             _partAt[hash][i] = pointers[i];
         }
@@ -516,12 +525,10 @@ contract ContentStore is IContentStore {
     function _load(bytes32 hash) private view returns (bool found, bytes memory data) {
         address pointer = chunkPointer[hash];
         if (pointer != address(0)) return (true, SSTORE2.readVerified(pointer, hash));
-        uint256 linked = _linked[hash];
-        uint256 n = linked >> 64;
+        Link memory linked = _linked[hash];
+        uint256 n = linked.parts;
         if (n == 0) return (false, data);
-        // The low 64 bits are the length; it is at most CHUNK_SIZE.
-        // forge-lint: disable-next-line(unsafe-typecast)
-        data = new bytes(uint64(linked));
+        data = new bytes(linked.length);
         uint256 filled;
         for (uint256 i; i < n; ++i) {
             filled += SSTORE2.copyInto(_partAt[hash][i], data, filled);
@@ -542,10 +549,8 @@ contract ContentStore is IContentStore {
         uint256 expected = _expectedLength(f, index);
         address pointer = chunkPointer[hash];
         if (pointer != address(0)) return SSTORE2.size(pointer) == expected ? 1 : 0;
-        uint256 linked = _linked[hash];
-        // The low 64 bits are the length, the bits above them the part count.
-        // forge-lint: disable-next-line(unsafe-typecast)
-        return uint64(linked) == expected ? linked >> 64 : 0;
+        Link memory linked = _linked[hash];
+        return linked.length == expected ? linked.parts : 0;
     }
 
     /// @dev Whether `source` returns chunk `index` with the manifest's hash and length. The read

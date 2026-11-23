@@ -34,13 +34,14 @@ jobs:
             filter: --match-test ^invariant_(Dust|Escrow|Intermediaries|Marks|Observed) --match-contract ^EconomicsInvariant
           - name: economics, releases
             filter: --match-test ^invariant_(Recipients|Released|Wallet) --match-contract ^EconomicsInvariant
-          # The four campaigns of the November 2026 testing build: about 68 minutes locally.
-          - name: testing build
-            filter: --match-test ^invariant --match-contract ^(WorkDelivery|GovernedVault|FederatedState|CurationSigner)Invariant
+          # The token, vault and signer campaigns (StreamCore, IndependentStream, GovernedVault,
+          # CurationSigner); not yet timed at the deep profile.
+          - name: core, vault and signer
+            filter: --match-test ^invariant --match-contract ^(StreamCore|IndependentStream|GovernedVault|CurationSigner)Invariant
           - name: auctions
             filter: --match-test ^invariant --match-contract ^(Auction|EditionAuction)
           - name: others
-            filter: --match-test ^invariant --no-match-contract ^((Economics|WorkDelivery|GovernedVault|FederatedState|CurationSigner)Invariant|Auction|EditionAuction)
+            filter: --match-test ^invariant --no-match-contract ^((Economics|StreamCore|IndependentStream|GovernedVault|CurationSigner)Invariant|Auction|EditionAuction)
 
     steps:
       - name: Checkout

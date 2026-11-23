@@ -1,17 +1,14 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { IAssetAllowlist } from "../economics/interfaces/IAssetAllowlist.sol";
-import { FederationRegistry } from "../federated/FederationRegistry.sol";
-import { IArtistRegistry } from "../interfaces/IArtistRegistry.sol";
-import { IFederationRegistry } from "../interfaces/IFederationRegistry.sol";
-import { IMintTarget } from "../interfaces/IMintTarget.sol";
+import { IndependentStreamRegistry } from "../independent/IndependentStreamRegistry.sol";
+import { IIndependentStreamRegistry } from "../interfaces/IIndependentStreamRegistry.sol";
 import { IPackageRegistry } from "../interfaces/IPackageRegistry.sol";
 import { ISaleAdapter } from "../interfaces/ISaleAdapter.sol";
 import { IStatementLog } from "../interfaces/IStatementLog.sol";
-import { IStream } from "../interfaces/IStream.sol";
 import { BoundedCall } from "../libraries/BoundedCall.sol";
 import { Roles } from "./Roles.sol";
 import { WorksAccessManager } from "./WorksAccessManager.sol";
@@ -25,10 +22,10 @@ import { WorksAccessManager } from "./WorksAccessManager.sol";
 ///      {GovernanceConfigurator} on the manager it deploys itself. It proposes the network with
 ///      `transferNetwork`; the network takes over when it calls `acceptNetwork`.
 ///
-///      Genesis wiring: `install` also executes the genesis calls ({isGenesisSelector}: one-shot
-///      binds, admitted minters, sale targets, default currencies, the English auction's ETH
-///      opening bid, the federation's first registry, adapters and template versions, the
-///      epoch-0 manifest) as the zero-delay installer, before any selector is mapped. Every
+///      Genesis wiring: `install` also executes the genesis calls ({isGenesisSelector}: the
+///      package registry's Stream bind and entropy module, sale targets, the ETH opening bid,
+///      the Independent Stream module's adapters, template versions and entropy module, the epoch-0
+///      manifest) as the zero-delay installer, before any selector is mapped. Every
 ///      wired selector therefore still resolves to `ADMIN`; without this phase those calls would
 ///      wait the network's 7-day class.
 library GovernanceConfig {
@@ -132,45 +129,35 @@ library GovernanceConfig {
         }
     }
 
-    /// @notice Whether `selector` may be wired at genesis: a one-shot bind (including the
-    ///         federation bind), an admitted-minter grant, a sale target, a product's
-    ///         first default currency (an auction cannot start without one), the federation's
-    ///         first configuration (the English auction's federation registry, the registry's
-    ///         admitted adapters and its v1 template versions: ADR 0008), or the epoch-0
-    ///         governance manifest. Everything else waits its delay class after genesis.
+    /// @notice Whether `selector` may be wired at genesis: the package registry's one-shot
+    ///         Stream bind and first entropy module, an edition auction's sale target, the
+    ///         ETH opening bid, the Independent Stream
+    ///         module's first configuration (its admitted sale contracts, its first template
+    ///         versions and its entropy module: ADR 0008), or the epoch-0 governance manifest.
+    ///         Modules and minters of the core are constructor arguments, so none is wired
+    ///         here. Everything else waits its delay class after genesis.
     function isGenesisSelector(bytes4 selector) internal pure returns (bool) {
         return genesisInterface(selector) != 0;
     }
 
     /// @notice The ERC-165 interface a target must declare to receive genesis call `selector`,
     ///         so a selector admitted for one contract never reaches another contract's function
-    ///         of the same selector (the artist registry's `setFederationRegistry`, a 7-day
-    ///         replacement, shares the sale adapters' selector). `ANY_TARGET` for a one-shot bind
-    ///         (each runs once wherever it is declared) and for selectors only one v1 contract
-    ///         declares (the asset allowlist's and the statement log's, which implement no
-    ///         ERC-165); zero for any other selector.
+    ///         of the same selector. `ANY_TARGET` for selectors only one contract declares (the
+    ///         asset allowlist's and the statement log's, which implement no ERC-165); zero for
+    ///         any other selector.
     function genesisInterface(bytes4 selector) internal pure returns (bytes4) {
-        if (selector == IMintTarget.setAdmittedMinter.selector) {
-            return type(IMintTarget).interfaceId;
-        }
+        if (selector == ISaleAdapter.setTarget.selector) return type(ISaleAdapter).interfaceId;
         if (
-            selector == ISaleAdapter.setTarget.selector
-                || selector == ISaleAdapter.setFederationRegistry.selector
-        ) return type(ISaleAdapter).interfaceId;
+            selector == IndependentStreamRegistry.setAdapter.selector
+                || selector == IndependentStreamRegistry.approveTemplate.selector
+                || selector == IndependentStreamRegistry.setEntropyModule.selector
+        ) return type(IIndependentStreamRegistry).interfaceId;
         if (
-            selector == FederationRegistry.setAdapter.selector
-                || selector == FederationRegistry.approveTemplate.selector
-        ) return type(IFederationRegistry).interfaceId;
+            selector == IPackageRegistry.bindStream.selector
+                || selector == IPackageRegistry.setEntropyModule.selector
+        ) return type(IPackageRegistry).interfaceId;
         if (
-            selector == IStream.bindWorkRecords.selector
-                || selector == IStream.bindEditions.selector
-                || selector == IPackageRegistry.bindStream.selector
-                || selector == IArtistRegistry.bindPackageRegistry.selector
-                || selector == IArtistRegistry.bindSplitFactory.selector
-                || selector == IArtistRegistry.bindFederationRegistry.selector
-                || selector == IArtistRegistry.bindStatementLog.selector
-                || selector == IAssetAllowlist.setDefaultCurrency.selector
-                || selector == IAssetAllowlist.setOpeningBid.selector
+            selector == IAssetAllowlist.setOpeningBid.selector
                 || selector == IStatementLog.appendGovernanceManifest.selector
         ) return ANY_TARGET;
         return 0;

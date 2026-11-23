@@ -95,19 +95,6 @@
         "type": "address"
       }
     ],
-    "name": "bindEditions",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "target",
-        "type": "address"
-      }
-    ],
     "name": "bindStream",
     "outputs": [],
     "stateMutability": "nonpayable",
@@ -134,7 +121,20 @@
   },
   {
     "inputs": [],
-    "name": "editions",
+    "name": "economics",
+    "outputs": [
+      {
+        "internalType": "contract IEconomicsResolver",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "entropyModule",
     "outputs": [
       {
         "internalType": "address",
@@ -237,25 +237,6 @@
   {
     "inputs": [
       {
-        "internalType": "bytes32",
-        "name": "contentHash",
-        "type": "bytes32"
-      }
-    ],
-    "name": "releasedTo",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "artistId",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
         "internalType": "uint256",
         "name": "artistId",
         "type": "uint256"
@@ -285,6 +266,24 @@
       }
     ],
     "name": "revokePackage",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "expected",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "next",
+        "type": "address"
+      }
+    ],
+    "name": "setEntropyModule",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
@@ -393,6 +392,25 @@
       }
     ],
     "name": "Bound",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "previous",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "next",
+        "type": "address"
+      }
+    ],
+    "name": "EntropyModuleSet",
     "type": "event"
   },
   {
@@ -545,43 +563,6 @@
     "type": "error"
   },
   {
-    "inputs": [
-      {
-        "internalType": "bytes32",
-        "name": "contentHash",
-        "type": "bytes32"
-      },
-      {
-        "internalType": "uint256",
-        "name": "beneficiary",
-        "type": "uint256"
-      }
-    ],
-    "name": "ContentReserved",
-    "type": "error"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "bytes32",
-        "name": "product",
-        "type": "bytes32"
-      },
-      {
-        "internalType": "bytes32",
-        "name": "contentHash",
-        "type": "bytes32"
-      },
-      {
-        "internalType": "bytes32",
-        "name": "claimedBy",
-        "type": "bytes32"
-      }
-    ],
-    "name": "ContentUsed",
-    "type": "error"
-  },
-  {
     "inputs": [],
     "name": "ExpectedValueMismatch",
     "type": "error"
@@ -599,7 +580,32 @@
   },
   {
     "inputs": [],
+    "name": "InvalidItemSale",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidLeadArtist",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidLicenseId",
+    "type": "error"
+  },
+  {
+    "inputs": [],
     "name": "InvalidMintRequest",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidSeedPolicy",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidWorkTerms",
     "type": "error"
   },
   {
@@ -713,12 +719,12 @@
   {
     "inputs": [
       {
-        "internalType": "address",
-        "name": "caller",
-        "type": "address"
+        "internalType": "bytes32",
+        "name": "itemHash",
+        "type": "bytes32"
       }
     ],
-    "name": "UnboundCaller",
+    "name": "SeedNotDelivered",
     "type": "error"
   }
 ]

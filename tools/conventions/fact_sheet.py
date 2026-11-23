@@ -246,11 +246,11 @@ def build_fact_sheet(inputs: Mapping[str, Any]) -> FactSheetResult:
     at = _need(reads, "at", "reads")
     token = _lc(_need(reads, "token", "reads"))
     token_id = str(_need(reads, "tokenId", "reads"))
-    stream = _need(reads, "Stream", "reads")
-    owner = _need(stream, "ownerOf", "Stream")  # null, not absent, when it reverted
+    stream = _need(reads, "Stream6529", "reads")
+    owner = _need(stream, "ownerOf", "Stream6529")  # null, not absent, when it reverted
     if owner is None:
         raise NoFactSheet("the token is burned (ownerOf reverts): a burned token has no fact sheet")
-    core = _need(stream, "coreOf", "Stream")
+    core = _need(stream, "coreOf", "Stream6529")
     records = _need(reads, "WorkRecords", "reads")
     store = reads.get("ContentStore", {})
     log = _need(reads, "StatementLog", "reads")
@@ -269,7 +269,7 @@ def build_fact_sheet(inputs: Mapping[str, Any]) -> FactSheetResult:
             "status": "finalized" if finalized else "open",
             "version": rec["version"],
             "stateHash": _lc(_need(records, "workStateHash", "WorkRecords")),
-            "renderer": _lc(_need(stream, "rendererOf", "Stream")),
+            "renderer": _lc(_need(stream, "rendererOf", "Stream6529")),
             "rendererPinned": pinned != ZERO_ADDRESS,
         }
         media = list(_need(records, "mediaOf", "WorkRecords"))
@@ -302,7 +302,7 @@ def build_fact_sheet(inputs: Mapping[str, Any]) -> FactSheetResult:
                              f"ContentStore.isComplete[{text_id}]"),
     }
 
-    ps = _need(stream, "primarySale", "Stream")
+    ps = _need(stream, "primarySale", "Stream6529")
     sale: dict[str, Any] = {"outcome": ps["outcome"]}
     if ps["outcome"] == "SOLD":
         sale["currency"] = _lc(ps["currency"])

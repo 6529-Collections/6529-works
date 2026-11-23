@@ -8,7 +8,7 @@ import { ContentStore } from "src/content/ContentStore.sol";
 ///         the store's bounds: 4,096 chunks, every chunk stored at its own cold pointer. The
 ///         pointers are etched at the exact chunk size and the mapping written directly, so the
 ///         walk does exactly the reads it does on chain; every account and slot is cooled first.
-///         `FederatedStream.syncOnChain` calls it once per media file (up to 32) in one call.
+///         `IndependentStream6529.syncOnChain` calls it once per media file (up to 32) in one call.
 contract ContentStoreCompletenessGasTest is Test {
     uint256 internal constant TX_GAS_CAP = 16_777_216;
     /// @dev `chunkPointer` is the store's storage slot 2 (`test/snapshots/storage/ContentStore.json`).

@@ -2,14 +2,12 @@
 pragma solidity ^0.8.24;
 
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
-import { IEditions } from "src/interfaces/IEditions.sol";
+import { IEditions } from "src/interfaces/core/IEditions.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
 import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
 import { BoundedCall } from "src/libraries/BoundedCall.sol";
-import { UniformEditionAuction } from "src/sales/UniformEditionAuction.sol";
-import { UniformEditionAuctionLens } from "src/sales/UniformEditionAuctionLens.sol";
 import { EditionAuctionBase } from "./EditionAuctionBase.sol";
 
 /// @notice The edition's open period (R20: every sale closes exactly 15 minutes after its 1/1),
@@ -19,7 +17,8 @@ contract UniformEditionAuctionWindowTest is EditionAuctionBase {
     address internal bob = makeAddr("bob");
 
     function _oneEnd() internal view returns (uint256) {
-        return english.auction(english.saleIdOf(address(stream), ID)).endTime;
+        (, uint64 end) = english.clockOf(address(stream), ID);
+        return end;
     }
 
     // ------------------------------------------------------------------ the window
@@ -153,50 +152,8 @@ contract UniformEditionAuctionWindowTest is EditionAuctionBase {
         uint256 saleId = _open(0);
         _bid(saleId, alice, 10, 2);
         _closeOneOfOne(saleId);
-        editions.setExists(ID, true);
         vm.expectEmit(address(editions));
         emit IEditions.EditionSupplySealed(ID, 2);
         auction.settle(saleId, new uint256[](0));
-    }
-
-    /// @dev The payout gas's bounds are exact (found by mutation testing): a new auction takes
-    ///      exactly 30,000 and refuses one gas less; from 1,600,000 the governed figure reaches
-    ///      exactly 3,000,000 and is refused one gas above it, though that is below double.
-    function test_SetLimits_TheBoundsAreExact() public {
-        address l = address(
-            new UniformEditionAuctionLens(
-                address(editions), address(stream), address(english), address(escrow)
-            )
-        );
-        vm.expectRevert(IUniformEditionAuction.InvalidConfig.selector);
-        new UniformEditionAuction(
-            address(manager),
-            address(escrow),
-            address(editions),
-            address(english),
-            l,
-            l.codehash,
-            defaultConfig(),
-            IUniformEditionAuction.Limits(29_999)
-        );
-        UniformEditionAuction low = new UniformEditionAuction(
-            address(manager),
-            address(escrow),
-            address(editions),
-            address(english),
-            l,
-            l.codehash,
-            defaultConfig(),
-            IUniformEditionAuction.Limits(30_000)
-        );
-        assertEq(IUniformEditionAuction(address(low)).limits().payoutGas, 30_000);
-        _setLimits(IUniformEditionAuction.Limits(200_000));
-        _setLimits(IUniformEditionAuction.Limits(400_000));
-        _setLimits(IUniformEditionAuction.Limits(800_000));
-        _setLimits(IUniformEditionAuction.Limits(1_600_000));
-        vm.expectRevert(IUniformEditionAuction.InvalidConfig.selector);
-        auction.setLimits(1_600_000, 3_000_001);
-        _setLimits(IUniformEditionAuction.Limits(3_000_000));
-        assertEq(ua.limits().payoutGas, 3_000_000);
     }
 }

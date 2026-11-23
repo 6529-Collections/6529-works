@@ -3,19 +3,18 @@ pragma solidity ^0.8.24;
 
 import { Base64 } from "@openzeppelin/contracts/utils/Base64.sol";
 import { ContentBase } from "../ContentBase.sol";
+import { RendererDisputeLogMock } from "../../mocks/content/RendererMocks.sol";
 import {
-    RendererDisputeLogMock,
-    RendererEditionsMock,
-    RendererWorkRecordsMock
-} from "../../mocks/content/RendererMocks.sol";
-import { StreamMock } from "../../mocks/stream/StreamMock.sol";
+    RecordInfo,
+    RendererRecordsMock,
+    RendererStreamMock,
+    RendererWiring,
+    WorkCore
+} from "./RendererCoreMocks.sol";
 import { ContentStore } from "src/content/ContentStore.sol";
 import { Renderer } from "src/content/Renderer.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { IStatementLog } from "src/interfaces/IStatementLog.sol";
-import { IStream } from "src/interfaces/IStream.sol";
-import { IStreamViews } from "src/interfaces/IStreamViews.sol";
-import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { FileRole, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { ItemKind, License, SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
@@ -28,7 +27,7 @@ struct Trait {
     string value;
 }
 
-/// @dev The fields of a work record the renderer reads (`IWorkRecords`: keys `name`,
+/// @dev The fields of a work record the renderer reads (the record file: keys `name`,
 ///      `description`, `artists`, `year`, `medium`, `dimensions`, `attributes`).
 struct Rec {
     string name;
@@ -40,9 +39,11 @@ struct Rec {
     Trait[] attributes;
 }
 
-/// @dev Fixtures for the renderer tests: a real content store, a mock Stream and work-records
-///      satellite, mock Editions and a mock statement log, plus helpers that build records and
-///      read the renderer's output the way a client does.
+/// @dev Fixtures for the renderer tests: a real content store, a mock token (the plain views of
+///      `IStream`), a mock that is the work's permanent record, RECORDS module and delivery
+///      contract at once, mock editions and a mock statement log, plus helpers that build records
+///      and read the renderer's output the way a client does. `RendererCore.t.sol` renders works
+///      of the real core (`CoreFixture`) end to end.
 abstract contract RendererBase is ContentBase {
     IContentStore.Encoding internal constant IDENTITY = IContentStore.Encoding.Identity;
     IContentStore.Encoding internal constant GZIP = IContentStore.Encoding.Gzip;
@@ -60,16 +61,16 @@ abstract contract RendererBase is ContentBase {
     uint256 internal constant MAX_INLINE_BYTES = 1_048_576;
     string internal constant PREFIX = "data:application/json;utf8,";
 
-    StreamMock internal stream;
-    RendererWorkRecordsMock internal records;
+    RendererStreamMock internal stream;
+    RendererRecordsMock internal records;
     RendererDisputeLogMock internal disputeLog;
     Renderer internal renderer;
 
     function setUp() public virtual {
         store = new ContentStore();
-        stream = new StreamMock();
-        records = new RendererWorkRecordsMock();
-        stream.setWorkRecords(address(records));
+        stream = new RendererStreamMock();
+        records = new RendererRecordsMock();
+        RendererWiring.wire(stream, records);
         disputeLog = new RendererDisputeLogMock();
         renderer = new Renderer(store, IStatementLog(address(disputeLog)), THRESHOLD);
     }
@@ -137,7 +138,7 @@ abstract contract RendererBase is ContentBase {
         return License("CC0-1.0", bytes32(0));
     }
 
-    function _core() internal pure returns (IStreamViews.WorkCore memory core) {
+    function _core() internal pure returns (WorkCore memory core) {
         core.itemHash = bytes32(uint256(1));
         core.artistId = 1;
         core.kind = uint8(ItemKind.ORIGINAL);
@@ -193,7 +194,7 @@ abstract contract RendererBase is ContentBase {
     /// @dev As `_installRaw`, for work `id`.
     function _installRawAt(uint256 id, bytes memory json, MediaFile[] memory media) internal {
         bytes32 recordFile = _file(json, IDENTITY, "application/json");
-        IWorkRecords.RecordInfo memory info;
+        RecordInfo memory info;
         info.recordFileId = recordFile;
         info.licenseKey = WorksHashing.CC0_LICENSE_KEY;
         info.version = 1;
@@ -230,11 +231,11 @@ abstract contract RendererBase is ContentBase {
     }
 
     /// @dev Changes the record state of `ID`.
-    function _setRecordInfo(IWorkRecords.RecordInfo memory info) internal {
+    function _setRecordInfo(RecordInfo memory info) internal {
         records.setRecord(ID, info);
     }
 
-    function _info() internal view returns (IWorkRecords.RecordInfo memory) {
+    function _info() internal view returns (RecordInfo memory) {
         return records.record(ID);
     }
 

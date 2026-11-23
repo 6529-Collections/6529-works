@@ -237,10 +237,8 @@ contract RevenueEscrowTest is EconomicsBase {
     }
 
     function test_DeprecatedAssetCreditsStillFlush() public {
-        allowlist.admitAsset(address(token), 0, 1);
         vm.prank(depositor);
         escrow.depositERC20(address(wallet), address(token), 10);
-        allowlist.deprecateAsset(address(token));
         escrow.flush(address(wallet), address(token));
         assertEq(token.balanceOf(address(wallet)), 10);
     }
@@ -284,7 +282,7 @@ contract RevenueEscrowTest is EconomicsBase {
         usdc.mint(address(wallet), 100);
         usdc.setBlocked(address(wallet), true);
         usdc.mint(address(payer), 1000);
-        assertTrue(payer.payERC20(address(wallet), address(usdc), 1000));
+        payer.creditERC20(address(wallet), address(usdc), 1000);
         vm.expectRevert(
             abi.encodeWithSelector(
                 TokenTransfer.TokenCallFailed.selector, address(usdc), usdc.transfer.selector
@@ -376,7 +374,7 @@ contract RevenueEscrowTest is EconomicsBase {
         BlocklistToken usdc = new BlocklistToken();
         usdc.setBlocked(alice, true);
         usdc.mint(address(payer), 1000);
-        assertTrue(payer.payERC20(alice, address(usdc), 1000));
+        payer.creditERC20(alice, address(usdc), 1000);
         vm.startPrank(depositor);
         escrow.depositETH{ value: 1 ether }(alice);
         escrow.depositETH{ value: 2 ether }(bob);

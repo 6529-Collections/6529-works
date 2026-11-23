@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { IStream } from "src/interfaces/IStream.sol";
+import { IStream } from "src/interfaces/core/IStream.sol";
 
 /// @dev A token that declares `IStream` by ERC-165 and whose `coreOf` reverts with the exact
 ///      bytes the test sets.

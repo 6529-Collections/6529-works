@@ -1,438 +1,93 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
-import { IERC721Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
-import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
-import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
+import { IERC721Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
+import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
-import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
-import { IStatementLog, Statement } from "src/interfaces/IStatementLog.sol";
-import { EditionTerms, ItemKind, SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
-import { IEntropyModule } from "src/interfaces/IEntropyModule.sol";
-import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
-import { HASH_SHA256, HashRef } from "src/interfaces/types/HashRef.sol";
-import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
-import { CURRENCY_ETH, PRODUCT_STREAM } from "src/interfaces/types/EconomicsTypes.sol";
-import { Payment, PaymentMethod } from "src/interfaces/types/SaleTypes.sol";
+import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
+import { IStatementLog } from "src/interfaces/IStatementLog.sol";
+import { IMintPolicy } from "src/interfaces/core/IMintPolicy.sol";
+import { Outcome } from "src/interfaces/core/CoreTypes.sol";
 import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
-import { IntegrationBase } from "./IntegrationBase.sol";
-import { IStream } from "src/interfaces/IStream.sol";
-import { IStreamViews } from "src/interfaces/IStreamViews.sol";
+import { SaleFlowBase } from "./SaleFlowBase.sol";
 
-/// @notice Flow 5 (integration brief, lane B): a dispute on the real contracts. A copier's
-///         package reaches auction; a guardian pauses it; PLATFORM appends the
-///         `DISPUTE_OUTCOME` statement, which the renderer shows; PARAMETER_SETTER's governed
-///         `cancel` runs after its 48-hour delay, refunding the bid and burning the token; the
-///         governed `releaseContent` reserves the content for the rightful artist the outcome
-///         names; and only that artist's item with the same content then consumes. A rejected
-///         dispute resumes the auction, and a dispute after a sale only adds a statement.
-contract DisputeFlowTest is IntegrationBase {
+/// @notice A dispute on the deployed stack. A copier's package, claiming the rightful artist's
+///         media, reaches auction; a pauser key pauses the sale with a dispute reference; the high
+///         bidder may withdraw while it is paused; PLATFORM records the outcome statement, which
+///         the renderer shows; the network cancels the sale citing that statement (the bid is
+///         credited back, the token burned, its ID never reused); the network releases the
+///         content to the rightful artist, whose item then mints while every other copy is
+///         refused. A rejected dispute resumes the sale with its clock extended; a pause that runs
+///         its 3 days lapses by itself; a dispute after a sale only adds a statement.
+contract DisputeTest is SaleFlowBase {
     address internal rightful;
     address internal copier;
     address internal bidder = makeAddr("disputeBidder");
     bytes32 internal copierRoot;
     bytes32 internal rightfulRoot;
     bytes32 internal contentHash;
+    bytes32 internal constant DISPUTE_REF = keccak256("disputes wave: copied media");
 
     function setUp() public override {
         super.setUp();
         rightful = _actor("rightfulArtist");
         copier = _actor("copier");
         Work memory original = _work(rightful, collectionId);
-        Work memory copy = _work(copier, collectionId);
-        // The copier claims the rightful artist's media: same content hash and media list.
-        copy.media = original.media;
-        copy.item.contentHash = original.item.contentHash;
-        copy.item.mediaHash = original.item.mediaHash;
-        contentHash = original.item.contentHash;
         Work[] memory copies = new Work[](2);
-        copies[0] = copy;
+        copies[0] = _copyOf(original);
         copies[1] = _work(copier, collectionId); // the copier's other work, sold normally
+        contentHash = original.item.contentHash;
         copierRoot = _publish(copies);
         _keep(copierRoot, copies);
         rightfulRoot = _publish(_one(original));
         _keep(rightfulRoot, _one(original));
     }
 
+    /// @dev A work by the copier with `original`'s media (same content and media hash) and its
+    ///      own record.
+    function _copyOf(Work memory original) internal returns (Work memory copy) {
+        copy = _work(copier, collectionId);
+        copy.media = original.media;
+        copy.item.contentHash = original.item.contentHash;
+        copy.item.mediaHash = original.item.mediaHash;
+    }
+
+    function _pause(uint256 saleId) internal {
+        vm.expectEmit(address(auction));
+        emit IEnglishAuction.AuctionPaused(saleId, DISPUTE_REF);
+        _govern(
+            pauser1,
+            address(auction),
+            abi.encodeWithSignature("pause(uint256,bytes32)", saleId, DISPUTE_REF)
+        );
+    }
+
+    /// @dev Starts the copy, takes a 1 ETH bid and pauses the sale two hours in.
     function _pauseCopy() internal returns (uint256 saleId, uint256 tokenId) {
         (saleId, tokenId) = _start(copierRoot, _package(copierRoot), 0);
         _ethBid(saleId, bidder, 1 ether);
         vm.warp(block.timestamp + 2 hours);
-        vm.prank(guardian1);
-        auction.pause(saleId, keccak256("disputes wave: copied media"));
+        _pause(saleId);
         assertEq(uint8(auction.auction(saleId).state), uint8(IEnglishAuction.AuctionState.PAUSED));
     }
 
-    function test_UpheldDisputeCancelsBurnsReleasesAndTheRightfulArtistMints() public {
-        (uint256 saleId, uint256 tokenId) = _pauseCopy();
-
-        // No bids while paused.
-        vm.deal(bidder, 2 ether);
-        vm.prank(bidder);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IEnglishAuction.InvalidAuctionState.selector,
-                saleId,
-                IEnglishAuction.AuctionState.PAUSED
-            )
-        );
-        auction.bid{ value: 2 ether }(saleId, address(0), _payment(2 ether));
-
-        // The TDH vote upholds the dispute: PLATFORM records the outcome; metadata shows it.
-        bytes32 outcome = _platformStatement(
-            address(stream), tokenId, StatementKinds.DISPUTE_OUTCOME, "ar://dispute-outcome-upheld"
-        );
-        assertEq(statements.latestDisputeOutcome(address(stream), tokenId), outcome);
-        assertTrue(
-            _contains(
-                stream.tokenURI(tokenId),
-                string.concat(
-                    '{"trait_type":"Dispute statement","value":"',
-                    Strings.toHexString(uint256(outcome), 32),
-                    '"}'
-                )
-            ),
-            "the renderer shows the dispute statement"
-        );
-
-        // A cancel citing anything but the recorded outcome fails; the network's cancel citing
-        // it lands inside the 3-day pause (C30). Both are scheduled together, so the role's
-        // delay (none in the second pass's map) is waited once.
-        bytes memory wrong = abi.encodeCall(auction.cancel, (saleId, keccak256("not the outcome")));
-        bytes memory right = abi.encodeCall(auction.cancel, (saleId, outcome));
-        (bool immediate, uint32 delay) = manager.canCall(hotAdmin, address(auction), bytes4(right));
-        if (!immediate) {
-            _schedule(hotAdmin, address(auction), wrong);
-            _schedule(hotAdmin, address(auction), right);
-            vm.warp(block.timestamp + delay);
-        }
-        vm.prank(hotAdmin);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IEnglishAuction.OutcomeNotRecorded.selector, saleId, keccak256("not the outcome")
-            )
-        );
-        if (immediate) {
-            (bool ok,) = address(auction).call(wrong);
-            ok;
-        } else {
-            manager.execute(address(auction), wrong);
-        }
-        vm.prank(hotAdmin);
-        if (immediate) {
-            (bool ok,) = address(auction).call(right);
-            assertTrue(ok);
-        } else {
-            manager.execute(address(auction), right);
-        }
-        assertEq(
-            uint8(auction.auction(saleId).state), uint8(IEnglishAuction.AuctionState.CANCELLED)
-        );
-        assertEq(auction.claimable(bidder, CURRENCY_ETH), 1 ether, "the bid is refunded");
-        vm.expectRevert(
-            abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, tokenId)
-        );
-        stream.ownerOf(tokenId);
-        assertEq(
-            IStreamViews(address(stream)).totalSupply(),
-            IStream(address(stream)).totalMinted() - 1,
-            "a gap: the ID is never reused"
-        );
-        uint256 before = bidder.balance;
-        vm.prank(bidder);
-        auction.claim(CURRENCY_ETH, bidder);
-        assertEq(bidder.balance - before, 1 ether);
-
-        // The governed release names the rightful artist; the copier's item is tombstoned.
-        bytes32 copierItem = WorksHashing.itemHash(_package(copierRoot)[0].item);
-        _release(tokenId);
-        assertEq(registry.consumedItemOf(contentHash), bytes32(0));
-        assertEq(registry.releasedTo(contentHash), artists.artistIdOf(rightful));
-        assertTrue(registry.isReleased(copierItem));
-
-        // The rightful artist's item with the same content now consumes.
-        (, uint256 rightfulToken) = _start(rightfulRoot, _package(rightfulRoot), 0);
-        assertEq(stream.ownerOf(rightfulToken), address(auction));
-        assertEq(
-            registry.consumedItemOf(contentHash),
-            WorksHashing.itemHash(_package(rightfulRoot)[0].item)
-        );
-        assertEq(rightfulToken, tokenId + 1);
-
-        // The copier's item can never be consumed again, through any root.
-        bytes memory again = _mintData(copierRoot, _package(copierRoot), 0);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IPackageRegistry.ContentUsed.selector,
-                PRODUCT_STREAM,
-                contentHash,
-                WorksHashing.itemHash(_package(rightfulRoot)[0].item)
-            )
-        );
-        auction.start(address(stream), again);
+    function _outcome(uint256 tokenId, string memory uri) internal returns (bytes32) {
+        return _platformStatement(address(stream), tokenId, StatementKinds.DISPUTE_OUTCOME, uri);
     }
 
-    /// @dev The cancel must land while the pause is live (C30): the network's cancel, with no
-    ///      delay of its own, is refused once the 3-day pause has lapsed and the auction has
-    ///      resumed and run out.
-    function test_CancelIsRefusedOnceThePauseHasLapsed() public {
-        (uint256 saleId, uint256 tokenId) = _pauseCopy();
-        bytes32 outcome = _platformStatement(
-            address(stream), tokenId, StatementKinds.DISPUTE_OUTCOME, "ar://late-outcome"
-        );
-        vm.warp(block.timestamp + 3 days + AUCTION_DURATION + 1);
-        vm.prank(hotAdmin);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IEnglishAuction.InvalidAuctionState.selector,
-                saleId,
-                IEnglishAuction.AuctionState.ENDED
-            )
-        );
-        auction.cancel(saleId, outcome);
+    function _cancel(uint256 saleId, bytes32 outcome) internal {
+        _asNetwork(address(auction), abi.encodeCall(auction.cancel, (saleId, outcome)));
     }
 
-    /// @dev A rejected dispute (or none within 7 days): the high bidder may withdraw while
-    ///      paused, and the auction resumes with its remaining time.
-    function test_RejectedDisputeResumesTheAuction() public {
-        (uint256 saleId, uint256 tokenId) = _pauseCopy();
-        IEnglishAuction.Auction memory paused = auction.auction(saleId);
-        uint256 remaining = paused.endTime - paused.pausedAt;
-        vm.prank(bidder);
-        auction.withdrawBid(saleId);
-        assertEq(auction.claimable(bidder, CURRENCY_ETH), 1 ether);
-
-        _govern(hotAdmin, address(auction), abi.encodeCall(auction.resume, (saleId)));
-        IEnglishAuction.Auction memory resumed = auction.auction(saleId);
-        assertEq(uint8(resumed.state), uint8(IEnglishAuction.AuctionState.ACTIVE));
-        // LIFECYCLE-1: the bid was withdrawn, so at least the full duration.
-        uint256 left = remaining > AUCTION_DURATION ? remaining : AUCTION_DURATION;
-        assertEq(resumed.endTime, block.timestamp + left, "the remaining time, or the duration");
-        assertEq(auction.minimumBid(saleId), 1 ether, "the withdrawn bid is the reserve");
-        _ethBid(saleId, makeAddr("lateBidder"), 2 ether);
-        _settleAtEnd(saleId);
-        assertEq(stream.ownerOf(tokenId), makeAddr("lateBidder"));
-    }
-
-    /// @dev After a sale a dispute only produces a statement: nothing is confiscated.
-    function test_DisputeAfterASaleIsAStatementOnly() public {
-        uint256 tokenId = _sell(copierRoot, _package(copierRoot), 1, bidder, 1 ether);
-        bytes32 outcome = _platformStatement(
-            address(stream), tokenId, StatementKinds.DISPUTE_OUTCOME, "ar://after-sale-outcome"
-        );
-        assertEq(stream.ownerOf(tokenId), bidder, "nothing is confiscated");
-        assertTrue(_contains(stream.tokenURI(tokenId), Strings.toHexString(uint256(outcome), 32)));
-        (, uint256 royalty) = stream.royaltyInfo(tokenId, 1 ether);
-        assertEq(royalty, 0.06529 ether, "royalties unchanged");
-    }
-
-    /// @dev The emergency pause (PAUSER, held by the guardians) blocks new starts only; bids on
-    ///      live auctions continue. Unpausing is UNPAUSER's, in the 48-hour class.
-    function test_EmergencyPauseBlocksStartsNotBids() public {
-        (uint256 saleId,) = _start(copierRoot, _package(copierRoot), 1);
-        vm.prank(guardian3);
-        auction.pause();
-        bytes memory data = _mintData(copierRoot, _package(copierRoot), 0);
-        vm.expectRevert(ISaleAdapter.SalePaused.selector);
-        auction.start(address(stream), data);
-        _ethBid(saleId, bidder, 1 ether);
-        _govern(hotAdmin, address(auction), abi.encodeCall(auction.unpause, ()));
-        auction.start(address(stream), data);
-    }
-
-    /// @dev The upheld path up to the burn of the copier's work.
-    function _upheldBurn() internal returns (uint256 tokenId) {
-        uint256 saleId;
-        (saleId, tokenId) = _pauseCopy();
-        bytes32 outcome = _platformStatement(
-            address(stream), tokenId, StatementKinds.DISPUTE_OUTCOME, "ar://dispute-upheld"
-        );
-        _govern(hotAdmin, address(auction), abi.encodeCall(auction.cancel, (saleId, outcome)));
-    }
-
-    /// @dev PARAMETER_SETTER's governed release (24 hours) to the rightful artist.
-    function _release(uint256 tokenId) internal {
-        _govern(
-            hotAdmin,
-            address(stream),
+    /// @dev The network's release (PARAMETER_SETTER, 24 hours) of the burned token's content.
+    function _release(uint256 tokenId, uint256 beneficiary) internal {
+        _asNetwork(
+            address(registry),
             abi.encodeCall(
-                stream.releaseContent, (tokenId, contentHash, artists.artistIdOf(rightful))
+                registry.releaseContent, (address(stream), tokenId, contentHash, beneficiary)
             )
-        );
-    }
-
-    /// Regression: SIGS-1, LIFECYCLE-2 (docs/security/internal-review-2026-10.md)
-    /// @dev SIGS-1 / LIFECYCLE-2: the copier holds a second approved copy of the content (same
-    ///      media, another record). Once the upheld dispute burns the first, the release reserves
-    ///      the content for the rightful artist the outcome names, so the copy cannot take it in
-    ///      the same block, while the rightful artist's item consumes.
-    function test_ReleasedContentIsReservedForTheNamedArtist() public {
-        Work memory sibling = _work(copier, collectionId);
-        Work memory original = _package(rightfulRoot)[0];
-        sibling.media = original.media;
-        sibling.item.contentHash = contentHash;
-        sibling.item.mediaHash = original.item.mediaHash;
-        bytes32 siblingRoot = _publish(_one(sibling));
-        uint256 tokenId = _upheldBurn();
-        _release(tokenId);
-
-        uint256 rightfulId = artists.artistIdOf(rightful);
-        bytes memory copy = _mintData(siblingRoot, _one(sibling), 0);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IPackageRegistry.ContentReserved.selector, contentHash, rightfulId
-            )
-        );
-        auction.start(address(stream), copy);
-
-        (, uint256 rightfulToken) = _start(rightfulRoot, _package(rightfulRoot), 0);
-        assertEq(stream.artistOf(rightfulToken), rightfulId);
-        assertEq(
-            registry.consumedItemOf(contentHash),
-            WorksHashing.itemHash(original.item),
-            "the rightful artist's item holds the content"
-        );
-    }
-
-    /// @dev The release is a governed action, not first come: nobody else may call it, it must
-    ///      name an artist, and it happens once per burned token.
-    function test_ReleaseIsGovernedNamesAnArtistAndHappensOnce() public {
-        uint256 tokenId = _upheldBurn();
-        uint256 rightfulId = artists.artistIdOf(rightful);
-        address[2] memory strangers = [copier, makeAddr("anyone")];
-        for (uint256 i; i < strangers.length; ++i) {
-            vm.prank(strangers[i]);
-            vm.expectRevert(
-                abi.encodeWithSelector(
-                    IAccessManaged.AccessManagedUnauthorized.selector, strangers[i]
-                )
-            );
-            stream.releaseContent(tokenId, contentHash, rightfulId);
-        }
-        (, uint32 delay) =
-            manager.canCall(hotAdmin, address(stream), stream.releaseContent.selector);
-        assertEq(delay, 24 hours, "the upheld-dispute class");
-
-        // A release must name a registered artist: zero, or an ID nobody registered (here one
-        // derived from an address the rightful artist never uses), is refused.
-        uint256[2] memory unregistered =
-            [uint256(0), uint160(makeAddr("an address the artist never registers"))];
-        for (uint256 i; i < unregistered.length; ++i) {
-            bytes memory unnamed =
-                abi.encodeCall(stream.releaseContent, (tokenId, contentHash, unregistered[i]));
-            _schedule(hotAdmin, address(stream), unnamed);
-            vm.warp(block.timestamp + 24 hours);
-            vm.prank(hotAdmin);
-            vm.expectRevert(
-                abi.encodeWithSelector(IArtistRegistry.UnknownArtist.selector, unregistered[i])
-            );
-            manager.execute(address(stream), unnamed);
-        }
-
-        bytes memory named =
-            abi.encodeCall(stream.releaseContent, (tokenId, contentHash, rightfulId));
-        _schedule(hotAdmin, address(stream), named);
-        vm.warp(block.timestamp + 24 hours);
-        vm.expectEmit(true, true, true, true, address(stream));
-        emit IStream.ContentReleased(tokenId, contentHash, rightfulId);
-        vm.prank(hotAdmin);
-        manager.execute(address(stream), named);
-
-        bytes memory again = abi.encodeCall(
-            stream.releaseContent, (tokenId, contentHash, artists.artistIdOf(copier))
-        );
-        _schedule(hotAdmin, address(stream), again);
-        vm.warp(block.timestamp + 24 hours);
-        vm.prank(hotAdmin);
-        vm.expectRevert(
-            abi.encodeWithSelector(IStream.ClaimNotAllowed.selector, PRODUCT_STREAM, contentHash)
-        );
-        manager.execute(address(stream), again);
-        assertEq(registry.releasedTo(contentHash), rightfulId, "the first release stands");
-    }
-
-    /// Regression: SIGS-1, DEPS-1 (docs/security/internal-review-2026-10.md)
-    /// @dev DEPS-1 with SIGS-1: a VRF work keeps its one seed through an upheld dispute. The
-    ///      rightful artist's VRF item cannot request while the content is consumed; after the
-    ///      release it joins the content's delivered draw, with no new request, and starts.
-    function test_TheRightfulVrfItemReadsTheContentsSeed() public {
-        Work memory original = _work(rightful, collectionId);
-        original.item.seedPolicy = uint8(SeedPolicy.VRF);
-        Work memory copy = _work(copier, collectionId);
-        copy.media = original.media;
-        copy.item.contentHash = original.item.contentHash;
-        copy.item.mediaHash = original.item.mediaHash;
-        copy.item.seedPolicy = uint8(SeedPolicy.VRF);
-        bytes32 copyRoot = _publish(_one(copy));
-        bytes32 originalRoot = _publish(_one(original));
-        bytes32[] memory none = new bytes32[](0);
-        coordinator.fulfill(entropy.requestSeed(copy.item, copyRoot, none), 77);
-
-        (uint256 saleId, uint256 tokenId) = _start(copyRoot, _one(copy), 0);
-        bytes32 originalItem = WorksHashing.itemHash(original.item);
-        vm.expectRevert(
-            abi.encodeWithSelector(IEntropyModule.NotRequestable.selector, originalItem)
-        );
-        entropy.requestSeed(original.item, originalRoot, none);
-        vm.prank(guardian1);
-        auction.pause(saleId, keccak256("disputes wave: copied media"));
-        bytes32 outcome = _platformStatement(
-            address(stream), tokenId, StatementKinds.DISPUTE_OUTCOME, "ar://vrf-dispute-upheld"
-        );
-        _govern(hotAdmin, address(auction), abi.encodeCall(auction.cancel, (saleId, outcome)));
-        _govern(
-            hotAdmin,
-            address(stream),
-            abi.encodeCall(
-                stream.releaseContent,
-                (tokenId, original.item.contentHash, artists.artistIdOf(rightful))
-            )
-        );
-
-        uint256 nextId = coordinator.nextId();
-        assertEq(entropy.requestSeed(original.item, originalRoot, none), 0, "joined");
-        assertEq(coordinator.nextId(), nextId, "no second draw");
-        assertEq(entropy.seedOf(originalItem), bytes32(uint256(77)));
-        (, uint256 rightfulToken) = _start(originalRoot, _one(original), 0);
-        assertEq(
-            uint8(IStreamViews(address(stream)).work(rightfulToken).seedPolicy),
-            uint8(SeedPolicy.VRF)
-        );
-    }
-
-    /// @dev The network withdraws a mistaken release during its delay.
-    function test_TheNetworkCancelsAPendingRelease() public {
-        uint256 tokenId = _upheldBurn();
-        bytes memory wrong = abi.encodeCall(
-            stream.releaseContent, (tokenId, contentHash, artists.artistIdOf(copier))
-        );
-        _schedule(hotAdmin, address(stream), wrong);
-        vm.prank(hotAdmin);
-        manager.cancel(hotAdmin, address(stream), wrong);
-        vm.warp(block.timestamp + 24 hours);
-        bytes32 operation = manager.hashOperation(hotAdmin, address(stream), wrong);
-        vm.prank(hotAdmin);
-        vm.expectRevert(
-            abi.encodeWithSelector(IAccessManager.AccessManagerNotScheduled.selector, operation)
-        );
-        manager.execute(address(stream), wrong);
-        assertEq(registry.releasedTo(contentHash), 0);
-    }
-
-    /// @dev A PLATFORM dispute outcome on `(token, id)`, as `_platformStatement` builds it.
-    function _outcome(address token, uint256 id) internal pure returns (Statement memory) {
-        return Statement(
-            token,
-            id,
-            StatementKinds.DISPUTE_OUTCOME,
-            keccak256("6529-works/dispute-outcome/1"),
-            HashRef(HASH_SHA256, keccak256("outcome")),
-            "ar://outcome",
-            bytes32(0),
-            bytes32(0)
         );
     }
 
@@ -447,73 +102,287 @@ contract DisputeFlowTest is IntegrationBase {
         );
     }
 
-    /// Regression: LIFECYCLE-4 (docs/security/internal-review-2026-10.md)
-    /// @dev LIFECYCLE-4: an outcome can name only a token that exists (not one not yet minted,
-    ///      nor a burned one), and an edition's outcome goes on its master.
-    function test_ADisputeOutcomeNamesAnExistingToken() public {
-        uint256 nextId = IStream(address(stream)).totalMinted() + 1;
-        vm.prank(platform);
+    /// @dev The upheld path up to the burn of the copier's work.
+    function _upheldBurn() internal returns (uint256 tokenId) {
+        uint256 saleId;
+        (saleId, tokenId) = _pauseCopy();
+        _cancel(saleId, _outcome(tokenId, "ar://dispute-upheld"));
+    }
+
+    // ------------------------------------------------------------------ upheld
+
+    function test_Dispute_UpheldCancelBurnsReleasesAndTheRightfulArtistMints() public {
+        (uint256 saleId, uint256 tokenId) = _pauseCopy();
+
+        // No bids while paused.
+        vm.deal(bidder, 2 ether);
+        vm.prank(bidder);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IEnglishAuction.InvalidAuctionState.selector,
+                saleId,
+                IEnglishAuction.AuctionState.PAUSED
+            )
+        );
+        auction.bid{ value: 2 ether }(saleId, address(0));
+
+        // PLATFORM records the outcome; the renderer shows it.
+        bytes32 outcome = _outcome(tokenId, "ar://dispute-outcome-upheld");
+        assertEq(statements.latestDisputeOutcome(address(stream), tokenId), outcome);
+        assertTrue(_shows(stream.tokenURI(tokenId), outcome), "the renderer shows the statement");
+
+        // A cancel citing anything but the recorded outcome fails.
+        bytes32 wrong = keccak256("not the outcome");
+        vm.prank(network);
+        vm.expectRevert(
+            abi.encodeWithSelector(IEnglishAuction.OutcomeNotRecorded.selector, saleId, wrong)
+        );
+        auction.cancel(saleId, wrong);
+
+        vm.expectEmit(address(auction));
+        emit IEnglishAuction.Credited(bidder, address(0), saleId, 1 ether);
+        vm.expectEmit(address(auction));
+        emit IEnglishAuction.AuctionCancelled(saleId, outcome);
+        _cancel(saleId, outcome);
+        assertEq(
+            uint8(auction.auction(saleId).state), uint8(IEnglishAuction.AuctionState.CANCELLED)
+        );
+        assertEq(auction.claimable(bidder), 1 ether, "the bid is credited back");
+        vm.expectRevert(
+            abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, tokenId)
+        );
+        stream.ownerOf(tokenId);
+        assertEq(stream.totalSupply(), stream.totalMinted() - 1, "a gap: the ID is never reused");
+        assertEq(
+            stream.workOf(tokenId).itemHash, WorksHashing.itemHash(_package(copierRoot)[0].item)
+        );
+
+        // Before the release the content is not free, for anyone.
+        bytes memory early = _mintData(rightfulRoot, _package(rightfulRoot), 0);
+        vm.expectRevert(
+            abi.encodeWithSelector(IMintPolicy.ContentUsed.selector, contentHash, tokenId)
+        );
+        auction.start(address(stream), early);
+
+        // The network releases the content to the rightful artist; the copier's item is barred.
+        uint256 rightfulId = accounts.artistIdOf(rightful);
+        bytes memory release = abi.encodeCall(
+            registry.releaseContent, (address(stream), tokenId, contentHash, rightfulId)
+        );
+        vm.prank(network);
+        manager.schedule(address(registry), release, 0);
+        vm.warp(block.timestamp + 24 hours);
+        vm.expectEmit(address(registry));
+        emit IMintPolicy.ContentReleased(address(stream), tokenId, contentHash, rightfulId);
+        vm.prank(network);
+        manager.execute(address(registry), release);
+        assertEq(registry.releasedTo(address(stream), contentHash), rightfulId);
+        assertEq(registry.consumedItemOf(contentHash), bytes32(0));
+        bytes32 copierItem = WorksHashing.itemHash(_package(copierRoot)[0].item);
+        assertTrue(registry.isBarred(copierItem));
+
+        // The rightful artist's item mints, as a new token.
+        (, uint256 rightfulToken) = _start(rightfulRoot, _package(rightfulRoot), 0);
+        assertEq(rightfulToken, tokenId + 1);
+        assertEq(stream.workOf(rightfulToken).artistId, rightfulId);
+        assertEq(registry.releasedTo(address(stream), contentHash), 0, "the release is used up");
+        assertEq(
+            registry.consumedItemOf(contentHash),
+            WorksHashing.itemHash(_package(rightfulRoot)[0].item)
+        );
+
+        // The copier's item never mints again, through any root.
+        bytes memory again = _mintData(copierRoot, _package(copierRoot), 0);
+        vm.expectRevert(
+            abi.encodeWithSelector(IMintPolicy.ContentUsed.selector, contentHash, rightfulToken)
+        );
+        auction.start(address(stream), again);
+
+        vm.prank(bidder);
+        auction.claim(bidder);
+        assertEq(bidder.balance, 3 ether, "the refund pulled");
+    }
+
+    /// @dev After the release, another copy of the content (the copier's second package) is
+    ///      reserved out, and the burned item itself is barred.
+    function test_Dispute_ReleasedContentIsReservedForTheNamedArtist() public {
+        Work memory sibling = _copyOf(_package(rightfulRoot)[0]);
+        bytes32 siblingRoot = _publish(_one(sibling));
+        uint256 tokenId = _upheldBurn();
+        uint256 rightfulId = accounts.artistIdOf(rightful);
+        _release(tokenId, rightfulId);
+
+        bytes memory copy = _mintData(siblingRoot, _one(sibling), 0);
+        vm.expectRevert(
+            abi.encodeWithSelector(IMintPolicy.ContentReserved.selector, contentHash, rightfulId)
+        );
+        auction.start(address(stream), copy);
+        bytes memory burned = _mintData(copierRoot, _package(copierRoot), 0);
+        vm.expectRevert(
+            abi.encodeWithSelector(IMintPolicy.ContentUsed.selector, contentHash, tokenId)
+        );
+        auction.start(address(stream), burned);
+
+        (, uint256 rightfulToken) = _start(rightfulRoot, _package(rightfulRoot), 0);
+        assertEq(stream.workOf(rightfulToken).artistId, rightfulId);
+    }
+
+    /// @dev The release is the network's, names a registered artist and a burned token.
+    function test_Dispute_ReleaseIsGovernedAndNamesARegisteredArtistAndABurnedToken() public {
+        (uint256 saleId, uint256 tokenId) = _pauseCopy();
+        uint256 rightfulId = accounts.artistIdOf(rightful);
+
+        // A live token's content cannot be released.
+        bytes memory live = abi.encodeCall(
+            registry.releaseContent, (address(stream), tokenId, contentHash, rightfulId)
+        );
+        vm.expectRevert(
+            abi.encodeWithSelector(IMintPolicy.ContentUsed.selector, contentHash, tokenId)
+        );
+        this.asNetworkExternal(address(registry), live);
+
+        _cancel(saleId, _outcome(tokenId, "ar://upheld"));
+        vm.prank(copier);
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, copier)
+        );
+        registry.releaseContent(address(stream), tokenId, contentHash, rightfulId);
+        (, uint32 delay) =
+            manager.canCall(network, address(registry), registry.releaseContent.selector);
+        assertEq(delay, 24 hours, "the PARAMETER_SETTER class");
+
+        uint256 nobody = uint160(makeAddr("never registered"));
+        bytes memory unnamed = abi.encodeCall(
+            registry.releaseContent, (address(stream), tokenId, contentHash, nobody)
+        );
+        vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.UnknownArtist.selector, nobody));
+        this.asNetworkExternal(address(registry), unnamed);
+        assertEq(registry.releasedTo(address(stream), contentHash), 0);
+    }
+
+    /// @dev External, so `vm.expectRevert` sees a governed call's revert at this depth.
+    function asNetworkExternal(address target, bytes calldata data) external {
+        _asNetwork(target, data);
+    }
+
+    /// @dev The cancel cites an outcome recorded after the pause: one recorded before cannot
+    ///      cancel the sale.
+    function test_Dispute_CancelNeedsAnOutcomeRecordedAfterThePause() public {
+        (uint256 saleId, uint256 tokenId) = _start(copierRoot, _package(copierRoot), 0);
+        bytes32 early = _outcome(tokenId, "ar://before-the-pause");
+        _pause(saleId);
+        vm.prank(network);
+        vm.expectRevert(
+            abi.encodeWithSelector(IEnglishAuction.OutcomeNotRecorded.selector, saleId, early)
+        );
+        auction.cancel(saleId, early);
+        _cancel(saleId, _outcome(tokenId, "ar://after-the-pause"));
+        assertEq(
+            uint8(auction.auction(saleId).state), uint8(IEnglishAuction.AuctionState.CANCELLED)
+        );
+    }
+
+    // ------------------------------------------------------------------ rejected or lapsed
+
+    /// @dev A rejected dispute: the high bidder withdraws while paused, and the network resumes
+    ///      the sale with its clock extended to at least the full duration.
+    function test_Dispute_WithdrawWhilePausedThenResumeAfterARejectedDispute() public {
+        (uint256 saleId, uint256 tokenId) = _pauseCopy();
+        IEnglishAuction.Auction memory paused = auction.auction(saleId);
+        uint256 remaining = paused.endTime - paused.pausedAt;
+        assertEq(remaining, AUCTION_DURATION - 2 hours);
+
+        address stranger = makeAddr("stranger");
+        vm.prank(stranger);
+        vm.expectRevert(abi.encodeWithSelector(IEnglishAuction.NotHighBidder.selector, stranger));
+        auction.withdrawBid(saleId);
+        vm.expectEmit(address(auction));
+        emit IEnglishAuction.BidWithdrawn(saleId, bidder, 1 ether);
+        vm.prank(bidder);
+        auction.withdrawBid(saleId);
+        assertEq(auction.claimable(bidder), 1 ether);
+
+        vm.warp(block.timestamp + 1 days);
+        _asNetwork(address(auction), abi.encodeCall(auction.resume, (saleId)));
+        IEnglishAuction.Auction memory resumed = auction.auction(saleId);
+        assertEq(uint8(resumed.state), uint8(IEnglishAuction.AuctionState.ACTIVE));
+        assertEq(resumed.endTime, block.timestamp + AUCTION_DURATION, "extended to the duration");
+        assertGt(resumed.endTime, paused.endTime + 1 days, "longer than the pause alone");
+        assertEq(auction.minimumBid(saleId), 1 ether, "the withdrawn bid is the reserve");
+
+        // One pause per sale.
+        vm.prank(pauser1);
+        vm.expectRevert(abi.encodeWithSelector(IEnglishAuction.PauseExhausted.selector, saleId));
+        auction.pause(saleId, DISPUTE_REF);
+
+        address late = makeAddr("lateBidder");
+        _ethBid(saleId, late, 1 ether);
+        _settleAtEnd(saleId);
+        assertEq(stream.ownerOf(tokenId), late);
+    }
+
+    /// @dev With no call within 3 days the pause lapses: the sale runs again with its clock
+    ///      extended, and the network can no longer cancel it.
+    function test_Dispute_APauseLapsesAfterThreeDays() public {
+        (uint256 saleId, uint256 tokenId) = _pauseCopy();
+        uint256 pausedAt = block.timestamp;
+        bytes32 outcome = _outcome(tokenId, "ar://late-outcome");
+        vm.warp(pausedAt + 3 days);
+        assertEq(uint8(auction.auction(saleId).state), uint8(IEnglishAuction.AuctionState.PAUSED));
+        vm.warp(pausedAt + 3 days + 1);
+        IEnglishAuction.Auction memory a = auction.auction(saleId);
+        assertEq(uint8(a.state), uint8(IEnglishAuction.AuctionState.ACTIVE), "lapsed");
+        assertEq(a.endTime, pausedAt + 3 days + AUCTION_DURATION, "extended");
+        assertEq(a.pausedAt, 0);
+
+        vm.prank(network);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IEnglishAuction.InvalidAuctionState.selector,
+                saleId,
+                IEnglishAuction.AuctionState.ACTIVE
+            )
+        );
+        auction.cancel(saleId, outcome);
+        _ethBid(saleId, makeAddr("next"), 2 ether);
+        _settleAtEnd(saleId);
+        assertEq(stream.ownerOf(tokenId), makeAddr("next"));
+        assertEq(auction.claimable(bidder), 1 ether, "the outbid bid credited");
+    }
+
+    // ------------------------------------------------------------------ statements
+
+    /// @dev After a sale a dispute only produces a statement: nothing is confiscated, and the
+    ///      renderer shows the statement.
+    function test_Dispute_AfterASaleIsAStatementOnly() public {
+        uint256 tokenId = _sell(copierRoot, _package(copierRoot), 1, bidder, 1 ether);
+        bytes32 outcome = _outcome(tokenId, "ar://after-sale-outcome");
+        assertEq(stream.ownerOf(tokenId), bidder, "nothing is confiscated");
+        assertEq(uint8(stream.workOf(tokenId).outcome), uint8(Outcome.SOLD));
+        assertTrue(_shows(stream.tokenURI(tokenId), outcome));
+        (, uint256 royalty) = stream.royaltyInfo(tokenId, 1 ether);
+        assertEq(royalty, 0.06529 ether, "royalties unchanged");
+    }
+
+    /// @dev An outcome names a token that exists: not one not yet minted, nor a burned one.
+    function test_Dispute_AnOutcomeNamesAnExistingToken() public {
+        uint256 burned = _upheldBurn();
+        uint256 nextId = stream.totalMinted() + 1;
         vm.expectRevert(
             abi.encodeWithSelector(
                 IStatementLog.UnknownDisputeSubject.selector, address(stream), nextId
             )
         );
-        statements.appendPlatform(_outcome(address(stream), nextId));
-
-        uint256 burned = _upheldBurn();
-        vm.prank(platform);
+        this.outcomeExternal(nextId);
         vm.expectRevert(
             abi.encodeWithSelector(
                 IStatementLog.UnknownDisputeSubject.selector, address(stream), burned
             )
         );
-        statements.appendPlatform(_outcome(address(stream), burned));
-
-        vm.prank(platform);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IStatementLog.UnknownDisputeSubject.selector, address(editions), burned + 1
-            )
-        );
-        statements.appendPlatform(_outcome(address(editions), burned + 1));
+        this.outcomeExternal(burned);
     }
 
-    /// Regression: LIFECYCLE-4 (docs/security/internal-review-2026-10.md)
-    /// @dev LIFECYCLE-4 (a) and (b), inverted: an outcome recorded about an item before its
-    ///      mint (subject `(address(0), itemHash)`) is shown on the work minted from it and on
-    ///      that work's edition, until an outcome about the token itself takes precedence.
-    function test_APreMintOutcomeShowsOnTheWorkAndItsEdition() public {
-        Work memory w = _work(rightful, collectionId);
-        w.item.kind = uint8(ItemKind.EDITION_MASTER);
-        w.item.edition = EditionTerms(10, CURRENCY_ETH, SaleKind.UNIFORM_AUCTION, "");
-        bytes32 masterRoot = _publish(_one(w));
-        bytes32 preMint = _platformStatement(
-            address(0),
-            uint256(WorksHashing.itemHash(w.item)),
-            StatementKinds.DISPUTE_OUTCOME,
-            "ar://pre-mint-outcome"
-        );
-        uint256 tokenId = _sell(masterRoot, _one(w), 0, bidder, 1 ether);
-        assertEq(statements.latestDisputeOutcome(address(stream), tokenId), preMint);
-        (bytes32 own,) = statements.disputeOutcomeOf(address(stream), tokenId);
-        assertEq(own, bytes32(0), "no outcome about the token itself");
-        assertTrue(_shows(stream.tokenURI(tokenId), preMint), "(a) on the work");
-        editions.createEdition(tokenId, w.item);
-        assertTrue(_shows(editions.uri(tokenId), preMint), "(b) on its edition");
-
-        // An outcome about the token is the work's current status from then on.
-        bytes32 later = _platformStatement(
-            address(stream), tokenId, StatementKinds.DISPUTE_OUTCOME, "ar://token-outcome"
-        );
-        assertEq(statements.latestDisputeOutcome(address(stream), tokenId), later);
-        (own,) = statements.disputeOutcomeOf(address(stream), tokenId);
-        assertEq(own, later);
-        assertTrue(_shows(stream.tokenURI(tokenId), later));
-        assertTrue(_shows(editions.uri(tokenId), later));
-        assertFalse(_shows(stream.tokenURI(tokenId), preMint));
-    }
-
-    function _payment(uint256 amount) internal view returns (Payment memory) {
-        return Payment(PaymentMethod.DIRECT, bidder, amount, 0, 0, "");
+    function outcomeExternal(uint256 tokenId) external {
+        _outcome(tokenId, "ar://outcome");
     }
 }

@@ -49,7 +49,7 @@
   },
   {
     "inputs": [],
-    "name": "federationRegistry",
+    "name": "independentStreamRegistry",
     "outputs": [
       {
         "internalType": "address",
@@ -125,7 +125,7 @@
         "type": "address"
       }
     ],
-    "name": "setFederationRegistry",
+    "name": "setIndependentStreamRegistry",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
@@ -222,6 +222,37 @@
       },
       {
         "indexed": true,
+        "internalType": "address",
+        "name": "to",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      }
+    ],
+    "name": "CreditExpired",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "currency",
+        "type": "address"
+      },
+      {
+        "indexed": true,
         "internalType": "uint256",
         "name": "saleId",
         "type": "uint256"
@@ -252,7 +283,7 @@
         "type": "address"
       }
     ],
-    "name": "FederationRegistrySet",
+    "name": "IndependentStreamRegistrySet",
     "type": "event"
   },
   {
@@ -517,17 +548,6 @@
       }
     ],
     "name": "NothingToClaim",
-    "type": "error"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "deadline",
-        "type": "uint256"
-      }
-    ],
-    "name": "PaymentExpired",
     "type": "error"
   },
   {

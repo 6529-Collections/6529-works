@@ -6,6 +6,7 @@ import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol
 import { VrfEntropyModule } from "src/entropy/VrfEntropyModule.sol";
 import { IEntropyModule } from "src/interfaces/IEntropyModule.sol";
 import { BoundedParameter } from "src/governance/BoundedParameter.sol";
+import { IModuleSlots } from "src/interfaces/core/IModules.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { PackageItem, SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
@@ -128,7 +129,8 @@ contract VrfEntropyModuleTest is EntropyBase {
             _config(),
             RETRY_DELAY,
             IPackageRegistry(address(registry)),
-            address(registry).codehash
+            address(registry).codehash,
+            IModuleSlots(address(0))
         );
     }
 
@@ -160,7 +162,8 @@ contract VrfEntropyModuleTest is EntropyBase {
             _config(),
             RETRY_DELAY,
             IPackageRegistry(address(registry)),
-            wrong
+            wrong,
+            IModuleSlots(address(0))
         );
     }
 
@@ -244,8 +247,8 @@ contract VrfEntropyModuleTest is EntropyBase {
             ^ IEntropyModule.seedOf.selector ^ IEntropyModule.requestOf.selector
             ^ IEntropyModule.retryDelay.selector ^ IEntropyModule.coordinator.selector
             ^ IEntropyModule.setCoordinator.selector ^ IEntropyModule.isDeliveredContent.selector
-            ^ IEntropyModule.seedOfContent.selector ^ IEntropyModule.requestFederatedSeed.selector
-            ^ IEntropyModule.federatedSeedOf.selector;
+            ^ IEntropyModule.seedOfContent.selector ^ IEntropyModule.requestIndependentSeed.selector
+            ^ IEntropyModule.independentSeedOf.selector;
         assertEq(type(IEntropyModule).interfaceId, expected);
     }
 

@@ -2,10 +2,12 @@
 pragma solidity ^0.8.24;
 
 import { Rec, RendererBase } from "./RendererBase.sol";
-import { RendererEditionsMock } from "../../mocks/content/RendererMocks.sol";
-import { IStream } from "src/interfaces/IStream.sol";
-import { IStreamViews } from "src/interfaces/IStreamViews.sol";
-import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
+import {
+    CollectionInfo,
+    RecordInfo,
+    RendererEditionsMock,
+    WorkCore
+} from "./RendererCoreMocks.sol";
 import { Limits } from "src/interfaces/types/Limits.sol";
 import { SSTORE2 } from "src/libraries/SSTORE2.sol";
 import { License, SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
@@ -187,12 +189,12 @@ contract RendererRecordsTest is RendererBase {
     /// @dev Decision M2: the renderer never reverts for a record: it says so and shows the core.
     function test_Record_AnInvalidRecordKeepsTheChainTraits() public {
         _raw(bytes('{"name":5}'));
-        IStreamViews.WorkCore memory core = _core();
+        WorkCore memory core = _core();
         core.collectionId = 3;
         core.serial = 12;
         core.artistId = 0xabc;
         stream.setWork(ID, core);
-        stream.setCollection(3, IStreamViews.Collection("Spring", bytes32(0), 12));
+        stream.setCollection(3, CollectionInfo("Spring", bytes32(0), 12));
         disputeLog.set(address(stream), ID, bytes32(uint256(9)));
 
         string memory j = _out();
@@ -217,11 +219,11 @@ contract RendererRecordsTest is RendererBase {
             ),
             _media(file, 0)
         );
-        IStreamViews.WorkCore memory core = _core();
+        WorkCore memory core = _core();
         core.collectionId = 1;
         core.serial = 4;
         stream.setWork(ID, core);
-        stream.setCollection(1, IStreamViews.Collection("C", bytes32(0), 4));
+        stream.setCollection(1, CollectionInfo("C", bytes32(0), 4));
 
         string memory j = _out();
 
@@ -274,7 +276,7 @@ contract RendererRecordsTest is RendererBase {
     function test_Record_MustBeAnIdentityFileWithinTheSizeLimit() public {
         bytes32 file = _file(png, IDENTITY, "image/png");
         _install(file);
-        IWorkRecords.RecordInfo memory info = _info();
+        RecordInfo memory info = _info();
 
         info.recordFileId = _file(bytes('{"name":"N"}'), GZIP, "application/json");
         _setRecordInfo(info);
@@ -337,7 +339,7 @@ contract RendererRecordsTest is RendererBase {
     function test_Record_NotAFileTheStoreKnowsIsIncomplete() public {
         bytes32 file = _file(png, IDENTITY, "image/png");
         _install(file);
-        IWorkRecords.RecordInfo memory info = _info();
+        RecordInfo memory info = _info();
         info.recordFileId = bytes32(uint256(0xdead));
         _setRecordInfo(info);
         _assertCoreOnly("incomplete");
@@ -853,18 +855,17 @@ contract RendererRecordsTest is RendererBase {
         Rec memory r = _rec();
         r.dimensions = "1 x 1";
         _install(file, r);
-        IStreamViews.WorkCore memory core = _core();
+        WorkCore memory core = _core();
         core.collectionId = 1;
         core.serial = 3;
         core.seedPolicy = uint8(SeedPolicy.ARTIST);
         stream.setWork(ID, core);
-        stream.setCollection(1, IStreamViews.Collection("C", bytes32(0), 3));
-        records.setSeed(ID, SeedPolicy.ARTIST, bytes32(uint256(1)));
+        stream.setCollection(1, CollectionInfo("C", bytes32(0), 3));
+        stream.setSeed(ID, bytes32(uint256(1)));
         disputeLog.set(address(stream), ID, bytes32(uint256(1)));
         string memory full = _out();
         RendererEditionsMock editions = new RendererEditionsMock(address(stream));
-        editions.setMaster(5, ID, _sha(file));
-        string memory edition = _decode(renderer.tokenURI(address(editions), 5));
+        string memory edition = _decode(renderer.tokenURI(address(editions), ID));
         _setOpen(false);
         string memory coreOnly = _out();
 

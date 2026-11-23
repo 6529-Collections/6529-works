@@ -4,10 +4,10 @@ pragma solidity ^0.8.24;
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IArtistPayoutResolver } from "src/economics/interfaces/IArtistPayoutResolver.sol";
 import { IConsolidationSource } from "src/interfaces/IArtistRegistry.sol";
-import { IEditions } from "src/interfaces/IEditions.sol";
-import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
+import { IEditions } from "src/interfaces/core/IEditions.sol";
+import { IIndependentStreamRegistry } from "src/interfaces/IIndependentStreamRegistry.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
-import { IStream } from "src/interfaces/IStream.sol";
+import { IStream } from "src/interfaces/core/IStream.sol";
 
 /// @notice Answers ERC-165 for one interface (plus ERC-165 itself), as a binding target.
 contract InterfaceStub {
@@ -28,9 +28,9 @@ contract PackageRegistryStub is InterfaceStub {
     constructor() InterfaceStub(type(IPackageRegistry).interfaceId) { }
 }
 
-/// @notice Stands in for the v1.1 federation registry.
-contract FederationRegistryStub is InterfaceStub {
-    constructor() InterfaceStub(type(IFederationRegistry).interfaceId) { }
+/// @notice Stands in for the v1.1 Independent Stream registry.
+contract IndependentStreamRegistryStub is InterfaceStub {
+    constructor() InterfaceStub(type(IIndependentStreamRegistry).interfaceId) { }
 }
 
 /// @notice The 6529 Stream Editions read the artist registry makes: `masterOf(id)`, which reverts

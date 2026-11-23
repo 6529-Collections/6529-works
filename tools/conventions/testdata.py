@@ -200,7 +200,7 @@ def example_sheet_inputs() -> dict:
             "token": sheet["work"]["token"],
             "tokenId": "42",
             "WorkMinted": {"contentHash": sheet["work"]["contentHash"]},
-            "Stream": {
+            "Stream6529": {
                 "ownerOf": sheet["work"]["owner"],
                 "coreOf": {"itemHash": sheet["work"]["itemHash"], "artistId": sheet["work"]["artistId"],
                            "collectionId": "1", "kind": "ORIGINAL", "seedPolicy": "NONE"},

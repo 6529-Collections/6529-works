@@ -18,7 +18,7 @@ import {
     CURRENCY_DEFAULT,
     CURRENCY_ETH,
     PRODUCT_EDITIONS,
-    PRODUCT_FEDERATED,
+    PRODUCT_INDEPENDENT,
     PRODUCT_STREAM
 } from "../../src/interfaces/types/EconomicsTypes.sol";
 import { ISplitWallet } from "../../src/economics/interfaces/ISplitWallet.sol";
@@ -87,7 +87,7 @@ contract WorksHashingTest is Test {
             PRODUCT_EDITIONS, 0xdda24e9b6aae8e08617e9965b04fb0c49afa288965fbdf1734798e07309ffb7b
         );
         assertEq(
-            PRODUCT_FEDERATED, 0x12f6fbd5cb8f4522cd7d37f0fdc7097a4960a4f90e7a869820d34c7bdb75edff
+            PRODUCT_INDEPENDENT, 0xceae10eeadd6514ab815b7d46a9e2a6acffb06f8b066a317051724d4676d4051
         );
     }
 

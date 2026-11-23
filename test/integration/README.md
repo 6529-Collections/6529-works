@@ -1,12 +1,9 @@
 # integration
 
-End-to-end flows on the real, wired v1 contracts (integration lane B). Nothing
-between v1 modules is mocked. Only external systems are:
-- the 6529 delegation contract, using the identity lane's faithful reduction;
-- the Chainlink VRF v2.5 coordinator, using the entropy lane's mock;
-- Permit2, using the sales lane's faithful reproduction placed at the canonical
-  address with `deployCodeTo`;
-- an EIP-2612 ERC-20.
+End-to-end flows on the real, wired contracts. Nothing between the modules is mocked. Only
+external systems are:
+- the 6529 delegation contract, using the identity suites' faithful reduction;
+- the Chainlink VRF v2.5 coordinator, using the entropy suites' mock.
 
 ```bash
 forge test --match-path "test/integration/*"
@@ -15,97 +12,58 @@ forge test --match-test test_Gas_Table -vv   # prints the gas table
 
 ## Deployment
 
-[`WorksDeployment.sol`](WorksDeployment.sol) deploys the system with Lane A's
-deploy library, [`script/DeployV1.sol`](../../script/DeployV1.sol), the same code
-the deploy script broadcasts:
-- `DeployV1.deploy` creates every v1 contract in dependency order, with the immutable
-  and pinned dependencies as constructor arguments;
-- `DeployV1.install` runs `GovernanceConfigurator.configure` with the committed
-  [`config/genesis.example.json`](../../config/genesis.example.json): its role and
-  selector map and its genesis wiring.
+[`CoreIntegrationBase.sol`](CoreIntegrationBase.sol) deploys the system with the deploy library,
+[`script/DeployCore.sol`](../../script/DeployCore.sol), the same code the deploy script
+broadcasts: `DeployCore.deploy` creates every contract, the genesis configuration
+([`config/genesis.core.example.json`](../../config/genesis.core.example.json)) is installed with
+its role map and wiring, the network accepts, and `VerifyCore` reads everything back. The JSON's
+placeholder holders are replaced by the tests' actors, so the curation signers are keys the
+tests hold.
 
-The JSON's placeholder holders are replaced by the tests' actors, so the curation
-signers are keys the tests hold.
-
-[`IntegrationBase.sol`](IntegrationBase.sol) adds the actors and package building.
-It signs EIP-712 digests read from the contracts, builds sorted-pair Merkle trees
-over `WorksHashing.leaf`, and drives sales and governed actions. A zero-delay role
-acts directly; any other role is scheduled, waited out and executed.
+[`IntegrationBase.sol`](IntegrationBase.sol) adds the actors and package building: it signs
+EIP-712 digests read from the contracts, builds sorted-pair Merkle trees over
+`WorksHashing.leaf`, and drives sales and governed actions (a zero-delay role acts directly; any
+other role is scheduled, waited out and executed).
+[`IndependentIntegrationBase.sol`](IndependentIntegrationBase.sol) adds a listed Independent Stream
+pair; [`GasBase.sol`](GasBase.sol) the whole-transaction gas measurement.
 
 ## Flows
 
-| File | Flow (integration brief) |
+| File | Flow |
 | --- | --- |
-| [`CuratedSale.t.sol`](CuratedSale.t.sol) | 1. Package, attestation, registration, acceptance and move signature; `start` and `startWithBid`; bids and anti-snipe; `settle`; split-wallet release (the artist pulls, a keeper pushes the collaborator); `royaltyInfo` against the resolver. Also an ERC-20 auction started with a relayed Permit2 bid, the escrow fallback, a pending delivery, and the guardian's curation controls. |
-| [`MasterEdition.t.sol`](MasterEdition.t.sol) | 2. Master settles, then `createEdition` (a revoked root still counts, an unregistered one does not); both directions of the link. A new sale method admitted by governance mints copies. Linked metadata. The edition royalty follows a master re-rate, and a zero-fee edition locks no fee. |
-| [`ContentToTokenURI.t.sol`](ContentToTokenURI.t.sol) | 3. The uploader's golden calldata, then `attestBase64`, `openRecord`, `finalize` and `syncOnChain`; `tokenURI` in locator and inline modes; and the gas matrix. |
-| [`RecordAmendments.t.sol`](RecordAmendments.t.sol) | 3, continued. Relicense with consent and governance, a new default renderer, the errata repin, and artist and owner statements. |
-| [`IdentityRecovery.t.sol`](IdentityRecovery.t.sol) | 4. Registration and consolidation standing; stage, cancel, veto and execute; the payout freeze during a change and an override; sticky standing against a key thief; the split-wallet pull and signed release after recovery. |
-| [`Dispute.t.sol`](Dispute.t.sol) | 5. Guardian pause; the PLATFORM `DISPUTE_OUTCOME` statement shown by the renderer; the 48-hour governed `cancel` (refund, then burn); the governed `releaseContent` to the rightful artist, whose item then consumes while another copy is refused; outcomes name existing tokens, and a pre-mint outcome shows on the work and its edition. Also a rejected dispute, a lapsed pause, an after-sale dispute and the emergency pause. |
-| [`Museum.t.sol`](Museum.t.sol) | The museum rule (D140, ADR 0005): the museum wired at genesis in the 14-day FUNDS_SETTER class and read back as Verify does; a governed change and its refusals; an unbid work to the museum named at settlement; the 60-day freeze exit to the museum with the bid refunded; the museum's pending delivery that the artist cannot claim; and a federated work's unbid outcome, which stays with its artist. |
-| [`VrfWork.t.sol`](VrfWork.t.sol) | 6. `requestSeed`, the mock fulfilment, `start`, and the seed in the metadata. Also the 3-day retry and the artist seed. |
-| [`Genesis.t.sol`](Genesis.t.sol) | 7. Deploy, configure and wire. The readback passes and the configurator keeps no ADMIN. Guardians cancel hostile admin operations, the cold admin removes the hot admin, and `configure` fits the transaction cap. |
-| [`StreamSaleMethods.t.sol`](StreamSaleMethods.t.sol) | Owner decision 15: a second 1/1 sale method, admitted on Stream through the 30-day governance path, sells a work end to end (mint into custody, price from the item's params, fee and seller paid, delivery, settled); an unadmitted adapter is refused; each adapter sells only its own kind; the English auction works unchanged beside it; removing the English auction stops new starts while a live auction still settles to its winner. |
-| [`Helpers.t.sol`](Helpers.t.sol) | The helpers themselves: the package Merkle trees agree with OpenZeppelin's `MerkleProof` for 1 to 17 leaves. |
-| [`GasHarness.t.sol`](GasHarness.t.sol) | The gas report's harness against the truth: a start measured from a fully cold state equals the corrected figure after every account it reaches was warmed, and storage the harness does not cool is refused. |
-| [`PieceLifecycle.t.sol`](PieceLifecycle.t.sol) | A piece's whole life (ADR 0005): a 1/1 and its uniform-price edition auction side by side, the 1/1's anti-snipe moving the edition close, the edition's own soft close, both settlements, claims, the network's and the seller's shares, and the master's royalty on the edition. Also an unbid 1/1 going to the museum while its editions sell, no edition bid minting nothing, and a cancelled 1/1 voiding its edition auction with full refunds. |
-| [`EditionAuctionDifferential.t.sol`](EditionAuctionDifferential.t.sol) | Differential fuzzing of the edition auction against a brute-force per-unit clearing ([`UniformClearingReference`](../helpers/UniformClearingReference.sol)): random books of bids and raises, capped and uncapped, under four breadth margins; the live clearing, every bid's outcome and the settlement order against the reference; other settlers' skipped, partial and reordered sweeps, after which a keeper still settles and every outcome still equals the reference; then every claim against exact supply and ETH conservation. |
-| [`RoyaltyInfoGas.t.sol`](RoyaltyInfoGas.t.sol) | `royaltyInfo` under a caller's gas limit: a cold call succeeds with its 50,000-gas budget ([ADR 0004](../../docs/adr/0004-gas-budgets-under-glamsterdam.md)), and every lower limit reverts, never answering a zero or partial royalty. |
-| [`GasReport.t.sol`](GasReport.t.sol) | The budgets ([ADR 0004](../../docs/adr/0004-gas-budgets-under-glamsterdam.md)): Prague gas, and the exact new slots and accounts, of `start` and `startWithBid` (one and two parties, VRF, edition master, ERC-20 by Permit2, first ever, new collection, new terms), `bid`, `settle` (with and without a bid), `consume`, `createEdition`, `refreshStanding` and `royaltyInfo`, and `tokenURI` by size. |
+| [`CuratedSale.t.sol`](CuratedSale.t.sol) | Package, attestation, registration, acceptance and move signature; `start` and `startWithBid`; bids and the soft close; `settle`; releases from the split vaults |
+| [`Museum.t.sol`](Museum.t.sol) | A work with no bid goes to the museum; a governed change of the museum; rescue |
+| [`Dispute.t.sol`](Dispute.t.sol) | Pause, the dispute statement the renderer shows, cancel and the content release |
+| [`VrfWork.t.sol`](VrfWork.t.sol) | `requestSeed`, the mock fulfilment, the start, and the seed in the metadata |
+| [`Releases.t.sol`](Releases.t.sol), [`Credits.t.sol`](Credits.t.sol), [`EscrowRecovery.t.sol`](EscrowRecovery.t.sol), [`LoweredShareRoyalties.t.sol`](LoweredShareRoyalties.t.sol) | Money: releases, credits that age under a changing unclaimed period, escrow recovery, a lowered network share |
+| [`RecordLifecycle.t.sol`](RecordLifecycle.t.sol), [`ContentToTokenURI.t.sol`](ContentToTokenURI.t.sol), [`WorkRecordsStackPorted.t.sol`](WorkRecordsStackPorted.t.sol), [`SyncOnChainResumePorted.t.sol`](SyncOnChainResumePorted.t.sol) | A work's record from open to finalized, and content from upload to `tokenURI` |
+| [`IdentityRecovery.t.sol`](IdentityRecovery.t.sol) | Consolidated wallets, an account's own change, a network replacement, a freeze and a contest |
+| [`AccountsSuccessor.t.sol`](AccountsSuccessor.t.sol) | The accounts module replaced by a successor that reads through the genesis module ([`ReadThroughAccounts`](../mocks/identity/ReadThroughAccounts.sol), a test double): a moved account keeps its ID, payout address, wallets and freeze, and its money |
+| [`PieceLifecycle.t.sol`](PieceLifecycle.t.sol), [`EditionAuction.t.sol`](EditionAuction.t.sol), [`EditionAuctionDifferential.t.sol`](EditionAuctionDifferential.t.sol), [`MasterEditionPorted.t.sol`](MasterEditionPorted.t.sol) | A 1/1 and its edition auction: close, clearing, claims, refunds, adopt and rebind; differential fuzzing against [`UniformClearingReference`](../helpers/UniformClearingReference.sol) |
+| [`IndependentPair.t.sol`](IndependentPair.t.sol), [`IndependentEditionSale.t.sol`](IndependentEditionSale.t.sol) | An Independent Stream artist's pair on the real stack; its edition sale from the open to the claims, with the 90/10 split released and every wei accounted |
+| [`ModuleLifecycle.t.sol`](ModuleLifecycle.t.sol), [`ModuleSwap.t.sol`](ModuleSwap.t.sol) | Announcing, activating, cancelling and removing modules and minters; every module replaced, with tokens, facts and owed money unchanged |
+| [`GenesisPorted.t.sol`](GenesisPorted.t.sol), [`StreamCorePolicyPorted.t.sol`](StreamCorePolicyPorted.t.sol), [`StreamDependenciesPorted.t.sol`](StreamDependenciesPorted.t.sol), [`StreamSalePorted.t.sol`](StreamSalePorted.t.sol), [`RecipientValidationPorted.t.sol`](RecipientValidationPorted.t.sol), [`CurationSignerPorted.t.sol`](CurationSignerPorted.t.sol), [`HelpersPorted.t.sol`](HelpersPorted.t.sol) | Behaviours carried over from the suites of the earlier contracts, on the current stack |
+| [`GasReport.t.sol`](GasReport.t.sol), [`GasHarness.t.sol`](GasHarness.t.sol), [`RoyaltyInfoGas.t.sol`](RoyaltyInfoGas.t.sol), [`TokenUriBudget.t.sol`](TokenUriBudget.t.sol) | The gas table (Prague gas, exact new slots and accounts per row), its harness checked against a cold transaction, `royaltyInfo` under a caller's gas limit, and `tokenURI` inside 8M gas at every cap |
 
 ## Invariant suites
 
-Two stateful invariant suites run on the same real stack, in [`invariant/`](invariant/). Each
-test contract inherits its handler and targets itself, so the handler has every helper above and
-no handler contract meets the EIP-170 limit. Each action is
-bounded, never reverts (`fail_on_revert`), predicts its outcome from the protocol's rules and
+The stateful suites in [`invariant/`](invariant/) run on the same real stack:
+`StreamLifecycleInvariant` (handler `StreamLifecycleHandler`, with `StreamLifecycleHostile`),
+`StreamStatesInvariant` and `EditionAuctionInvariant` (handler `EditionAuctionHandler`). Each
+action is bounded, never reverts (`fail_on_revert`), predicts its outcome from the rules and
 records any disagreement; the invariant function asserts there is none, then checks the state.
-
-| Suite | Actions | Invariants |
-| --- | --- | --- |
-| [`StreamLifecycleInvariant.t.sol`](invariant/StreamLifecycleInvariant.t.sol) (handler [`StreamLifecycleHandler.sol`](invariant/StreamLifecycleHandler.sol)) | register and accept packages; move items to Stream and start auctions (with or without a first bid, a revoked move); bid; settle; dispute pause; cancel (upheld) or resume (rejected, with a withdrawal); `releaseContent`; `openRecord`, `setRecord`, `finalize`, `addLocator`; governed relicense; transfer; stage a recovery override and end it (veto or execution); the restrained keys trying every artist power; the auction's start pause and governed unpause; a hostile contract (reverting, burning its gas or re-entering) that bids, receives works and claims, its refused deliveries claimed by the winning bidder while a third party's claim routed through it is refused; time | every token has exactly one known owner, or auction custody while its sale is unsettled or its delivery pending; token IDs assigned once, in order, never reused; a content hash held by at most one live item unless released to its beneficiary; a finalized record keeps its content hashes, and media never changes; a CC0 work stays CC0 with the pinned text; locators are append-only; a restrained artist never acts; the auction holds exactly the live bids and credits; an unbid work ends with the museum, at once even while its artist is restrained, and the museum holds nothing else |
-| [`EditionAuctionInvariant.t.sol`](invariant/EditionAuctionInvariant.t.sol) (handler [`EditionAuctionHandler.sol`](invariant/EditionAuctionHandler.sol)) | start 1/1s and open their edition auctions; bid (a quarter in the soft-close window, now and then far above the band), raise, bid on the 1/1 in its anti-snipe window; pause a 1/1 for a dispute and withdraw edition bids, then cancel it (voiding the edition sale) or resume it; settle the 1/1 (an unbid one goes to the museum); create editions; settle edition sales as keepers do, each settler sweeping on its own: one keeper, a handoff from a keeper's half sweep to another, a griefer's order that skips a departure, a reordered order (refused), interleaved keepers; spread a few books wider than one settle call scans, so settlement scans over calls; try to settle early; try to claim while a sale is SETTLING; claim directly or by `claimBidFor`; withdraw credits; time | no unsold or extra copies: minted equals the units claimed, never above `k`, exactly `k` once every bid is claimed; ETH conservation, exactly what is owed; the live clearing and the settled one equal a brute-force per-unit reference (the breadth rule, `R*`); the cap; FIFO at the cut step, every claim equal to the reference's fill in arrival order; the view equals settlement; the clocks (`max(closeAt, softEnd)` within the backstop, bidding and withdrawals open exactly when the rules say); no settlement before the end or a final 1/1; a void sale refunds everyone; per-settler sweeps: a settler's call moves only its own progress, a skipping order never finishes, and a keeper always completes settlement within a bounded number of calls; no claim, by the bidder or pushed, while a scan or a sweep is unfinished |
-
-A second, smaller suite covers the content store on its own:
-[`ContentStoreInvariant.t.sol`](../content/ContentStoreInvariant.t.sol) writes and rewrites chunks,
-registers and re-registers manifests (one over the same chunks with another MIME type, one that
-breaks the layout rule), refuses malformed manifests and reads ranges back: chunks are written
-once at a fixed pointer, manifests are idempotent and immutable, a file is complete exactly when
-every chunk it names is stored with its layout length, and a read returns exactly the bytes
-written (a range over a missing or mis-sized chunk never reads).
-
-In CI each suite asserts its state every fourth call and after the last call of each run
-(`forge-config: default.invariant.check_interval = 4`); every action still checks its own
-outcome at once, and the `deep` profile asserts the state after every call.
-
-`test_EveryActionRuns` in the lifecycle suite replays sequences of the campaign's shape from
-fixed seeds and asserts that every action, and the paths the invariants are about (cancel,
-release and re-consumption, recovery, refusals), really ran, so a campaign cannot pass
-vacuously.
+Each suite has a self-test that replays sequences from fixed seeds and asserts that every action
+and the paths the invariants are about really ran.
 
 ```bash
 forge test --match-path "test/integration/invariant/*"            # CI: 256 runs x depth 128
-forge test --match-contract ContentStoreInvariantTest
-FOUNDRY_PROFILE=deep forge test --match-test "invariant_"         # nightly: 2,000 x 256
+FOUNDRY_PROFILE=deep forge test --match-test "invariant_"         # nightly
 ```
 
 The fork tests against the real external systems are in [`test/fork/`](../fork/README.md).
 
-## Findings
+## Open findings
 
-Every integration finding was resolved in the lane that owned it. Each one is now a
+While a finding is open, its check runs through `_expectFailure`: the test passes while the
+finding stands and fails with "finding fixed" once it is resolved, when the check becomes a
 regular test.
-
-| ID | Resolved by | Test |
-| --- | --- | --- |
-| G-1: no default currency at genesis | #31 wires ETH as each product's default | `Genesis.t.sol` `test_DefaultCurrencyIsEthFromGenesis` |
-| G-2: two-party `startWithBid` over 350K | #34 and #33 | `GasReport.t.sol` `test_Gas_StartWithBid_TwoPartyWork` |
-| E-1: an edition did not take its master's rate | #14 | `MasterEdition.t.sol` `test_EditionTakesTheMastersCurrentRate` |
-| L-1: zero-fee terms blocked edition sales | #35 | `MasterEdition.t.sol` `test_ZeroFeeEditionLocksNoFee` |
-
-While a finding is open, its test is named `test_Finding_*`. That test passes while
-the finding stands, and fails with "finding fixed" once it is resolved.
-
-`GasReport.t.sol` also tracks one observation, G-3, as its own row. The first bid
-under a new set of sale terms pays once to record the terms with their increment
-floor. That bid costs about 387K, against about 317K at steady state.

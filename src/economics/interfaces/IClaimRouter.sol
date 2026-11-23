@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IReleaseVerifier } from "./IReleaseVerifier.sol";
@@ -114,7 +114,7 @@ interface IClaimRouter is IERC165 {
     /// @notice Releases every plain claim in order. In atomic mode any failure reverts the batch;
     ///         in continue mode a failed item emits {ClaimFailed}, releases 0 and the batch goes
     ///         on. A release from a wallet whose fixed payee is the network also pays the
-    ///         network its share (R11), so callers leave out the network's own index: an item
+    ///         network its share, so callers leave out the network's own index: an item
     ///         for it after a release of the same wallet and asset releases nothing and fails.
     /// @param claims The plain releases, at most {MAX_CLAIMS} (at most 8 in continue mode, the
     ///        router's `MAX_CONTINUE_CLAIMS`; `TooManyClaims` otherwise).

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
@@ -14,8 +14,8 @@ import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol
 ///      plain transfer) and to the fee recipient; a push that
 ///      fails is deposited in the revenue escrow instead. Refunds and overpayments are credited
 ///      here and claimed by the account. Every ERC-20 movement is checked by exact balance delta.
-///      Federation readiness: a token is served when governance listed it, or when the
-///      federation registry reports it active, in which case the network fee comes from its
+///      Independent Stream readiness: a token is served when governance listed it, or when the
+///      Independent Stream registry reports it active, in which case the network fee comes from its
 ///      registry entry, not from the token.
 interface ISaleAdapter is IERC165 {
     /// @notice A sale started: an English auction started, or an edition sale opened.
@@ -48,8 +48,8 @@ interface ISaleAdapter is IERC165 {
     /// @param buyer The paying bidder or buyer; zero when no bid won an auction, and zero for an
     ///        edition auction, whose winners claim later (`IUniformEditionAuction.BidClaimed`).
     /// @param recipient Who receives the tokens: when no bid won an English auction, the 6529
-    ///        Network Museum, or a federated work's artist (ADR 0005); zero for an edition
-    ///        auction.
+    ///        Network Museum, or an Independent Stream work's artist (ADR 0005); zero for an
+    ///        edition auction.
     /// @param quantity The number of tokens sold: 1 for an English auction, the copies sold
     ///        otherwise (an edition auction's count, possibly zero).
     /// @param currency The locked currency, zero for ETH.
@@ -76,10 +76,9 @@ interface ISaleAdapter is IERC165 {
     /// @notice `amount` was credited to `account` and is claimable: an outbid refund, a
     ///         withdrawn bid, or an ETH overpayment; for the auction also the high bid refunded by
     ///         a dispute cancel or by a sale ending unsold (a currency freeze past its 14 days, or
-    ///         a delisted federated contract), and an ERC-20 settlement payout that failed in its
-    ///         own frame (MONEY-1), which `IEnglishAuction.claimFor` pays out.
-    /// @param account The account credited: the bidder or buyer, or (MONEY-1) the seller or fee
-    ///        wallet.
+    ///         a delisted Independent Stream contract), and an ERC-20 settlement payout that failed
+    ///         in its own frame, which `IEnglishAuction.claimFor` pays out.
+    /// @param account The account credited: the bidder or buyer, or the seller or fee wallet.
     /// @param currency The credit's currency, zero for ETH.
     /// @param saleId The sale the credit comes from.
     /// @param amount The amount credited, in the currency's base units.
@@ -94,14 +93,23 @@ interface ISaleAdapter is IERC165 {
     event Claimed(
         address indexed account, address indexed currency, address indexed to, uint256 amount
     );
+    /// @notice The part of `account`'s credits that waited the unclaimed period went to the
+    ///         network; the rest stays the account's.
+    /// @param account The credited account.
+    /// @param currency The currency, zero for ETH.
+    /// @param to The network's fee recipient.
+    /// @param amount The amount sent, in base units.
+    event CreditExpired(
+        address indexed account, address indexed currency, address indexed to, uint256 amount
+    );
     /// @notice Governance listed or unlisted a token contract.
     /// @param token The token contract.
     /// @param listed Whether the token is now listed.
     event TargetSet(address indexed token, bool listed);
-    /// @notice The federation registry changed.
+    /// @notice The Independent Stream registry changed.
     /// @param previous The registry before the change, or zero.
     /// @param next The registry after the change, or zero when none is installed.
-    event FederationRegistrySet(address previous, address next);
+    event IndependentStreamRegistrySet(address previous, address next);
     /// @notice `account` paused the adapter.
     /// @param account The caller that paused it.
     event Paused(address account);
@@ -109,14 +117,12 @@ interface ISaleAdapter is IERC165 {
     /// @param account The caller that unpaused it.
     event Unpaused(address account);
 
-    /// @notice The token contract is neither listed nor active in the federation registry.
+    /// @notice The token contract is neither listed nor active in the Independent Stream registry.
     error TargetNotAllowed(address token);
     /// @notice The caller has nothing to claim in this currency.
     error NothingToClaim(address account, address currency);
     /// @notice The payment does not match the method, the amount, `msg.value` or the payer.
     error InvalidPayment();
-    /// @notice A PERMIT or PERMIT2 payment's deadline has passed.
-    error PaymentExpired(uint256 deadline);
     /// @notice No sale has this ID.
     error UnknownSale(uint256 saleId);
     /// @notice The adapter is paused, so no sale may open, start or sell; also a repeated
@@ -124,8 +130,9 @@ interface ISaleAdapter is IERC165 {
     error SalePaused();
     /// @notice `unpause` was called while the adapter is not paused.
     error NotPaused();
-    /// @notice A credit may be sent to the network's fee recipient only from `expiresAt`, 180
-    ///         days after it went from zero (R12).
+    /// @notice A credit may be sent to the network's fee recipient only from `expiresAt`, once
+    ///         the network's unclaimed period (`IDirectory.unclaimedPeriod`, 180 days at launch)
+    ///         has passed.
     error CreditNotExpired(address account, uint256 expiresAt);
     /// @notice The address cannot receive the token or the credit (for `claim`, zero).
     error InvalidRecipient(address recipient);
@@ -135,15 +142,14 @@ interface ISaleAdapter is IERC165 {
     error ExpectedValueMismatch();
     /// @notice The token returned unusable terms. Every adapter: no seller, the revenue escrow
     ///         as seller or fee recipient, no fee recipient for a nonzero fee share, a fee share
-    ///         above the denominator, federated code that differs from its registry entry, or a
-    ///         mint that returned another token ID. The auction also: a token ID of 2^32 or more,
-    ///         no creator (a pending recovery override), a nonzero price or sale parameters, the
-    ///         token not in its custody after the mint. Other adapters add their own cases.
+    ///         above the denominator, Independent Stream code that differs from its registry entry,
+    ///         or a mint that returned another token ID. The auction also: a token ID of 2^32 or
+    ///         more, no creator (a pending recovery override), a nonzero price or sale parameters,
+    ///         the token not in its custody after the mint. Other adapters add their own cases.
     error InvalidSaleTerms(address token, uint256 id);
 
     /// @notice This adapter's `SaleKind` label: a token mints only for an admitted adapter whose
-    ///         label equals its terms' kind. A new sale method claims a new label (ADR 0005,
-    ///         owner decision 14).
+    ///         label equals its terms' kind. A new sale method claims a new label (ADR 0005).
     /// @return `SaleKind.ENGLISH_AUCTION`, `SaleKind.UNIFORM_AUCTION`, rc.1's
     ///         `SaleKind.FIXED_PRICE` or `SaleKind.DUTCH`, or a later adapter's own label.
     function saleKind() external view returns (bytes32);
@@ -156,8 +162,8 @@ interface ISaleAdapter is IERC165 {
     /// @notice Whether the adapter is paused.
     /// @return True from `pause` until `unpause`.
     function paused() external view returns (bool);
-    /// @notice Whether `token` may be sold: listed by governance, or active in the federation
-    ///         registry.
+    /// @notice Whether `token` may be sold: listed by governance, or active in the Independent
+    ///         Stream registry.
     /// @param token The token contract.
     /// @return True when listed, or active in an installed registry whose code is unchanged.
     function isTarget(address token) external view returns (bool);
@@ -169,14 +175,14 @@ interface ISaleAdapter is IERC165 {
     ///        names the tokens it serves (the edition auction, 6529 Stream Editions only).
     /// @param listed True to list the token, false to unlist it.
     function setTarget(address token, bool listed) external;
-    /// @notice The federation registry, or zero before v1.1.
+    /// @notice The Independent Stream registry, or zero before v1.1.
     /// @return The registry's address, or zero.
-    function federationRegistry() external view returns (address);
-    /// @notice Sets the federation registry. SUCCESSOR_SETTER role, compare-and-set.
+    function independentStreamRegistry() external view returns (address);
+    /// @notice Sets the Independent Stream registry. SUCCESSOR_SETTER role, compare-and-set.
     /// @param expected The registry the caller expects is installed now; a stale value reverts.
     /// @param next The new registry, or zero to remove it; a nonzero one must support
-    ///        `IFederationRegistry` through ERC-165.
-    function setFederationRegistry(address expected, address next) external;
+    ///        `IIndependentStreamRegistry` through ERC-165.
+    function setIndependentStreamRegistry(address expected, address next) external;
     /// @notice What `account` may claim in `currency`.
     /// @param account The credited account.
     /// @param currency The currency, zero for ETH.

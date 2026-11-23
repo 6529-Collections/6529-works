@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { Create2 } from "@openzeppelin/contracts/utils/Create2.sol";
 import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import { BoundedCall } from "../libraries/BoundedCall.sol";
+import { IDirectory } from "../interfaces/core/IDirectory.sol";
 import { Dependency } from "../libraries/Dependency.sol";
 import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 import { IArtistPayoutResolver } from "./interfaces/IArtistPayoutResolver.sol";
@@ -46,19 +47,18 @@ import { TokenTransfer } from "./TokenTransfer.sol";
 ///      checks), so nobody can push an accrued balance to a lost key before recovery.
 ///      Every external call forwards all available gas and any failure reverts the release, so
 ///      no gas shortfall can produce a partial or success-shaped result.
-///      The network (R11, R12): every release also pays the network fee vault ({network}) its
+///      The network: every release also pays the network fee vault ({network}) its
 ///      share of the same asset when the vault is a payee of the wallet, and a payee's share that
-///      someone marked and that is still unreleased {UNCLAIMED_PERIOD} later goes to the network.
+///      someone marked and that is still unreleased once the unclaimed period has passed goes to
+///      the network. The period is the network's setting, read from the resolver
+///      (`IDirectory.unclaimedPeriod`, 180 days at launch) when a forfeit is attempted, so a
+///      change applies to marks already running; what a mark covers never changes. The ledger
+///      itself gains no authority, setter or storage for it.
 contract SplitLedger is ISplitLedger, EIP712 {
     /// @notice The EIP-712 type hash of {IReleaseVerifier.Authorization}.
     bytes32 public constant RELEASE_TYPEHASH = keccak256(
         "ReleaseAuthorization(address wallet,address asset,uint256 payee,address account,address recipient,uint256 amount,uint256 nonce,uint256 deadline)"
     );
-
-    /// @notice How long a marked share stays its payee's: 180 days. The number is the guarantee
-    ///         (an unclaimed share is its payee's for at least this long after it was marked), so
-    ///         it is compiled in and nothing changes it.
-    uint256 public constant UNCLAIMED_PERIOD = 180 days;
 
     /// @inheritdoc ISplitFactory
     IArtistPayoutResolver public immutable resolver;
@@ -83,13 +83,21 @@ contract SplitLedger is ISplitLedger, EIP712 {
     /// @dev Bit `nonce % 256` of word `nonce / 256` is set once `account` used `nonce`.
     mapping(address account => mapping(uint256 word => uint256 bits)) private _nonceBitmap;
 
-    /// @dev A payee's mark: the time it was placed (top 48 bits) and the released level the payee
-    ///      must reach (low 208 bits). Zero when there is none.
-    mapping(address wallet => mapping(address asset => mapping(uint256 index => uint256))) private
+    /// @dev A payee's mark, one storage slot: `target` is the released level the payee must reach
+    ///      to clear the mark (never zero in a mark that exists) and `markedAt` the time it was
+    ///      placed.
+    struct Mark {
+        uint208 target;
+        uint48 markedAt;
+    }
+
+    /// @dev Each payee's mark; all zero when there is none.
+    mapping(address wallet => mapping(address asset => mapping(uint256 index => Mark))) private
         _marks;
 
-    /// @param resolver_ The artist payout resolver (the artist registry). It must have code and
-    ///        not be an EIP-7702 delegated account.
+    /// @param resolver_ The artist payout resolver (the `StreamDirectory6529`), which also answers
+    ///        the unclaimed period (`IDirectory.unclaimedPeriod`). It must have code and not be an
+    ///        EIP-7702 delegated account.
     /// @param network_ The network fee vault (a `GovernedVault`), deployed first. It must have
     ///        code and not be an EIP-7702 delegated account.
     constructor(IArtistPayoutResolver resolver_, address network_)
@@ -111,11 +119,7 @@ contract SplitLedger is ISplitLedger, EIP712 {
         bytes32 walletSalt = _walletSalt(configHash, salt);
         wallet = Create2.computeAddress(walletSalt, walletInitCodeHash);
         if (configOf[wallet] != bytes32(0)) return wallet;
-        bytes memory initCode = SplitVault.INIT_CODE;
-        address deployed;
-        assembly ("memory-safe") {
-            deployed := create2(0, add(initCode, 0x20), mload(initCode), walletSalt)
-        }
+        address deployed = Create2.deploy(0, walletSalt, SplitVault.INIT_CODE);
         if (deployed != wallet) revert WalletAddressMismatch(wallet, deployed);
         configOf[wallet] = configHash;
         emit WalletCreated(wallet, configHash, salt, payees);
@@ -211,11 +215,12 @@ contract SplitLedger is ISplitLedger, EIP712 {
         uint256 done = released[wallet][asset][index];
         uint256 due = _dueNow(wallet, asset, index, share);
         if (due == 0) revert NothingToRelease(asset, index);
-        uint256 previous = _marks[wallet][asset][index];
         // A mark the payee has not yet released past keeps its clock: nobody can restart it.
-        if (previous != 0 && done < uint208(previous)) revert MarkPending(wallet, asset, index);
+        if (done < _marks[wallet][asset][index].target) revert MarkPending(wallet, asset, index);
         uint256 target = done + due;
-        _marks[wallet][asset][index] = block.timestamp << 208 | SafeCast.toUint208(target);
+        _marks[wallet][asset][index] = Mark({
+            target: SafeCast.toUint208(target), markedAt: SafeCast.toUint48(block.timestamp)
+        });
         emit Marked(wallet, asset, index, target, block.timestamp);
     }
 
@@ -241,8 +246,8 @@ contract SplitLedger is ISplitLedger, EIP712 {
         view
         returns (uint256 target, uint256 markedAt)
     {
-        uint256 m = _marks[wallet][asset][index];
-        return (uint208(m), m >> 208);
+        Mark memory m = _marks[wallet][asset][index];
+        return (m.target, m.markedAt);
     }
 
     // ------------------------------------------------------------------ nonces
@@ -329,20 +334,23 @@ contract SplitLedger is ISplitLedger, EIP712 {
 
     /// @dev Clears a matured mark and returns what of it is still unreleased, at most what the
     ///      payee can release now: only what was due at the mark, never money that arrived later.
-    ///      Reverts with {MarkNotDue} when there is no mark or it is younger than the period.
+    ///      Reverts with {MarkNotDue} when there is no mark or it is younger than the unclaimed
+    ///      period, read from the resolver now (a plain call: if it fails, the forfeit reverts
+    ///      and the money stays in the wallet).
     function _forfeitable(address wallet, address asset, uint256 index, uint32 share)
         private
         returns (uint256 amount)
     {
-        uint256 m = _marks[wallet][asset][index];
+        Mark memory m = _marks[wallet][asset][index];
         {
-            uint256 dueAt = m == 0 ? 0 : (m >> 208) + UNCLAIMED_PERIOD;
+            bool none = m.target == 0;
+            uint256 dueAt = none ? 0 : m.markedAt + IDirectory(address(resolver)).unclaimedPeriod();
             // forge-lint: disable-next-line(block-timestamp)
-            if (m == 0 || block.timestamp < dueAt) revert MarkNotDue(wallet, asset, index, dueAt);
+            if (none || block.timestamp < dueAt) revert MarkNotDue(wallet, asset, index, dueAt);
         }
         delete _marks[wallet][asset][index];
         uint256 done = released[wallet][asset][index];
-        amount = done < uint208(m) ? uint208(m) - done : 0;
+        amount = done < m.target ? m.target - done : 0;
         uint256 due = _dueNow(wallet, asset, index, share);
         if (amount > due) amount = due;
     }
@@ -358,7 +366,7 @@ contract SplitLedger is ISplitLedger, EIP712 {
         );
     }
 
-    /// @dev R11: after a release of payee `paid` of `wallet`, pays the network fee vault, when it
+    /// @dev After a release of payee `paid` of `wallet`, pays the network fee vault, when it
     ///      is a fixed payee of the wallet, everything it is due in the same asset, under the
     ///      wallet's lock that the release holds. The move comes first and the accounting is
     ///      written only once it succeeded; a refusal (the token will not pay the vault) leaves the
@@ -370,20 +378,8 @@ contract SplitLedger is ISplitLedger, EIP712 {
     {
         address net = network;
         uint256 count = payees.length;
-        // Binary search for `(0, net)`: a release only gets here for a deployed wallet, whose
-        // list is canonical, strictly ascending by `(artistId, account)`. Each payee is three
-        // calldata words: artist ID, account, share.
-        uint256 i;
-        uint256 hi = count;
-        assembly ("memory-safe") {
-            for { } lt(i, hi) { } {
-                let mid := shr(1, add(i, hi))
-                let at := add(payees.offset, mul(mid, 0x60))
-                switch and(iszero(calldataload(at)), lt(calldataload(add(at, 0x20)), net))
-                case 1 { i := add(mid, 1) }
-                default { hi := mid }
-            }
-        }
+        // A release only gets here for a deployed wallet, whose list is canonical.
+        uint256 i = Splits.lowerBound(payees, net);
         if (i == count || i == paid || payees[i].artistId != 0 || payees[i].account != net) {
             return;
         }

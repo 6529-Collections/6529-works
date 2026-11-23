@@ -29,7 +29,15 @@ Checks `config/genesis.example.json`:
      role (`check_authority`).
 
 A configured contract whose artifact source is not in the repository yet (a lane that has
-not merged) is reported as pending and skips checks 1 and 2; it fails nothing.
+not merged), or whose `status` says `pending` (a contract another lane is rewriting in place,
+so the source present is the old one), is reported as pending and skips checks 1 and 2; it
+fails nothing. Check 3 does not count the old contracts listed in tools/retiring.json (deleted
+at integration) nor the sources of pending contracts. A wiring call given with `args` and no
+`calldata` (the plain-core configuration: the deploy library encodes the call from the
+addresses it predicts) has its signature and arguments checked, not calldata.
+
+The default configuration is the plain-core one (ADR 0010), `config/genesis.core.example.json`;
+the earlier stack's `config/genesis.example.json` is checked with `--config` and `--policy`.
 
 Run from anywhere: `python tools/check_genesis.py`. Standard library only. Method IDs come from
 `forge inspect` by default, or from a build's artifact directory with `--artifacts out`.
@@ -46,28 +54,26 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-CONFIG = "config/genesis.example.json"
+CONFIG = "config/genesis.core.example.json"
+RETIRING = "tools/retiring.json"
 CLASS_DELAY = {"immediate": 0, "24h": 86_400, "3d": 259_200, "7d": 604_800}
 # The roles `network()` holds (`Roles.isNetworkRole`); nobody else can be granted them.
 NETWORK_ROLES = frozenset({"ADMIN", "NETWORK", "PARAMETER_SETTER", "FUNDS_SETTER", "SUCCESSOR_SETTER"})
 ADDRESS = re.compile(r"^0x[0-9a-fA-F]{40}$")
-# Functions `GovernanceConfig.isGenesisSelector` admits (one-shot binds, admitted minters,
-# sale targets, first default currencies, the English auction's ETH opening bid, the
-# federation's first registry, adapters and template versions, the epoch-0 manifest). The
-# Solidity tests pin the selectors themselves.
+# Functions `GovernanceConfig.isGenesisSelector` admits (the package registry's Stream bind
+# and entropy module, sale targets, the ETH opening bid, the
+# Independent Stream module's adapters, template versions and entropy module, the epoch-0 manifest).
 GENESIS_FUNCTIONS = frozenset({
-    "bindWorkRecords", "bindEditions", "bindStream", "bindPackageRegistry", "bindSplitFactory",
-    "bindStatementLog", "bindFederationRegistry", "setAdmittedMinter", "setTarget",
-    "setDefaultCurrency", "setOpeningBid", "setFederationRegistry", "setAdapter",
-    "approveTemplate", "appendGovernanceManifest",
+    "bindStream", "setTarget", "setOpeningBid", "setAdapter",
+    "approveTemplate", "setEntropyModule", "appendGovernanceManifest",
 })
 
-# Wiring arguments that name a federated template: `DeployV1.templateCodeHash` computes the
+# Wiring arguments that name an Independent Stream template: `DeployV1.templateCodeHash` computes the
 # runtime code hash from the build, so the JSON holds the name, never a literal (a `bytes32`
 # argument); and each template's deployer, which `DeployV1` deploys (not a governed target, so
 # not in `contracts`), an `address` argument (ADR 0008).
-TEMPLATE_HASHES = frozenset({"FederatedStream", "FederatedEditions"})
-TEMPLATE_DEPLOYERS = frozenset({"FederatedStreamDeployer", "FederatedEditionsDeployer"})
+TEMPLATE_HASHES = frozenset({"IndependentStream6529", "IndependentStreamEditions6529"})
+TEMPLATE_DEPLOYERS = frozenset({"IndependentStream721Deployer", "IndependentStreamEditionsDeployer"})
 
 # What a deployment's copy of the configuration may change (check 6).
 DEPLOYMENT_KEYS = frozenset({"holders", "description", "network", "brake"})
@@ -324,9 +330,25 @@ def source_present(root: Path) -> Present:
     return lambda ref: isinstance(ref, str) and (root / ref.split(":")[0]).is_file()
 
 
+def is_pending(contract: dict, present: Present) -> bool:
+    """Not in the repository yet, or marked pending: another lane is rewriting it."""
+    status = contract.get("status", "")
+    return not present(contract["artifact"]) or (
+        isinstance(status, str) and status.startswith("pending")
+    )
+
+
 def pending(config: dict, present: Present) -> list[str]:
-    """Configured contracts whose artifact source is not in the repository yet."""
-    return [c["name"] for c in config.get("contracts", []) if not present(c["artifact"])]
+    """Configured contracts whose source is not in the repository yet, or marked pending."""
+    return [c["name"] for c in config.get("contracts", []) if is_pending(c, present)]
+
+
+def retiring(root: Path) -> set[str]:
+    """Source paths deleted at integration (tools/retiring.json; none if absent)."""
+    path = root / RETIRING
+    if not path.is_file():
+        return set()
+    return set(json.loads(path.read_text(encoding="utf-8")).get("files", []))
 
 
 def check(
@@ -334,9 +356,11 @@ def check(
     ids: MethodIds,
     restricted: dict[str, set[str]],
     present: Present = lambda ref: True,
+    exempt_sources: set[str] | None = None,
 ) -> list[str]:
-    """Every problem found, as one line each. Contracts whose artifact source is not present
-    (unmerged lanes) skip the ABI and `restricted` coverage checks."""
+    """Every problem found, as one line each. Pending contracts (source not present, or marked
+    pending) skip the ABI and `restricted` coverage checks; `restricted` functions in
+    `exempt_sources` (old files deleted at integration) need no configuration."""
     problems: list[str] = []
     roles = {r["name"]: r for r in config.get("roles", [])}
     by_name = {c["name"]: c for c in config.get("contracts", [])}
@@ -345,8 +369,10 @@ def check(
     addresses.update({p["name"]: p["address"] for p in config.get("peers", [])})
     implemented = {c["implementation"] for c in by_name.values() if c.get("implementation")}
 
+    exempt = set(exempt_sources or ())
+    exempt |= {c["artifact"].split(":")[0] for c in by_name.values() if is_pending(c, present)}
     for name, c in by_name.items():
-        here = present(c["artifact"])
+        here = not is_pending(c, present)
         methods = ids(c["artifact"]) if here else {}
         groups = {g: c.get(g, []) for g in ("functions", "genesisOnly", "deferred")}
         listed = set()
@@ -356,11 +382,16 @@ def check(
                 listed.add(sig)
                 if not here:
                     continue
-                if sig not in methods:
-                    problems.append(f"{name}: {group} {sig} is not a method of {c['artifact']}")
-                elif methods[sig] != _selector(e):
+                # A `via` entry is a selector of another contract that asks the manager about
+                # this target (each Independent Stream token asks `canCall(caller, StreamDirectory6529, selector)`
+                # for its network functions), so it is checked against that contract's ABI.
+                where = ids(e["via"]) if e.get("via") else methods
+                if sig not in where:
+                    art = e.get("via") or c["artifact"]
+                    problems.append(f"{name}: {group} {sig} is not a method of {art}")
+                elif where[sig] != _selector(e):
                     problems.append(
-                        f"{name}: {group} {sig} selector 0x{_selector(e)} != compiled 0x{methods[sig]}"
+                        f"{name}: {group} {sig} selector 0x{_selector(e)} != compiled 0x{where[sig]}"
                     )
         for e in groups["functions"]:
             role = roles.get(e.get("role"))
@@ -374,7 +405,7 @@ def check(
                     f"match {e['role']} ({role['executionDelay']})"
                 )
         impl = c.get("implementation")
-        if impl and present(impl):
+        if impl and here and present(impl):
             impl_methods = ids(impl)
             for fn in sorted(restricted.get(impl, set())):
                 for sig in sorted(s for s in impl_methods if s.split("(")[0] == fn):
@@ -385,7 +416,7 @@ def check(
                         )
 
     for ref in sorted(restricted):
-        if ref not in implemented:
+        if ref not in implemented and ref.split(":")[0] not in exempt:
             problems.append(f"{ref} has restricted functions but no contract in the configuration")
 
     problems += check_manager(config, ids, present)
@@ -400,15 +431,18 @@ def check(
         if sig.split("(")[0] not in GENESIS_FUNCTIONS:
             problems.append(f"{where}: not a genesis function")
         artifact = by_name[name]["artifact"]
-        methods = ids(artifact) if present(artifact) else {sig: None}
+        here = not is_pending(by_name[name], present)
+        methods = ids(artifact) if here else {sig: None}
+        encoded = "calldata" in w  # else the deploy library encodes `args` itself
         data = w.get("calldata", "").lower().removeprefix("0x")
         if sig not in methods:
             problems.append(f"{where}: not a method of {by_name[name]['artifact']}")
-        elif methods[sig] is not None and data[:8] != methods[sig]:
+        elif encoded and methods[sig] is not None and data[:8] != methods[sig]:
             problems.append(f"{where}: calldata selector 0x{data[:8]} != 0x{methods[sig]}")
-        problems += _check_calldata(
-            where, sig, w.get("calldata"), w.get("args", []), addresses
-        )
+        if encoded:
+            problems += _check_calldata(
+                where, sig, w.get("calldata"), w.get("args", []), addresses
+            )
         params = _static_params(sig)
         for j, arg in enumerate(w.get("args", [])):
             if not isinstance(arg, str) or arg.startswith("0x"):
@@ -581,7 +615,7 @@ def main(argv: list[str] | None = None) -> int:
     ids = artifact_ids(args.artifacts) if args.artifacts else forge_inspect(root)
     present = source_present(root)
     try:
-        problems = check(config, ids, scan_sources(root / "src"), present)
+        problems = check(config, ids, scan_sources(root / "src"), present, retiring(root))
         problems += check_roles(config) + check_authority(config)
         if policy is not None:
             problems += policy_differences(config, policy)

@@ -431,6 +431,71 @@ class MarginTest(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("FAIL Core margin 600 bytes < 1024", out)
 
+    def _margins_file(self, data: dict) -> None:
+        path = self.repo.root / "tools" / "size-margins.json"
+        path.parent.mkdir(exist_ok=True)
+        path.write_text(json.dumps(data), encoding="utf-8")
+
+    def test_a_directory_floor_raises_the_floor_for_its_contracts_only(self) -> None:
+        self.repo.write("core/Plain.sol", "contract Plain {}\n")
+        self._margins_file({"floors": {"src/core/": 3000}, "exempt": {}})
+        sizes = {"Core": _runtime(600), "Tight": _runtime(600), "Plain": _runtime(3000)}
+        code, out = self._run(sizes)
+        self.assertEqual(code, 0, out)
+        self.assertIn("(0 exempt, 1 of them under a raised directory floor)", out)
+        sizes["Plain"] = _runtime(2999)
+        code, out = self._run(sizes)
+        self.assertEqual(code, 1)
+        self.assertIn("FAIL Plain margin 2999 bytes < 3000", out)
+
+    def test_a_directory_floor_may_not_lower_the_default(self) -> None:
+        for floors in ({"src/core/": 100}, {"core/": 3000}, {"src/core": 3000}, {"src/": "big"}):
+            with self.subTest(floors):
+                self._margins_file({"floors": floors, "exempt": {}})
+                code, out = self._run({"Core": _runtime(600), "Tight": _runtime(600)})
+                self.assertEqual(code, 1, out)
+                self.assertIn("FAIL size-margins.json: floor", out)
+
+    def test_an_exemption_below_a_directory_floor_is_accepted(self) -> None:
+        self.repo.write("core/Plain.sol", "contract Plain {}\n")
+        self._margins_file(
+            {"floors": {"src/core/": 3000}, "exempt": {"Plain": {"margin": 2000, "reason": "r"}}}
+        )
+        code, out = self._run({"Core": _runtime(600), "Tight": _runtime(600), "Plain": _runtime(2000)})
+        self.assertEqual(code, 0, out)
+        self.assertIn("Plain margin 2000 bytes (exempt, recorded 2000)", out)
+
+    def test_two_contracts_of_one_name_are_measured_separately(self) -> None:
+        self.repo.write("core/Token.sol", "contract Token {}\n")
+        self.repo.write("old/Token.sol", "contract Token {}\n")
+        self._margins_file({"floors": {"src/core/": 3000}, "exempt": {}})
+        self.assertIn("Token (src/core/Token.sol)", cb.deployable_contracts(self.repo.root / "src"))
+        sizes = {
+            "Core": _runtime(600),
+            "Tight": _runtime(600),
+            "Token (src/core/Token.sol)": _runtime(3000),
+            "Token (src/old/Token.sol)": _runtime(600),
+        }
+        code, out = self._run(sizes)
+        self.assertEqual(code, 0, out)
+        sizes["Token (src/core/Token.sol)"] = _runtime(600)
+        code, out = self._run(sizes)
+        self.assertEqual(code, 1)
+        self.assertIn("FAIL Token (src/core/Token.sol) margin 600 bytes < 3000", out)
+        del sizes["Token (src/old/Token.sol)"]
+        code, out = self._run(sizes)
+        self.assertIn("FAIL Token (src/old/Token.sol): declared in src/ but has no size", out)
+
+    def test_a_src_name_shared_with_a_test_contract_is_found_by_path(self) -> None:
+        sizes = {"Core (src/Core.sol)": _runtime(600), "Core (test/Mock.sol)": _runtime(0)}
+        sizes["Tight"] = _runtime(600)
+        code, out = self._run(sizes)
+        self.assertEqual(code, 0, out)
+
+    def test_the_committed_floors_hold_the_core_to_three_thousand_bytes(self) -> None:
+        path = Path(__file__).with_name("size-margins.json")
+        self.assertEqual(cb.load_floors(path, cb.MIN_RUNTIME_MARGIN), {"src/core/": 3000})
+
     def test_the_committed_exemptions_are_well_formed(self) -> None:
         path = Path(__file__).with_name("size-margins.json")
         exempt = cb.load_margins(path, cb.MIN_RUNTIME_MARGIN)

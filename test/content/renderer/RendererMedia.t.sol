@@ -6,9 +6,8 @@ import { RendererBase } from "./RendererBase.sol";
 import { Renderer } from "src/content/Renderer.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { IStatementLog } from "src/interfaces/IStatementLog.sol";
-import { IStream } from "src/interfaces/IStream.sol";
-import { IStreamViews } from "src/interfaces/IStreamViews.sol";
-import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
+import { ILocators } from "src/interfaces/core/ILocators.sol";
+import { RecordInfo, WorkCore } from "./RendererCoreMocks.sol";
 import { FileRole, Locator, LocatorKind, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
 import { IRenderer } from "src/interfaces/IRenderer.sol";
@@ -216,20 +215,16 @@ contract RendererMediaTest is RendererBase {
         _noMedia(_out());
     }
 
-    /// @dev Decision M1: a satellite that cannot answer `preferredLocator` within its gas cap fails
-    ///      the call. Media silently dropped would be a plausible but wrong token.
-    function test_Locator_AFailedReadFailsClosed() public {
+    /// @dev The renderer owns the locator check: a delivery contract that refuses
+    ///      `preferredLocator` is no locator, so the work renders without that media instead of
+    ///      failing (a delivery contract is replaceable and must not break `tokenURI`).
+    function test_Locator_ARefusedReadIsNoLocator() public {
         bytes32 file = _file(_data(THRESHOLD + 1, 47), IDENTITY, PNG);
         _install(file);
-        records.fail(IWorkRecords.preferredLocator.selector, true);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IRenderer.RendererReadFailed.selector,
-                address(records),
-                IWorkRecords.preferredLocator.selector
-            )
-        );
-        renderer.tokenURI(address(stream), ID);
+        records.addLocator(ID, file, Locator(LocatorKind.IPFS, "ipfs://x"));
+        assertTrue(_has(_out(), ".image"));
+        records.fail(ILocators.preferredLocator.selector, true);
+        _noMedia(_out());
     }
 
     function test_Locator_GzipFilesAreNeverInlined() public {
@@ -251,7 +246,7 @@ contract RendererMediaTest is RendererBase {
     function test_Locator_NotOnChainCompleteIsNotInlined() public {
         bytes32 file = _file(_data(500, 14), IDENTITY, PNG);
         _install(file);
-        IWorkRecords.RecordInfo memory info = _info();
+        RecordInfo memory info = _info();
         info.onChainComplete = false;
         _setRecordInfo(info);
         records.addLocator(ID, file, Locator(LocatorKind.IPFS, IPFS));
@@ -490,7 +485,7 @@ contract RendererMediaTest is RendererBase {
         // The work is not on-chain complete.
         bytes32 file = _file(_data(300, 41), IDENTITY, PNG);
         _install(file);
-        IWorkRecords.RecordInfo memory info = _info();
+        RecordInfo memory info = _info();
         info.onChainComplete = false;
         _setRecordInfo(info);
         vm.expectRevert(expected);
@@ -617,10 +612,10 @@ contract RendererMediaTest is RendererBase {
         bytes memory js = "go();";
         bytes32 file = _file(js, IDENTITY, "text/javascript");
         _install(file);
-        IStreamViews.WorkCore memory core = _core();
+        WorkCore memory core = _core();
         core.seedPolicy = uint8(SeedPolicy.ARTIST);
         stream.setWork(ID, core);
-        records.setSeed(ID, SeedPolicy.ARTIST, bytes32(uint256(0xfeed)));
+        stream.setSeed(ID, bytes32(uint256(0xfeed)));
 
         string memory seed = vm.toString(bytes32(uint256(0xfeed)));
         assertTrue(
@@ -639,6 +634,7 @@ contract RendererMediaTest is RendererBase {
         // No seed at all is null.
         core.seedPolicy = uint8(SeedPolicy.NONE);
         stream.setWork(ID, core);
+        stream.setSeed(ID, 0);
         assertTrue(
             _contains(_page(), "window.works={v:1,tokenId:7,seed:null};</script><script>go();")
         );

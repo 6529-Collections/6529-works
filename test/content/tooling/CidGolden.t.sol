@@ -1,19 +1,17 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
+import { IWorkDelivery } from "src/interfaces/IWorkDelivery.sol";
 import { Locator, LocatorKind } from "src/interfaces/types/ContentTypes.sol";
 import { ContentAddresses } from "../../helpers/ContentAddresses.sol";
 import { IntegrationBase } from "../../integration/IntegrationBase.sol";
 import { CidGoldenData as Golden } from "./CidGoldenData.sol";
 
-import { IWorkLocators } from "src/interfaces/IWorkDelivery.sol";
-
-/// @dev Cross-language agreement between the `cid` helper (`tools/content/cid.py`) and the real
-///      `WorkRecords`: every CID the helper computes for the golden files is accepted as an
-///      `ipfs://` locator, and Solidity re-derives each single-block (raw) CID from the SHA-256
-///      of the file. The vectors come from `CidGoldenData`, generated from
-///      `tools/content/golden/cid-vectors.json`.
+/// @dev Cross-language agreement between the `cid` helper (`tools/content/cid.py`) and the
+///      deployed `WorkDelivery`: every CID the helper computes for the golden files is accepted
+///      as an `ipfs://` locator of a work's media file, and Solidity re-derives each
+///      single-block (raw) CID from the SHA-256 of the file. The vectors come from
+///      `CidGoldenData`, generated from `tools/content/golden/cid-vectors.json`.
 contract CidGoldenTest is IntegrationBase {
     uint256 internal tokenId;
     bytes32 internal fileId;
@@ -25,19 +23,24 @@ contract CidGoldenTest is IntegrationBase {
         Work[] memory works = _one(_work(artist, collectionId));
         bytes32 root = _publish(works);
         tokenId = _sell(root, works, 0, makeAddr("cidGoldenCollector"), 1 ether);
-        records.openRecord(tokenId, works[0].item, works[0].media);
+        _open(tokenId, works[0]);
         fileId = works[0].media[0].fileId;
+    }
+
+    function _add(string memory uri) internal {
+        vm.prank(artist);
+        delivery.addLocator(address(stream), tokenId, fileId, Locator(LocatorKind.IPFS, uri));
     }
 
     function test_EveryHelperCidIsAnAcceptedLocator() public {
         Golden.Vector[] memory v = Golden.vectors();
         for (uint256 i; i < v.length; ++i) {
-            vm.prank(artist);
-            delivery.addLocator(tokenId, fileId, Locator(LocatorKind.IPFS, v[i].uri));
+            _add(v[i].uri);
         }
-        Locator[] memory stored = delivery.locators(tokenId, fileId);
+        Locator[] memory stored = delivery.locators(address(stream), tokenId, fileId);
         assertEq(stored.length, v.length);
         for (uint256 i; i < v.length; ++i) {
+            assertEq(uint8(stored[i].kind), uint8(LocatorKind.IPFS), v[i].name);
             assertEq(stored[i].uri, v[i].uri, v[i].name);
         }
     }
@@ -73,9 +76,10 @@ contract CidGoldenTest is IntegrationBase {
         ];
         for (uint256 i; i < bad.length; ++i) {
             vm.prank(artist);
-            vm.expectRevert(IWorkLocators.InvalidLocator.selector);
-            delivery.addLocator(tokenId, fileId, Locator(LocatorKind.IPFS, bad[i]));
+            vm.expectRevert(IWorkDelivery.InvalidLocator.selector);
+            delivery.addLocator(address(stream), tokenId, fileId, Locator(LocatorKind.IPFS, bad[i]));
         }
+        _add(good);
     }
 
     function _prefix(string memory uri) internal pure returns (string memory) {

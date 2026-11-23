@@ -76,7 +76,7 @@
   },
   {
     "inputs": [],
-    "name": "FEDERATED_FEE_SHARE",
+    "name": "INDEPENDENT_FEE_SHARE",
     "outputs": [
       {
         "internalType": "uint32",
@@ -314,30 +314,6 @@
         "internalType": "struct WorkTerms",
         "name": "",
         "type": "tuple"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "bytes32",
-        "name": "product",
-        "type": "bytes32"
-      },
-      {
-        "internalType": "address",
-        "name": "requested",
-        "type": "address"
-      }
-    ],
-    "name": "resolveCurrency",
-    "outputs": [
-      {
-        "internalType": "address",
-        "name": "currency",
-        "type": "address"
       }
     ],
     "stateMutability": "view",
@@ -715,17 +691,6 @@
       }
     ],
     "name": "AccessManagedUnauthorized",
-    "type": "error"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "currency",
-        "type": "address"
-      }
-    ],
-    "name": "CurrencyNotAllowed",
     "type": "error"
   },
   {

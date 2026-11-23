@@ -203,6 +203,67 @@ contract EscrowSymbolicTest is SymHelpers {
         assert(escrow.expirableAt(W1, ETH, t + read) >= floor);
     }
 
+    /// @notice ECO-45 while the network changes the unclaimed period: an expiry moves an amount
+    ///         only if the escrow has seen it a full period old, under the period in force at
+    ///         that look (the write of a later deposit, or an expiry); an amount a write found
+    ///         a period old stays aged when the period is raised afterwards; once the period
+    ///         in force has passed since the last credit, an expiry moves everything; and every
+    ///         wei credited is expired, flushed to its wallet or still held, never lost.
+    /// @dev Bounds: two 64-bit credits (zero skips one) any delay below 2**32 seconds apart,
+    ///      two expiries after any such delays, and the period set to any 48-bit value, zero
+    ///      included, before the second credit and before each expiry; then an optional flush.
+    function check_expiry_waitsThePeriodInForceWhenItChanges(
+        uint64 c1,
+        uint64 c2,
+        uint32[3] memory gaps,
+        uint48[3] memory periods,
+        bool flushAfter
+    ) public {
+        SymResolver directory = SymResolver(address(ledger.resolver()));
+        uint256 credit = uint256(c1) + c2;
+        // times[0], times[1]: the credits. times[2], times[3]: the expiries.
+        uint256[4] memory times;
+        times[0] = block.timestamp;
+        _deposit(W1, c1);
+        for (uint256 i; i < 3; ++i) {
+            times[i + 1] = times[i] + gaps[i];
+            vm.warp(times[i + 1]);
+            directory.setUnclaimedPeriod(periods[i]);
+            if (i == 0) {
+                _deposit(W1, c2);
+            } else {
+                _call(PAYER, address(escrow), abi.encodeCall(escrow.expire, (W1, ETH)));
+            }
+        }
+        // The vault held no credit before, so its credit is what the two expiries moved.
+        uint256 moved = escrow.owed(address(feeVault), ETH);
+
+        // Whether a look found each credit a period old. The second deposit is a look at the
+        // first credit only when it credits something.
+        bool sawSecondOld =
+            _or(times[1] + periods[1] <= times[2], times[1] + periods[2] <= times[3]);
+        bool agedAtDeposit = _and(_and(c1 != 0, c2 != 0), times[0] + periods[0] <= times[1]);
+        bool sawFirstOld = _or(
+            agedAtDeposit, _or(times[0] + periods[1] <= times[2], times[0] + periods[2] <= times[3])
+        );
+        assert(moved <= _pick(sawFirstOld, c1, 0) + _pick(sawSecondOld, c2, 0));
+        // Aged stays aged: the first expiry takes it whatever the period is by then.
+        assert(moved >= _pick(agedAtDeposit, c1, 0));
+        // A period after the last credit (the second credit's time, also when it was zero),
+        // nothing is left to wait.
+        if (sawSecondOld) assert(moved == credit);
+
+        assert(escrow.owed(W1, ETH) == credit - moved);
+        assert(escrow.totalOwed(ETH) == credit && address(escrow).balance == credit);
+        if (flushAfter) {
+            (bool ok,) = _call(PAYER, address(escrow), abi.encodeCall(escrow.flush, (W1, ETH)));
+            assert(ok == (credit != moved));
+            // Credited = flushed + expired, and what expired is still held for the vault.
+            assert(W1.balance == credit - moved && escrow.owed(W1, ETH) == 0);
+            assert(escrow.totalOwed(ETH) == moved && address(escrow).balance == moved);
+        }
+    }
+
     // ---------------------------------------------------------------------------------------
     // Governed paths: ECO-28, ECO-40, ECO-5
     // ---------------------------------------------------------------------------------------

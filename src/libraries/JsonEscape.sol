@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 /// @title JsonEscape
 /// @notice Byte-exact escaping for JSON string values. Text placed inside a `<script>` element
 ///         goes through `HtmlScript.neutralize` instead.
-/// @dev Ported from 6529Stream PR #744's `StreamRenderContextV1.escape`, keeping its output byte
+/// @dev Ported from 6529Stream's `StreamRenderContextV1.escape`, keeping its output byte
 ///      for byte. Escaping preserves every other byte, including malformed UTF-8; validate UTF-8
 ///      separately with `Utf8`. Inputs are never modified, and an input that needs no change is
 ///      returned as the same memory reference. The encoder walks the input twice (count, then

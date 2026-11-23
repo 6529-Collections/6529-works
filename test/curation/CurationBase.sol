@@ -1,13 +1,20 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { StreamDirectory6529 } from "src/core/StreamDirectory6529.sol";
 import { Test } from "forge-std/Test.sol";
 import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
+import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import { ContentStore } from "src/content/ContentStore.sol";
+import { Stream6529 } from "src/core/Stream6529.sol";
+import { StreamWorkFacts6529 } from "src/core/StreamWorkFacts6529.sol";
 import { Eip712CurationVerifier } from "src/curation/Eip712CurationVerifier.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { PackageRegistry } from "src/curation/PackageRegistry.sol";
 import { ICurationVerifier } from "src/interfaces/ICurationVerifier.sol";
-import { CURRENCY_DEFAULT, CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
+import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
+import { IEntropyModule } from "src/interfaces/IEntropyModule.sol";
+import { CURRENCY_ETH, ProductEconomics, WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import {
     EditionTerms,
@@ -19,32 +26,107 @@ import {
     PartyAcceptance,
     PartyRole,
     SaleTerms,
-    SeedPolicy,
     StreamMintRequest
 } from "src/interfaces/types/PackageTypes.sol";
 import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
-import { IEditions } from "src/interfaces/IEditions.sol";
-import { IStream } from "src/interfaces/IStream.sol";
-import { IMintPolicy } from "src/interfaces/IMintPolicy.sol";
-import { ProductEconomics } from "src/interfaces/types/EconomicsTypes.sol";
+import { MintFacts, MintTerms } from "src/interfaces/core/CoreTypes.sol";
+import { IMintPolicy } from "src/interfaces/core/IMintPolicy.sol";
+import { IStream } from "src/interfaces/core/IStream.sol";
 import { CurationArtistRegistryMock } from "test/mocks/curation/CurationArtistRegistryMock.sol";
-import { MockBoundCaller } from "test/mocks/curation/MockBoundCaller.sol";
-import { StreamContentMock } from "test/mocks/curation/StreamContentMock.sol";
+import { MockRecords, MockRenderer, MockTerms } from "test/mocks/core/CoreMocks.sol";
 
-/// @dev Pure fixtures shared by the curation tests and the invariant handler: items, Merkle
-///      trees with sorted-pair hashing, and the three signature forms.
-/// @dev Stub economics resolver and split factory for the policy's quote.
-contract CurationPolicyStub {
-    function economics(bytes32) external pure returns (ProductEconomics memory) {
-        return ProductEconomics(address(0), 0, 5000);
+/// @dev The economics resolver the policy quotes from: settable product economics, a fixed
+///      seller wallet, and a royalty wallet derived from the seller and the fee terms (so a test
+///      can tell the two apart). Answers ERC-165 for `IEconomicsResolver`.
+contract CurationPolicyStub is IERC165 {
+    ProductEconomics internal _e = ProductEconomics(address(0), 0, 5000);
+    address public seller = address(0x5E11E7);
+
+    function set(ProductEconomics memory e) external {
+        _e = e;
     }
 
-    function walletFor(ISplitWallet.Payee[] calldata, bytes32) external pure returns (address) {
-        return address(0x5E11E7);
+    function economics(bytes32) external view returns (ProductEconomics memory) {
+        return _e;
+    }
+
+    function newWorkTerms(bytes32, ISplitWallet.Payee[] calldata)
+        external
+        view
+        returns (WorkTerms memory)
+    {
+        return WorkTerms(seller, _e.feeRecipient, _e.feeShare, royaltyWallet(), _e.royaltyRate);
+    }
+
+    /// @dev The royalty receiver the stub names: the seller with no share, else a derived
+    ///      address.
+    function royaltyWallet() public view returns (address) {
+        if (_e.feeShare == 0) return seller;
+        return
+            address(uint160(uint256(keccak256(abi.encode(seller, _e.feeRecipient, _e.feeShare)))));
+    }
+
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return interfaceId == type(IERC165).interfaceId
+            || interfaceId == type(IEconomicsResolver).interfaceId;
     }
 }
 
+/// @dev An entropy module whose deliveries the test sets. Answers ERC-165 for `IEntropyModule`.
+///      Like the VRF module, `seedOfContent` reverts until the seed is delivered.
+contract EntropyStub is IERC165 {
+    error SeedNotDelivered(bytes32 contentHash);
+
+    mapping(bytes32 contentHash => bytes32) internal _seeds;
+
+    function deliver(bytes32 contentHash, bytes32 seed) external {
+        _seeds[contentHash] = seed;
+    }
+
+    function isDeliveredContent(bytes32 contentHash) external view returns (bool) {
+        return _seeds[contentHash] != 0;
+    }
+
+    function seedOfContent(bytes32 contentHash) external view returns (bytes32) {
+        if (_seeds[contentHash] == 0) revert SeedNotDelivered(contentHash);
+        return _seeds[contentHash];
+    }
+
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return
+            interfaceId == type(IERC165).interfaceId
+                || interfaceId == type(IEntropyModule).interfaceId;
+    }
+}
+
+/// @dev A sale contract (a Stream minter) as the policy sees it: it asks the policy, then mints
+///      the answered facts into its own custody. Anyone may drive it.
+contract PolicyMinter {
+    function mint(address policy, address token, bytes calldata request)
+        external
+        returns (MintFacts memory facts, MintTerms memory terms, uint256 tokenId)
+    {
+        (facts, terms) = IMintPolicy(policy).authorize(token, request);
+        tokenId = IStream(token).mint(address(this), facts);
+    }
+
+    /// @dev The policy's answer only, without minting.
+    function authorizeOnly(address policy, address token, bytes calldata request)
+        external
+        returns (MintFacts memory facts, MintTerms memory terms)
+    {
+        return IMintPolicy(policy).authorize(token, request);
+    }
+
+    /// @dev Burns a token this minter holds unsold (an upheld dispute).
+    function burn(address token, uint256 tokenId) external {
+        IStream(token).burn(tokenId);
+    }
+}
+
+/// @dev Pure fixtures shared by the curation tests and the invariant handler: items, Merkle
+///      trees with sorted-pair hashing, and the three signature forms.
 abstract contract CurationHelpers is Test {
     CurationPolicyStub internal _policyStub = new CurationPolicyStub();
 
@@ -73,7 +155,7 @@ abstract contract CurationHelpers is Test {
         i.parties[0] = Party(artist, uint8(PartyRole.ARTIST));
         i.payees = new ISplitWallet.Payee[](1);
         i.payees[0] = ISplitWallet.Payee(_id(artist), address(0), 100_000);
-        i.license = License("CC0-1.0", keccak256("cc0"));
+        i.license = License("CC0-1.0", keccak256("cc0 text file")); // the fixture WorkFacts CC0 text
         i.sale = SaleTerms(SaleKind.ENGLISH_AUCTION, CURRENCY_ETH, "");
     }
 
@@ -179,19 +261,22 @@ abstract contract CurationHelpers is Test {
 }
 
 /// @dev Shared fixture: a real AccessManager with the curation selectors mapped to their
-///      `Roles`, a mock artist registry, two curation signers, and helpers that build items,
-///      Merkle trees and every signature the registry checks.
+///      `Roles`, a mock artist registry, two curation signers, the real permanent Stream (with a
+///      `PolicyMinter` as its one minter, and collection 1), and helpers that build items, Merkle
+///      trees and every signature the registry checks.
 abstract contract CurationBase is CurationHelpers {
     AccessManager internal manager;
     CurationArtistRegistryMock internal artists;
     Eip712CurationVerifier internal verifier;
     PackageRegistry internal registry;
+    Stream6529 internal core;
+    PolicyMinter internal minter;
+    EntropyStub internal entropy;
 
     address internal admin = makeAddr("admin");
     address internal guardian = makeAddr("guardian");
     address internal successor = makeAddr("successor");
     address internal stream;
-    address internal editions;
 
     uint256 internal signerKey1 = 0xC1;
     uint256 internal signerKey2 = 0xC2;
@@ -216,15 +301,32 @@ abstract contract CurationBase is CurationHelpers {
         manager = new AccessManager(admin);
         artists = new CurationArtistRegistryMock();
         verifier = new Eip712CurationVerifier(address(manager));
+        entropy = new EntropyStub();
         registry = _newRegistry();
         artists.bindPackageRegistry(address(registry));
-        // Stand-ins for the bound 6529 Stream and 6529 Stream Editions, with their ERC-165 answers.
-        stream = address(new StreamContentMock());
-        editions = address(new MockBoundCaller(type(IEditions).interfaceId));
+        // The real permanent Stream, with the policy minter as its genesis minter.
+        minter = new PolicyMinter();
+        address[] memory minters = new address[](1);
+        minters[0] = address(minter);
+        StreamWorkFacts6529 facts =
+            new StreamWorkFacts6529(address(new ContentStore()), keccak256("cc0 text file"));
+        core = new Stream6529(
+            address(manager),
+            address(facts),
+            admin,
+            address(new MockRenderer()),
+            address(new MockTerms()),
+            address(new MockRecords(facts)),
+            minters
+        );
+        stream = address(core);
 
         vm.startPrank(admin);
+        core.createCollection("Genesis", bytes32(uint256(1)));
         _map(address(registry), PackageRegistry.revokePackage.selector, Roles.NETWORK);
         _map(address(registry), PackageRegistry.killSignerApprovals.selector, Roles.NETWORK);
+        _map(address(registry), PackageRegistry.releaseContent.selector, Roles.NETWORK);
+        _map(address(registry), PackageRegistry.setEntropyModule.selector, Roles.NETWORK);
         _map(address(registry), PackageRegistry.setVerifier.selector, Roles.SUCCESSOR_SETTER);
         _map(address(verifier), Eip712CurationVerifier.disableSigner.selector, Roles.NETWORK);
         _map(
@@ -235,17 +337,23 @@ abstract contract CurationBase is CurationHelpers {
         manager.grantRole(Roles.CURATION_SIGNER, signer1, 0);
         manager.grantRole(Roles.CURATION_SIGNER, signer2, 0);
         registry.bindStream(stream);
-        registry.bindEditions(editions);
         vm.stopPrank();
     }
 
+    /// @dev A registry with the same stubs, unbound, with the entropy stub installed.
     function _newRegistry() internal returns (PackageRegistry) {
         return new PackageRegistry(
             address(manager),
             ICurationVerifier(address(verifier)),
             address(verifier).codehash,
-            address(artists),
-            address(artists).codehash
+            address(
+                new StreamDirectory6529(
+                    address(manager), address(artists), address(0), address(0), address(0)
+                )
+            ),
+            IEconomicsResolver(address(_policyStub)),
+            address(entropy),
+            keccak256("cc0 text file")
         );
     }
 
@@ -304,49 +412,59 @@ abstract contract CurationBase is CurationHelpers {
         );
     }
 
+    function _request(
+        bytes32 root,
+        PackageItem memory item,
+        bytes32[] memory proof,
+        MoveAuthorization memory move
+    ) internal pure returns (bytes memory) {
+        return abi.encode(StreamMintRequest(root, item, proof, move));
+    }
+
+    /// @dev Admits and mints the item in the real Stream through the minter; returns the item
+    ///      hash and lead artist.
     function _consume(
         bytes32 root,
         PackageItem memory item,
         bytes32[] memory proof,
         MoveAuthorization memory move
     ) internal returns (bytes32 itemHash, uint256 artistId) {
-        IMintPolicy.MintRecord memory r = _authorize(root, item, proof, move);
-        (itemHash, artistId) = (r.itemHash, r.artistId);
+        (MintFacts memory f,) = _authorize(root, item, proof, move);
+        (itemHash, artistId) = (f.itemHash, f.artistId);
     }
 
-    /// @dev `IMintPolicy.authorize` as the bound Stream calls it, with stub economics (no fee)
-    ///      and a stub split factory.
+    /// @dev `IMintPolicy.authorize` by Stream's minter, then `IStream.mint` of the answer.
     function _authorize(
         bytes32 root,
         PackageItem memory item,
         bytes32[] memory proof,
         MoveAuthorization memory move
-    ) internal returns (IMintPolicy.MintRecord memory) {
-        IMintPolicy.MintContext memory c = IMintPolicy.MintContext(
-            stream, address(_policyStub), address(0), address(_policyStub)
-        );
-        // Through the Stream stand-in, which applies Stream's content rule (AUC-44).
-        return StreamContentMock(stream)
-            .mintThrough(registry, c, abi.encode(StreamMintRequest(root, item, proof, move)));
+    ) internal returns (MintFacts memory f, MintTerms memory t) {
+        (f, t,) = minter.mint(address(registry), stream, _request(root, item, proof, move));
     }
 
-    /// @dev `IMintPolicy.authorize` on `target` with the caller the test set up (no prank).
+    /// @dev As `_authorize`, on `target` (a test may prank the minter call; the minter is the
+    ///      policy's caller either way).
     function _policyCall(
         PackageRegistry target,
         bytes32 root,
         PackageItem memory item,
         bytes32[] memory proof,
         MoveAuthorization memory move
-    ) internal returns (IMintPolicy.MintRecord memory) {
-        IMintPolicy.MintContext memory c = IMintPolicy.MintContext(
-            stream, address(_policyStub), address(0), address(_policyStub)
-        );
-        return target.authorize(c, abi.encode(StreamMintRequest(root, item, proof, move)));
+    ) internal returns (MintFacts memory f, MintTerms memory t) {
+        (f, t,) = minter.mint(address(target), stream, _request(root, item, proof, move));
     }
 
-    /// @dev Stream's dispute-burn release (held by Stream since AUC-44), on the stand-in.
-    function _release(bytes32 contentHash, bytes32 itemHash, uint256 beneficiary) internal {
-        StreamContentMock(stream).release(contentHash, itemHash, beneficiary, address(artists));
+    /// @dev Mints the item and burns it again from the minter's custody (an upheld dispute);
+    ///      returns the burned token.
+    function _mintAndBurn(
+        bytes32 root,
+        PackageItem memory item,
+        bytes32[] memory proof,
+        MoveAuthorization memory move
+    ) internal returns (uint256 tokenId) {
+        (,, tokenId) = minter.mint(address(registry), stream, _request(root, item, proof, move));
+        minter.burn(stream, tokenId);
     }
 
     /// @dev A registered one-item package by `lead`, accepted, with its move signed at nonce 0.

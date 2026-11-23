@@ -25,6 +25,20 @@
         "slot": 1,
         "type": "bytes32"
       }
+    ],
+    "struct PackageRegistry.Release": [
+      {
+        "label": "tokenId",
+        "offset": 0,
+        "slot": 0,
+        "type": "uint256"
+      },
+      {
+        "label": "beneficiary",
+        "offset": 0,
+        "slot": 1,
+        "type": "uint256"
+      }
     ]
   },
   "variables": [
@@ -79,7 +93,7 @@
     },
     {
       "contract": "PackageRegistry",
-      "label": "editions",
+      "label": "entropyModule",
       "offset": 0,
       "slot": 5,
       "type": "address"
@@ -125,6 +139,20 @@
       "offset": 0,
       "slot": 11,
       "type": "mapping(address => uint64)"
+    },
+    {
+      "contract": "PackageRegistry",
+      "label": "_releases",
+      "offset": 0,
+      "slot": 12,
+      "type": "mapping(address => mapping(bytes32 => struct PackageRegistry.Release))"
+    },
+    {
+      "contract": "PackageRegistry",
+      "label": "isBarred",
+      "offset": 0,
+      "slot": 13,
+      "type": "mapping(bytes32 => bool)"
     }
   ]
 }

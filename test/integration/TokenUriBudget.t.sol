@@ -4,9 +4,7 @@ pragma solidity ^0.8.24;
 import { console2 } from "forge-std/console2.sol";
 import { Base64 } from "@openzeppelin/contracts/utils/Base64.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
-import { IStream } from "src/interfaces/IStream.sol";
-import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
-import { FileRole, Locator, LocatorKind, MediaFile } from "src/interfaces/types/ContentTypes.sol";
+import { FileRole, LocatorKind, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import { Limits } from "src/interfaces/types/Limits.sol";
 import { EditionTerms, ItemKind, License, SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
@@ -14,34 +12,37 @@ import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
 import { ContentAddresses as CA } from "../helpers/ContentAddresses.sol";
 import { StateGrowth } from "../helpers/StateGrowth.sol";
-import { IntegrationBase } from "./IntegrationBase.sol";
+import { GasBase } from "./GasBase.sol";
 
-/// @notice The `tokenURI` budget proof on the real stack (ADR 0004: at most 8M Prague gas): every
-///         cap the protocol allows at once, measured cold through `Stream.tokenURI` (and
-///         `Editions.uri`) with the real WorkRecords, content store, statement log and renderer.
-///         - **The record**: the dearest rows of the renderer's record matrix
-///           (`RendererGasBudgetTest`): 32 attributes at the member cap with white space before
-///           each or after every token in all the room there is, 512 `%`, the rest of the 1,024
-///           units as top-level members or an array of zeros, or the costliest UTF-8 fill. Each
-///           attribute's name is 33 characters, the longest the renderer compares letter by
-///           letter with its own names (`TRAIT`).
+/// @notice The `tokenURI` budget proof on the deployed stack (ADR 0004: at most 8M Prague gas):
+///         every cap the protocol allows at once, measured cold through `Stream6529.tokenURI` (and
+///         `StreamEditions6529.uri`) with the real WorkFacts, content store, statement log,
+///         accounts module, delivery module and renderer.
+///         - **The record**: the dearest rows of the renderer's record matrix: 32 attributes at
+///           the member cap with white space before each or after every token in all the room
+///           there is, 512 `%`, the rest of the 1,024 units as top-level members or an array of
+///           zeros, or the costliest UTF-8 fill. Each attribute's name is 33 characters, the
+///           longest the renderer compares letter by letter with its own names (`TRAIT`).
 ///         - **The media**: 256 KiB of attested `Base64` `text/html` as the primary (inlined),
 ///           a PREVIEW image at the renderer's bound (`Limits.MAX_PREVIEW_BYTES`), stored as
 ///           `Identity` or as attested `Base64` (inlined), and 32 media files in all
 ///           (`Limits.MAX_MEDIA_FILES`).
 ///         - **The rest**: a 64-byte `LicenseRef` license whose text is a media file served by
-///           locator, 16 locators on it (the artist's 8 and the platform's 8, of the longest
-///           kind, the served one last, so the scan runs to the end), the dearest collection
-///           name `createCollection` accepts (`_dearestName`), an ARTIST seed and a dispute
-///           statement. (A VRF seed instead adds one bounded read of the entropy module, a few
-///           thousand gas.)
+///           locator, 16 locators on it (the platform's 8 and the artist's 8, of the longest
+///           kind, the served one last, so the scan runs to the end), a dear collection name,
+///           an ARTIST seed and a dispute statement.
 ///         Each row builds its own work, so each test measures one.
-contract TokenUriBudgetTest is IntegrationBase {
+/// @dev Stream does not check a collection's name (the PLATFORM role chooses it); the renderer
+///      shows a name of at most `Renderer.MAX_NAME_BYTES` (128) bytes of valid UTF-8 and reads
+///      no longer one. The rows use the dearest name it shows (`_dearestName`). The name rows
+///      measure the longest shown name, of bytes JSON escaping lengthens, and names far over
+///      the bound (`test_Budget_LongestShownName_*`, `test_Budget_NameOverTheBound_*`).
+contract TokenUriBudgetTest is GasBase {
     uint256 internal constant MAX_ATTRIBUTES = 32;
     uint256 internal constant MAX_ESCAPES = 512;
     uint256 internal constant MAX_VALUES = 1_024;
     /// @dev The dearest trait name: 33 characters is the longest name the renderer lowers and
-    ///      compares with its own (a longer one cannot be one of them without two spaces in a row).
+    ///      compares with its own.
     bytes internal constant TRAIT = "abcdefghijklmnopqrstuvwxyzabcdefg";
     bytes internal constant ATTR = '{"trait_type":"abcdefghijklmnopqrstuvwxyzabcdefg","value":1,'
         '"display_type":"number","max_value":9}';
@@ -50,6 +51,11 @@ contract TokenUriBudgetTest is IntegrationBase {
     ///      `Limits.MAX_PREVIEW_BYTES` of weight, an `Identity` byte weighing eight).
     uint256 internal constant PREVIEW_IDENTITY = Limits.MAX_PREVIEW_BYTES / 8;
     uint256 internal constant PREVIEW_BASE64 = Limits.MAX_PREVIEW_BYTES;
+    /// @dev The longest collection name the renderer shows (`Renderer.MAX_NAME_BYTES`).
+    uint256 internal constant LONGEST_SHOWN_NAME = 128;
+
+    /// @dev A work's metadata measured at or over the 8M budget (an open finding).
+    error OverTokenUriBudget(uint256 used);
 
     // Where the attributes' white space goes, and what the leftover units are.
     uint256 internal constant NO_SPACE = 0;
@@ -64,6 +70,10 @@ contract TokenUriBudgetTest is IntegrationBase {
     /// @dev When above 1, every chunk uploaded is stored as a link of this many parts, never
     ///      whole (`_writeChunks`).
     uint256 internal linkParts;
+    /// @dev The collection name the next `_build` uses (`_dearestName` when empty).
+    bytes internal nextName;
+    /// @dev The token `_namedRow` built last.
+    uint256 internal lastTokenId;
 
     function setUp() public override {
         super.setUp();
@@ -94,9 +104,9 @@ contract TokenUriBudgetTest is IntegrationBase {
         }
     }
 
-    /// @dev `RendererGasBudgetTest._record`: `name`, a description of `MAX_ESCAPES` `%` and then
-    ///      `fill` up to 12 KiB, the attributes, and the rest of the units as `shape`.
-    function _record(bytes memory fill, uint256 shape, bytes memory attributes, uint256 units)
+    /// @dev `name`, a description of `MAX_ESCAPES` `%` and then `fill` up to 12 KiB, the
+    ///      attributes, and the rest of the units as `shape`.
+    function _json(bytes memory fill, uint256 shape, bytes memory attributes, uint256 units)
         internal
         pure
         returns (bytes memory)
@@ -150,12 +160,11 @@ contract TokenUriBudgetTest is IntegrationBase {
     function _worstRecord(uint256 where, uint256 shape) internal pure returns (bytes memory) {
         uint256 n = MAX_ATTRIBUTES;
         bytes memory plain = _list(ATTR, n);
-        if (where == NO_SPACE) return _record(hex"6161c3a9", shape, plain, ATTR_UNITS * n);
-        uint256 free =
-            Limits.MAX_RECORD_BYTES - _record("", shape, plain, ATTR_UNITS * n).length - 8;
+        if (where == NO_SPACE) return _json(hex"6161c3a9", shape, plain, ATTR_UNITS * n);
+        uint256 free = Limits.MAX_RECORD_BYTES - _json("", shape, plain, ATTR_UNITS * n).length - 8;
         bytes memory attributes =
             where == BEFORE ? _spacedBefore(n, free / n) : _spacedInside(n, free / (17 * n));
-        return _record(hex"6161c3a9", shape, attributes, ATTR_UNITS * n);
+        return _json(hex"6161c3a9", shape, attributes, ATTR_UNITS * n);
     }
 
     // ------------------------------------------------------------------ linked chunks
@@ -181,13 +190,10 @@ contract TokenUriBudgetTest is IntegrationBase {
 
     // ------------------------------------------------------------------ the work
 
-    /// @dev The dearest collection name to render, of those `createCollection` accepts (it
-    ///      refuses control characters, `<`, `"` and `\`, which JSON escaping makes six bytes):
-    ///      U+2028 three bytes at a time, escaped to six (`\u2028`), and a `#` to fill the 256
-    ///      bytes (the delta review's dearest). 256 `%` or `#` cost about 0.08M less, plain ASCII
-    ///      about 0.2M less.
+    /// @dev The dearest collection name the renderer shows: U+2028 three bytes at a time,
+    ///      escaped to six (a JSON `u2028` escape), and `#x` to fill the 128 bytes.
     function _dearestName() internal pure returns (string memory) {
-        return string(bytes.concat(_fill(hex"e280a8", 255), "#"));
+        return string(bytes.concat(_fill(hex"e280a8", LONGEST_SHOWN_NAME - 2), "#x"));
     }
 
     struct Built {
@@ -220,9 +226,10 @@ contract TokenUriBudgetTest is IntegrationBase {
         _attestAll(b.media[0].fileId);
         (bytes32 preview, bytes32 previewSha) = _preview(base64Preview);
         b.media[1] = MediaFile(preview, previewSha, uint8(FileRole.PREVIEW));
-        bytes memory terms = abi.encodePacked("The terms of the license, #", vm.toString(salt));
-        b.licenseText = _storeText(terms, "text/plain");
-        b.media[2] = MediaFile(b.licenseText, sha256(terms), uint8(FileRole.AUXILIARY));
+        bytes memory licenseTerms =
+            abi.encodePacked("The terms of the license, #", vm.toString(salt));
+        b.licenseText = _storeText(licenseTerms, "text/plain");
+        b.media[2] = MediaFile(b.licenseText, sha256(licenseTerms), uint8(FileRole.AUXILIARY));
         for (uint256 i = 3; i < b.media.length; ++i) {
             bytes memory aux =
                 abi.encodePacked("auxiliary ", vm.toString(salt), "/", vm.toString(i));
@@ -237,8 +244,9 @@ contract TokenUriBudgetTest is IntegrationBase {
         returns (Built memory b)
     {
         ++salt;
+        string memory name = nextName.length == 0 ? _dearestName() : string(nextName);
         vm.prank(platform);
-        uint256 coll = stream.createCollection(_dearestName(), keccak256(abi.encode(salt)));
+        uint256 coll = stream.createCollection(name, keccak256(abi.encode(salt)));
         bytes32 content;
         (b, content) = _mediaFiles(base64Preview);
         Work memory w;
@@ -257,39 +265,55 @@ contract TokenUriBudgetTest is IntegrationBase {
         _platformStatement(address(stream), b.tokenId, StatementKinds.DISPUTE_OUTCOME, "ar://d");
     }
 
+    /// @dev Starts the work (a master's edition opened while its 1/1 is live), opens its record
+    ///      and marks it on-chain complete.
     function _mintAndOpen(Work memory w, bool master) internal returns (uint256 tokenId) {
         Work[] memory works = _one(w);
-        bytes32 root = _publish(works);
-        uint256 saleId;
-        (saleId, tokenId) = _start(root, works, 0);
+        bytes32 r = _publish(works);
+        (, tokenId) = _start(r, works, 0);
         if (master) {
-            _ethBid(saleId, makeAddr("budgetCollector"), 1 ether);
-            _settleAtEnd(saleId);
-            editions.createEdition(tokenId, w.item);
+            editionAuction.open(
+                address(editions), tokenId, abi.encode(w.item, r, _proofOf(works, 0))
+            );
         }
-        records.openRecord(tokenId, w.item, w.media);
-        records.syncOnChain(tokenId, 0, type(uint256).max);
+        _open(tokenId, w);
+        facts.markOnChainComplete(address(stream), tokenId);
     }
 
     /// @dev 16 locators on the license text, of the longest kind (IPFS, 66 bytes) last and
-    ///      ARWEAVE before it, and the global preference on IPFS: the scan runs to the end. The
-    ///      platform's 8 come first and the artist's 8 last, since the kind fallback considers
-    ///      only the artist's (WS-21), so the served IPFS copy is the artist's at index 15.
+    ///      ARWEAVE before it, and the token's preference on IPFS: the scan runs to the end. The
+    ///      platform's 8 come first and the artist's 8 last, so the served IPFS copy is the
+    ///      artist's at index 15.
     function _addLocators(Built memory b) internal {
         for (uint256 i; i < 16; ++i) {
             string memory seed = string.concat(vm.toString(salt), "/", vm.toString(i));
-            vm.prank(i < 8 ? platform : artist);
-            delivery.addLocator(
-                b.tokenId, b.licenseText, i == 15 ? CA.ipfsLocator(seed) : CA.ar(seed)
+            bytes memory call = abi.encodeCall(
+                delivery.addLocator,
+                (
+                    address(stream),
+                    b.tokenId,
+                    b.licenseText,
+                    i == 15 ? CA.ipfsLocator(seed) : CA.ar(seed)
+                )
             );
+            if (i < 8) {
+                _govern(platform, address(delivery), call);
+            } else {
+                vm.prank(artist);
+                (bool ok, bytes memory reason) = address(delivery).call(call);
+                _bubble(ok, reason);
+            }
         }
-        vm.prank(storageOperator);
-        delivery.setPreferredKind(LocatorKind.IPFS);
+        _govern(
+            storageOperator,
+            address(delivery),
+            abi.encodeCall(delivery.setPreferredKind, (address(stream), LocatorKind.IPFS))
+        );
     }
 
     // ------------------------------------------------------------------ measuring
 
-    /// @dev Cold Prague gas of `token`'s metadata view for `id`, as `_tokenUriMatrix` measures it.
+    /// @dev Cold Prague gas of a metadata view, as the integration report measures it.
     function _cold(address token, bytes memory call) internal returns (uint256 used) {
         (bool ok,) = token.call(call); // warm every account, so the surcharge applies to all
         assertTrue(ok, "metadata view");
@@ -299,7 +323,10 @@ contract TokenUriBudgetTest is IntegrationBase {
         used += COLD_ACCOUNT_SURCHARGE * growth.coldAccounts.length;
     }
 
-    function _row(string memory label, bytes memory json, bool base64Preview) internal {
+    function _row(string memory label, bytes memory json, bool base64Preview)
+        internal
+        returns (uint256 used)
+    {
         Built memory b = _build(json, base64Preview, false);
         string memory uri = stream.tokenURI(b.tokenId);
         assertFalse(_contains(uri, "record_status"), "the record is accepted");
@@ -309,12 +336,12 @@ contract TokenUriBudgetTest is IntegrationBase {
             _contains(uri, string.concat('"license_url":"', CA.ipfs(_last(salt)), '"')),
             "the last locator is served"
         );
-        uint256 used = _cold(address(stream), abi.encodeCall(stream.tokenURI, (b.tokenId)));
+        used = _cold(address(stream), abi.encodeCall(stream.tokenURI, (b.tokenId)));
         console2.log(label, used);
         assertLt(used, TOKEN_URI_BUDGET, label);
     }
 
-    function _last(uint256 s) internal view returns (string memory) {
+    function _last(uint256 s) internal pure returns (string memory) {
         return string.concat(vm.toString(s), "/15");
     }
 
@@ -350,10 +377,9 @@ contract TokenUriBudgetTest is IntegrationBase {
         );
     }
 
-    /// @dev The dearest row with every chunk the renderer reads (the record, the primary's 11
-    ///      and the preview's) linked from `MAX_PARTS_PER_CHUNK` (3) parts, the most it reads
-    ///      from: each part costs one more storage read and code copy, and the row still fits
-    ///      8M. Every other row stores whole chunks; this one is their upper bound.
+    /// @dev The dearest row with every chunk the renderer reads linked from
+    ///      `MAX_PARTS_PER_CHUNK` (3) parts, the most it reads from: each part costs one more
+    ///      storage read and code copy, and the row still fits 8M.
     function test_Budget_LinkedAtTheBound_SpacedBefore_Zeros_Base64Preview() public {
         linkParts = 3;
         _row(
@@ -364,7 +390,7 @@ contract TokenUriBudgetTest is IntegrationBase {
     }
 
     /// @dev One part more than the bound in every chunk: the renderer neither reads the record
-    ///      nor inlines a file (`maxParts` above 3), so the work renders its core facts.
+    ///      nor inlines a file, so the work renders its core facts.
     function test_Budget_PastTheBoundNothingIsRead() public {
         linkParts = 4;
         Built memory b = _build(_worstRecord(BEFORE, ZEROS), true, false);
@@ -375,7 +401,8 @@ contract TokenUriBudgetTest is IntegrationBase {
         assertLt(used, TOKEN_URI_BUDGET);
     }
 
-    /// @dev An edition renders its master: `Editions.uri` adds the master link and one trait.
+    /// @dev An edition renders its master: `StreamEditions6529.uri` adds the master link and one
+    ///      trait.
     function test_Budget_Edition_SpacedBefore_Zeros() public {
         Built memory b = _build(_worstRecord(BEFORE, ZEROS), false, true);
         string memory uri = editions.uri(b.tokenId);
@@ -386,100 +413,99 @@ contract TokenUriBudgetTest is IntegrationBase {
         assertLt(used, TOKEN_URI_BUDGET);
     }
 
-    // ------------------------------------------------------------------ the read caps
-
-    /// @dev The renderer's gas caps for the two satellite reads that grow with a work: the media
-    ///      list (its own cap) and a preferred locator (the small-read cap). Not getters, to save
-    ///      the renderer's bytecode: `RendererHostile.t.sol` checks the media cap's value.
-    uint256 internal constant MEDIA_READ_CAP = 1_000_000;
-    uint256 internal constant SMALL_READ_CAP = 300_000;
-
-    /// @dev The least gas `call` on WorkRecords succeeds with, storage cold, plus EIP-2929's
-    ///      2,500 for the one account it reaches that Foundry cannot cool (the store for
-    ///      `mediaOf`, Stream for `preferredLocator`).
-    function _least(bytes memory call) internal returns (uint256) {
-        uint256 lo = 10_000;
-        uint256 hi = 2_000_000;
-        while (hi - lo > 100) {
-            uint256 mid = (lo + hi) / 2;
-            _coolAll();
-            (bool ok,) = address(records).staticcall{ gas: mid }(call);
-            if (ok) hi = mid;
-            else lo = mid;
-        }
-        return hi + COLD_ACCOUNT_SURCHARGE;
-    }
-
-    /// @dev At every cap (32 files, 16 locators scanned to the last), each read needs a small
-    ///      part of its cap from cold storage: room for a repricing of cold reads.
-    function test_Reads_FarUnderTheirCaps() public {
-        Built memory b = _build(_worstRecord(BEFORE, ZEROS), false, false);
-        uint256 media = _least(abi.encodeCall(records.mediaOf, (b.tokenId)));
-        uint256 locator =
-            _least(abi.encodeCall(records.preferredLocator, (b.tokenId, b.licenseText)));
-        console2.log("mediaOf, 32 files, cold:", media, "of", MEDIA_READ_CAP);
-        console2.log("preferredLocator, 16 scanned, cold:", locator, "of", SMALL_READ_CAP);
-        assertLt(media * 4, MEDIA_READ_CAP, "mediaOf: a quarter of its cap at most");
-        assertLt(locator * 2, SMALL_READ_CAP, "preferredLocator: half of its cap at most");
-    }
-
     // ------------------------------------------------------------------ the collection name
 
-    /// @dev The names the review measured above the budget (a collection of 256 control bytes,
-    ///      `"` or `<`, each escaped to up to six bytes in every work's metadata) are refused at
-    ///      creation, as are a backslash and DEL anywhere; the dearest accepted name is the one
-    ///      the rows use.
-    function test_CollectionName_RefusesBytesThatEscapeLong() public {
-        bytes[8] memory refused = [
-            _fill(hex"01", 256),
-            _fill('"', 256),
-            _fill("<", 256),
-            bytes("Genesis\\"),
-            bytes("Genesis\x7f"),
-            bytes("Gene\nsis"),
-            bytes("A <b> collection"),
-            hex"1f"
-        ];
-        for (uint256 i; i < refused.length; ++i) {
-            vm.prank(platform);
-            vm.expectRevert(IStream.InvalidCollectionName.selector);
-            stream.createCollection(string(refused[i]), bytes32(0));
-        }
-        vm.startPrank(platform);
-        stream.createCollection(_dearestName(), bytes32(0));
-        stream.createCollection(string(_fill("%", 256)), bytes32(0));
-        stream.createCollection("Genesis & Co. > 'all' #1", bytes32(0));
-        vm.stopPrank();
+    /// @dev A work at every cap whose collection is named `name`: its cold `tokenURI` gas.
+    function _namedRow(bytes memory name) internal returns (uint256) {
+        nextName = name;
+        Built memory b = _build(_worstRecord(BEFORE, ZEROS), false, false);
+        lastTokenId = b.tokenId;
+        assertFalse(_contains(stream.tokenURI(b.tokenId), "record_status"), "record accepted");
+        return _cold(address(stream), abi.encodeCall(stream.tokenURI, (b.tokenId)));
     }
 
-    // ------------------------------------------------------------------ the preview cap
+    /// @dev Whatever name the PLATFORM role gives a collection, a work in it renders within 8M.
+    function _checkNamedWithinBudget(bytes memory name) internal {
+        uint256 used = _namedRow(name);
+        console2.log("tokenURI with a long collection name:", used);
+        if (used >= TOKEN_URI_BUDGET) revert OverTokenUriBudget(used);
+    }
 
-    /// @dev `openRecord` holds no renderer budget: a PREVIEW of any size opens, and the renderer
-    ///      decides what it inlines (its preview bound keeps `tokenURI` within 8M).
-    function test_PreviewCap_OpenRecordAcceptsAnyPreview() public {
+    /// @dev The longest names the renderer shows, of the bytes JSON escaping lengthens most
+    ///      (a control byte becomes six, a quote two, U+2028 six for three): each is shown, in
+    ///      the work's name and in its Collection trait, inside the budget.
+    function test_Budget_LongestShownName_ControlBytes() public {
+        bytes memory name = _fill(hex"01", LONGEST_SHOWN_NAME);
+        _checkNamedWithinBudget(name);
+        assertTrue(_contains(stream.tokenURI(lastTokenId), "\\u0001\\u0001"), "name shown");
+    }
+
+    function test_Budget_LongestShownName_Quotes() public {
+        _checkNamedWithinBudget(_fill('"', LONGEST_SHOWN_NAME));
+        assertTrue(_contains(stream.tokenURI(lastTokenId), '\\"\\"\\"'), "name shown");
+    }
+
+    function test_Budget_LongestShownName_LineSeparators() public {
+        _checkNamedWithinBudget(bytes(_dearestName()));
+        assertTrue(_contains(stream.tokenURI(lastTokenId), "\\u2028\\u2028"), "name shown");
+    }
+
+    /// @dev A name over the bound is refused by its length alone, so what it holds costs
+    ///      nothing: the work renders without a collection name, inside the budget. (Before the
+    ///      bound, 4,096 control bytes took this work to 15.7M gas.)
+    function _checkOverTheBound(bytes memory name) internal {
+        uint256 used = _namedRow(name);
+        console2.log("tokenURI with a collection name over the bound:", used);
+        string memory uri = stream.tokenURI(lastTokenId);
+        assertFalse(_contains(uri, "\\u0001\\u0001"), "the name is not shown");
+        assertFalse(_contains(uri, '\\"\\"\\"'), "the name is not shown");
+        assertLt(used, TOKEN_URI_BUDGET);
+    }
+
+    function test_Budget_NameOverTheBound_ControlBytes() public {
+        _checkOverTheBound(_fill(hex"01", 4_096));
+    }
+
+    function test_Budget_NameOverTheBound_Quotes() public {
+        _checkOverTheBound(_fill('"', 4_096));
+    }
+
+    function test_Budget_NameOverTheBound_NotUtf8() public {
+        _checkOverTheBound(_fill(hex"ff", 4_096));
+    }
+
+    function test_Budget_NameOverTheBound_ByOneByte() public {
+        _checkOverTheBound(_fill(hex"01", LONGEST_SHOWN_NAME + 1));
+    }
+
+    /// @dev A name longer than the renderer reads is no name: the work still renders, with its
+    ///      record, inside the budget.
+    function test_CollectionName_LongerThanTheRendererReadsIsNoName() public {
+        nextName = _fill("n", LONGEST_SHOWN_NAME + 1);
+        Built memory b = _build(_worstRecord(BEFORE, ZEROS), false, false);
+        string memory uri = stream.tokenURI(b.tokenId);
+        assertFalse(_contains(uri, "nnnn"), "the name is not shown");
+        assertFalse(_contains(uri, "record_status"), "the record is accepted");
+        uint256 used = _cold(address(stream), abi.encodeCall(stream.tokenURI, (b.tokenId)));
+        assertLt(used, TOKEN_URI_BUDGET);
+    }
+
+    // ------------------------------------------------------------------ the preview
+
+    /// @dev `StreamWorkFacts6529.open` holds no renderer budget: a PREVIEW of any size and encoding
+    ///      opens, and the renderer decides what it inlines (its preview bound keeps `tokenURI`
+    ///      within 8M).
+    function test_PreviewCap_OpenAcceptsAnyPreview() public {
         uint256 cap = Limits.MAX_PREVIEW_BYTES;
-        _expectPreview(_bytes(cap / 4 + 1, 1), IContentStore.Encoding.Identity, true);
-        _expectPreview(_bytes(cap + 4, 2), IContentStore.Encoding.Base64, true);
-        _expectPreview(_bytes(4 * cap, 3), IContentStore.Encoding.Gzip, true);
-        _expectPreview(_bytes(4 * cap, 6), IContentStore.Encoding.GzipBase64, true);
-        _expectPreview(_bytes(cap / 4, 4), IContentStore.Encoding.Identity, true);
-        _expectPreview(_bytes(cap, 5), IContentStore.Encoding.Base64, true);
-        // Not a PREVIEW: an auxiliary file of any size is unaffected.
-        Work memory w = _work(artist, collectionId);
-        MediaFile[] memory media = new MediaFile[](2);
-        media[0] = w.media[0];
-        bytes memory big = _bytes(cap + 1, 6);
-        media[1] = MediaFile(
-            _registerOnly(big, IContentStore.Encoding.Identity, "image/png", sha256(big)),
-            sha256(big),
-            uint8(FileRole.AUXILIARY)
-        );
-        _open(w, media, true);
+        _expectPreview(_bytes(cap / 4 + 1, 1), IContentStore.Encoding.Identity);
+        _expectPreview(_bytes(cap + 4, 2), IContentStore.Encoding.Base64);
+        _expectPreview(_bytes(4 * cap, 3), IContentStore.Encoding.Gzip);
+        _expectPreview(_bytes(4 * cap, 6), IContentStore.Encoding.GzipBase64);
+        _expectPreview(_bytes(cap / 4, 4), IContentStore.Encoding.Identity);
+        _expectPreview(_bytes(cap, 5), IContentStore.Encoding.Base64);
     }
 
-    function _expectPreview(bytes memory stored, IContentStore.Encoding encoding, bool fits)
-        internal
-    {
+    function _expectPreview(bytes memory stored, IContentStore.Encoding encoding) internal {
         Work memory w = _work(artist, collectionId);
         MediaFile[] memory media = new MediaFile[](2);
         media[0] = w.media[0];
@@ -487,20 +513,11 @@ contract TokenUriBudgetTest is IntegrationBase {
         media[1] = MediaFile(
             _registerOnly(stored, encoding, "image/png", sha), sha, uint8(FileRole.PREVIEW)
         );
-        _open(w, media, fits);
-    }
-
-    function _open(Work memory w, MediaFile[] memory media, bool fits) internal {
         w.media = media;
         w.item = _item(artist, collectionId, media[0].sha256Hash, media, w.item.recordFileId);
         Work[] memory works = _one(w);
         (, uint256 tokenId) = _start(_publish(works), works, 0);
-        if (!fits) {
-            vm.expectRevert(
-                abi.encodeWithSelector(IWorkRecords.InvalidRecordData.selector, tokenId)
-            );
-        }
-        records.openRecord(tokenId, w.item, media);
-        assertEq(records.isOpen(tokenId), fits);
+        _open(tokenId, w);
+        assertTrue(facts.factsOf(address(stream), tokenId).opened, "opened");
     }
 }

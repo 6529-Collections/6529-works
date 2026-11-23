@@ -5,34 +5,32 @@ import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.so
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import { UniformClearingReference as Ref } from "../helpers/UniformClearingReference.sol";
 import { EditionAuctionStack } from "./EditionAuctionStack.sol";
-import { IUniformEditionAuctionLens } from "src/interfaces/IUniformEditionAuctionLens.sol";
 
-/// @notice Differential fuzzing of the edition auction on the real stack against the slow,
-///         obvious definition of D138 (`UniformClearingReference`, the Solidity twin of
-///         `tools/edition_auction_ref.py`'s brute force): random books of bids and raises, on
-///         capped and uncapped sales and under four breadth margins, then the contract's live
-///         clearing, every bid's outcome and the settlement order against the reference, and
-///         settlement and every claim against exact supply and ETH conservation. Before the
-///         keeper settles, other settlers make bad, partial or reordered sweeps of their own:
-///         settlement still completes and every outcome still equals the reference.
+/// @notice Differential fuzzing of the edition auction on the deployed stack against the slow,
+///         obvious definition of D138 (`UniformClearingReference`, the brute-force per-unit
+///         clearing): random books of bids and raises, on capped and uncapped sales and under
+///         four breadth margins, then the contract's live clearing, every bid's outcome and the
+///         settlement order against the reference, and settlement and every claim against exact
+///         supply and ETH conservation. Before the keeper settles, other settlers make bad,
+///         partial or reordered sweeps of their own: settlement still completes and every
+///         outcome still equals the reference.
 /// @dev The golden vectors replay fixed books through the adapter
 ///      (`test/sales/edition/UniformEditionAuctionVectors.t.sol`); this explores books nobody
 ///      wrote down. Bids land on a narrow band of low steps, so steps collide, caps bind inside a
 ///      step and raises leave holes at the cut step.
 contract EditionAuctionDifferentialTest is EditionAuctionStack {
-    uint256 internal constant DENOMINATOR = 100_000;
     uint256 internal constant MAX_BIDS = 16;
     uint256 internal constant BAND = 10;
 
-    uint32[5] internal CAPS = [uint32(0), 1, 3, 7, 20];
-    uint32[4] internal MARGINS = [uint32(0), 10_000, 25_000, 50_000];
+    uint32[5] internal caps = [uint32(0), 1, 3, 7, 20];
+    uint32[4] internal margins = [uint32(0), 10_000, 25_000, 50_000];
 
     address internal artist;
     address internal collector = makeAddr("differentialCollector");
     address[4] internal bidders;
     bytes32 internal root;
 
-    /// @dev The fuzzed book, as the reference sees it (reset by every run's snapshot).
+    /// @dev The fuzzed book, as the reference sees it.
     uint256[] internal bidStep;
     uint256[] internal bidQty;
     uint256[] internal bidPos;
@@ -41,6 +39,8 @@ contract EditionAuctionDifferentialTest is EditionAuctionStack {
     mapping(uint256 step => uint256[]) internal departedPos;
     uint256 internal lo = type(uint256).max;
     uint256 internal hi;
+    /// @dev ETH paid into the adapter by bids and raises.
+    uint256 internal paidIn;
 
     function setUp() public override {
         super.setUp();
@@ -48,9 +48,9 @@ contract EditionAuctionDifferentialTest is EditionAuctionStack {
         for (uint256 i; i < 4; ++i) {
             bidders[i] = makeAddr(string.concat("differentialBidder", vm.toString(i)));
         }
-        Work[] memory works = new Work[](CAPS.length);
-        for (uint256 i; i < CAPS.length; ++i) {
-            works[i] = _masterWork(artist, CAPS[i]);
+        Work[] memory works = new Work[](caps.length);
+        for (uint256 i; i < caps.length; ++i) {
+            works[i] = _masterWork(artist, caps[i]);
         }
         root = _publish(works);
         _keep(root, works);
@@ -58,18 +58,52 @@ contract EditionAuctionDifferentialTest is EditionAuctionStack {
 
     /// @notice A random book: the live clearing, every outcome and the settlement order equal the
     ///         per-unit reference's; settling and claiming every bid mints exactly the clearing
-    ///         count and leaves the adapter empty.
+    ///         count, pays out exactly the revenue and leaves the adapter empty.
     function testFuzz_Clearing_EqualsTheBruteForceReference(
         uint256 seed,
         uint8 capIndex,
         uint8 marginIndex
     ) public {
-        uint32 cap = CAPS[capIndex % CAPS.length];
-        uint256 margin = _setMargin(MARGINS[marginIndex % MARGINS.length]);
-        (uint256 oneSaleId, uint256 workId, uint256 sale) = _startCapped(capIndex % CAPS.length);
+        uint256 index = capIndex % caps.length;
+        uint32 cap = caps[index];
+        uint256 margin = _setMargin(margins[marginIndex % margins.length]);
+        (uint256 oneSaleId, uint256 workId, uint256 sale) = _startCapped(index);
+        assertEq(ea.auction(sale).terms.marginShare, margin, "the margin in force at open");
         _fuzzBook(sale, seed, cap);
+        assertEq(address(editionAuction).balance, paidIn, "every wei of escrow held");
+        (uint256 k, uint256 price) = _liveEqualsReference(sale, cap, margin);
 
-        (uint256 k, uint256 price, uint256 best) = _reference(sale, cap, margin);
+        // A sold 1/1, then the edition sale and every claim.
+        _ethBid(oneSaleId, collector, 1 ether);
+        _settleAtEnd(oneSaleId);
+        _settleAndCheckPayout(sale, workId, k, price, seed);
+        _checkOutcomes(sale, k, price, cap);
+        _claimAll(sale, workId, k, seed);
+    }
+
+    /// @notice The fuzzed books reach the hard case: a cap rationed inside a step with two or
+    ///         more departures to sweep. Searches seeds for one, then runs the whole differential
+    ///         on it (the mangled sweeps included).
+    function test_Differential_ReachesARationedSweepWithDepartures() public {
+        uint256 found = type(uint256).max;
+        for (uint256 seed; seed < 256 && found == type(uint256).max; ++seed) {
+            uint256 snapshot = vm.snapshotState();
+            (,, uint256 sale) = _startCapped(3);
+            _fuzzBook(sale, seed, caps[3]);
+            if (ea.settlementOrder(sale).length >= 2) found = seed;
+            vm.revertToState(snapshot);
+        }
+        assertTrue(found != type(uint256).max, "no book with a rationed sweep");
+        testFuzz_Clearing_EqualsTheBruteForceReference(found, 3, 1);
+    }
+
+    function _liveEqualsReference(uint256 sale, uint32 cap, uint256 margin)
+        internal
+        view
+        returns (uint256 k, uint256 price)
+    {
+        uint256 best;
+        (k, price, best) = _reference(sale, cap, margin);
         IUniformEditionAuction.Clearing memory c = ea.clearing(sale);
         assertEq(c.count, k, "count");
         assertEq(c.price, price, "price");
@@ -77,20 +111,27 @@ contract EditionAuctionDifferentialTest is EditionAuctionStack {
         if (cap != 0) assertLe(c.count, cap, "cap");
         _checkOutcomes(sale, k, price, cap);
         _checkOrder(sale, k, price, cap);
+    }
 
-        // A sold 1/1, the edition when copies sold, then the edition sale and every claim.
-        _ethBid(oneSaleId, collector, 1 ether);
-        _settleAtEnd(oneSaleId);
-        if (k != 0) {
-            Work[] memory works = _package(root);
-            uint256 index = capIndex % CAPS.length;
-            editions.createEdition(workId, works[index].item);
-        }
+    /// @dev Other settlers, then the keeper, settle: the count is the reference's, exactly the
+    ///      revenue leaves the adapter (network fee plus seller), and the edition is sealed at
+    ///      the count.
+    function _settleAndCheckPayout(
+        uint256 sale,
+        uint256 workId,
+        uint256 k,
+        uint256 price,
+        uint256 seed
+    ) internal {
+        address seller = ea.auction(sale).seller;
+        uint256 out = networkFee.balance + seller.balance;
+        uint256 held = address(editionAuction).balance;
         _otherSettlers(sale, seed);
         _settleEditions(sale);
         assertEq(ea.settlement(sale).count, k, "settled count");
-        _checkOutcomes(sale, k, price, cap);
-        _claimAll(sale, workId, k, seed);
+        assertEq(networkFee.balance + seller.balance - out, k * price, "the revenue paid out");
+        assertEq(held - address(editionAuction).balance, k * price, "and only it");
+        assertEq(editions.editionOf(workId).maxSupply, k, "sealed at k");
     }
 
     /// @dev After the close, three settlers each start a sweep of their own from a mangled
@@ -135,13 +176,13 @@ contract EditionAuctionDifferentialTest is EditionAuctionStack {
 
     // ------------------------------------------------------------------ the book
 
+    /// @dev The network (PARAMETER_SETTER, 24 hours) sets the margin for sales opened next.
     function _setMargin(uint32 margin) internal returns (uint256) {
         IUniformEditionAuction.AuctionConfig memory current = ea.config();
         IUniformEditionAuction.AuctionConfig memory next = ea.config();
         next.marginShare = margin;
         if (margin != current.marginShare) {
-            _govern(
-                hotAdmin,
+            _asNetwork(
                 address(editionAuction),
                 abi.encodeCall(IUniformEditionAuction.setConfig, (current, next))
             );
@@ -170,6 +211,7 @@ contract EditionAuctionDifferentialTest is EditionAuctionStack {
             }
             uint256 step = (r >> 16) % 64 == 0 ? 40 + (r >> 24) % 4 : (r >> 24) % BAND;
             uint256 qty = 1 + (r >> 32) % 5;
+            paidIn += qty * ea.stepPrice(sale, step);
             _editionBid(sale, bidders[j % 4], step, qty);
             bidStep.push(step);
             bidQty.push(qty);
@@ -184,11 +226,8 @@ contract EditionAuctionDifferentialTest is EditionAuctionStack {
         uint256 index = r % bidStep.length;
         uint256 from = bidStep[index];
         uint256 to = from + 1 + (r >> 8) % 4;
-        uint256 cost = bidQty[index] * (ea.stepPrice(sale, to) - ea.stepPrice(sale, from));
-        address bidder = ea.bidOf(sale, index + 1).bidder;
-        vm.deal(bidder, bidder.balance + cost);
-        vm.prank(bidder);
-        editionAuction.raise{ value: cost }(sale, index + 1, to);
+        paidIn += bidQty[index] * (ea.stepPrice(sale, to) - ea.stepPrice(sale, from));
+        _editionRaise(sale, index + 1, to);
         live[from] -= bidQty[index];
         if (cap != 0) departedPos[from].push(bidPos[index]);
         bidStep[index] = to;
@@ -299,7 +338,8 @@ contract EditionAuctionDifferentialTest is EditionAuctionStack {
     // ------------------------------------------------------------------ settlement and claims
 
     /// @dev Claims every bid (half pushed by `claimBidFor`, whose refunds the bidders then take):
-    ///      exactly `k` copies exist afterwards and the adapter holds nothing.
+    ///      exactly `k` copies exist afterwards, every bidder holds what it won, and the adapter
+    ///      holds nothing.
     function _claimAll(uint256 sale, uint256 workId, uint256 k, uint256 seed) internal {
         uint256 minted;
         for (uint256 j; j < bidStep.length; ++j) {
@@ -313,16 +353,16 @@ contract EditionAuctionDifferentialTest is EditionAuctionStack {
                 minted += won;
             }
         }
+        uint256 copies;
         for (uint256 i; i < 4; ++i) {
-            if (
-                IUniformEditionAuctionLens(address(editionAuction))
-                        .claimable(bidders[i], CURRENCY_ETH) == 0
-            ) continue;
+            copies += editions.balanceOf(bidders[i], workId);
+            if (eaLens.claimable(bidders[i], CURRENCY_ETH) == 0) continue;
             vm.prank(bidders[i]);
             editionAuction.claim(CURRENCY_ETH, bidders[i]);
         }
         assertEq(minted, k, "the claims minted k");
-        if (k != 0) assertEq(editions.edition(workId).minted, k, "supply is k");
+        assertEq(copies, k, "the bidders hold k");
+        assertEq(editions.editionOf(workId).minted, k, "supply is k");
         assertEq(address(editionAuction).balance, 0, "nothing left in the adapter");
     }
 }

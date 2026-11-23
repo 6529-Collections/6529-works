@@ -1,7 +1,8 @@
 <#
 .SYNOPSIS
-    Runs the v1 flows on a Sepolia rehearsal deployment (r5 by default; -Record selects
-    another) and records the gas of every transaction (deployments/11155111/flows.md).
+    Runs the flows on a Sepolia rehearsal of the plain core (ADR 0010; round r6 on) and records
+    the gas of every transaction. -Record is the deployment record script/DeployCore.s.sol
+    wrote (one `<name>: <address>` object).
 
 .DESCRIPTION
     script/sepolia/Flows.s.sol encodes every call and reads every EIP-712 digest from the
@@ -25,35 +26,39 @@
     (-GasLimit) so the node does not refuse to estimate it, and records the failed receipt.
 
 .EXAMPLE
-    ./flows.ps1 -SignerModule <path> -State <state.json> -Step content
-    ./flows.ps1 -SignerModule <path> -State <state.json> -Step start -Index 0
-    ./flows.ps1 -SignerModule <path> -State <state.json> -Step settle -TokenId 6
-    ./flows.ps1 -SignerModule <path> -State <state.json> -Step bid -TokenId 2 -Bidder bidder1 -Amount 50000000000000000 -Label bid-2-antisnipe
-    ./flows.ps1 -SignerModule <path> -State <r1-state.json> -Record deployments/11155111/1791746472.json -Step settle -TokenId 6
-    ./flows.ps1 -SignerModule <path> -State <state.json> -Step openEdition -Index 5 -TokenId 2
-    ./flows.ps1 -SignerModule <path> -State <state.json> -Step editionBid -TokenId 2 -Bidder bidder3 -EditionStep 30 -Quantity 2
-    ./flows.ps1 -SignerModule <path> -State <state.json> -Step editionSettle -TokenId 3 -Settler wallet3 -Order 1
-    ./flows.ps1 -SignerModule <path> -State <state.json> -Step bid -TokenId 2 -Bidder bidder1 -Amount 1 -ExpectRevert -Label bid-1-wei
-    ./flows.ps1 -SignerModule <path> -State <state.json> -Step pause -TokenId 1
-    ./flows.ps1 -SignerModule <path> -State <state.json> -Step editionState -TokenId 2 -Label before-antisnipe
-    ./flows.ps1 -SignerModule <path> -State <state.json> -Step prague
+    $r = 'deployments/11155111/core-<timestamp>.json'
+    ./flows.ps1 -SignerModule <path> -State <state.json> -Record $r -Step content
+    ./flows.ps1 -SignerModule <path> -State <state.json> -Record $r -Step starter -Index 0
+    ./flows.ps1 -SignerModule <path> -State <state.json> -Record $r -Step settle -TokenId 6
+    ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step bid -TokenId 2 -Bidder bidder1 -Amount 60000000000000000 -Label bid-2-antisnipe
+    ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step openEdition -Index 5 -TokenId 2
+    ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step editionBid -TokenId 2 -Bidder bidder3 -EditionStep 30 -Quantity 2
+    ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step editionSettle -TokenId 3 -Settler wallet3 -Order 1
+    ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step bid -TokenId 2 -Bidder bidder1 -Amount 1 -ExpectRevert -Label bid-1-wei
+    ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step finalize -TokenId 1
+    ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step release -Index 5
+    ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step pause -TokenId 1
+    ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step editionState -TokenId 2 -Label before-antisnipe
+    ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step prague
 
     The prague step replays each recorded transaction with
     `cast run <tx> --quick --evm-version prague`: the parent block's state, Prague gas costs.
     Run it soon after the transactions: a public RPC keeps only recent historical state (or
-    pass an archive RPC with -Rpc; r4 used https://sepolia.gateway.tenderly.co).
+    pass an archive RPC with -Rpc, such as https://sepolia.gateway.tenderly.co).
 #>
 param(
     [Parameter(Mandatory)] [string] $SignerModule,
     [Parameter(Mandatory)] [string] $State,
     [Parameter(Mandatory)] [ValidateSet('content', 'collections', 'package', 'start', 'starter', 'startWithBid',
-        'bid', 'openRecord', 'sync', 'requestSeed', 'settle', 'createEdition', 'openEdition',
+        'bid', 'openRecord', 'sync', 'finalize', 'requestSeed', 'settle', 'openEdition',
         'editionBid', 'editionRaise', 'editionSettle', 'claimBid', 'claimBidFor',
-        'claimCredits', 'editionState', 'englishState', 'pause', 'englishWithdraw', 'outcome',
-        'cancel', 'send', 'safeCall', 'record', 'prague', 'report')] [string] $Step,
+        'claimCredits', 'release', 'forward', 'editionState', 'englishState', 'pause',
+        'englishWithdraw', 'outcome', 'cancel', 'send', 'safeCall', 'record', 'prague',
+        'report')] [string] $Step,
     [string] $Rpc = 'https://ethereum-sepolia-rpc.publicnode.com',
-    # The deployment record, relative to the repository root (r5 by default; r4 is 1793536584.json).
-    [string] $Record = 'deployments/11155111/1795338612.json',
+    # The deployment record, relative to the repository root (script/DeployCore.s.sol writes
+    # deployments/11155111/core-<timestamp>.json).
+    [Parameter(Mandatory)] [string] $Record,
     # The keystore that relays permissionless calls (role `any`): the keeper, an EOA with no
     # role. A second relayer lets the content uploads run beside the sale flow, each with its
     # own state file.
@@ -88,7 +93,7 @@ $State = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath
 $Repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $Script = 'script/sepolia/Flows.s.sol:Flows'
 $env:FLOWS_RECORD = $Record
-$Contracts = (Get-Content -Raw -Encoding UTF8 (Join-Path $Repo $Record) | ConvertFrom-Json).contracts
+$Contracts = Get-Content -Raw -Encoding UTF8 (Join-Path $Repo $Record) | ConvertFrom-Json
 # 0.05 gwei and 0.2 gwei by default (cast's own max fee can fall below the priority fee);
 # FLOWS_PRIORITY_FEE and FLOWS_MAX_FEE (wei) override them when Sepolia's base fee is near zero.
 $PriorityFee = if ($env:FLOWS_PRIORITY_FEE) { $env:FLOWS_PRIORITY_FEE } else { '50000000' }
@@ -100,22 +105,18 @@ $Accounts = @{
     curator  = 'curator'            # CURATOR
     artist   = 'stream-artist'      # the lead artist of the package
     signer   = 'curation-1'         # CURATION_SIGNER (signs only)
-    pauser   = 'pauser-1'           # PAUSER (r5 on: a key, not a Safe)
+    pauser   = 'pauser-1'           # PAUSER (a key)
     bidder1  = 'flows-bidder-1'
     bidder2  = 'flows-bidder-2'
-    wallet2  = 'flows-consolidated'  # the artist's consolidated second wallet (from r1)
-    wallet3  = 'flows-wallet3'       # a wallet consolidated after the artist registers on r2
-    bidder3  = 'flows-bidder-3'      # r4 on
-    bidder4  = 'flows-bidder-4'      # r4 on
+    wallet2  = 'flows-consolidated'  # the artist's consolidated second wallet
+    wallet3  = 'flows-wallet3'       # a wallet consolidated after the artist registers
+    bidder3  = 'flows-bidder-3'
+    bidder4  = 'flows-bidder-4'
 }
 # Safe -> the owner keystores that sign for it (threshold many), from the genesis holders.
 $SafeSigners = @{
-    '0x54a769fe591c3f47cf83d30b69e576497ce34454' = @('safe-owner-1', 'safe-owner-2')  # r5 network Safe, 2-of-3
-    '0x5d1103f2fc0ce8d0e81a918a3819182208b6e916' = @('guardian1-1', 'guardian1-2')    # r4 Guardian Safe 1, 2-of-3
-    '0x2588a62384f41bb32412841ab774cd574b427bd5' = @('hot-1', 'hot-2')                # r4 Hot admin Safe, 2-of-3
+    '0x54a769fe591c3f47cf83d30b69e576497ce34454' = @('safe-owner-1', 'safe-owner-2')  # the network Safe (r5, r6), 2-of-3
 }
-# r4's guardian Safe paused 1/1s; from r5 a pauser key does (-Safe overrides).
-$GuardianSafe = '0x5d1103f2FC0ce8D0E81a918A3819182208B6E916'
 $Zero = '0x0000000000000000000000000000000000000000'
 
 # ---------------------------------------------------------------------------- state
@@ -410,10 +411,9 @@ switch ($Step) {
         Send-Items (Invoke-Plan 'content()' @())
     }
     'collections' {
-        $stream = $Contracts.Stream.address
+        $stream = $Contracts.Stream6529
         # Creates only the collections an instance lacks, so a re-run is a no-op where both
-        # exist. r1's two were created under earlier names ("r1 Flows", "r1 Flows 2"); the
-        # package uses collection IDs 1 and 2, not names.
+        # exist. The package uses collection IDs 1 and 2, not names.
         $count = [int](Invoke-Cli 'cast' @('call', $stream, 'collectionCount()(uint256)', '--rpc-url', $Rpc)).Trim()
         foreach ($name in (@('Flows', 'Flows 2') | Select-Object -Skip $count)) {
             $hash = (Invoke-Cli 'cast' @('keccak', "6529-works/sepolia/flows/collection/$name")).Trim()
@@ -450,18 +450,18 @@ switch ($Step) {
         Send-Items (Invoke-Plan 'openRecordTx(uint256,uint256)' @("$Index", "$TokenId"))
     }
     'sync' {
-        $records = $Contracts.WorkRecords.address
-        $data = (Invoke-Cli 'cast' @('calldata', 'syncOnChain(uint256)', "$TokenId")).Trim()
-        Send-Planned "syncOnChain-$TokenId" 'any' $records '0' $data | Out-Null
+        # Records in WorkFacts that every media file of the work is complete in the content store.
+        $data = (Invoke-Cli 'cast' @('calldata', 'markOnChainComplete(address,uint256)', $Contracts.Stream6529, "$TokenId")).Trim()
+        Send-Planned "markOnChainComplete-$TokenId" 'any' $Contracts.StreamWorkFacts6529 '0' $data | Out-Null
+    }
+    'finalize' {
+        Send-Items (Invoke-Plan 'finalizeTx(uint256)' @("$TokenId"))
     }
     'requestSeed' {
         Send-Items (Invoke-Plan 'requestSeedTx()' @())
     }
     'settle' {
         Send-Items (Invoke-Plan 'settleTx(uint256)' @("$TokenId"))
-    }
-    'createEdition' {
-        Send-Items (Invoke-Plan 'createEditionTx(uint256,uint256)' @("$Index", "$TokenId"))
     }
     'openEdition' {
         Send-Items (Invoke-Plan 'openEditionTx(uint256,uint256)' @("$Index", "$TokenId"))
@@ -487,8 +487,14 @@ switch ($Step) {
         Send-Items (Invoke-Plan 'claimBidForTx(uint256,uint256)' @("$TokenId", "$BidId"))
     }
     'claimCredits' {
-        $adapterAddress = if ($Adapter -eq 'english') { $Contracts.EnglishAuction.address } else { $Contracts.UniformEditionAuction.address }
+        $adapterAddress = if ($Adapter -eq 'english') { $Contracts.EnglishAuction } else { $Contracts.UniformEditionAuction }
         Send-Items (Invoke-Plan 'claimCreditsTx(address,address)' @($adapterAddress, (Get-Address $Bidder)))
+    }
+    'release' {
+        Send-Items (Invoke-Plan 'releaseTx(uint256)' @("$Index"))
+    }
+    'forward' {
+        Send-Items (Invoke-Plan 'forwardTx()' @())
     }
     'editionState' {
         Save-Snapshot (Invoke-Plan 'editionState(uint256)' @("$TokenId")) $Label
@@ -497,7 +503,7 @@ switch ($Step) {
         Save-Snapshot (Invoke-Plan 'englishState(uint256)' @("$TokenId")) $Label
     }
     'pause' {
-        # The pauser key (r5 on), or -Safe for an instance whose pauser is a Safe (r4: $GuardianSafe).
+        # The pauser key, or -Safe for a pauser that is a Safe.
         $guardian = if ($Safe) { $Safe } else { Get-Address 'pauser' }
         Send-Items (Invoke-Plan 'pauseTx(uint256,address)' @("$TokenId", $guardian))
     }
@@ -508,17 +514,13 @@ switch ($Step) {
         Send-Items (Invoke-Plan 'outcomeTx(uint256)' @("$TokenId"))
     }
     'cancel' {
-        # The selected record's network (the manager's `network()`). A failed read stops the
-        # step: a record from before the single network address has no `network()`, and for
-        # such a record pass -Safe (its network was the hot admin Safe). -Safe always
-        # overrides. Send-Safe refuses a Safe without configured signers.
+        # The network (the manager's `network()`; the manager is the configurator's
+        # `worksManager()`). -Safe overrides. Send-Safe refuses a Safe without configured signers.
         $network = $Safe
         if (-not $network) {
-            try {
-                $network = (Invoke-Cli 'cast' @('call', $Contracts.WorksAccessManager.address,
-                        'network()(address)', '--rpc-url', $Rpc)).Trim()
-            }
-            catch { throw "could not read network() from the selected record's manager; pass -Safe for a record that predates it" }
+            $manager = (Invoke-Cli 'cast' @('call', $Contracts.GovernanceConfigurator,
+                    'worksManager()(address)', '--rpc-url', $Rpc)).Trim()
+            $network = (Invoke-Cli 'cast' @('call', $manager, 'network()(address)', '--rpc-url', $Rpc)).Trim()
         }
         if (-not $SafeSigners[$network.ToLower()]) { throw "no signers configured for network Safe $network" }
         Send-Items (Invoke-Plan 'cancelTx(uint256,address)' @("$TokenId", $network))

@@ -2,45 +2,53 @@
 pragma solidity ^0.8.24;
 
 import { console2 } from "forge-std/console2.sol";
+import { Outcome } from "src/interfaces/core/CoreTypes.sol";
 import { StreamLifecycleHandler } from "./StreamLifecycleHandler.sol";
 
-/// @notice Stateful invariants of a work's whole lifecycle on the real stack: 6529 Stream, the
-///         package registry, the records satellite, the English auction and the artist registry,
-///         deployed and configured by `DeployV1` with the committed genesis.
+/// @notice Stateful invariants of a work's whole lifecycle on the plain-core stack: 6529 Stream,
+///         the package registry, `StreamWorkFacts6529` and `WorkRules`, the delivery contract, the
+///         English auction and the accounts module, deployed and configured by `DeployCore`
+///         with the committed genesis.
 ///
 ///         The handler (`StreamLifecycleHandler`, inherited) registers and accepts packages,
-///         moves items to Stream and starts their auctions, bids, settles, pauses for disputes and
-///         cancels or resumes them, releases a burned work's content, opens, amends, finalizes
-///         and relicenses records, adds locators, transfers works, stages and ends recovery
-///         overrides while the restrained keys keep trying to act, pauses and unpauses the
-///         auction's starts, and lets a hostile contract (reverting, burning its gas or
-///         re-entering) bid, receive works and claim, its refused deliveries claimed by the winning
-///         bidder (RFX-SAL-1, RFX-SAL-4). After every call:
+///         moves items to Stream and starts their auctions, bids, settles, pauses for disputes
+///         and cancels or resumes them, releases a burned work's content, opens, amends,
+///         finalizes and relicenses records, adds locators, swaps the RENDERER module,
+///         transfers works, stages and ends replacements and freezes accounts while the
+///         restrained keys keep trying to act, pauses and unpauses starts, claims and expires
+///         credits while the network changes the unclaimed period, and lets a hostile contract
+///         (reverting, burning its gas or re-entering) bid, receive works and claim, its refused
+///         deliveries claimed by the winning bidder. The state is checked:
 ///
 ///         1. Ownership: every token has exactly one owner, a known holder, and is in the
 ///            auction's custody exactly while its sale is unsettled or its delivery pending (a
 ///            burned token has none).
 ///         2. IDs: token IDs are assigned once, in order, each to one item, and never reused;
 ///            supply is minted minus burned.
-///         3. Content: a content hash is held by at most one live item. A burned work keeps it
-///            until it is released; a released item is tombstoned and only the release's
-///            beneficiary may consume the content again.
-///         4. Finality: a finalized record never changes its content hashes (the media hash,
-///            the media list and the record file); media never changes at all.
-///         5. CC0: a CC0 work stays CC0, with the deployment's pinned CC0 text.
-///         6. Locators are append-only: exactly the ones added, in order.
-///         7. Restraint (IDENTITY-1): while a recovery override that moves the authority is
-///            pending, the artist has no active authority, and nothing the old or the reserved
-///            key tries as the artist goes through.
-///         8. The auction holds exactly the live high bids and the bidders' credits.
-///         9. An unbid work ends with the museum (D140, ADR 0005): a settlement without a bid
-///            delivers it to the 6529 Network Museum at once, even while its artist is
-///            restrained, and the museum holds nothing else.
+///         3. Facts fixed at mint never change; the outcome is NONE until the sale records it,
+///            then SOLD or UNSOLD for good.
+///         4. Content: a content hash is held by at most one live work. A burned work keeps it
+///            until it is released; a released item is barred and only the release's
+///            beneficiary may mint the content again.
+///         5. Records: the media never change; the record file changes only by the artist's
+///            `setRecord` and never after finalize; a finalized work keeps its pinned renderer;
+///            a CC0 work stays CC0 with the deployment's pinned text; locators are append-only.
+///         6. Renderers: the RENDERER module is the one governance activated, a pending module
+///            keeps the time it was given whatever the module delay becomes, and a finalized
+///            work is drawn by its pinned renderer whatever the module.
+///         7. Restraint: a party has no active authority exactly while frozen or being
+///            replaced, and nothing its keys try as the artist goes through.
+///         8. The auction holds exactly the live high bids and the credits.
+///         9. Aged credits: a credit is what was credited and not claimed or expired; it is due
+///            one unclaimed period (as it stands) after its waiting money started to wait; an
+///            expiry sends exactly that money and never money younger than the period.
+///         10. An unbid work ends with the museum, at once whatever its artist's standing, and
+///            the museum holds nothing else.
 ///         Every action also predicts its outcome; any disagreement fails the campaign.
 contract StreamLifecycleInvariantTest is StreamLifecycleHandler {
-    uint256 internal constant ACTIONS = 22;
+    uint256 internal constant ACTIONS = 27;
     /// @dev Replayed sequences in `test_EveryActionRuns`.
-    uint256 internal constant RUNS = 32;
+    uint256 internal constant RUNS = 64;
 
     function setUp() public override {
         super.setUp();
@@ -72,9 +80,14 @@ contract StreamLifecycleInvariantTest is StreamLifecycleHandler {
         s[19] = this.hostileBid.selector;
         s[20] = this.hostileClaim.selector;
         s[21] = this.claimDelivery.selector;
+        s[22] = this.claimCredit.selector;
+        s[23] = this.expireCredit.selector;
+        s[24] = this.setUnclaimedPeriod.selector;
+        s[25] = this.swapRenderer.selector;
+        s[26] = this.freezeAccount.selector;
     }
 
-    /// @notice Every invariant above (1 to 9). In CI the state is asserted every fourth call
+    /// @notice Every invariant above (1 to 10). In CI the state is asserted every fourth call
     ///         and after the last call of each run (every action still checks its own outcome
     ///         at once); the `deep` profile asserts it after every call.
     /// forge-config: default.invariant.check_interval = 4
@@ -85,9 +98,9 @@ contract StreamLifecycleInvariantTest is StreamLifecycleHandler {
 
     /// @notice The campaign is not vacuous: sequences of the campaign's shape (uniform random
     ///         actions, depth 128) replayed from fixed seeds reach every action and the paths
-    ///         the invariants are about, with every invariant holding after each step.
+    ///         the invariants are about, with every invariant holding along the way.
     function test_EveryActionRuns() public {
-        string[44] memory paths = [
+        string[58] memory paths = [
             "register",
             "registerRefused",
             "accept",
@@ -104,12 +117,17 @@ contract StreamLifecycleInvariantTest is StreamLifecycleHandler {
             "withdraw",
             "openRecord",
             "setRecord",
+            "finalizedRecordRefused",
             "finalize",
             "addLocator",
             "relicense",
             "stageRecovery",
             "veto",
             "recovered",
+            "earlyExecuteRefused",
+            "freeze",
+            "unfreeze",
+            "freezeRefused",
             "restrainedStart",
             "restrainedAct",
             "restrainedAccept",
@@ -129,15 +147,24 @@ contract StreamLifecycleInvariantTest is StreamLifecycleHandler {
             "hostileReceived",
             "deliveryPending",
             "forwardedClaimRefused",
+            "recipientRedirect",
             "deliveryClaimed",
             "hostileClaimKept",
-            "hostileReentryRefused"
+            "hostileReentryRefused",
+            "claim",
+            "expired",
+            "expireEarly",
+            "expireNothing",
+            "setPeriod",
+            "rendererProposed",
+            "rendererSwapped",
+            "moduleNotReady"
         ];
-        uint256[44] memory totals;
+        uint256[58] memory totals;
         // The deepest chain (a copy burned by an upheld dispute, its content released, a racing
-        // copy refused, the rightful artist re-minting) is rare in random sequences: it is logged
-        // here and asserted step by step by `test_CopyDisputeReleaseAndRemint`.
-        uint256[3] memory deep;
+        // copy refused, the rightful artist minting again) is rare in random sequences: it is
+        // logged here and asserted step by step by `test_CopyDisputeReleaseAndRemint`.
+        uint256[4] memory deep;
         for (uint256 run; run < RUNS; ++run) {
             uint256 snapshot = vm.snapshotState();
             for (uint256 depth; depth < 128; ++depth) {
@@ -153,29 +180,33 @@ contract StreamLifecycleInvariantTest is StreamLifecycleHandler {
                     mstore(0x40, free)
                 }
             }
+            _assertLifecycle();
             for (uint256 i; i < paths.length; ++i) {
                 totals[i] += hits[bytes32(bytes(paths[i]))];
             }
-            (deep[0], deep[1], deep[2]) =
-            (deep[0] + hits["release"], deep[1] + hits["reserved"], deep[2] + hits["reconsume"]);
+            deep[0] += hits["release"];
+            deep[1] += hits["reserved"];
+            deep[2] += hits["reconsume"];
+            deep[3] += hits["frozenExecuteRefused"];
             vm.revertToStateAndDelete(snapshot);
         }
         for (uint256 i; i < paths.length; ++i) {
             console2.log(paths[i], totals[i]);
         }
-        console2.log("release, reserved, reconsume (asserted by test_CopyDisputeReleaseAndRemint)");
+        console2.log("release, reserved, reconsume, frozenExecuteRefused");
         console2.log(deep[0], deep[1], deep[2]);
+        console2.log(deep[3]);
         for (uint256 i; i < paths.length; ++i) {
             assertGt(totals[i], 0, paths[i]);
         }
     }
 
     /// @notice The deepest path, driven step by step through the handler: a copy of another
-    ///         artist's media is started and bid on, the guardian pauses it, the dispute is upheld
-    ///         (the work is burned and the bid credited back), its content is released to the
-    ///         rightful artist, another artist's copy racing for it is refused, and the rightful
-    ///         artist's own item then mints the content again.
-    ///         Every invariant holds after each step.
+    ///         artist's media is started and bid on, a pauser key pauses it, the dispute is
+    ///         upheld (the work is burned and the bid credited back), its content is released to
+    ///         the rightful artist, another artist's copy racing for it is refused, and the
+    ///         rightful artist's own item then mints the content again. Every invariant holds
+    ///         after each step.
     function test_CopyDisputeReleaseAndRemint() public {
         for (uint256 i; i < ARTISTS; ++i) {
             this.register(i);
@@ -192,50 +223,84 @@ contract StreamLifecycleInvariantTest is StreamLifecycleHandler {
         _assertLifecycle();
         this.resolveDispute(0, 0);
         assertTrue(tok[1].burned, "the upheld dispute burned the copy");
+        assertGt(auction.claimable(lcBidders[0]), 0, "the bid was credited back");
         _assertLifecycle();
         this.releaseContent(0, 0);
-        assertEq(registry.releasedTo(pool[4].contentHash), uint160(lcArtists[2]));
+        assertEq(registry.releasedTo(address(stream), pool[4].contentHash), uint160(lcArtists[2]));
+        assertTrue(registry.isBarred(pool[4].itemHash), "the burned item is barred");
         assertEq(hits["reserved"], 1, "artist 1's copy raced for the released content, refused");
         _assertLifecycle();
         this.start(0, 2);
         assertEq(pool[12].tokenId, 2, "the rightful artist's item minted the content again");
         assertEq(hits["reconsume"], 1);
+        assertEq(registry.releasedTo(address(stream), pool[4].contentHash), 0, "release used up");
         _assertLifecycle();
     }
 
-    /// @notice The deep campaign's shrunk sequence (nightly, 19 and 21 Nov 2026): while artist
-    ///         0 is restrained, its reserved key, a stranger to the record, records a finalize
-    ///         notice on the settled work; the recovery executes 14 days later and a second one
-    ///         is staged; the restrained authority then calls `finalize` once the notice is due.
-    ///         Not a wallet of the account, it finalizes the record as it stands, as anyone may
-    ///         (C9): a due finalize, not an artist's act. Every invariant holds after each step.
+    /// @notice While artist 0 is being replaced, the key the replacement reserves, a stranger
+    ///         to the record, records a finalize notice on the settled work; the replacement
+    ///         executes 14 days later and a second one is staged; the restrained authority then
+    ///         calls `finalize` once the notice is due. Not a wallet of the account, it finalizes
+    ///         the record as it stands, as anyone may: a due finalize, not an artist's act. Every
+    ///         invariant holds after each step.
     function test_DueFinalizeNoticeWhileRestrained() public {
-        this.start(89, 2222568082);
-        this.stageRecovery(14940972799394490962644263919452925702448);
-        this.settle(17034);
-        this.openRecord(121992225);
+        this.start(0, 2);
         uint256 id = uint160(lcArtists[0]);
-        assertEq(stream.artistOf(1), id, "artist 0's work");
-        assertTrue(stream.primarySaleSettled(1));
+        assertEq(stream.workOf(1).artistId, id, "artist 0's work");
+        this.stageRecovery(0);
+        assertEq(accounts.activeAuthorityOf(id), address(0), "restrained");
+        this.settle(0);
+        this.openRecord(0);
+        assertTrue(stream.workOf(1).outcome != Outcome.NONE, "the sale has an outcome");
         _assertLifecycle();
-        // The reserved key (which % 2 == 1), power 2: a notice, not a finalize.
-        this.restrainedAct(1e17, 3233);
-        uint256 notice = records.finalizeNoticeAt(1);
+        // The reserved key (which odd), power 2: a notice, not a finalize.
+        this.restrainedAct(0, 5);
+        uint256 notice = rules.finalizeNoticeAt(address(stream), 1);
         assertEq(notice, block.timestamp, "the stranger's call recorded a notice");
-        assertFalse(records.record(1).finalized);
+        assertFalse(facts.factsOf(address(stream), 1).finalized);
         _assertLifecycle();
-        this.endRecovery(
-            190490946534341508236511762691880928699280104594725378915283106627852459552, 117
-        );
-        this.stageRecovery(5566827158041360516774494190951858655291761710741097064);
-        address authority = artists.authorityOf(id);
-        assertEq(artists.activeAuthorityOf(id), address(0), "restrained again");
-        assertFalse(artists.isWallet(id, authority), "the authority is not a wallet");
+        this.endRecovery(0, 1);
+        assertEq(hits["recovered"], 1, "the replacement executed");
+        this.stageRecovery(0);
+        address authority = accounts.authorityOf(id);
+        assertEq(accounts.activeAuthorityOf(id), address(0), "restrained again");
+        assertFalse(accounts.isWallet(id, authority), "the authority is not a wallet");
         assertGe(block.timestamp, notice + FINALIZE_NOTICE, "the notice is due");
-        // The authority (which % 2 == 0), power 2: the due finalize anyone may make.
-        this.restrainedAct(12493, 64);
-        assertTrue(records.record(1).finalized, "the due notice finalized the record");
+        // The authority (which even), power 2: the due finalize anyone may make.
+        this.restrainedAct(0, 4);
+        assertTrue(facts.factsOf(address(stream), 1).finalized, "the due notice finalized");
         assertEq(hits["dueFinalize"], 1);
+        _assertLifecycle();
+    }
+
+    /// @notice The aged-credit rule under a changing period, step by step: a bidder outbid
+    ///         twice holds two credits that started at different times; shortening the period
+    ///         lets only the first (the waiting money) go to the network; the second then waits
+    ///         a whole period from the expiry; a claim takes everything.
+    function test_AgedCreditsExpireOnlyAgedMoney() public {
+        this.start(0, 2);
+        this.bid(0, 0, 0);
+        this.bid(0, 1, 0);
+        uint256 first = auction.claimable(lcBidders[0]);
+        assertGt(first, 0, "bidder 0 was outbid");
+        this.warp(12 hours);
+        this.bid(0, 0, 0);
+        this.bid(0, 1, 0);
+        assertGt(auction.claimable(lcBidders[0]), first, "a second credit joined");
+        this.setUnclaimedPeriod(2); // 1 day: neither credit has waited a day
+        this.expireCredit(0);
+        assertEq(hits["expireEarly"], 1, "refused: nothing has waited the period");
+        this.warp(12 hours);
+        this.setUnclaimedPeriod(0); // zero: the waiting money is due at once
+        uint256 total = auction.claimable(lcBidders[0]);
+        this.expireCredit(0);
+        assertEq(hits["expired"], 1);
+        assertEq(auction.claimable(lcBidders[0]), total - first, "only the first credit went");
+        this.setUnclaimedPeriod(2);
+        this.expireCredit(0);
+        assertEq(hits["expireEarly"], 2, "the rest waits a new period from the expiry");
+        this.claimCredit(0);
+        assertEq(auction.claimable(lcBidders[0]), 0, "a claim takes everything");
         _assertLifecycle();
     }
 
@@ -264,6 +329,11 @@ contract StreamLifecycleInvariantTest is StreamLifecycleHandler {
         else if (which == 18) this.toggleStartPause(a);
         else if (which == 19) this.hostileBid(a, b, seed >> 64);
         else if (which == 20) this.hostileClaim(b);
-        else this.claimDelivery(a);
+        else if (which == 21) this.claimDelivery(a);
+        else if (which == 22) this.claimCredit(a);
+        else if (which == 23) this.expireCredit(a);
+        else if (which == 24) this.setUnclaimedPeriod(a);
+        else if (which == 25) this.swapRenderer(a);
+        else this.freezeAccount(a, b);
     }
 }

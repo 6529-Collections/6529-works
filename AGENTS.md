@@ -1,136 +1,97 @@
 # Agent operating guide
 
-Instructions for automated coding agents working in this repository.
+Instructions for automated coding agents working in this repository. Human contributors read
+[CONTRIBUTING.md](CONTRIBUTING.md); the system itself is described in the
+[three-page overview](docs/overview.md).
 
-## Scope and ownership
+## Scope
 
-- **Scope** is [ADR 0001](docs/adr/0001-v1-scope.md). Anything outside it needs a
-  new ADR first.
-- **Delivery state** lives in [ops/DELIVERY_PLAN.md](ops/DELIVERY_PLAN.md).
-- **Delivery owner:** Claude Code is the integrator, acting for the repository
-  owner. Builder agents work on independent lanes in their own worktrees and hand
-  over small, green PRs.
-- **Maturity:** pre-audit. Never claim audit, beta or production readiness
-  without merged evidence.
+- Scope is [ADR 0001](docs/adr/0001-v1-scope.md) as amended, most recently by
+  [ADR 0010](docs/adr/0010-plain-permanent-core.md) (the plain permanent core). Anything
+  outside it needs a new ADR first.
+- Maturity: pre-audit. Never claim an audit, beta or production readiness.
+- Deployments: Sepolia only, with throwaway keys. Never mainnet.
+
+## Permanent code (`src/core/`, the split ledger and vaults, the escrow, the content store)
+
+- Holds only token ownership and the collection address, the facts of a finished work, and
+  money already owed. Every rule lives in a replaceable module.
+- Plain: OpenZeppelin style, one struct per thing, no assembly, no hand-packed words, no hash
+  tables, no `try`/`catch`, no gas numbers, no `delegatecall`; `pragma solidity 0.8.37;`;
+  custom errors; an event for every state change, sufficient to rebuild the state from that
+  contract's logs alone.
+- No fixed waiting periods. Every wait is a network setting: a stored value with a launch
+  value, changed by the network at once (no floor, zero allowed), with an event carrying old
+  and new. Tests read the setting; they never assume the number. Limits on the work of one
+  transaction (payees, chunks, name lengths) stay compiled.
+- Every contract under `src/core/` keeps at least 3,000 bytes of EIP-170 margin; every other
+  contract at least 512 (`tools/size-margins.json`).
+
+## Comments
+
+NatSpec is plain English and complete (`python tools/check_natspec.py`). A comment states what
+the code does and what it guarantees, never its history. A comment may cite only:
+
+- a rule ID of the specification that exists today (`AUC-3`, `WS-17`, `ED-30`);
+- an invariant or property ID of [docs/audit/invariants.md](docs/audit/invariants.md);
+- an ADR by number (`ADR 0010`), an EIP or ERC by number, or a limitation ID
+  (`LIM-SAL-9`) of [known limitations](docs/audit/known-limitations.md);
+- a file, contract, function or error in this repository.
+
+It may not cite owner decisions by number, review or finding labels, pass or lane names,
+pull request numbers or any other code a reader cannot look up here.
+`python tools/check_comment_codes.py` lists every remaining code.
 
 ## Engineering rules
 
-**Budgets** (CI-enforced)
-- At most 17,000 non-comment lines of Solidity under `src/` (ADR 0001's 8–12K target, raised
-  to 13,000 on 1 November 2026, to 15,000 by [ADR 0007](docs/adr/0007-permanence.md), to
-  16,000 by [ADR 0008](docs/adr/0008-federation.md), to 16,500 for the federation review's
-  fixes, and to 17,000 by the owner on 16 November 2026).
-- At most 5 linked libraries.
-- No delegatecall and no proxies.
-- EIP-170 respected, measured on the explicit `--profile default` build, with at least 512
-  bytes of runtime margin for every contract declared in `src/`. A contract below that floor
-  needs an exemption in `tools/size-margins.json`, which records its margin and a reason; an
-  exempt contract may not lose margin below its record without updating it in the same PR.
-- No unreviewed High or Medium Slither finding (`docs/security/slither-triage.md`).
-- CI under 15 minutes.
-- Starting an auction in ETH, Stream's launch currency, at steady state costs at most 350K
-  Prague gas and writes at most 6 new storage slots, 7 with a bid
-  ([ADR 0004](docs/adr/0004-gas-budgets-under-glamsterdam.md)); the artist's later works,
-  which reuse Stream's shared terms word, write 5 and 6. An artist's first start under new
-  terms writes one more on a hashed-position collision, which a curated artist can force by
-  grinding an address; first starts are measured and gated separately, and such a collision
-  can push one over 350K (an accepted limitation). The binding row, an artist's first start
-  of a two-party work with a bid, and its margin are in ADR 0004's table. An ERC-20 start paid by
-  Permit2 is a supported, non-default path: it has a regression ceiling and exact counts, not
-  a budget. Admitting the first ERC-20, or approving a Stream package that names one, must be
-  accompanied by a re-measurement and publication of its start cost, in Prague gas and on the
-  target chain. `tokenURI` costs at most 8M Prague gas.
-- Every operation in `test/integration/GasReport.t.sol` asserts its exact count of new storage
-  slots and new accounts, and a Prague gas ceiling. When a change lowers a count, the same PR
-  lowers the test's figure, ADR 0004's table and the figures here; that needs no new ADR.
-  Raising a count needs a stated reason, and raising the `start` or `startWithBid` maximum
-  needs an ADR.
-- Every transaction's regular gas fits the 16,777,216 cap (EIP-7825) for worst-case bounded
-  inputs.
+- At most 17,000 non-comment lines of Solidity under `src/`; at most 5 linked libraries; no
+  delegatecall and no proxies; no unreviewed High or Medium Slither finding
+  ([triage](docs/security/slither-triage.md)).
+- Every start row of the English auction costs at most 370,000 Prague gas and writes at most 8
+  new storage slots, with or without a bid ([ADR 0004](docs/adr/0004-gas-budgets-under-glamsterdam.md)
+  as amended by ADR 0010); `tokenURI` at most 8M Prague gas.
+- Pull payments with exact balance checks; storage-backed replay protection; `abi.encode` for
+  structured hashing; fail closed (no read that returns a plausible default); no `tx.origin`.
+- Tests: forge-std assertions; `vm.expectRevert` with specific selectors; stateful invariants
+  (256 runs, depth 128) for anything that moves money; hostile-module tests for every side of
+  the seam (a module that lies, reverts, burns all gas or re-enters: no token moves, no fact or
+  balance changes, transfers still work).
 
-**Solidity:** the pinned 0.8.x compiler in `foundry.toml`, OpenZeppelin 5, and
-custom errors.
-- Use events for every important state change.
-- Use storage-backed replay protection.
-- Use `abi.encode` for structured hashing.
-- Use pull payments, with exact balance-delta checks on token transfers.
-- Fail closed: no soft-failing reads that return plausible defaults.
-- External calls follow [ADR 0007's gas rule](docs/adr/0007-permanence.md#2-the-gas-rule-replaces-the-first-plans-bounded-gas-rule):
-  permanent contracts, and the renderer that finalized works pin, compile no gas number and
-  forward all the gas a call may take (`BoundedCall`'s forward-all family); a failed call that
-  left at most 1/8 of the gas reverts as a shortfall (`BoundedCallShortfall`), never reads as a
-  refusal or a default. Replaceable contracts may cap gas (the fixed-gas family). Either way,
-  a call to code the caller does not control bounds the return data it copies.
-- No `tx.origin`, and no unbounded loops over user-controlled data. A view whose size its caller
-  chooses and pays for, writing nothing (such as Stream's `extsload(slot, n)`), is not such a
-  loop: an oversized request only runs its own caller out of gas.
-
-**Tests:**
-- forge-std assertions, and `vm.expectRevert` with specific selectors.
-- Every contract that moves money gets stateful invariants (≥256 runs × depth
-  128) and adversarial mocks.
-- Security-sensitive changes need happy-path, negative, regression and event
-  tests.
-
-**Reuse.** Port from the ADR 0001 §17 keep list by rewriting within the budgets.
-Never copy 6529Stream PR #744 code wholesale.
-
-## Documentation: one source of truth per fact
-
-Each fact has one owner; every other page links to it instead of repeating it
-([where each fact lives](docs/README.md#where-each-fact-lives)):
+## Documentation: one owner per fact
 
 | Fact | Owner |
 | --- | --- |
-| Rules, state machines, parameters | The [specification](docs/spec/README.md) page of the area, by rule ID (`AUC-3`, `WS-17`, ...) |
-| Where the code departs from an ADR | The [register](docs/spec/README.md#differences-from-the-adrs) in the specification index |
+| What the system is | [Overview](docs/overview.md) |
+| Rules, by rule ID | The [specification](docs/spec/README.md) page of the area |
 | Events and topic0 values | [Events and indexing](docs/integrators/events-and-indexing.md) |
-| Selector, role, delay | The generated [role matrix](docs/audit/roles.md) (from `config/genesis.example.json`) |
+| Selector, role, delay | The generated [role matrix](docs/audit/roles.md) (from `config/genesis.core.example.json`) |
 | Gas budgets and measured gas | [ADR 0004's table](docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table) |
 | Accepted risks and known gaps | [Known limitations](docs/audit/known-limitations.md) |
 | Sizes and nSLOC | [Audit scope](docs/audit/scope.md), refreshed by `check_docs_facts.py --update` |
 
-- **Module READMEs under `src/` are code maps:** what the module is for, its files, entry
-  points with rule IDs, developer notes (storage layout, bytecode headroom, gotchas, tests)
-  and links. Keep each under about 800 words and put rules, events, roles, gas figures and
-  risks on their owning page, not in the README.
-- **ADRs are history.** Never rewrite one; record a later correction as a dated amendment
-  note, and the current behavior in the specification and its ADR register. The exception is
-  ADR 0004's table, which its decision 2 keeps current.
-- How to run the suite and how strong it is (coverage floors, mutation testing, Halmos proofs)
-  is in [Testing](docs/testing/README.md); the CI gates are in
-  [Build, test and budgets](docs/audit/build-and-test.md). Coverage and Halmos run on `main`,
-  nightly and on demand, not on pull requests, so run them locally when a change needs them.
+- Write for the owner and for outside readers: plain English, short sentences, no internal
+  codes, no wording that frames the network as a risk. Never call a waiting period a guarantee.
+- ADRs are history: never rewrite one; add a dated amendment note. ADR 0004's table is kept
+  current.
+- Module READMEs under `src/` are code maps of at most about 800 words.
 
 ## Workflow
 
 ```bash
-git fetch origin main
 forge build
-forge test
+forge test --no-match-test "^invariant"
+python tools/check_markdown_links.py
 ```
 
-- One focused change per PR, branched from `origin/main`. Describe the summary,
-  the validation you ran, and the security impact.
-- A change of behavior updates its page in [docs/spec/](docs/spec/README.md) in the
-  same PR, and the module README if a file, entry point or developer note changed. A
-  change to `config/genesis.example.json` regenerates the role matrix
-  (`python tools/gen_role_matrix.py`). A source change that moves nSLOC or bytecode sizes
-  refreshes the docs: run `forge build`, then
-  `python tools/check_docs_facts.py --artifacts out --update`, and commit what it rewrote.
-  CI checks all three: the Docs job runs `gen_role_matrix.py --check`, `check_docs_facts.py`
-  and `check_markdown_links.py`, and Build and checks runs `check_docs_facts.py --artifacts out`
-  (its result, with the three Tests parts, makes up the required Contracts check).
-- Keep the **Static analysis** job green. Fix a new High or Medium Slither finding; only
-  disposition a real false positive or an accepted risk, with a reason, in
-  [docs/security/slither-triage.md](docs/security/slither-triage.md).
-- Request CodeRabbit review (`@coderabbitai review`). Verify bot findings, fix
-  the valid ones, and explain any you decline.
-- Merge with green required checks and resolved threads.
+- One focused change per PR, branched from `origin/main`; state the summary, the validation
+  run and the security impact.
+- A behaviour change updates its specification page in the same PR. A change to the genesis
+  configuration regenerates the role matrix (`python tools/gen_role_matrix.py`). A change that
+  moves sizes runs `python tools/check_docs_facts.py --artifacts out --update`.
+- Use `python`, not `python3`. Read and write text as UTF-8.
+- Request CodeRabbit review (`@coderabbitai review`); verify bot findings before acting.
 
 ## Security and secrets
 
-- Never commit private keys, seed phrases, signer material, RPC credentials or
-  API tokens.
-- Do not discuss exploitable vulnerabilities publicly. See
-  [SECURITY.md](SECURITY.md).
+Never commit private keys, seed phrases, signer material, RPC credentials or API tokens. Do not
+discuss exploitable vulnerabilities publicly ([SECURITY.md](SECURITY.md)).

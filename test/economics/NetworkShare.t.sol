@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import { Vm } from "forge-std/Vm.sol";
 import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
 import { GovernedVault } from "src/economics/GovernedVault.sol";
+import { IDirectory } from "src/interfaces/core/IDirectory.sol";
 import { SplitLedger } from "src/economics/SplitLedger.sol";
 import { IClaimRouter } from "src/economics/interfaces/IClaimRouter.sol";
 import { IReleaseVerifier } from "src/economics/interfaces/IReleaseVerifier.sol";
@@ -42,8 +43,9 @@ contract ReleaseProbe {
 ///         - every release from a wallet that names the network fee vault also pays the vault
 ///           its due share of the same asset, by every release path; a token that refuses the
 ///           vault does not block the release, and no other fixed payee is pushed;
-///         - a share anyone marked and its payee left unreleased for 180 days goes to the
-///           network, never more than was due at the mark;
+///         - a share anyone marked and its payee left unreleased for the unclaimed period
+///           (the Directory's setting, 180 days at launch; the mock resolver answers it) goes to
+///           the network, never more than was due at the mark;
 ///         - an escrow credit nobody claimed for 180 days moves to the network;
 ///         - the network moves its own escrow credits without consent, and nobody else's.
 /// @dev Each test fails without the change: before it, a release moved one payee only, the
@@ -308,7 +310,7 @@ contract NetworkShareTest is EconomicsBase, GasRuleAssertions {
 
     // ------------------------------------------------------------------ R12: marks
 
-    function test_AMarkedShareUnclaimedFor180DaysGoesToTheNetwork() public {
+    function test_AMarkedShareUnclaimedForThePeriodGoesToTheNetwork() public {
         address wallet = _wallet(_list(_fixed(alice, 80_000), _artist(ARTIST, 20_000)));
         vm.deal(wallet, 10 ether);
         uint256 artistIndex = _artistIndex(wallet, ARTIST);
@@ -568,8 +570,12 @@ contract NetworkShareTest is EconomicsBase, GasRuleAssertions {
 
     function test_TheLedgerNamesTheNetwork() public view {
         assertEq(ledger.network(), address(feeVault));
-        assertEq(ledger.UNCLAIMED_PERIOD(), PERIOD);
-        assertEq(escrow.UNCLAIMED_PERIOD(), PERIOD);
+        assertEq(resolver.unclaimedPeriod(), PERIOD, "the ledger reads the resolver's period");
+        assertEq(
+            IDirectory(address(ledger.resolver())).unclaimedPeriod(),
+            PERIOD,
+            "the escrow reads it too"
+        );
     }
 
     function _bal(address asset, address account) internal view returns (uint256) {

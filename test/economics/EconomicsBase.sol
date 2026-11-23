@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { Test } from "forge-std/Test.sol";
 import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
 import { AssetAllowlist } from "src/economics/AssetAllowlist.sol";
@@ -28,8 +29,11 @@ contract PaymentHarness {
         return RevenuePayment.payETH(escrow, wallet, amount, gasLimit);
     }
 
-    function payERC20(address wallet, address asset, uint256 amount) external returns (bool) {
-        return RevenuePayment.payERC20(escrow, wallet, asset, amount);
+    /// @dev Test set-up only: credits `wallet` in the escrow with tokens this harness holds.
+    ///      Sales pay in ETH; the escrow still accepts token deposits from anyone.
+    function creditERC20(address wallet, address asset, uint256 amount) external {
+        IERC20(asset).approve(address(escrow), amount);
+        escrow.depositERC20(wallet, asset, amount);
     }
 }
 

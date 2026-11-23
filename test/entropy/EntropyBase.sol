@@ -6,6 +6,7 @@ import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessMana
 import { VrfEntropyModule } from "src/entropy/VrfEntropyModule.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { IEntropyModule } from "src/interfaces/IEntropyModule.sol";
+import { IModuleSlots } from "src/interfaces/core/IModules.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { CURRENCY_DEFAULT } from "src/interfaces/types/EconomicsTypes.sol";
@@ -153,7 +154,8 @@ abstract contract EntropyBase is Test, EntropyItems {
             config_,
             retryDelay_,
             IPackageRegistry(registry_),
-            registry_.codehash
+            registry_.codehash,
+            IModuleSlots(address(0))
         );
     }
 

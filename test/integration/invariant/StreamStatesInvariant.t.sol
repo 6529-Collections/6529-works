@@ -3,72 +3,79 @@ pragma solidity ^0.8.24;
 
 import { console2 } from "forge-std/console2.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
-import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
-import { SaleTerms } from "src/interfaces/types/PackageTypes.sol";
-import { Payment, PaymentMethod, PrimaryOutcome } from "src/interfaces/types/SaleTypes.sol";
-import { MockSaleAdapter } from "../../mocks/stream/StreamMocks.sol";
+import { MintFacts, Minter, Outcome } from "src/interfaces/core/CoreTypes.sol";
+import { IModules } from "src/interfaces/core/IModules.sol";
+import { MockSale } from "../../mocks/core/CoreMocks.sol";
 import { IntegrationBase } from "../IntegrationBase.sol";
-import { IStream } from "src/interfaces/IStream.sol";
-import { IStreamViews } from "src/interfaces/IStreamViews.sol";
 
-/// @notice Owner decision 28: 6529 Stream's work lifecycle and sale-method lifecycle are the
-///         tables in `docs/spec/stream-and-auctions.md` ("A work's lifecycle", "A sale
-///         method's lifecycle"), and nothing moves a work or an adapter outside them.
+/// @notice 6529 Stream's work lifecycle and minter lifecycle on the plain core: nothing moves a
+///         work or a minter outside the tables below.
 ///
-///         On the real stack (`DeployV1` with the committed genesis), random sequences of calls
-///         mint works through the English auction and a second admitted sale adapter, bid,
-///         settle with every outcome (and try the ones an adapter may not report), burn,
-///         transfer works out of and back into custody and between holders, remove and admit
-///         both adapters through governance (and try transitions that change nothing), warp
-///         time and rescue works. After every call the suite reads each work's state from what
-///         Stream stores and checks:
-///         1. every observed (before, after) pair of work states is a row of the table (or no
-///            change);
+///         On the plain-core stack (`DeployCore` with the committed genesis), random sequences
+///         of calls mint works through the English auction (admitted by the package registry)
+///         and a second minter the network adds, bid, settle with both outcomes, report again
+///         (refused), burn, transfer works out of and back into custody and between holders,
+///         remove and add both minters (and try changes that change nothing), change the
+///         network's module and rescue delays, warp time and rescue works. After every call the
+///         suite reads each work's state from what Stream stores and checks:
+///         1. every observed (before, after) pair of work states is a row of the work table (or
+///            no change): NEVER_MINTED to IN_SALE; IN_SALE to OUT_OF_CUSTODY, CANCELLED, SOLD,
+///            UNSOLD or RESCUED; OUT_OF_CUSTODY back to IN_SALE; the rest are final;
 ///         2. a recorded outcome never changes;
-///         3. every observed adapter transition is a row of the sale-method table, and a call
-///            that would change nothing is refused.
+///         3. every observed minter transition is a row of the minter table: never added to
+///            pending or active; pending to active or removed; active to removed; removed to
+///            pending or active; and a change that would change nothing is refused;
+///         4. an added minter is active from the time it was given (the module delay in force
+///            when it was added), whatever the module delay becomes;
+///         5. every report, burn and rescue goes through exactly when the seam allows it: a
+///            minter (active or removed) holding the token with no outcome reports once or
+///            burns; the network rescues only a token a removed minter holds unsold, once the
+///            rescue delay as it stands has passed since the removal.
 contract StreamStatesInvariantTest is IntegrationBase {
-    /// @dev The work states of the spec's table.
+    /// @dev The work states of the table.
     enum S {
         NEVER_MINTED,
         IN_SALE,
         OUT_OF_CUSTODY,
         CANCELLED,
         SOLD,
-        UNBID,
-        FROZEN_OUT,
+        UNSOLD,
         RESCUED,
         /// @dev Not a state of the table: a recorded outcome on a token that no longer exists.
         OUTCOME_WITHOUT_TOKEN
     }
 
-    /// @dev The sale-method states (rescue eligibility is the removed state plus time).
+    /// @dev The minter states (`IModules.minterOf`).
     enum A {
-        NEVER_ADMITTED,
-        ADMITTED,
+        NEVER_ADDED,
+        PENDING,
+        ACTIVE,
         REMOVED
     }
 
-    bytes32 internal constant KIND = keccak256("STATES_TEST_1OF1");
     uint256 internal constant ITEMS = 24;
-    uint256 internal constant ACTIONS = 11;
+    uint256 internal constant ACTIONS = 12;
     /// @dev Replayed sequences in `test_EveryTransitionIsReached`.
     uint256 internal constant RUNS = 24;
     uint256 internal constant DEPTH = 96;
 
-    MockSaleAdapter internal adapter;
+    MockSale internal adapter;
     address internal artist;
     address internal collector = makeAddr("statesCollector");
     address internal other = makeAddr("statesOther");
     address internal bidder = makeAddr("statesBidder");
+    address internal neverAdded = makeAddr("statesNeverAdded");
     bytes32 internal root;
     uint256 internal nextItem;
+    uint256 internal englishMinted;
 
-    mapping(uint256 tokenId => address) internal minterOf;
+    mapping(uint256 tokenId => address) internal minterOfToken;
     mapping(uint256 tokenId => uint256) internal englishSale;
     mapping(uint256 tokenId => S) internal seen;
-    mapping(uint256 tokenId => PrimaryOutcome) internal outcomeSeen;
-    mapping(address adapter => A) internal adapterSeen;
+    mapping(uint256 tokenId => Outcome) internal outcomeSeen;
+    mapping(address minter => A) internal minterSeen;
+    /// @dev The activation time each pending minter was given when it was added.
+    mapping(address minter => uint256) internal givenActiveFrom;
     mapping(bytes32 transition => uint256) internal hits;
     uint256 internal violations;
     string internal firstViolation;
@@ -76,22 +83,20 @@ contract StreamStatesInvariantTest is IntegrationBase {
     function setUp() public override {
         super.setUp();
         artist = _actor("statesArtist");
-        adapter = new MockSaleAdapter(KIND);
-        Work[] memory works = new Work[](ITEMS);
-        for (uint256 i; i < ITEMS; ++i) {
+        adapter = new MockSale();
+        // The English auction's items: odd items are sold there, through the package registry.
+        Work[] memory works = new Work[](ITEMS / 2);
+        for (uint256 i; i < works.length; ++i) {
             works[i] = _work(artist, collectionId);
-            // Even items sell through the second adapter, odd ones through the English auction.
-            if (i % 2 == 0) works[i].item.sale = SaleTerms(KIND, CURRENCY_ETH, "");
         }
         root = _publish(works);
         _keep(root, works);
-        _govern(
-            hotAdmin,
-            address(stream),
-            abi.encodeCall(stream.setAdmittedMinter, (address(adapter), true))
-        );
-        adapterSeen[address(auction)] = A.ADMITTED;
-        adapterSeen[address(adapter)] = A.ADMITTED;
+        // The network adds the second minter; it is active once the module delay has passed.
+        _asNetwork(address(stream), abi.encodeCall(stream.addMinter, (address(adapter))));
+        givenActiveFrom[address(adapter)] = block.timestamp + stream.moduleDelay();
+        vm.warp(block.timestamp + stream.moduleDelay());
+        minterSeen[address(auction)] = A.ACTIVE;
+        minterSeen[address(adapter)] = A.ACTIVE;
         vm.deal(bidder, 1000 ether);
         targetContract(address(this));
         targetSelector(FuzzSelector(address(this), _selectors()));
@@ -109,114 +114,114 @@ contract StreamStatesInvariantTest is IntegrationBase {
         s[7] = this.toggleAdmission.selector;
         s[8] = this.unchangedAdmission.selector;
         s[9] = this.rescue.selector;
-        s[10] = this.warp.selector;
+        s[10] = this.setDelay.selector;
+        s[11] = this.warp.selector;
     }
 
     // ------------------------------------------------------------------------- actions
 
-    /// @notice Mints the next item: through the second adapter (even items) or the English
-    ///         auction (odd). Refused while its adapter is removed.
+    /// @notice Mints the next item: through the second minter (even items) or the English
+    ///         auction (odd). Goes through exactly while that minter is active.
     function mint(uint256) external {
         if (nextItem < ITEMS) {
             uint256 index = nextItem;
-            bytes memory data = _mintData(root, _package(root), index);
-            uint256 before = IStream(address(stream)).totalMinted();
+            uint256 tokenId = stream.totalMinted() + 1;
+            bool ok;
             if (index % 2 == 0) {
-                try adapter.start(stream, data) {
-                    minterOf[before + 1] = address(adapter);
-                    ++nextItem;
-                } catch {
-                    ++hits["mint refused"];
+                try adapter.mint(address(stream), _facts(index)) {
+                    ok = true;
+                } catch { }
+                if (ok != stream.isMinter(address(adapter))) {
+                    _violation("a mint by the second minter");
                 }
+                if (ok) minterOfToken[tokenId] = address(adapter);
             } else {
+                bool active = stream.isMinter(address(auction));
+                bytes memory data = _mintData(root, _package(root), englishMinted);
                 try auction.start(address(stream), data) returns (uint256 saleId) {
-                    minterOf[before + 1] = address(auction);
-                    englishSale[before + 1] = saleId;
-                    ++nextItem;
-                } catch {
-                    ++hits["mint refused"];
-                }
+                    ok = true;
+                    englishSale[tokenId] = saleId;
+                    minterOfToken[tokenId] = address(auction);
+                    ++englishMinted;
+                } catch { }
+                if (ok != active) _violation("a start through the English auction");
             }
+            if (ok) ++nextItem;
+            else ++hits["mint refused"];
         }
         _observe();
     }
 
-    /// @notice An ETH bid at the minimum on an English-auction work, by the bidder (a DIRECT
-    ///         payment's payer is the caller).
+    /// @notice An ETH bid at the minimum on an English-auction work.
     function bid(uint256 seed) external {
         uint256 id = _pick(seed);
-        if (id != 0 && minterOf[id] == address(auction)) {
+        if (id != 0 && minterOfToken[id] == address(auction)) {
             uint256 saleId = englishSale[id];
-            try auction.minimumBid(saleId) returns (uint256 amount) {
-                vm.prank(bidder);
-                try auction.bid{ value: amount }(
-                    saleId, address(0), Payment(PaymentMethod.DIRECT, bidder, amount, 0, 0, "")
-                ) {
-                    ++hits["bid"];
-                } catch { }
+            uint256 amount = auction.minimumBid(saleId);
+            vm.prank(bidder);
+            try auction.bid{ value: amount }(saleId, address(0)) {
+                ++hits["bid"];
             } catch { }
         }
         _observe();
     }
 
-    /// @notice Settles a work: the English auction at its end, or the second adapter with any
-    ///         outcome, NONE and RESCUED included (which Stream refuses).
+    /// @notice Settles a work: the English auction at its end, or the second minter with either
+    ///         outcome (again on a work that already has one, or one it does not hold: refused).
     function settle(uint256 seed, uint8 outcomeSeed) external {
         uint256 id = _pick(seed);
-        if (id != 0 && minterOf[id] == address(auction)) {
-            uint256 saleId = englishSale[id];
-            try auction.auction(saleId) returns (IEnglishAuction.Auction memory a) {
-                if (block.timestamp < a.endTime) vm.warp(a.endTime);
-            } catch { }
-            try auction.settle(saleId) { } catch { }
+        if (id != 0 && minterOfToken[id] == address(auction)) {
+            IEnglishAuction.Auction memory a = auction.auction(englishSale[id]);
+            if (block.timestamp < a.endTime) vm.warp(a.endTime);
+            try auction.settle(englishSale[id]) { } catch { }
         } else if (id != 0) {
-            PrimaryOutcome outcome = PrimaryOutcome(outcomeSeed % 5);
-            bool sold = outcome == PrimaryOutcome.SOLD;
-            try adapter.settleWith(
-                IStream(address(stream)),
-                id,
-                outcome,
-                sold ? collector : address(0),
-                CURRENCY_ETH,
-                sold ? 1 : 0
-            ) {
-                if (outcome == PrimaryOutcome.NONE || outcome == PrimaryOutcome.RESCUED) {
-                    _violation("an adapter reported NONE or RESCUED");
+            bool sold = outcomeSeed % 2 == 0;
+            bool allowed = _seamAllows(address(adapter), id);
+            bool ok;
+            try adapter.record(address(stream), id, sold, sold ? collector : address(0), 1) {
+                ok = true;
+            } catch { }
+            if (ok != allowed) _violation("a report the seam does not allow, or a refused one");
+            if (ok) {
+                if (stream.workOf(id).outcome != (sold ? Outcome.SOLD : Outcome.UNSOLD)) {
+                    _violation("a report recorded another outcome");
                 }
-                // An accepted report lands in its own row's state.
-                (, PrimaryOutcome recorded) = _state(id);
-                if (recorded != outcome) _violation("a settlement recorded another outcome");
-            } catch {
-                if (outcome == PrimaryOutcome.RESCUED) ++hits["RESCUED report refused"];
+            } else {
+                ++hits["report refused"];
             }
         }
         _observe();
     }
 
-    /// @notice The second adapter burns a work (the English auction burns only after a dispute).
+    /// @notice The second minter burns a work (the English auction burns only after a dispute).
     function burn(uint256 seed) external {
         uint256 id = _pick(seed);
         if (id != 0) {
-            try adapter.burn(stream, id, 1) { } catch { }
+            bool allowed = _seamAllows(address(adapter), id);
+            bool ok;
+            try adapter.burn(address(stream), id) {
+                ok = true;
+            } catch { }
+            if (ok != allowed) _violation("a burn the seam does not allow, or a refused one");
         }
         _observe();
     }
 
-    /// @notice The second adapter hands a work it holds to the collector, settled or not.
+    /// @notice The second minter hands a work it holds to the collector, settled or not.
     function transferOut(uint256 seed) external {
         uint256 id = _pick(seed);
-        if (id != 0) {
-            try adapter.deliver(address(stream), id, collector) { } catch { }
+        if (id != 0 && _holder(id) == address(adapter)) {
+            adapter.send(address(stream), id, collector);
         }
         _observe();
     }
 
-    /// @notice The collector gives an unsettled work back to the adapter that minted it.
+    /// @notice The collector gives an unsettled work back to the minter that minted it.
     function transferBack(uint256 seed) external {
         uint256 id = _pick(seed);
-        if (id != 0 && _holder(id) == collector && !stream.primarySaleSettled(id)) {
+        if (id != 0 && _holder(id) == collector && stream.workOf(id).outcome == Outcome.NONE) {
             vm.prank(collector);
-            try stream.transferFrom(collector, minterOf[id], id) { } catch { }
+            stream.transferFrom(collector, minterOfToken[id], id);
         }
         _observe();
     }
@@ -228,66 +233,119 @@ contract StreamStatesInvariantTest is IntegrationBase {
         address holder = id == 0 ? address(0) : _holder(id);
         if (
             holder != address(0) && holder != address(adapter) && holder != address(auction)
-                && stream.primarySaleSettled(id)
+                && stream.workOf(id).outcome != Outcome.NONE
         ) {
             address to = holder == other ? collector : other;
             vm.prank(holder);
-            try stream.transferFrom(holder, to, id) { } catch { }
+            stream.transferFrom(holder, to, id);
         }
         _observe();
     }
 
-    /// @notice Governance removes or admits one of the two adapters (30 days): a transition.
+    /// @notice The network removes a minter (at once) or adds it (it waits the module delay).
     function toggleAdmission(uint256 seed) external {
         address which = seed % 2 == 0 ? address(adapter) : address(auction);
-        bool admitted = stream.isAdmittedMinter(which);
-        _govern(
-            hotAdmin, address(stream), abi.encodeCall(stream.setAdmittedMinter, (which, !admitted))
-        );
+        if (_added(which)) {
+            _asNetwork(address(stream), abi.encodeCall(stream.removeMinter, (which)));
+        } else {
+            _asNetwork(address(stream), abi.encodeCall(stream.addMinter, (which)));
+            givenActiveFrom[which] = block.timestamp + stream.moduleDelay();
+        }
         _observe();
     }
 
-    /// @notice Governance tries a transition that would change nothing; Stream refuses it.
+    /// @notice The network tries a change that would change nothing: adding a minter already
+    ///         added, or removing one that is not; Stream refuses it with the exact error.
     function unchangedAdmission(uint256 seed) external {
-        address which = seed % 3 == 0
-            ? address(adapter)
-            : seed % 3 == 1 ? address(auction) : makeAddr("statesNeverAdmitted");
-        bool admitted = stream.isAdmittedMinter(which);
-        bool ok = _governTry(
-            hotAdmin, address(stream), abi.encodeCall(stream.setAdmittedMinter, (which, admitted))
-        );
-        if (ok) _violation("a transition that changes nothing went through");
+        address which =
+            seed % 3 == 0 ? address(adapter) : seed % 3 == 1 ? address(auction) : neverAdded;
+        bytes memory call;
+        bytes memory expected;
+        if (_added(which)) {
+            call = abi.encodeCall(stream.addMinter, (which));
+            expected = abi.encodeWithSelector(IModules.MinterAlreadyAdded.selector, which);
+        } else {
+            call = abi.encodeCall(stream.removeMinter, (which));
+            expected = abi.encodeWithSelector(IModules.NotMinter.selector, which);
+        }
+        vm.prank(network);
+        (bool ok, bytes memory reason) = address(stream).call(call);
+        if (ok) _violation("a minter change that changes nothing went through");
+        else if (keccak256(reason) != keccak256(expected)) _violation("a no-op refused oddly");
         else ++hits["no-op refused"];
         _observe();
     }
 
-    /// @notice Governance rescues a work (30 days); refused unless it is stranded. A rescue
-    ///         that goes through lands in the rescued state.
+    /// @notice The network rescues a work to the museum: it goes through exactly when the token
+    ///         is live, unsold and held by a minter removed at least `rescueDelay` (as it stands
+    ///         now) ago, and then lands in the rescued state.
     function rescue(uint256 seed) external {
         uint256 id = _pick(seed);
         if (id != 0) {
-            bool ok = _governTry(
-                hotAdmin, address(stream), abi.encodeCall(stream.rescueToMuseum, (id))
-            );
+            address holder = _holder(id);
+            uint256 removedAt = holder == address(0) ? 0 : stream.minterOf(holder).removedAt;
+            bool allowed = holder != address(0) && stream.workOf(id).outcome == Outcome.NONE
+                && removedAt != 0 && block.timestamp >= removedAt + stream.rescueDelay();
+            vm.prank(network);
+            (bool ok,) = address(stream).call(abi.encodeCall(stream.rescue, (id, museum)));
+            if (ok != allowed) _violation("a rescue the rules refuse, or a refused due rescue");
             if (ok) {
-                (S rescued,) = _state(id);
-                if (rescued != S.RESCUED) _violation("a rescue did not record RESCUED");
+                if (stream.workOf(id).outcome != Outcome.RESCUED) {
+                    _violation("a rescue did not record RESCUED");
+                }
                 if (_holder(id) != museum) _violation("a rescue did not reach the museum");
+            } else {
+                ++hits["rescue refused"];
             }
         }
         _observe();
     }
 
+    /// @notice The network changes the module delay or the rescue delay, at once (zero allowed).
+    function setDelay(uint256 seed) external {
+        uint48[4] memory values = [uint48(0), 1 days, 14 days, 30 days];
+        uint48 value = values[(seed >> 1) % 4];
+        if (seed % 2 == 0) {
+            _asNetwork(address(stream), abi.encodeCall(stream.setModuleDelay, (value)));
+        } else {
+            _asNetwork(address(stream), abi.encodeCall(stream.setRescueDelay, (value)));
+        }
+        _observe();
+    }
+
     function warp(uint256 seed) external {
-        vm.warp(block.timestamp + 1 hours + seed % 100 days);
+        vm.warp(block.timestamp + 1 hours + seed % 20 days);
         _observe();
     }
 
     // -------------------------------------------------------------------- observation
 
+    /// @dev The second minter's facts for item `index`: its own content, the artist, the genesis
+    ///      collection, no royalty.
+    function _facts(uint256 index) internal view returns (MintFacts memory f) {
+        f.itemHash = keccak256(abi.encode("states item", index));
+        f.contentHash = keccak256(abi.encode("states content", index));
+        f.artistId = uint160(artist);
+        f.collectionId = collectionId;
+    }
+
+    /// @dev Whether the seam lets `minter` report or burn `id` now: it holds the token, it is or
+    ///      was an active minter, and no outcome is recorded.
+    function _seamAllows(address minter, uint256 id) internal view returns (bool) {
+        Minter memory m = stream.minterOf(minter);
+        bool wasActive = m.removedAt != 0 || (m.activeFrom != 0 && block.timestamp >= m.activeFrom);
+        return _holder(id) == minter && wasActive && stream.workOf(id).outcome == Outcome.NONE;
+    }
+
+    /// @dev Added and not removed (active, or pending activation).
+    function _added(address which) internal view returns (bool) {
+        Minter memory m = stream.minterOf(which);
+        return m.activeFrom != 0 && m.removedAt == 0;
+    }
+
     /// @dev A minted token ID from `seed`, or zero when none is minted.
     function _pick(uint256 seed) internal view returns (uint256) {
-        uint256 minted = IStream(address(stream)).totalMinted();
+        uint256 minted = stream.totalMinted();
         return minted == 0 ? 0 : 1 + seed % minted;
     }
 
@@ -299,62 +357,63 @@ contract StreamStatesInvariantTest is IntegrationBase {
         }
     }
 
-    /// @dev The work state of `id` per the spec's table, from what Stream stores.
-    function _state(uint256 id) internal view returns (S, PrimaryOutcome outcome) {
-        if (id > IStream(address(stream)).totalMinted()) {
-            return (S.NEVER_MINTED, PrimaryOutcome.NONE);
-        }
-        (outcome,,) = stream.primarySale(id);
+    /// @dev The work state of `id` per the table, from what Stream stores.
+    function _state(uint256 id) internal view returns (S, Outcome outcome) {
+        if (id > stream.totalMinted()) return (S.NEVER_MINTED, Outcome.NONE);
+        outcome = stream.workOf(id).outcome;
         address holder = _holder(id);
-        // Every settled state has a holder; only a cancelled work has none.
-        if (outcome != PrimaryOutcome.NONE && holder == address(0)) {
+        if (outcome != Outcome.NONE && holder == address(0)) {
             return (S.OUTCOME_WITHOUT_TOKEN, outcome);
         }
-        if (outcome == PrimaryOutcome.SOLD) return (S.SOLD, outcome);
-        if (outcome == PrimaryOutcome.UNBID) return (S.UNBID, outcome);
-        if (outcome == PrimaryOutcome.FROZEN_OUT) return (S.FROZEN_OUT, outcome);
-        if (outcome == PrimaryOutcome.RESCUED) return (S.RESCUED, outcome);
+        if (outcome == Outcome.SOLD) return (S.SOLD, outcome);
+        if (outcome == Outcome.UNSOLD) return (S.UNSOLD, outcome);
+        if (outcome == Outcome.RESCUED) return (S.RESCUED, outcome);
         if (holder == address(0)) return (S.CANCELLED, outcome);
-        return (holder == minterOf[id] ? S.IN_SALE : S.OUT_OF_CUSTODY, outcome);
+        bool custody = holder == address(adapter) || holder == address(auction);
+        return (custody ? S.IN_SALE : S.OUT_OF_CUSTODY, outcome);
     }
 
-    /// @dev The table's rows, and no change.
+    /// @dev The work table's rows, and no change.
     function _allowed(S a, S b) internal pure returns (bool) {
         if (b == S.OUTCOME_WITHOUT_TOKEN) return false;
         if (a == b) return true;
         if (a == S.NEVER_MINTED) return b == S.IN_SALE;
         if (a == S.IN_SALE) {
-            return b == S.OUT_OF_CUSTODY || b == S.CANCELLED || b == S.SOLD || b == S.UNBID
-                || b == S.FROZEN_OUT || b == S.RESCUED;
+            return b == S.OUT_OF_CUSTODY || b == S.CANCELLED || b == S.SOLD || b == S.UNSOLD
+                || b == S.RESCUED;
         }
-        if (a == S.OUT_OF_CUSTODY) return b == S.IN_SALE || b == S.SOLD;
+        if (a == S.OUT_OF_CUSTODY) return b == S.IN_SALE;
         return false; // cancelled and every outcome are final
     }
 
-    function _allowedAdapter(A a, A b) internal pure returns (bool) {
+    /// @dev The minter table's rows, and no change.
+    function _allowedMinter(A a, A b) internal pure returns (bool) {
         if (a == b) return true;
-        if (a == A.NEVER_ADMITTED) return b == A.ADMITTED;
-        if (a == A.ADMITTED) return b == A.REMOVED;
-        return b == A.ADMITTED; // removed (and rescue-eligible) to admitted
+        if (a == A.NEVER_ADDED) return b == A.PENDING || b == A.ACTIVE;
+        if (a == A.PENDING) return b == A.ACTIVE || b == A.REMOVED;
+        if (a == A.ACTIVE) return b == A.REMOVED;
+        return b == A.PENDING || b == A.ACTIVE;
     }
 
-    function _adapterState(address which) internal view returns (A) {
-        if (stream.isAdmittedMinter(which)) return A.ADMITTED;
-        return adapterSeen[which] == A.NEVER_ADMITTED ? A.NEVER_ADMITTED : A.REMOVED;
+    function _minterState(address which) internal view returns (A) {
+        Minter memory m = stream.minterOf(which);
+        if (m.activeFrom == 0) return A.NEVER_ADDED;
+        if (m.removedAt != 0) return A.REMOVED;
+        return block.timestamp < m.activeFrom ? A.PENDING : A.ACTIVE;
     }
 
-    /// @dev Reads every work and both adapters, checks each change against the tables and
+    /// @dev Reads every work and both minters, checks each change against the tables and
     ///      records the new states.
     function _observe() internal {
-        uint256 last = IStream(address(stream)).totalMinted() + 1;
+        uint256 last = stream.totalMinted() + 1;
         for (uint256 id = 1; id <= last; ++id) {
-            (S now_, PrimaryOutcome outcome) = _state(id);
+            (S now_, Outcome outcome) = _state(id);
             S before = seen[id];
             if (!_allowed(before, now_)) {
                 _violation(string.concat("work transition outside the table: ", _key(before, now_)));
             }
-            PrimaryOutcome recorded = outcomeSeen[id];
-            if (recorded != PrimaryOutcome.NONE && outcome != recorded) {
+            Outcome recorded = outcomeSeen[id];
+            if (recorded != Outcome.NONE && outcome != recorded) {
                 _violation("a recorded outcome changed");
             }
             if (before != now_) {
@@ -363,14 +422,20 @@ contract StreamStatesInvariantTest is IntegrationBase {
             }
             outcomeSeen[id] = outcome;
         }
-        address[2] memory adapters = [address(adapter), address(auction)];
+        address[2] memory minters = [address(adapter), address(auction)];
         for (uint256 i; i < 2; ++i) {
-            A now_ = _adapterState(adapters[i]);
-            if (!_allowedAdapter(adapterSeen[adapters[i]], now_)) {
-                _violation("adapter transition outside the table");
+            A now_ = _minterState(minters[i]);
+            A before = minterSeen[minters[i]];
+            if (!_allowedMinter(before, now_)) _violation("minter transition outside the table");
+            if (before != now_) ++hits[keccak256(bytes(_minterKey(before, now_)))];
+            uint256 given = givenActiveFrom[minters[i]];
+            if (_added(minters[i]) && given != 0 && stream.minterOf(minters[i]).activeFrom != given)
+            {
+                _violation("an added minter's activation time is not the one it was given");
             }
-            adapterSeen[adapters[i]] = now_;
+            minterSeen[minters[i]] = now_;
         }
+        if (_minterState(neverAdded) != A.NEVER_ADDED) _violation("a minter nobody added");
     }
 
     function _violation(string memory what) internal {
@@ -382,47 +447,52 @@ contract StreamStatesInvariantTest is IntegrationBase {
     }
 
     function _name(S s) internal pure returns (string memory) {
-        string[9] memory names = [
+        string[8] memory names = [
             "NEVER_MINTED",
             "IN_SALE",
             "OUT_OF_CUSTODY",
             "CANCELLED",
             "SOLD",
-            "UNBID",
-            "FROZEN_OUT",
+            "UNSOLD",
             "RESCUED",
             "OUTCOME_WITHOUT_TOKEN"
         ];
         return names[uint8(s)];
     }
 
+    function _minterKey(A a, A b) internal pure returns (string memory) {
+        string[4] memory names = ["NEVER_ADDED", "PENDING", "ACTIVE", "REMOVED"];
+        return string.concat("minter ", names[uint8(a)], ">", names[uint8(b)]);
+    }
+
     // ------------------------------------------------------------------------ the checks
 
-    /// @notice Every work and adapter transition observed in the campaign is in the tables, and
-    ///         no recorded outcome changed.
+    /// @notice Every work and minter transition observed in the campaign is in the tables, no
+    ///         recorded outcome changed, no pending minter's time moved, and every report, burn,
+    ///         mint and rescue went through exactly when the rules allow it.
     function invariant_streamStatesFollowTheTables() public view {
         assertEq(violations, 0, firstViolation);
     }
 
     /// @notice The campaign is not vacuous: random sequences of its shape, replayed from fixed
-    ///         seeds, reach every transition of the work table and the refusals, with no
-    ///         violation.
+    ///         seeds, reach every transition of both tables and the refusals, with no violation.
     function test_EveryTransitionIsReached() public {
-        string[9] memory transitions = [
+        string[12] memory transitions = [
             "NEVER_MINTED>IN_SALE",
             "IN_SALE>OUT_OF_CUSTODY",
             "IN_SALE>CANCELLED",
             "IN_SALE>SOLD",
-            "IN_SALE>UNBID",
-            "IN_SALE>FROZEN_OUT",
+            "IN_SALE>UNSOLD",
             "IN_SALE>RESCUED",
             "OUT_OF_CUSTODY>IN_SALE",
-            "OUT_OF_CUSTODY>SOLD"
+            "minter ACTIVE>REMOVED",
+            "minter REMOVED>PENDING",
+            "minter REMOVED>ACTIVE",
+            "minter PENDING>ACTIVE",
+            "minter PENDING>REMOVED"
         ];
-        uint256[9] memory totals;
-        uint256 refusedRescued;
-        uint256 refusedNoOps;
-        uint256 acceptedBids;
+        uint256[12] memory totals;
+        uint256[5] memory more;
         for (uint256 run; run < RUNS; ++run) {
             uint256 snapshot = vm.snapshotState();
             for (uint256 depth; depth < DEPTH; ++depth) {
@@ -432,26 +502,32 @@ contract StreamStatesInvariantTest is IntegrationBase {
             for (uint256 i; i < transitions.length; ++i) {
                 totals[i] += hits[keccak256(bytes(transitions[i]))];
             }
-            refusedRescued += hits["RESCUED report refused"];
-            refusedNoOps += hits["no-op refused"];
-            acceptedBids += hits["bid"];
+            more[0] += hits["rescue refused"];
+            more[1] += hits["mint refused"];
+            more[2] += hits["bid"];
+            more[3] += hits["no-op refused"];
+            more[4] += hits["report refused"];
             vm.revertToStateAndDelete(snapshot);
         }
         for (uint256 i; i < transitions.length; ++i) {
             console2.log(transitions[i], totals[i]);
             assertGt(totals[i], 0, transitions[i]);
         }
-        console2.log("RESCUED reports refused", refusedRescued);
-        console2.log("no-op admissions refused", refusedNoOps);
-        assertGt(refusedRescued, 0, "RESCUED report refused");
-        assertGt(refusedNoOps, 0, "no-op admission refused");
-        console2.log("bids accepted", acceptedBids);
-        assertGt(acceptedBids, 0, "bid accepted");
+        console2.log("rescues refused", more[0]);
+        console2.log("mints refused", more[1]);
+        console2.log("bids accepted", more[2]);
+        console2.log("no-op minter changes refused", more[3]);
+        console2.log("reports refused", more[4]);
+        assertGt(more[0], 0, "rescue refused");
+        assertGt(more[1], 0, "mint refused");
+        assertGt(more[2], 0, "bid accepted");
+        assertGt(more[3], 0, "no-op refused");
+        assertGt(more[4], 0, "report refused");
     }
 
     /// @dev One random action, weighted toward the ones that move works.
     function _step(uint256 r) internal {
-        uint256 pick = r % 20;
+        uint256 pick = r % 22;
         uint256 seed = r >> 8;
         if (pick < 4) this.mint(seed);
         else if (pick < 6) this.bid(seed);
@@ -463,6 +539,7 @@ contract StreamStatesInvariantTest is IntegrationBase {
         else if (pick < 16) this.toggleAdmission(seed);
         else if (pick < 17) this.unchangedAdmission(seed);
         else if (pick < 19) this.rescue(seed);
+        else if (pick < 20) this.setDelay(seed);
         else this.warp(seed);
     }
 }

@@ -1,5 +1,20 @@
 {
-  "structs": {},
+  "structs": {
+    "struct SplitLedger.Mark": [
+      {
+        "label": "target",
+        "offset": 0,
+        "slot": 0,
+        "type": "uint208"
+      },
+      {
+        "label": "markedAt",
+        "offset": 26,
+        "slot": 0,
+        "type": "uint48"
+      }
+    ]
+  },
   "variables": [
     {
       "contract": "SplitLedger",
@@ -55,7 +70,7 @@
       "label": "_marks",
       "offset": 0,
       "slot": 7,
-      "type": "mapping(address => mapping(address => mapping(uint256 => uint256)))"
+      "type": "mapping(address => mapping(address => mapping(uint256 => struct SplitLedger.Mark)))"
     }
   ]
 }

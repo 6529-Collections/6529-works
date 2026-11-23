@@ -1,552 +1,292 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
-import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
-import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
-import { Multicall } from "@openzeppelin/contracts/utils/Multicall.sol";
-import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import { Roles } from "src/governance/Roles.sol";
-import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
-import { GovernanceConfigurator } from "src/governance/GovernanceConfigurator.sol";
-import { FederationRegistry } from "src/federated/FederationRegistry.sol";
+import { DeployCore } from "script/DeployCore.sol";
 import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
-import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
-import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
-import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
-import { IMintTarget } from "src/interfaces/IMintTarget.sol";
+import { IndependentStreamRegistry } from "src/independent/IndependentStreamRegistry.sol";
+import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
+import { Roles } from "src/governance/Roles.sol";
+import { IIndependentStreamRegistry } from "src/interfaces/IIndependentStreamRegistry.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
-import { IStatementLog, Statement } from "src/interfaces/IStatementLog.sol";
-import { IStream } from "src/interfaces/IStream.sol";
-import { HashRef, HASH_SHA256 } from "src/interfaces/types/HashRef.sol";
-import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
-import { StatementLog } from "src/records/StatementLog.sol";
-import { GovernanceFixture } from "../helpers/GovernanceFixture.sol";
-import { GovernedTargetMock } from "../mocks/governance/GovernanceMocks.sol";
-import {
-    Erc165PeerMock,
-    WiringTargetMock,
-    WiringValidationHarness
-} from "../mocks/governance/GenesisWiringMocks.sol";
+import { IStatementLog } from "src/interfaces/IStatementLog.sol";
+import { IUniformEditionAuctionLens } from "src/interfaces/IUniformEditionAuctionLens.sol";
+import { IModules } from "src/interfaces/core/IModules.sol";
+import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
+import { IntegrationBase } from "../integration/IntegrationBase.sol";
+import { GenesisFreshBase } from "./GenesisFreshBase.sol";
 
-/// @notice The genesis wiring phase: one-shot binds, admitted minters, sale targets and the
-///         epoch-0 manifest, executed by the configurator as zero-delay ADMIN inside the
-///         configuring transaction, and nothing else.
-contract GenesisWiringTest is GovernanceFixture {
-    WiringTargetMock internal wired;
-    Erc165PeerMock internal peerA;
-    Erc165PeerMock internal peerB;
-
-    function setUp() public {
-        _deployUnconfigured();
-        wired = new WiringTargetMock(address(manager));
-        peerA = new Erc165PeerMock();
-        peerB = new Erc165PeerMock();
-    }
-
-    /// @dev The default config plus `wired`. Its binds stay unmapped (ADMIN), as in production;
-    ///      admissions, targets and the verifier map to the 30-day class.
-    function _wiredConfig() internal view returns (GovernanceConfig.Config memory cfg) {
-        cfg = _config();
-        GovernanceConfig.Target[] memory targets = new GovernanceConfig.Target[](2);
-        targets[0] = cfg.targets[0];
-        GovernanceConfig.FunctionRole[] memory fns = new GovernanceConfig.FunctionRole[](3);
-        fns[0] = GovernanceConfig.FunctionRole(
-            WiringTargetMock.setAdmittedMinter.selector, Roles.SUCCESSOR_SETTER
-        );
-        fns[1] = GovernanceConfig.FunctionRole(
-            WiringTargetMock.setTarget.selector, Roles.SUCCESSOR_SETTER
-        );
-        fns[2] = GovernanceConfig.FunctionRole(
-            WiringTargetMock.setVerifier.selector, Roles.SUCCESSOR_SETTER
-        );
-        targets[1] = GovernanceConfig.Target(address(wired), fns);
-        cfg.targets = targets;
-    }
-
-    function _call(address to, bytes memory data)
-        internal
-        pure
-        returns (GovernanceConfig.Call memory)
+/// @notice Exposes the library's wiring validation for the real deployment's targets.
+contract WiringValidator {
+    function validate(GovernanceConfig.Config memory cfg, GovernanceConfig.Call[] memory wiring)
+        external
+        view
     {
-        return GovernanceConfig.Call(to, data);
+        GovernanceConfig.validateWiring(cfg, wiring);
+    }
+}
+
+/// @notice The genesis wiring on the real deployed stack (with the entropy module): the genesis
+///         selector list is exactly eight selectors, each admitted only on a target declaring its
+///         interface; every wired call took effect in the configuring transaction; after genesis
+///         each wired selector waits its class's delay, and the one-shot bind cannot run again.
+contract GenesisWiringTest is IntegrationBase {
+    WiringValidator internal validator;
+
+    function setUp() public override {
+        super.setUp();
+        validator = new WiringValidator();
     }
 
-    function _one(GovernanceConfig.Call memory c)
-        internal
-        pure
-        returns (GovernanceConfig.Call[] memory wiring)
-    {
-        wiring = new GovernanceConfig.Call[](1);
-        wiring[0] = c;
+    function _withVrf() internal pure override returns (bool) {
+        return true;
     }
 
-    function _genesisCalls() internal view returns (GovernanceConfig.Call[] memory wiring) {
-        wiring = new GovernanceConfig.Call[](4);
-        wiring[0] = _call(
-            address(wired), abi.encodeCall(WiringTargetMock.bindWorkRecords, (address(peerA)))
-        );
-        wiring[1] =
-            _call(address(wired), abi.encodeCall(WiringTargetMock.bindEditions, (address(peerB))));
-        wiring[2] = _call(
-            address(wired),
-            abi.encodeCall(WiringTargetMock.setAdmittedMinter, (address(peerA), true))
-        );
-        wiring[3] = _call(
-            address(wired), abi.encodeCall(WiringTargetMock.setTarget, (address(peerB), true))
-        );
-    }
+    // ------------------------------------------------------------------ the list
 
-    function _expectWiringRevert(GovernanceConfig.Call[] memory wiring, bytes memory err) internal {
-        GovernanceConfig.Config memory cfg = _wiredConfig();
-        vm.expectRevert(err);
-        configurator.configure(cfg, MANIFEST, wiring);
-    }
-
-    function _assertUntouched() internal view {
-        assertEq(wired.workRecords(), address(0));
-        assertEq(manager.getRoleGuardian(Roles.PAUSER), Roles.ADMIN, "no role setup");
-        (bool stillAdmin,) = manager.hasRole(Roles.ADMIN, address(configurator));
-        assertTrue(stillAdmin, "the configurator still holds ADMIN and can retry");
-        (uint48 since,,,) = manager.getAccess(Roles.ADMIN, adminSafe);
-        assertEq(since, 0, "no grants");
-    }
-
-    // ------------------------------------------------------------------ the allow-list
-
-    function test_MaxWiringCallsIsPinned() public pure {
+    function test_GenesisWiring_TheGenesisSelectorsAreExactlyTheEight() public view {
+        bytes4[8] memory sels = _genesisSelectors();
+        bytes4[8] memory ifaces = [
+            type(IPackageRegistry).interfaceId,
+            type(IPackageRegistry).interfaceId,
+            type(IIndependentStreamRegistry).interfaceId,
+            type(ISaleAdapter).interfaceId,
+            type(IIndependentStreamRegistry).interfaceId,
+            type(IIndependentStreamRegistry).interfaceId,
+            GovernanceConfig.ANY_TARGET,
+            GovernanceConfig.ANY_TARGET
+        ];
+        for (uint256 i; i < sels.length; ++i) {
+            assertEq(GovernanceConfig.genesisInterface(sels[i]), ifaces[i]);
+        }
+        // No other selector of the role map, and no core module or minter function, is one.
+        GovernanceConfig.Config memory cfg = _genesisConfig();
+        uint256 others;
+        for (uint256 i; i < cfg.targets.length; ++i) {
+            for (uint256 j; j < cfg.targets[i].functions.length; ++j) {
+                bytes4 sel = cfg.targets[i].functions[j].selector;
+                if (_inList(sels, sel)) continue;
+                assertFalse(
+                    GovernanceConfig.isGenesisSelector(sel), vm.toString(abi.encodePacked(sel))
+                );
+                ++others;
+            }
+        }
+        assertGt(others, 90);
+        assertFalse(GovernanceConfig.isGenesisSelector(IModules.addMinter.selector));
+        assertFalse(GovernanceConfig.isGenesisSelector(bytes4(0)));
         assertEq(GovernanceConfig.MAX_WIRING_CALLS, 64);
     }
 
-    function test_GenesisSelectorsAreExactlyTheAllowList() public pure {
-        bytes4[15] memory allowed = [
-            IStream.bindWorkRecords.selector,
-            IStream.bindEditions.selector,
+    function test_GenesisWiring_TheWiringIsTheJsonsWithTheEntropyCallsWhenThereIsAModule()
+        public
+        view
+    {
+        GovernanceConfig.Call[] memory calls = DeployCore.wiring(deployment, genesisJson, manifest);
+        assertEq(calls.length, 10);
+        uint256 entropyCalls;
+        for (uint256 i; i < calls.length; ++i) {
+            bytes4 sel = bytes4(calls[i].data);
+            assertTrue(GovernanceConfig.isGenesisSelector(sel));
+            if (
+                sel == IPackageRegistry.setEntropyModule.selector
+                    || sel == IndependentStreamRegistry.setEntropyModule.selector
+            ) ++entropyCalls;
+        }
+        assertEq(entropyCalls, 2);
+        DeployCore.Deployment memory without = deployment;
+        without.entropyModule = address(0);
+        assertEq(DeployCore.wiring(without, genesisJson, manifest).length, 8, "left out");
+    }
+
+    function test_GenesisWiring_EveryWiredCallTookEffectAtGenesis() public view {
+        assertEq(registry.stream(), address(stream), "bindStream");
+        assertEq(registry.entropyModule(), address(entropy), "PackageRegistry.setEntropyModule");
+        assertEq(
+            independentStream.entropyModule(),
+            address(entropy),
+            "IndependentStreamRegistry.setEntropyModule"
+        );
+        assertTrue(
+            IUniformEditionAuctionLens(address(editionAuction)).isTarget(address(editions)),
+            "setTarget"
+        );
+        assertEq(allowlist.openingBid(CURRENCY_ETH), OPENING_BID, "setOpeningBid");
+        address[2] memory adapters = [address(auction), deployment.independentEditionAuction];
+        for (uint256 i; i < 2; ++i) {
+            IIndependentStreamRegistry.SaleContract memory s =
+                independentStream.saleContractOf(adapters[i]);
+            assertTrue(s.addedAt != 0 && s.removedAt == 0, "setAdapter");
+        }
+        _template(deployment.independentStream721Deployer, IIndependentStreamRegistry.Form.ERC721);
+        _template(
+            deployment.independentStreamEditionsDeployer, IIndependentStreamRegistry.Form.ERC1155
+        );
+        (uint64 count,) = statements.chainOf(address(manager), 0);
+        assertEq(count, 1, "the epoch-0 manifest is the manager's first statement");
+    }
+
+    function test_GenesisWiring_AfterGenesisEachWiredSelectorWaitsItsClass() public {
+        GovernanceConfig.Call[] memory calls = DeployCore.wiring(deployment, genesisJson, manifest);
+        for (uint256 i; i < calls.length; ++i) {
+            bytes4 sel = bytes4(calls[i].data);
+            uint64 role = manager.getTargetFunctionRole(calls[i].target, sel);
+            (bool immediate, uint32 delay) = manager.canCall(network, calls[i].target, sel);
+            assertFalse(immediate, "no wired selector is the network's at once");
+            assertEq(delay, Roles.executionDelay(role));
+            assertGe(delay, 1 days);
+        }
+        assertEq(
+            manager.getTargetFunctionRole(address(registry), IPackageRegistry.bindStream.selector),
+            Roles.ADMIN,
+            "the one-shot bind stays at the 7-day default"
+        );
+        // And it binds once: even the network, after the wait, cannot bind again.
+        bytes memory again = abi.encodeCall(IPackageRegistry.bindStream, (address(stream)));
+        vm.prank(network);
+        manager.schedule(address(registry), again, 0);
+        vm.warp(block.timestamp + 7 days);
+        vm.prank(network);
+        vm.expectRevert(
+            abi.encodeWithSelector(IPackageRegistry.AlreadyBound.selector, bytes32("STREAM"))
+        );
+        manager.execute(address(registry), again);
+    }
+
+    // ------------------------------------------------------------------ validation
+
+    function test_GenesisWiring_TheRealGenesisWiringValidates() public view {
+        validator.validate(_genesisConfig(), DeployCore.wiring(deployment, genesisJson, manifest));
+    }
+
+    function test_GenesisWiring_AGenesisSelectorReachesOnlyATargetDeclaringItsInterface() public {
+        _refused(address(registry), IndependentStreamRegistry.setAdapter.selector);
+        _refused(address(registry), IndependentStreamRegistry.approveTemplate.selector);
+        _refused(address(independentStream), IPackageRegistry.bindStream.selector);
+        _refused(address(independentStream), ISaleAdapter.setTarget.selector);
+        _refused(address(stream), ISaleAdapter.setTarget.selector);
+        _refused(address(stream), IModules.addMinter.selector);
+        _refused(address(editions), IModules.addMinter.selector);
+        _refused(address(directory), IModules.addMinter.selector);
+        // ANY_TARGET selectors pass validation on any configured target (only one contract
+        // declares each; a call elsewhere fails when executed).
+        validator.validate(
+            _genesisConfig(),
+            _call(address(stream), IStatementLog.appendGovernanceManifest.selector)
+        );
+    }
+
+    function test_GenesisWiring_ACallOutsideTheConfiguredTargetsIsRefused() public {
+        GovernanceConfig.Config memory cfg = _genesisConfig();
+        bytes4 sel = IPackageRegistry.bindStream.selector;
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GovernanceConfig.InvalidWiringCall.selector, address(manager), sel
+            )
+        );
+        validator.validate(cfg, _call(address(manager), sel));
+        vm.expectRevert(
+            abi.encodeWithSelector(GovernanceConfig.InvalidWiringCall.selector, address(facts), sel)
+        );
+        validator.validate(cfg, _call(address(facts), sel));
+        GovernanceConfig.Call[] memory tooMany = new GovernanceConfig.Call[](65);
+        vm.expectRevert(abi.encodeWithSelector(GovernanceConfig.TooManyWiringCalls.selector, 65));
+        validator.validate(cfg, tooMany);
+    }
+
+    // ------------------------------------------------------------------ helpers
+
+    function _genesisSelectors() internal pure returns (bytes4[8] memory) {
+        return [
             IPackageRegistry.bindStream.selector,
-            IArtistRegistry.bindPackageRegistry.selector,
-            IArtistRegistry.bindSplitFactory.selector,
-            IArtistRegistry.bindFederationRegistry.selector,
-            IArtistRegistry.bindStatementLog.selector,
-            IMintTarget.setAdmittedMinter.selector,
+            IPackageRegistry.setEntropyModule.selector,
+            IndependentStreamRegistry.setEntropyModule.selector,
             ISaleAdapter.setTarget.selector,
-            IAssetAllowlist.setDefaultCurrency.selector,
+            IndependentStreamRegistry.setAdapter.selector,
+            IndependentStreamRegistry.approveTemplate.selector,
             IAssetAllowlist.setOpeningBid.selector,
-            ISaleAdapter.setFederationRegistry.selector,
-            FederationRegistry.setAdapter.selector,
-            FederationRegistry.approveTemplate.selector,
             IStatementLog.appendGovernanceManifest.selector
         ];
-        for (uint256 i; i < allowed.length; ++i) {
-            assertTrue(GovernanceConfig.isGenesisSelector(allowed[i]));
+    }
+
+    function _inList(bytes4[8] memory list, bytes4 sel) internal pure returns (bool) {
+        for (uint256 i; i < list.length; ++i) {
+            if (list[i] == sel) return true;
         }
-        // The same selectors on the other contracts that declare them.
-        assertEq(IPackageRegistry.bindEditions.selector, IStream.bindEditions.selector);
-        assertEq(IArtistRegistry.bindStream.selector, IPackageRegistry.bindStream.selector);
-        assertFalse(GovernanceConfig.isGenesisSelector(IPackageRegistry.setVerifier.selector));
-        assertFalse(GovernanceConfig.isGenesisSelector(IStream.setDefaultRenderer.selector));
-        // The federation registry's later changes wait their class.
-        assertFalse(GovernanceConfig.isGenesisSelector(FederationRegistry.revokeTemplate.selector));
-        assertFalse(GovernanceConfig.isGenesisSelector(FederationRegistry.setStatus.selector));
-        assertFalse(GovernanceConfig.isGenesisSelector(bytes4(0)));
+        return false;
     }
 
-    function testFuzz_OnlyGenesisSelectorsPassValidation(bytes4 selector) public {
-        _expectValidation(selector);
+    function _template(address deployer_, IIndependentStreamRegistry.Form form) internal view {
+        IIndependentStreamRegistry.Template memory t = independentStream.templateOf(deployer_);
+        assertEq(t.version, 1, "approveTemplate");
+        assertEq(uint8(t.form), uint8(form));
+        assertEq(uint8(t.status), uint8(IIndependentStreamRegistry.TemplateStatus.APPROVED));
     }
 
-    /// @dev The federation registry's genesis selectors reach only a target declaring
-    ///      `IFederationRegistry`: the wiring mock declares only `IMintTarget` and `ISaleAdapter`,
-    ///      so both are refused there (explicit, so coverage does not rest on the fuzzer).
-    function test_FederationRegistrySelectorsNeedTheirInterface() public {
-        assertFalse(
-            IERC165(address(wired)).supportsInterface(type(IFederationRegistry).interfaceId)
+    function _call(address target, bytes4 sel)
+        internal
+        pure
+        returns (GovernanceConfig.Call[] memory calls)
+    {
+        calls = new GovernanceConfig.Call[](1);
+        calls[0] = GovernanceConfig.Call(target, abi.encodePacked(sel, bytes32(0)));
+    }
+
+    function _refused(address target, bytes4 sel) internal {
+        GovernanceConfig.Config memory cfg = _genesisConfig();
+        vm.expectRevert(
+            abi.encodeWithSelector(GovernanceConfig.WiringSelectorNotAllowed.selector, target, sel)
         );
-        _expectValidation(FederationRegistry.approveTemplate.selector);
-        _expectValidation(FederationRegistry.setAdapter.selector);
-        _expectValidation(IMintTarget.setAdmittedMinter.selector);
+        validator.validate(cfg, _call(target, sel));
     }
+}
 
-    /// @dev Validates one wiring call of `selector` on the wiring mock, expecting what
-    ///      `genesisInterface` and the mock's declared interfaces allow: a genesis selector the
-    ///      target may receive (any target, or one declaring its interface) passes; any other is
-    ///      refused.
-    function _expectValidation(bytes4 selector) internal {
-        WiringValidationHarness harness = new WiringValidationHarness();
-        GovernanceConfig.Config memory cfg = _wiredConfig();
-        GovernanceConfig.Call[] memory wiring =
-            _one(_call(address(wired), abi.encodePacked(selector, bytes32(0))));
-        bytes4 iface = GovernanceConfig.genesisInterface(selector);
-        bool allowed = iface != 0
-            && (iface == bytes4(0xffffffff) || IERC165(address(wired)).supportsInterface(iface));
-        if (!allowed) {
-            vm.expectRevert(
-                abi.encodeWithSelector(
-                    GovernanceConfig.WiringSelectorNotAllowed.selector, address(wired), selector
-                )
-            );
+/// @notice The configuring transaction with a failing wiring call: the whole configuration is
+///         undone and can be sent again correctly.
+contract GenesisWiringAbortTest is GenesisFreshBase {
+    function test_GenesisWiring_AFailingCallAbortsTheWholeConfiguration() public {
+        GovernanceConfig.Call[] memory calls = _wiring();
+        GovernanceConfig.Call[] memory twice = new GovernanceConfig.Call[](calls.length + 1);
+        for (uint256 i; i < calls.length; ++i) {
+            twice[i] = calls[i];
         }
-        harness.validateWiring(cfg, wiring);
-    }
-
-    // ------------------------------------------------------------------ happy path
-
-    function test_WiringExecutesGenesisCallsInTheConfiguringTransaction() public {
-        GovernanceConfig.Config memory cfg = _wiredConfig();
-        GovernanceConfig.Call[] memory wiring = _genesisCalls();
-        vm.expectEmit(address(wired));
-        emit WiringTargetMock.Bound(WiringTargetMock.bindWorkRecords.selector, address(peerA));
-        vm.expectEmit(address(configurator));
-        emit GovernanceConfigurator.GovernanceConfigured(
-            address(manager), keccak256(abi.encode(cfg)), MANIFEST, keccak256(abi.encode(wiring))
+        twice[calls.length] = calls[0]; // bindStream again
+        assertEq(bytes4(calls[0].data), IPackageRegistry.bindStream.selector);
+        GovernanceConfig.Config memory cfg = _genesisConfig();
+        vm.prank(deployer);
+        vm.expectRevert(
+            abi.encodeWithSelector(IPackageRegistry.AlreadyBound.selector, bytes32("STREAM"))
         );
-        configurator.configure(cfg, MANIFEST, wiring);
-        assertEq(wired.workRecords(), address(peerA));
-        assertEq(wired.editions(), address(peerB));
-        assertTrue(wired.isAdmittedMinter(address(peerA)));
-        assertTrue(wired.isTarget(address(peerB)));
+        configurator.configure(cfg, manifest.digest, twice);
 
+        // Nothing landed: no bind, no grant, the configurator still the installer.
+        assertEq(IPackageRegistry(deployment.packageRegistry).stream(), address(0));
+        (bool installer,) = manager.hasRole(Roles.ADMIN, address(configurator));
+        assertTrue(installer);
+        (bool pauser,) = manager.hasRole(Roles.PAUSER, pauser1);
+        assertFalse(pauser);
+
+        vm.prank(deployer);
+        configurator.configure(cfg, manifest.digest, calls);
         _accept();
         configurator.verify(cfg);
+        assertEq(IPackageRegistry(deployment.packageRegistry).stream(), address(deployment.stream));
     }
 
-    function test_WiringRunsBeforeSelectorsAreMapped() public {
-        // `setAdmittedMinter` maps to SUCCESSOR_SETTER, which the configurator never holds,
-        // yet the wiring call succeeds: it runs while every selector resolves to ADMIN, which
-        // the installer holds with no delay.
-        configurator.configure(_wiredConfig(), MANIFEST, _genesisCalls());
-        _accept();
-        assertEq(
-            manager.getTargetFunctionRole(
-                address(wired), WiringTargetMock.setAdmittedMinter.selector
-            ),
-            Roles.SUCCESSOR_SETTER
+    function test_GenesisWiring_ANonGenesisCallIsRefusedBeforeAnythingRuns() public {
+        GovernanceConfig.Call[] memory calls = _wiring();
+        calls[calls.length - 1] = GovernanceConfig.Call(
+            address(deployment.stream), abi.encodeCall(IModules.addMinter, (address(this)))
         );
-        (uint48 since,,,) = manager.getAccess(Roles.SUCCESSOR_SETTER, address(configurator));
-        assertEq(since, 0);
-
-        // After genesis the same calls are the network's, at 7 days.
-        bytes4[2] memory selectors = [
-            WiringTargetMock.setAdmittedMinter.selector, WiringTargetMock.bindWorkRecords.selector
-        ];
-        for (uint256 i; i < selectors.length; ++i) {
-            (bool immediate, uint32 delay) =
-                manager.canCall(adminSafe, address(wired), selectors[i]);
-            assertFalse(immediate);
-            assertEq(delay, 7 days);
-        }
+        GovernanceConfig.Config memory cfg = _genesisConfig();
+        vm.prank(deployer);
         vm.expectRevert(
-            abi.encodeWithSelector(
-                IAccessManaged.AccessManagedUnauthorized.selector, address(configurator)
-            )
-        );
-        vm.prank(address(configurator));
-        wired.setAdmittedMinter(address(peerB), true);
-    }
-
-    function test_ConfiguratorEndsWithNoRoleAfterWiring() public {
-        configurator.configure(_wiredConfig(), MANIFEST, _genesisCalls());
-        for (uint64 role; role < Roles.COUNT; ++role) {
-            assertFalse(GovernanceConfig.hasRecord(manager, role, address(configurator)));
-        }
-    }
-
-    function test_EmptyWiringIsAllowed() public {
-        configurator.configure(_wiredConfig(), MANIFEST, _noWiring());
-        assertEq(wired.workRecords(), address(0));
-    }
-
-    function test_EpochZeroManifestIsWrittenAtGenesis() public {
-        // The real statement log: the manifest history starts with the genesis epoch.
-        StatementLog log = new StatementLog(address(manager), address(0), bytes32(0));
-        GovernanceConfig.Config memory cfg = _wiredConfig();
-        GovernanceConfig.Target[] memory targets = new GovernanceConfig.Target[](3);
-        (targets[0], targets[1]) = (cfg.targets[0], cfg.targets[1]);
-        GovernanceConfig.FunctionRole[] memory fns = new GovernanceConfig.FunctionRole[](4);
-        fns[0] = GovernanceConfig.FunctionRole(
-            StatementLog.appendGovernanceManifest.selector, Roles.SUCCESSOR_SETTER
-        );
-        fns[1] = GovernanceConfig.FunctionRole(StatementLog.appendCurator.selector, Roles.CURATOR);
-        fns[2] = GovernanceConfig.FunctionRole(StatementLog.appendPlatform.selector, Roles.PLATFORM);
-        fns[3] = GovernanceConfig.FunctionRole(
-            StatementLog.setArtistResolver.selector, Roles.SUCCESSOR_SETTER
-        );
-        targets[2] = GovernanceConfig.Target(address(log), fns);
-        cfg.targets = targets;
-
-        Statement memory manifest = Statement({
-            token: address(manager),
-            id: 0,
-            kind: StatementKinds.GOVERNANCE_MANIFEST,
-            schema: keccak256("6529-works/governance-manifest/1"),
-            content: HashRef(HASH_SHA256, keccak256("signed epoch-0 manifest")),
-            uri: "ar://epoch-0-manifest",
-            fileId: bytes32(0),
-            supersedes: bytes32(0)
-        });
-        GovernanceConfig.Call[] memory wiring = _one(
-            _call(address(log), abi.encodeCall(StatementLog.appendGovernanceManifest, (manifest)))
-        );
-        configurator.configure(cfg, MANIFEST, wiring);
-        _accept();
-
-        (uint64 count, bytes32 head) = log.chainOf(address(manager), 0);
-        assertEq(count, 1, "epoch-0 manifest recorded");
-        assertTrue(head != bytes32(0));
-        // Later epochs go through the 7-day class.
-        (bool immediate, uint32 delay) =
-            manager.canCall(adminSafe, address(log), StatementLog.appendGovernanceManifest.selector);
-        assertFalse(immediate);
-        assertEq(delay, 7 days);
-    }
-
-    // ------------------------------------------------------------------ failures abort all
-
-    function test_RevertingWiringCallAbortsTheWholeConfiguration() public {
-        GovernanceConfig.Call[] memory wiring = new GovernanceConfig.Call[](2);
-        wiring[0] = _call(
-            address(wired), abi.encodeCall(WiringTargetMock.bindWorkRecords, (address(peerA)))
-        );
-        wiring[1] = _call(
-            address(wired), abi.encodeCall(WiringTargetMock.bindPackageRegistry, (address(peerB)))
-        );
-        _expectWiringRevert(wiring, abi.encodeWithSelector(WiringTargetMock.Refused.selector));
-        _assertUntouched();
-    }
-
-    function test_SilentWiringRevertIsNamedByIndex() public {
-        GovernanceConfig.Call[] memory wiring = new GovernanceConfig.Call[](2);
-        wiring[0] = _call(
-            address(wired), abi.encodeCall(WiringTargetMock.bindWorkRecords, (address(peerA)))
-        );
-        wiring[1] = _call(
-            address(wired), abi.encodeCall(WiringTargetMock.bindSplitFactory, (address(peerB)))
-        );
-        _expectWiringRevert(
-            wiring, abi.encodeWithSelector(GovernanceConfig.WiringCallFailed.selector, 1)
-        );
-        _assertUntouched();
-    }
-
-    function test_RepeatedOneShotBindAbortsTheWholeConfiguration() public {
-        GovernanceConfig.Call[] memory wiring = new GovernanceConfig.Call[](2);
-        wiring[0] = _call(
-            address(wired), abi.encodeCall(WiringTargetMock.bindWorkRecords, (address(peerA)))
-        );
-        wiring[1] = _call(
-            address(wired), abi.encodeCall(WiringTargetMock.bindWorkRecords, (address(peerB)))
-        );
-        _expectWiringRevert(
-            wiring,
-            abi.encodeWithSelector(
-                WiringTargetMock.AlreadyBound.selector, WiringTargetMock.bindWorkRecords.selector
-            )
-        );
-        _assertUntouched();
-    }
-
-    // ------------------------------------------------------------------ rejected wiring
-
-    /// Regression for the PR #25 review: wiring once reached any target selector, so a 30-day
-    /// verifier swap or recipient change could run at zero delay. Only genesis selectors pass.
-    function test_RejectsZeroDelaySwapsThroughWiring() public {
-        bytes[2] memory onTarget = [
-            abi.encodeCall(GovernedTargetMock.setVerifier, (verifier0, attacker)),
-            abi.encodeCall(GovernedTargetMock.setRecipient, (recipient0, attacker))
-        ];
-        for (uint256 i; i < onTarget.length; ++i) {
-            _expectWiringRevert(
-                _one(_call(address(target), onTarget[i])),
-                abi.encodeWithSelector(
-                    GovernanceConfig.WiringSelectorNotAllowed.selector,
-                    address(target),
-                    bytes4(onTarget[i])
-                )
-            );
-        }
-        _expectWiringRevert(
-            _one(_call(address(wired), abi.encodeCall(WiringTargetMock.setVerifier, (attacker)))),
             abi.encodeWithSelector(
                 GovernanceConfig.WiringSelectorNotAllowed.selector,
-                address(wired),
-                WiringTargetMock.setVerifier.selector
+                address(deployment.stream),
+                IModules.addMinter.selector
             )
         );
-        assertEq(target.verifier(), verifier0);
-    }
-
-    /// Review F (F5): a genesis selector reaches only the contracts that declare the interface
-    /// it is admitted for. The artist registry's `setFederationRegistry`, a 30-day replacement,
-    /// shares the sale adapters' selector; a target that does not declare `ISaleAdapter` is
-    /// refused, and so are the other scoped selectors.
-    function test_GenesisSelectorsReachOnlyTheirTargets() public {
-        assertEq(
-            IArtistRegistry.setFederationRegistry.selector,
-            ISaleAdapter.setFederationRegistry.selector
-        );
-        assertEq(
-            GovernanceConfig.genesisInterface(ISaleAdapter.setFederationRegistry.selector),
-            type(ISaleAdapter).interfaceId
-        );
-        bytes4[5] memory scoped = [
-            ISaleAdapter.setFederationRegistry.selector,
-            ISaleAdapter.setTarget.selector,
-            IMintTarget.setAdmittedMinter.selector,
-            FederationRegistry.setAdapter.selector,
-            FederationRegistry.approveTemplate.selector
-        ];
-        for (uint256 i; i < scoped.length; ++i) {
-            _expectWiringRevert(
-                _one(_call(address(target), abi.encodePacked(scoped[i], bytes32(0), bytes32(0)))),
-                abi.encodeWithSelector(
-                    GovernanceConfig.WiringSelectorNotAllowed.selector, address(target), scoped[i]
-                )
-            );
-        }
-        // A target declaring the interface still receives it.
-        GovernanceConfig.Config memory cfg = _wiredConfig();
-        configurator.configure(cfg, MANIFEST, _genesisCalls());
-        assertTrue(wired.isTarget(address(peerB)));
-    }
-
-    /// Regression for the PR #25 review: the old deny-list missed the manager's `multicall`.
-    /// Even if the manager were admitted as a target, the allow-list rejects it.
-    function test_AllowListRejectsManagerCallsEvenIfTheManagerWereATarget() public {
-        WiringValidationHarness harness = new WiringValidationHarness();
-        GovernanceConfig.Config memory cfg;
-        cfg.targets = new GovernanceConfig.Target[](1);
-        cfg.targets[0].target = address(manager);
-        bytes[] memory inner = new bytes[](1);
-        inner[0] = abi.encodeCall(IAccessManager.grantRole, (Roles.ADMIN, attacker, 0));
-        bytes[2] memory calls = [abi.encodeCall(Multicall.multicall, (inner)), inner[0]];
-        for (uint256 i; i < calls.length; ++i) {
-            vm.expectRevert(
-                abi.encodeWithSelector(
-                    GovernanceConfig.WiringSelectorNotAllowed.selector,
-                    address(manager),
-                    bytes4(calls[i])
-                )
-            );
-            harness.validateWiring(cfg, _one(_call(address(manager), calls[i])));
-        }
-    }
-
-    function test_RejectsWiringOnTheManagersRoleAdminFunctions() public {
-        bytes[2] memory calls = [
-            abi.encodeCall(IAccessManager.grantRole, (Roles.ADMIN, attacker, 0)),
-            abi.encodeCall(
-                IAccessManager.setTargetFunctionRole,
-                (address(target), _one(GovernedTargetMock.setRecipient.selector), Roles.KEEPER)
-            )
-        ];
-        for (uint256 i; i < calls.length; ++i) {
-            _expectWiringRevert(
-                _one(_call(address(manager), calls[i])),
-                abi.encodeWithSelector(
-                    GovernanceConfig.InvalidWiringCall.selector, address(manager), bytes4(calls[i])
-                )
-            );
-        }
-    }
-
-    function test_RejectsAccessManagementSelectorsOnAnyTarget() public {
-        bytes4[16] memory selectors = [
-            IAccessManager.labelRole.selector,
-            IAccessManager.grantRole.selector,
-            IAccessManager.revokeRole.selector,
-            IAccessManager.renounceRole.selector,
-            IAccessManager.setRoleAdmin.selector,
-            IAccessManager.setRoleGuardian.selector,
-            IAccessManager.setGrantDelay.selector,
-            IAccessManager.setTargetFunctionRole.selector,
-            IAccessManager.setTargetAdminDelay.selector,
-            IAccessManager.setTargetClosed.selector,
-            IAccessManager.updateAuthority.selector,
-            IAccessManager.schedule.selector,
-            IAccessManager.execute.selector,
-            IAccessManager.cancel.selector,
-            Multicall.multicall.selector,
-            IAccessManaged.setAuthority.selector
-        ];
-        for (uint256 i; i < selectors.length; ++i) {
-            _expectWiringRevert(
-                _one(_call(address(wired), abi.encodePacked(selectors[i], bytes32(0)))),
-                abi.encodeWithSelector(
-                    GovernanceConfig.WiringSelectorNotAllowed.selector, address(wired), selectors[i]
-                )
-            );
-        }
-    }
-
-    function test_RejectsWiringOnAnUnconfiguredTarget() public {
-        WiringTargetMock stranger = new WiringTargetMock(address(manager));
-        bytes memory data = abi.encodeCall(WiringTargetMock.bindWorkRecords, (address(peerA)));
-        _expectWiringRevert(
-            _one(_call(address(stranger), data)),
-            abi.encodeWithSelector(
-                GovernanceConfig.InvalidWiringCall.selector, address(stranger), bytes4(data)
-            )
-        );
-    }
-
-    function test_RejectsWiringWithoutASelector() public {
-        _expectWiringRevert(
-            _one(_call(address(wired), hex"0102")),
-            abi.encodeWithSelector(
-                GovernanceConfig.InvalidWiringCall.selector, address(wired), bytes4(0)
-            )
-        );
-    }
-
-    /// @dev A wiring call of exactly four bytes carries its selector and is validated by it: a
-    ///      genesis selector passes, and any other is refused by name.
-    function test_AFourByteWiringCallIsValidatedByItsSelector() public {
-        WiringValidationHarness harness = new WiringValidationHarness();
-        GovernanceConfig.Config memory cfg = _wiredConfig();
-        bytes4 genesis = IStream.bindEditions.selector;
-        harness.validateWiring(cfg, _one(_call(address(wired), abi.encodePacked(genesis))));
-        bytes4 other = IStream.setDefaultRenderer.selector;
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                GovernanceConfig.WiringSelectorNotAllowed.selector, address(wired), other
-            )
-        );
-        harness.validateWiring(cfg, _one(_call(address(wired), abi.encodePacked(other))));
-    }
-
-    function test_RejectsMoreThanTheWiringBound() public {
-        uint256 count = GovernanceConfig.MAX_WIRING_CALLS + 1;
-        GovernanceConfig.Call[] memory wiring = new GovernanceConfig.Call[](count);
-        for (uint256 i; i < count; ++i) {
-            wiring[i] = _call(
-                address(wired), abi.encodeCall(WiringTargetMock.setTarget, (address(peerA), true))
-            );
-        }
-        _expectWiringRevert(
-            wiring, abi.encodeWithSelector(GovernanceConfig.TooManyWiringCalls.selector, count)
-        );
-    }
-
-    function test_OnlyTheDeployerCanWire() public {
-        GovernanceConfig.Config memory cfg = _wiredConfig();
-        GovernanceConfig.Call[] memory wiring = _genesisCalls();
-        vm.expectRevert(
-            abi.encodeWithSelector(GovernanceConfigurator.NotDeployer.selector, attacker)
-        );
-        vm.prank(attacker);
-        configurator.configure(cfg, MANIFEST, wiring);
-    }
-
-    function test_StockManagerTargetCannotBeWired() public {
-        // Wiring calls only reach targets validated as governed by the configurator's manager.
-        AccessManager stock = new AccessManager(address(this));
-        GovernedTargetMock foreign = new GovernedTargetMock(address(stock), recipient0, verifier0);
-        bytes memory data = abi.encodeCall(WiringTargetMock.setTarget, (address(peerA), true));
-        _expectWiringRevert(
-            _one(_call(address(foreign), data)),
-            abi.encodeWithSelector(
-                GovernanceConfig.InvalidWiringCall.selector, address(foreign), bytes4(data)
-            )
-        );
+        configurator.configure(cfg, manifest.digest, calls);
     }
 }

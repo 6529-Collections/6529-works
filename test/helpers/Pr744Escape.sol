@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-/// @notice 6529Stream PR #744 code copied verbatim from `smart-contracts/domains/metadata/StreamRenderContextV1.sol` at
-///         `origin/codex/v1-integration` (19432ea43). Test-only: proves byte parity with, and measures
-///         gas against, the implementation the v1 library ports. Not formatted.
+/// @notice 6529Stream PR #744 code copied verbatim from
+///         `smart-contracts/domains/metadata/StreamRenderContextV1.sol` at
+///         `origin/codex/v1-integration` (19432ea43). Test-only: proves byte parity with, and
+///         measures gas against, the implementation the v1 library ports. Not formatted.
 // forgefmt: disable-start
 library Pr744Escape {
     /// @dev Count exact expansion first; ordinary spans are copied in words. The old encoder's

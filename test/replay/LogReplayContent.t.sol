@@ -4,12 +4,13 @@ pragma solidity ^0.8.24;
 import { Base64 } from "@openzeppelin/contracts/utils/Base64.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { ReplayBase } from "./ReplayBase.sol";
+import { ReplayEvents } from "./ReplayEvents.sol";
 
 /// @notice Log replay of the content store (WS-27, WS-44, WS-50 to WS-52, WS-54): a history that
 ///         emits every one of its events rebuilds, from those logs alone, the same chunk index,
 ///         manifests, completeness and attestations as the contract's views.
 contract LogReplayContentTest is ReplayBase {
-    function test_EveryContentEventReplaysToTheSameState() public {
+    function test_ContentStore_EveryEventReplaysToTheSameState() public {
         uint256 size = store.CHUNK_SIZE();
         // Two whole chunks and a short tail, written.
         bytes memory media = _bytes(2 * size + 100, 1);
@@ -19,7 +20,7 @@ contract LogReplayContentTest is ReplayBase {
         _listFile();
         _base64File(size);
         assertTrue(store.isComplete(complete));
-        _assertEveryEventReplayed("ContentStore", contentIdx, new string[](0));
+        _assertEveryEventReplayed("ContentStore", contentIdx, ReplayEvents.contentStore(), _none());
     }
 
     /// @dev A file registered before its upload, whose first chunk arrives as three linked parts
@@ -86,7 +87,7 @@ contract LogReplayContentTest is ReplayBase {
 
     /// @dev Negative control: the comparison fails when state and logs disagree. Slot 1 holds the
     ///      attestations; a write marks a file attested that no log attested.
-    function test_IndexerDetectsStateThatLogsDoNotExplain() public {
+    function test_ContentStore_ReplayFailsOnStateNoLogExplains() public {
         bytes32 fileId = cc0TextFileId;
         contentIdx.assertMatches();
         vm.store(
@@ -98,11 +99,27 @@ contract LogReplayContentTest is ReplayBase {
 
     /// @dev Negative control: slot 5 holds `completeThrough`; a prefix no log attested makes the
     ///      comparison fail.
-    function test_IndexerDetectsACompletenessPrefixLogsDoNotExplain() public {
+    function test_ContentStore_ReplayFailsOnAPrefixNoLogExplains() public {
         bytes32 fileId = cc0TextFileId;
         contentIdx.assertMatches();
         vm.store(address(store), keccak256(abi.encode(fileId, uint256(5))), bytes32(uint256(1)));
         vm.expectRevert(bytes("completeThrough: 1 != 0"));
+        contentIdx.assertMatches();
+    }
+
+    /// @dev An attestation whose `Base64Attested` log is dropped: the rebuilt flag is stale.
+    function test_ContentStore_ReplayFailsOnADroppedLog() public {
+        bytes memory decoded = _bytes(300, 5);
+        bytes32 b64 = _upload(
+            bytes(Base64.encode(decoded)),
+            IContentStore.Encoding.Base64,
+            "image/png",
+            sha256(decoded)
+        );
+        _sync();
+        assertTrue(store.attestBase64(b64, 10));
+        _apply(_dropOne(address(store), IContentStore.Base64Attested.selector));
+        vm.expectRevert(bytes("isBase64Attested: true != false"));
         contentIdx.assertMatches();
     }
 

@@ -2,453 +2,266 @@
 pragma solidity ^0.8.24;
 
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
-import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
-import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
-import { Roles } from "src/governance/Roles.sol";
-import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
-import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
-import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
-import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
-import {
-    LockedTerms,
-    Payment,
-    PaymentMethod,
-    PrimaryOutcome,
-    PrimaryTerms,
-    SaleKind
-} from "src/interfaces/types/SaleTypes.sol";
-import { IStream } from "src/interfaces/IStream.sol";
-import { DeployV1 } from "script/DeployV1.sol";
-import { VerifyV1 } from "script/VerifyV1.sol";
-import { HostileActor, MockMintTarget } from "../mocks/sales/AuctionMocks.sol";
-import { MockFederationRegistry } from "../mocks/sales/SaleMocks.sol";
-import { IntegrationBase } from "./IntegrationBase.sol";
+import { IMintPolicy } from "src/interfaces/core/IMintPolicy.sol";
+import { IModules } from "src/interfaces/core/IModules.sol";
+import { IStream } from "src/interfaces/core/IStream.sol";
+import { Outcome } from "src/interfaces/core/CoreTypes.sol";
+import { WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
+import { SaleFlowBase } from "./SaleFlowBase.sol";
 
-/// @notice D140 on the real stack (ADR 0005; owner decisions 9, 10 and 11). The 6529 Network
-///         Museum is set in the economics resolver at genesis and changed only through the
-///         14-day FUNDS_SETTER class. It receives every unbid canonical 6529 Stream 1/1, read
-///         when the sale settles: after no bid, while the artist is restrained, and at the
-///         60-day currency-freeze exit, with the standing bid credited back. Stream moves the
-///         work there itself when the auction reports the outcome (owner decision 17), so nothing
-///         is ever pending, and records the outcome. An unbid federated work stays with its artist.
-contract MuseumTest is IntegrationBase {
+/// @notice Where a 6529 Stream work goes when its sale does not end with a buyer, on the deployed
+///         stack. An unsold work goes to the 6529 Network Museum (the museum vault the resolver
+///         names at settlement), recorded UNSOLD, with nothing paid. A work held unsold by a
+///         minter the network removed may be rescued by the network once `rescueDelay` (its own
+///         setting, read at the attempt) has passed since the removal; the auction then closes
+///         that sale with the standing bid credited back.
+contract MuseumTest is SaleFlowBase {
     address internal artist;
-    address internal collector = makeAddr("museumCollector");
-    address internal federatedArtist = makeAddr("federatedArtist");
+    address internal bidder = makeAddr("museumBidder");
     bytes32 internal root;
 
     function setUp() public override {
         super.setUp();
         artist = _actor("museumArtist");
         Work[] memory works = new Work[](3);
-        for (uint256 i; i < works.length; ++i) {
+        for (uint256 i; i < 3; ++i) {
             works[i] = _work(artist, collectionId);
         }
         root = _publish(works);
         _keep(root, works);
     }
 
-    /// @dev External, so `vm.expectRevert` sees the readback's revert at this call depth.
-    function checkMuseum(address recorded) external view {
-        VerifyV1.checkMuseum(deployment, recorded);
-    }
+    // ------------------------------------------------------------------ unsold
 
-    function _startItem(uint256 index) internal returns (uint256 saleId, uint256 tokenId) {
-        (saleId, tokenId) = _start(root, _package(root), index);
-    }
-
-    /// @dev Governance moves the museum (FUNDS_SETTER, 14 days).
-    function _setMuseum(address next) internal {
-        _govern(
-            hotAdmin,
-            address(economics),
-            abi.encodeCall(economics.setMuseum, (economics.museumRevision(), next))
-        );
-    }
-
-    /// @dev A federated ERC-721 whose artist is `federatedArtist`, registered ACTIVE with a 10%
-    ///      fee in a registry governance installs on the auction (SUCCESSOR_SETTER, 30 days).
-    function _federatedToken() internal returns (MockMintTarget fed) {
-        MockFederationRegistry reg = new MockFederationRegistry();
-        fed = new MockMintTarget();
-        fed.setAdmittedMinter(address(auction), true);
-        fed.setTerms(
-            PrimaryTerms(
-                SaleKind.ENGLISH_AUCTION,
-                CURRENCY_ETH,
-                0,
-                "",
-                makeAddr("federatedSeller"),
-                address(0),
-                0,
-                federatedArtist
-            )
-        );
-        _govern(
-            hotAdmin,
-            address(auction),
-            abi.encodeCall(
-                auction.setFederationRegistry, (auction.federationRegistry(), address(reg))
-            )
-        );
-        reg.register(
-            address(fed),
-            IFederationRegistry.Entry(
-                IFederationRegistry.Form.ERC721,
-                address(0),
-                uint160(federatedArtist),
-                1,
-                address(fed).codehash,
-                10_000,
-                IFederationRegistry.Status.ACTIVE
-            )
-        );
-    }
-
-    /// @dev Another ERC-721 governance lists on the auction (`setTarget`, SUCCESSOR_SETTER, 30
-    ///      days), whose artist is `federatedArtist`. It is not 6529 Stream, the token the auction
-    ///      was deployed with.
-    function _listedToken() internal returns (MockMintTarget token) {
-        token = new MockMintTarget();
-        token.setAdmittedMinter(address(auction), true);
-        token.setTerms(
-            PrimaryTerms(
-                SaleKind.ENGLISH_AUCTION,
-                CURRENCY_ETH,
-                0,
-                "",
-                makeAddr("listedSeller"),
-                networkFee,
-                25_000,
-                federatedArtist
-            )
-        );
-        _govern(
-            hotAdmin, address(auction), abi.encodeCall(auction.setTarget, (address(token), true))
-        );
-        assertTrue(auction.isTarget(address(token)));
-    }
-
-    /// @dev A 6529 Stream 1/1 priced in the test ERC-20 (ETH is never deprecated, so the
-    ///      freeze exit is shown in a token).
-    function _startUsdItem() internal returns (uint256 saleId, uint256 tokenId) {
-        _admitUsd();
-        Work[] memory one = new Work[](1);
-        one[0] = _work(artist, collectionId);
-        bytes32 usdRoot = _publish(_inUsd(one));
-        (saleId, tokenId) = _start(usdRoot, one, 0);
-    }
-
-    // ------------------------------------------------------------------ genesis and governance
-
-    /// @dev Owner decision 11: genesis sets the museum in the resolver (a constructor value
-    ///      `Verify.s.sol` reads back) and maps `setMuseum` to FUNDS_SETTER, the 14-day class.
-    function test_GenesisWiresTheMuseumInTheFundsClass() public {
-        assertEq(economics.museum(), museum);
-        assertEq(
-            manager.getTargetFunctionRole(
-                address(economics), IEconomicsResolver.setMuseum.selector
-            ),
-            Roles.FUNDS_SETTER
-        );
-        (bool immediate, uint32 delay) =
-            manager.canCall(hotAdmin, address(economics), IEconomicsResolver.setMuseum.selector);
-        assertFalse(immediate);
-        assertEq(delay, Roles.DELAY_3D);
-        // The resolver names the museum's governed vault, which forwards to the recorded Safe.
-        this.checkMuseum(museumSafe);
-        vm.expectRevert(
-            abi.encodeWithSelector(VerifyV1.MuseumMismatch.selector, networkFeeSafe, museumSafe)
-        );
-        this.checkMuseum(networkFeeSafe);
-    }
-
-    /// @dev A governed change waits its 14 days, names the old and the new museum in its event,
-    ///      and then fails Verify's genesis readback by design. Nobody else may call the setter.
-    function test_SetMuseum_GovernedChangeWaitsFourteenDays() public {
-        address next = makeAddr("nextMuseumSafe");
-        bytes memory call = abi.encodeCall(economics.setMuseum, (1, next));
-        bytes32 id = _schedule(hotAdmin, address(economics), call);
-        vm.warp(block.timestamp + Roles.DELAY_3D - 1);
-        vm.prank(hotAdmin);
-        vm.expectRevert(abi.encodeWithSelector(IAccessManager.AccessManagerNotReady.selector, id));
-        manager.execute(address(economics), call);
-        vm.warp(block.timestamp + 1);
-        vm.expectEmit(address(economics));
-        emit IEconomicsResolver.MuseumSet(museum, next, 2);
-        vm.prank(hotAdmin);
-        manager.execute(address(economics), call);
-        assertEq(economics.museum(), next);
-        vm.expectRevert(abi.encodeWithSelector(VerifyV1.MuseumMismatch.selector, museum, next));
-        this.checkMuseum(museum);
-
-        vm.prank(collector);
-        vm.expectRevert(
-            abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, collector)
-        );
-        economics.setMuseum(2, collector);
-    }
-
-    /// @dev The museum must hold what it receives: governance cannot name zero or a system
-    ///      contract (the fee-recipient rule, CALLS-1). The execution reverts after its delay and
-    ///      the museum is unchanged.
-    function test_SetMuseum_RefusesZeroAndSystemContracts() public {
-        address[13] memory refused = [
-            address(0),
-            address(escrow),
-            address(claimRouter),
-            address(auction),
-            address(stream),
-            address(editions),
-            address(economics),
-            address(allowlist),
-            address(splitFactory),
-            address(artists),
-            address(registry),
-            address(records),
-            address(releaseVerifier)
-        ];
-        for (uint256 i; i < refused.length; ++i) {
-            bytes memory call = abi.encodeCall(economics.setMuseum, (1, refused[i]));
-            _schedule(hotAdmin, address(economics), call);
-            vm.warp(block.timestamp + Roles.DELAY_3D);
-            vm.prank(hotAdmin);
-            vm.expectRevert(
-                abi.encodeWithSelector(IEconomicsResolver.InvalidMuseum.selector, refused[i])
-            );
-            manager.execute(address(economics), call);
-            assertEq(economics.museum(), museum);
-            // The refused operation stays scheduled until it expires; cancel it so a repeated
-            // address in the list can be scheduled again.
-            vm.prank(hotAdmin);
-            manager.cancel(hotAdmin, address(economics), call);
-        }
-    }
-
-    // ------------------------------------------------------------------ unbid works
-
-    /// @dev D140: with no bid the work goes to the museum, not its artist; nothing is paid.
-    ///      Stream records UNBID and moves the work itself (owner decision 17).
-    function test_UnbidWorkGoesToTheMuseum() public {
-        (uint256 saleId, uint256 tokenId) = _startItem(0);
+    /// @dev With no bid the work goes to the museum vault, not its artist; nothing is paid.
+    function test_Museum_UnbidWorkGoesToTheMuseum() public {
+        Work[] memory works = _package(root);
+        WorkTerms memory t = _terms(works[0]);
+        (uint256 saleId, uint256 tokenId) = _start(root, works, 0);
+        assertEq(economics.museum(), museum, "the genesis museum is the museum vault");
         vm.warp(auction.auction(saleId).endTime);
-        LockedTerms memory lt = auction.lockedTerms(saleId);
         vm.expectEmit(address(stream));
-        emit IStream.PrimarySaleSettled(tokenId, PrimaryOutcome.UNBID, address(0), CURRENCY_ETH, 0);
+        emit IStream.PrimarySale(tokenId, Outcome.UNSOLD, address(0), 0);
         vm.expectEmit(address(auction));
-        emit ISaleAdapter.SaleSettled(
+        emit IEnglishAuction.SaleSettled(
             saleId,
             address(stream),
             tokenId,
             address(0),
             museum,
             1,
-            CURRENCY_ETH,
+            address(0),
             0,
-            lt.seller,
+            t.seller,
             0,
-            lt.feeRecipient,
+            address(0),
             0
         );
         auction.settle(saleId);
-        assertEq(stream.ownerOf(tokenId), museum);
+        assertEq(stream.ownerOf(tokenId), museum, "the museum holds the work");
         assertEq(stream.balanceOf(artist), 0, "not the artist");
-        assertEq(auction.auction(saleId).recipient, museum);
-        assertTrue(stream.primarySaleSettled(tokenId));
-        assertEq(address(auction).balance, 0);
-        assertEq(auction.pendingDelivery(saleId), address(0), "nothing pending");
-        (PrimaryOutcome outcome, address currency, uint256 price) = stream.primarySale(tokenId);
-        assertEq(uint8(outcome), uint8(PrimaryOutcome.UNBID));
-        assertEq(currency, address(0));
-        assertEq(price, 0);
+        assertEq(uint8(stream.workOf(tokenId).outcome), uint8(Outcome.UNSOLD));
+        assertEq(t.seller.balance, 0, "nothing paid");
+        assertEq(networkFee.balance, 0);
+        assertEq(uint8(auction.auction(saleId).state), uint8(IEnglishAuction.AuctionState.SETTLED));
     }
 
-    /// @dev The museum is read at settlement: a change that lands while the sale waits for its
-    ///      settle sends the work to the new museum.
-    function test_UnbidWorkGoesToTheMuseumNamedAtSettlement() public {
-        (uint256 saleId, uint256 tokenId) = _startItem(0);
-        address next = makeAddr("nextMuseumSafe");
-        _setMuseum(next);
-        assertEq(uint8(auction.auction(saleId).state), uint8(IEnglishAuction.AuctionState.ENDED));
-        auction.settle(saleId);
-        assertEq(stream.ownerOf(tokenId), next);
-        assertEq(stream.balanceOf(museum), 0);
-    }
-
-    /// @dev A sold work is untouched by the rule: it goes to its winner. Stream records SOLD,
-    ///      the currency and the price, and names the buyer in its event (owner decision 17).
-    function test_ASoldWorkStillGoesToItsWinner() public {
-        (uint256 saleId, uint256 tokenId) = _startItem(1);
-        _ethBid(saleId, collector, 1 ether);
-        vm.warp(auction.auction(saleId).endTime);
-        vm.expectEmit(address(stream));
-        emit IStream.PrimarySaleSettled(
-            tokenId, PrimaryOutcome.SOLD, collector, CURRENCY_ETH, 1 ether
+    /// @dev An unsold work never starts again.
+    function test_Museum_AnUnsoldWorkNeverStartsAgain() public {
+        Work[] memory works = _package(root);
+        (uint256 saleId, uint256 tokenId) = _start(root, works, 0);
+        _settleAtEnd(saleId);
+        bytes memory again = _mintData(root, works, 0);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IMintPolicy.ContentUsed.selector, works[0].item.contentHash, tokenId
+            )
         );
-        auction.settle(saleId);
-        assertEq(stream.ownerOf(tokenId), collector);
-        assertEq(stream.balanceOf(museum), 0);
-        (PrimaryOutcome outcome, address currency, uint256 price) = stream.primarySale(tokenId);
-        assertEq(uint8(outcome), uint8(PrimaryOutcome.SOLD));
-        assertEq(currency, CURRENCY_ETH);
-        assertEq(price, 1 ether);
+        auction.start(address(stream), again);
     }
 
-    /// @dev Owner decision 19 (LIM-SAL-1): genesis wires a 0.05 ETH opening bid, so the artist
-    ///      can no longer keep an unsold 1/1 from the museum with a 1-wei bid of their own. A
-    ///      self-bid at the floor still can, but it shows publicly as SOLD to the artist, and
-    ///      the network fee on it, about 0.0125 ETH at the genesis 25%, is paid like any sale's.
-    function test_ASelfBidMustMeetTheOpeningBidAndShowsAsSold() public {
-        assertEq(auction.openingBid(CURRENCY_ETH), DeployV1.ETH_OPENING_BID, "genesis wires it");
-        assertEq(DeployV1.ETH_OPENING_BID, 0.05 ether);
-        (uint256 saleId, uint256 tokenId) = _startItem(1);
+    /// @dev The museum is read at settlement: a change that lands while the sale runs sends the
+    ///      work to the new museum.
+    function test_Museum_TheMuseumIsReadAtSettlement() public {
+        (uint256 saleId, uint256 tokenId) = _start(root, _package(root), 0);
+        address nextMuseum = makeAddr("nextMuseum");
+        _asNetwork(
+            address(economics),
+            abi.encodeCall(economics.setMuseum, (economics.museumRevision(), nextMuseum))
+        );
+        assertEq(economics.museum(), nextMuseum);
+        auction.settle(saleId);
+        assertEq(stream.ownerOf(tokenId), nextMuseum);
+    }
+
+    /// @dev The artist cannot keep its work from the museum with a token bid: a first bid must
+    ///      reach the 0.05 ETH opening bid, and one that does is a sale like any other.
+    function test_Museum_ASelfBidMustReachTheOpeningBid() public {
+        (uint256 saleId, uint256 tokenId) = _start(root, _package(root), 1);
         vm.deal(artist, 1 ether);
         vm.prank(artist);
-        vm.expectRevert(abi.encodeWithSelector(IEnglishAuction.BidTooLow.selector, 0.05 ether, 1));
-        auction.bid{ value: 1 }(
-            saleId, address(0), Payment(PaymentMethod.DIRECT, artist, 1, 0, 0, "")
-        );
-
-        _ethBid(saleId, artist, 0.05 ether);
-        uint256 feeBefore = networkFee.balance;
-        vm.warp(auction.auction(saleId).endTime);
-        vm.expectEmit(address(stream));
-        emit IStream.PrimarySaleSettled(
-            tokenId, PrimaryOutcome.SOLD, artist, CURRENCY_ETH, 0.05 ether
-        );
-        auction.settle(saleId);
-        assertEq(stream.ownerOf(tokenId), artist, "kept from the museum, but as a sale");
-        (PrimaryOutcome outcome,, uint256 price) = stream.primarySale(tokenId);
-        assertEq(uint8(outcome), uint8(PrimaryOutcome.SOLD));
-        assertEq(price, 0.05 ether);
-        assertEq(networkFee.balance - feeBefore, 0.0125 ether, "the network fee it costs");
+        vm.expectRevert(abi.encodeWithSelector(IEnglishAuction.BidTooLow.selector, OPENING_BID, 1));
+        auction.bid{ value: 1 }(saleId, address(0));
+        vm.prank(artist);
+        auction.bid{ value: OPENING_BID }(saleId, address(0));
+        _settleAtEnd(saleId);
+        assertEq(stream.ownerOf(tokenId), artist);
+        assertEq(uint8(stream.workOf(tokenId).outcome), uint8(Outcome.SOLD));
+        assertEq(networkFee.balance, _fee(OPENING_BID, _terms(_package(root)[1]).feeShare));
     }
 
-    /// @dev Owner decision 10: the 60-day currency-freeze exit takes the no-bid branch. The
-    ///      standing bid is credited back in full and the work goes to the museum.
-    function test_FreezeExitSendsTheWorkToTheMuseumAndCreditsTheBid() public {
-        (uint256 saleId, uint256 tokenId) = _startUsdItem();
-        _usdBid(saleId, collector, 100e18);
-        uint256 frozenAt = _deprecateUsd();
-        vm.warp(frozenAt + 14 days - 1);
+    // ------------------------------------------------------------------ rescue
+
+    /// @dev The network removes the English auction as a minter of Stream.
+    function _removeAuction() internal {
+        _asNetwork(address(stream), abi.encodeCall(stream.removeMinter, (address(auction))));
+        assertFalse(stream.isMinter(address(auction)));
+    }
+
+    function _rescue(uint256 tokenId, address to) internal {
+        _asNetwork(address(stream), abi.encodeCall(stream.rescue, (tokenId, to)));
+    }
+
+    function _expectNotRescuable(uint256 tokenId) internal {
+        vm.prank(network);
+        vm.expectRevert(abi.encodeWithSelector(IStream.NotRescuable.selector, tokenId));
+        stream.rescue(tokenId, museum);
+    }
+
+    /// @dev The whole path: a sale with a standing bid, the auction removed as a minter, the
+    ///      rescue refused before `rescueDelay`, allowed after; the sale then closes with the bid
+    ///      credited back and nothing recorded, paid or delivered.
+    function test_Museum_RescueOfAWorkARemovedMinterHoldsAndTheSaleCloses() public {
+        Work[] memory works = _package(root);
+        WorkTerms memory t = _terms(works[0]);
+        (uint256 saleId, uint256 tokenId) = _start(root, works, 0);
+        _ethBid(saleId, bidder, 1 ether);
+        uint256 removedAt = block.timestamp;
+        _removeAuction();
+        assertEq(stream.minterOf(address(auction)).removedAt, removedAt);
+        assertEq(stream.rescueDelay(), 14 days, "the launch value");
+
+        // A removed minter starts nothing new.
+        bytes memory next = _mintData(root, works, 1);
         vm.expectRevert(
-            abi.encodeWithSelector(IAssetAllowlist.AssetNotActive.selector, address(usd))
+            abi.encodeWithSelector(
+                IMintPolicy.NotSaleContract.selector, address(stream), address(auction)
+            )
         );
-        auction.settle(saleId);
+        auction.start(address(stream), next);
 
-        vm.warp(frozenAt + 14 days);
-        vm.expectEmit(address(auction));
-        emit ISaleAdapter.Credited(collector, address(usd), saleId, 100e18);
+        vm.warp(removedAt + 14 days - 1);
+        _expectNotRescuable(tokenId);
+        vm.warp(removedAt + 14 days);
         vm.expectEmit(address(stream));
-        emit IStream.PrimarySaleSettled(
-            tokenId, PrimaryOutcome.FROZEN_OUT, address(0), address(usd), 0
+        emit IStream.PrimarySale(tokenId, Outcome.RESCUED, address(0), 0);
+        vm.expectEmit(address(stream));
+        emit IStream.WorkRescued(tokenId, address(auction), museum);
+        _rescue(tokenId, museum);
+        assertEq(stream.ownerOf(tokenId), museum);
+        assertEq(uint8(stream.workOf(tokenId).outcome), uint8(Outcome.RESCUED));
+
+        vm.expectEmit(address(auction));
+        emit IEnglishAuction.Credited(bidder, address(0), saleId, 1 ether);
+        vm.expectEmit(address(auction));
+        emit IEnglishAuction.RescuedSaleClosed(saleId);
+        auction.settle(saleId);
+        assertEq(auction.claimable(bidder), 1 ether, "the standing bid credited back");
+        assertEq(stream.ownerOf(tokenId), museum, "the work stays where the rescue sent it");
+        assertEq(t.seller.balance, 0, "nothing paid");
+        assertEq(networkFee.balance, 0);
+        assertEq(uint8(auction.auction(saleId).state), uint8(IEnglishAuction.AuctionState.SETTLED));
+        vm.prank(bidder);
+        auction.claim(bidder);
+        assertEq(bidder.balance, 1 ether);
+        assertEq(address(auction).balance, 0);
+    }
+
+    /// @dev A rescue with no standing bid closes the sale with nothing to credit.
+    function test_Museum_RescuedSaleWithNoBidClosesWithNothingToCredit() public {
+        (uint256 saleId, uint256 tokenId) = _start(root, _package(root), 0);
+        _removeAuction();
+        vm.warp(block.timestamp + 14 days);
+        _rescue(tokenId, museum);
+        vm.recordLogs();
+        auction.settle(saleId);
+        assertEq(vm.getRecordedLogs().length, 1, "RescuedSaleClosed only");
+        assertEq(address(auction).balance, 0, "nothing held");
+    }
+
+    /// @dev `rescueDelay` is read when a rescue is attempted: lowering it opens a rescue at once;
+    ///      raising it closes one that the old value had opened.
+    function test_Museum_RescueDelayIsReadAtTheAttempt() public {
+        (uint256 saleId, uint256 tokenId) = _start(root, _package(root), 0);
+        _ethBid(saleId, bidder, 1 ether);
+        uint256 removedAt = block.timestamp;
+        _removeAuction();
+
+        vm.warp(removedAt + 15 days);
+        _asNetwork(address(stream), abi.encodeCall(stream.setRescueDelay, (30 days)));
+        _expectNotRescuable(tokenId);
+
+        vm.expectEmit(address(stream));
+        emit IStream.RescueDelaySet(30 days, 1 days);
+        _asNetwork(address(stream), abi.encodeCall(stream.setRescueDelay, (1 days)));
+        _rescue(tokenId, museum);
+        assertEq(stream.ownerOf(tokenId), museum);
+    }
+
+    /// @dev Only the network rescues, and only a token a removed minter holds with no outcome.
+    function test_Museum_RescueRefusals() public {
+        Work[] memory works = _package(root);
+        (uint256 runningSale, uint256 running) = _start(root, works, 0);
+        (uint256 soldSale, uint256 sold) = _start(root, works, 1);
+        (uint256 unbidSale, uint256 unbid) = _start(root, works, 2);
+        _ethBid(soldSale, bidder, 1 ether);
+        vm.warp(block.timestamp + 30 days);
+        // The minter was never removed.
+        _expectNotRescuable(running);
+
+        auction.settle(soldSale);
+        auction.settle(unbidSale);
+        _removeAuction();
+        vm.warp(block.timestamp + 30 days);
+        _expectNotRescuable(sold); // held by its buyer, outcome SOLD
+        _expectNotRescuable(unbid); // held by the museum, outcome UNSOLD
+
+        address stranger = makeAddr("stranger");
+        vm.prank(stranger);
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, stranger)
         );
-        auction.settle(saleId);
-        assertEq(stream.ownerOf(tokenId), museum, "the work goes to the museum");
-        (PrimaryOutcome outcome,,) = stream.primarySale(tokenId);
-        assertEq(uint8(outcome), uint8(PrimaryOutcome.FROZEN_OUT));
-        assertEq(stream.balanceOf(artist), 0, "not the artist");
-        assertEq(auction.claimable(collector, address(usd)), 100e18, "the bid is credited back");
-        assertEq(usd.balanceOf(address(auction)), 100e18, "only the credit is held");
-        vm.prank(collector);
-        auction.claim(address(usd), collector);
-        assertEq(usd.balanceOf(collector), 100e18, "refunded in full");
-        assertEq(usd.balanceOf(address(auction)), 0);
+        stream.rescue(running, stranger);
+        _rescue(running, museum);
+        _expectNotRescuable(running); // once
+        auction.settle(runningSale);
     }
 
-    /// @dev Owner decision 17: Stream moves the work to the museum with no receiver callback, so
-    ///      a museum contract that would reject a safe transfer still receives it. Nothing is
-    ///      pending, so nobody (the artist, a collector, a later museum, the museum itself) has
-    ///      anything to claim, and a later change of museum moves nothing.
-    function test_AMuseumThatWouldRejectStillReceivesTheWork() public {
-        HostileActor museumSafe = new HostileActor();
-        museumSafe.configure(HostileActor.Behaviour.ACCEPT, HostileActor.Behaviour.REVERT);
-        _setMuseum(address(museumSafe));
-        (uint256 saleId, uint256 tokenId) = _startItem(0);
+    /// @dev A removed minter still finishes a sale nobody rescued, as before.
+    function test_Museum_ARemovedMinterStillSettlesItsSale() public {
+        (uint256 saleId, uint256 tokenId) = _start(root, _package(root), 0);
+        _ethBid(saleId, bidder, 1 ether);
+        _removeAuction();
         _settleAtEnd(saleId);
-        assertEq(stream.ownerOf(tokenId), address(museumSafe));
-        assertEq(auction.pendingDelivery(saleId), address(0));
-
-        address next = makeAddr("nextMuseumSafe");
-        _setMuseum(next);
-        address[4] memory refused = [artist, collector, next, address(museumSafe)];
-        for (uint256 i; i < refused.length; ++i) {
-            vm.prank(refused[i]);
-            vm.expectRevert(
-                abi.encodeWithSelector(IEnglishAuction.NoPendingDelivery.selector, saleId)
-            );
-            auction.claimDelivery(saleId, refused[i]);
-        }
-        assertEq(stream.ownerOf(tokenId), address(museumSafe));
+        assertEq(stream.ownerOf(tokenId), bidder);
+        assertEq(uint8(stream.workOf(tokenId).outcome), uint8(Outcome.SOLD));
+        vm.warp(block.timestamp + 30 days);
+        _expectNotRescuable(tokenId);
     }
 
-    // ------------------------------------------------------------------ other listed tokens
-
-    /// @dev Owner decision 9, enforced in code: 6529 Stream moves its own unbid works to the
-    ///      museum (owner decision 17). A token governance lists later leaves its unbid works to
-    ///      the auction, which delivers them to the artist, as for a federated token.
-    function test_AnotherListedTokensUnbidWorkGoesToItsArtist() public {
-        MockMintTarget other = _listedToken();
-        uint256 saleId = auction.start(address(other), "");
-        (uint256 streamSale, uint256 tokenId) = _startItem(0);
-        vm.warp(auction.auction(saleId).endTime);
-        auction.settle(saleId);
-        auction.settle(streamSale);
-        assertEq(other.ownerOf(1), federatedArtist, "its artist");
-        assertEq(other.balanceOf(museum), 0, "never the museum");
-        assertEq(stream.ownerOf(tokenId), museum, "Stream's unbid work: the museum");
-    }
-
-    /// @dev Decision 10 with decision 9: another listed token's 60-day freeze exit takes its
-    ///      no-bid branch, so the work goes to its artist, with the bid credited back in full.
-    function test_AnotherListedTokensFreezeExitGoesToItsArtist() public {
-        MockMintTarget other = _listedToken();
-        _admitUsd();
-        _pricedInUsd(other);
-        uint256 saleId = auction.start(address(other), "");
-        _usdBid(saleId, collector, 100e18);
-        uint256 frozenAt = _deprecateUsd();
-        vm.warp(frozenAt + 60 days);
-        auction.settle(saleId);
-        assertEq(other.ownerOf(1), federatedArtist, "its artist, not the museum");
-        assertEq(auction.claimable(collector, address(usd)), 100e18, "the bid is credited back");
-        vm.prank(collector);
-        auction.claim(address(usd), collector);
-        assertEq(usd.balanceOf(collector), 100e18, "refunded in full");
-    }
-
-    /// @dev `token`'s terms, priced in the test ERC-20.
-    function _pricedInUsd(MockMintTarget token) internal {
-        PrimaryTerms memory t = token.primaryTerms(0, "");
-        t.currency = address(usd);
-        token.setTerms(t);
-    }
-
-    // ------------------------------------------------------------------ federated works
-
-    /// @dev Owner decision 9: an unbid federated work stays with its artist; the museum rule
-    ///      covers the canonical 6529 Stream only.
-    function test_UnbidFederatedWorkStaysWithItsArtist() public {
-        MockMintTarget fed = _federatedToken();
-        uint256 saleId = auction.start(address(fed), "");
-        _settleAtEnd(saleId);
-        assertEq(fed.ownerOf(1), federatedArtist);
-        assertEq(fed.balanceOf(museum), 0, "never the museum");
-    }
-
-    /// @dev Owner decisions 9 and 10 together: a federated work's freeze exit takes its no-bid
-    ///      branch too, so it goes to its artist, with the bid credited back.
-    function test_FederatedFreezeExitGoesToItsArtist() public {
-        MockMintTarget fed = _federatedToken();
-        _admitUsd();
-        _pricedInUsd(fed);
-        uint256 saleId = auction.start(address(fed), "");
-        _usdBid(saleId, collector, 100e18);
-        uint256 frozenAt = _deprecateUsd();
-        vm.warp(frozenAt + 60 days);
-        auction.settle(saleId);
-        assertEq(fed.ownerOf(1), federatedArtist);
-        assertEq(auction.claimable(collector, address(usd)), 100e18);
+    /// @dev A minter added again is no longer removed: what it holds is not rescuable.
+    function test_Museum_AMinterAddedAgainStrandsNothing() public {
+        (, uint256 tokenId) = _start(root, _package(root), 0);
+        _removeAuction();
+        _asNetwork(address(stream), abi.encodeCall(stream.addMinter, (address(auction))));
+        vm.warp(block.timestamp + 30 days);
+        assertTrue(stream.isMinter(address(auction)));
+        _expectNotRescuable(tokenId);
+        vm.expectRevert(
+            abi.encodeWithSelector(IModules.MinterAlreadyAdded.selector, address(auction))
+        );
+        vm.prank(network);
+        stream.addMinter(address(auction));
     }
 }

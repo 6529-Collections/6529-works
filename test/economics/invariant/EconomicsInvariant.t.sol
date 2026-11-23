@@ -343,15 +343,14 @@ contract EconomicsInvariantTest is Test {
         }
     }
 
-    /// @notice The router and the payer never keep funds or approvals (beyond the residue of
-    ///         payments the model expected to revert).
+    /// @notice The router and the payer never keep funds or approvals.
     function invariant_IntermediariesHoldNothing() public view {
         for (uint256 k; k < assets.length; ++k) {
             assertEq(_balance(assets[k], address(router)), 0);
         }
         assertEq(address(payer).balance, 0);
-        assertEq(usdc.balanceOf(address(payer)), handler.payerResidue(address(usdc)));
-        assertEq(fee.balanceOf(address(payer)), handler.payerResidue(address(fee)));
+        assertEq(usdc.balanceOf(address(payer)), 0);
+        assertEq(fee.balanceOf(address(payer)), 0);
         assertEq(usdc.allowance(address(payer), address(escrow)), 0);
         assertEq(fee.allowance(address(payer), address(escrow)), 0);
     }
@@ -373,7 +372,7 @@ contract EconomicsInvariantTest is Test {
             } else if (action == 4) {
                 handler.claimBatch(r >> 8, uint8(r >> 16), (r >> 24) % 2 == 0);
             } else if (action == 5) {
-                handler.pay(r >> 8, r >> 16, r >> 24);
+                handler.pay(r >> 8, r >> 24);
             } else if (action == 6) {
                 handler.receiveDirect(r >> 8, r >> 16, r >> 24);
             } else if (action == 7) {
@@ -410,7 +409,7 @@ contract EconomicsInvariantTest is Test {
                 handler.toggleOpen();
             }
         }
-        bytes32[28] memory paths = [
+        bytes32[27] memory paths = [
             keccak256(abi.encode(bytes32("release"), "ok")),
             keccak256(abi.encode(bytes32("releaseTo"), "ok")),
             keccak256(abi.encode(bytes32("signed"), "ok")),
@@ -422,7 +421,6 @@ contract EconomicsInvariantTest is Test {
             bytes32("batch.signedPaid"),
             bytes32("batch.failed"),
             bytes32("pay.escrow"),
-            bytes32("pay.reverted"),
             bytes32("flush.ok"),
             bytes32("recover.ok"),
             bytes32("consent.set"),

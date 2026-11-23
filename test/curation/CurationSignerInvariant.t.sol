@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { StreamDirectory6529 } from "src/core/StreamDirectory6529.sol";
 import { Eip712CurationVerifier } from "src/curation/Eip712CurationVerifier.sol";
 import { PackageRegistry } from "src/curation/PackageRegistry.sol";
 import { Roles } from "src/governance/Roles.sol";
@@ -9,7 +10,7 @@ import { ICurationVerifier } from "src/interfaces/ICurationVerifier.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { HandlerReach } from "../helpers/HandlerReach.sol";
 import { CurationArtistRegistryMock } from "../mocks/curation/CurationArtistRegistryMock.sol";
-import { StreamContentMock } from "../mocks/curation/StreamContentMock.sol";
+import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { CurationHelpers } from "./CurationBase.sol";
 
 /// @notice Drives the curation signers around live approvals: signers sign package approvals at
@@ -256,8 +257,14 @@ contract CurationSignerInvariantTest is CurationHelpers {
             address(manager),
             ICurationVerifier(address(verifier)),
             address(verifier).codehash,
-            address(artists),
-            address(artists).codehash
+            address(
+                new StreamDirectory6529(
+                    address(manager), address(artists), address(0), address(0), address(0)
+                )
+            ),
+            IEconomicsResolver(address(_policyStub)),
+            address(0),
+            keccak256("cc0 text file")
         );
         artists.bindPackageRegistry(address(registry));
         vm.startPrank(admin);
@@ -269,7 +276,6 @@ contract CurationSignerInvariantTest is CurationHelpers {
         );
         manager.grantRole(Roles.CURATION_SIGNER, vm.addr(0xC1), 0);
         manager.grantRole(Roles.CURATION_SIGNER, vm.addr(0xC2), 0);
-        registry.bindStream(address(new StreamContentMock()));
         vm.stopPrank();
         handler = new CurationSignerHandler(manager, verifier, registry, admin);
         bytes4[] memory s = new bytes4[](10);

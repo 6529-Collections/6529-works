@@ -2,16 +2,16 @@
 pragma solidity ^0.8.24;
 
 import { ConsolidationAdapter, IDelegationManagement } from "src/identity/ConsolidationAdapter.sol";
-import { IAccounts } from "src/interfaces/IAccounts.sol";
+import { IAccounts } from "src/interfaces/core/IAccounts.sol";
 import { IConsolidationSource } from "src/interfaces/IArtistRegistry.sol";
 import { Burner, GasRuleAssertions } from "../helpers/GasRule.sol";
 import { ConsolidationSourceMock } from "../mocks/identity/IdentityWorksMocks.sol";
-import { IdentityFixture } from "./IdentityFixture.sol";
+import { AccountsFixture } from "./AccountsFixture.sol";
 
 /// @notice The gas rule on the registry's one live read: whether a wallet is consolidated with
 ///         an account's root. With the source costing 1x to 100x its base, the answer is the
 ///         same; run short, the call reverts with `BoundedCallShortfall`, never "not a wallet".
-contract AccountsGasRuleTest is IdentityFixture, GasRuleAssertions {
+contract AccountsGasRuleTest is AccountsFixture, GasRuleAssertions {
     Burner internal burner;
 
     function setUp() public override {

@@ -4,17 +4,15 @@ pragma solidity ^0.8.24;
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
 import { AssetAllowlist } from "src/economics/AssetAllowlist.sol";
-import { TokenTransfer } from "src/economics/TokenTransfer.sol";
 import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
 import { Roles } from "src/governance/Roles.sol";
-import { ReturnDataMock } from "../mocks/libraries/AdversarialTargets.sol";
 import { MockERC20 } from "../mocks/economics/EconomicsMocks.sol";
 import { EconomicsBase } from "./EconomicsBase.sol";
 
+/// @notice The ETH-only allowlist: ETH is admitted at deployment and stays active, no other
+///         asset can be admitted, and the English auction's opening bid and the increment floor
+///         are compare-and-set on a revision.
 contract AssetAllowlistTest is EconomicsBase {
-    bytes32 internal constant STREAM = keccak256("6529.stream.auction");
-    bytes32 internal constant EDITIONS = keccak256("6529.editions.sale");
-
     MockERC20 internal usdc;
     address internal stranger = makeAddr("stranger");
 
@@ -50,193 +48,49 @@ contract AssetAllowlistTest is EconomicsBase {
         new AssetAllowlist(address(manager), 0);
     }
 
-    function test_AdmitAssetActivatesWithFloor() public {
-        vm.expectEmit(true, false, false, true, address(allowlist));
-        emit IAssetAllowlist.AssetStatusChanged(
-            address(usdc), IAssetAllowlist.Status.None, IAssetAllowlist.Status.Active, 1
-        );
-        vm.expectEmit(true, false, false, true, address(allowlist));
-        emit IAssetAllowlist.IncrementFloorChanged(address(usdc), 0, 1e6, 1);
-        allowlist.admitAsset(address(usdc), 0, 1e6);
-        assertEq(uint8(allowlist.status(address(usdc))), uint8(IAssetAllowlist.Status.Active));
-        assertTrue(allowlist.isActive(address(usdc)));
-        assertEq(allowlist.incrementFloor(address(usdc)), 1e6);
-        (IAssetAllowlist.Status status, uint256 floor, uint64 revision) =
-            allowlist.assetConfig(address(usdc));
-        assertEq(uint8(status), uint8(IAssetAllowlist.Status.Active));
-        assertEq(floor, 1e6);
-        assertEq(revision, 1);
-    }
-
-    function test_AdmitRejectsNonTokens() public {
-        vm.expectRevert(abi.encodeWithSelector(IAssetAllowlist.AssetNotAdmissible.selector, alice));
-        allowlist.admitAsset(alice, 0, 1);
-
-        address delegated = makeAddr("delegated");
-        vm.etch(delegated, abi.encodePacked(hex"ef0100", address(usdc)));
-        vm.expectRevert(
-            abi.encodeWithSelector(IAssetAllowlist.AssetNotAdmissible.selector, delegated)
-        );
-        allowlist.admitAsset(delegated, 0, 1);
-
-        ReturnDataMock malformed = new ReturnDataMock();
-        malformed.configure(hex"01", false);
-        vm.expectRevert(
-            abi.encodeWithSelector(TokenTransfer.TokenReadFailed.selector, address(malformed))
-        );
-        allowlist.admitAsset(address(malformed), 0, 1);
-        malformed.configure("", true);
-        vm.expectRevert(
-            abi.encodeWithSelector(TokenTransfer.TokenReadFailed.selector, address(malformed))
-        );
-        allowlist.admitAsset(address(malformed), 0, 1);
-    }
-
-    function test_AdmitRejectsABalanceAboveTotalSupply() public {
-        usdc.mint(address(allowlist), 10);
-        vm.mockCall(address(usdc), abi.encodeWithSignature("totalSupply()"), abi.encode(9));
-        vm.expectRevert(
-            abi.encodeWithSelector(IAssetAllowlist.AssetNotAdmissible.selector, address(usdc))
-        );
-        allowlist.admitAsset(address(usdc), 0, 1);
-        vm.clearMockedCalls();
-        allowlist.admitAsset(address(usdc), 0, 1);
-        assertTrue(allowlist.isActive(address(usdc)));
-    }
-
-    function test_AdmitRejectsZeroFloorAndActiveAssets() public {
-        vm.expectRevert(IAssetAllowlist.InvalidIncrementFloor.selector);
-        allowlist.admitAsset(address(usdc), 0, 0);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IAssetAllowlist.InvalidStatusTransition.selector, ETH, IAssetAllowlist.Status.Active
-            )
-        );
-        allowlist.admitAsset(ETH, 1, 1);
-    }
-
-    /// Regression: MONEY-M1 and G-2 in the rc.2 review
-    /// @dev ETH, the native currency, can never be deprecated: the call reverts, nothing
-    ///      changes (status, revision, floor), and ETH stays usable for every sale.
-    function test_DeprecateAsset_RefusesEth() public {
-        (IAssetAllowlist.Status before, uint256 floor, uint64 revision) = allowlist.assetConfig(ETH);
-        vm.recordLogs();
-        vm.expectRevert(IAssetAllowlist.EthNotDeprecable.selector);
-        allowlist.deprecateAsset(ETH);
-        assertEq(vm.getRecordedLogs().length, 0, "no event");
-        (IAssetAllowlist.Status status, uint256 floorAfter, uint64 revisionAfter) =
-            allowlist.assetConfig(ETH);
-        assertEq(uint8(status), uint8(before));
-        assertEq(uint8(status), uint8(IAssetAllowlist.Status.Active));
-        assertEq(floorAfter, floor);
-        assertEq(revisionAfter, revision);
-        assertTrue(allowlist.isActive(ETH));
-    }
-
-    function test_DeprecateThenReadmit() public {
-        allowlist.admitAsset(address(usdc), 0, 1e6);
-        vm.expectEmit(true, false, false, true, address(allowlist));
-        emit IAssetAllowlist.AssetStatusChanged(
-            address(usdc), IAssetAllowlist.Status.Active, IAssetAllowlist.Status.Deprecated, 2
-        );
-        allowlist.deprecateAsset(address(usdc));
+    /// @dev No other asset can be admitted and ETH cannot be deprecated: neither function
+    ///      exists, and any other asset stays `None` (inactive) whatever the network calls.
+    function test_NoOtherAssetCanBeAdmitted() public {
+        (bool ok,) = address(allowlist)
+            .call(abi.encodeWithSignature("admitAsset(address,uint64,uint256)", usdc, 0, 1e6));
+        assertFalse(ok, "no admission function");
         assertFalse(allowlist.isActive(address(usdc)));
+        assertEq(uint8(allowlist.status(address(usdc))), uint8(IAssetAllowlist.Status.None));
         vm.expectRevert(
             abi.encodeWithSelector(IAssetAllowlist.AssetNotActive.selector, address(usdc))
         );
         allowlist.incrementFloor(address(usdc));
         vm.expectRevert(
-            abi.encodeWithSelector(
-                IAssetAllowlist.InvalidStatusTransition.selector,
-                address(usdc),
-                IAssetAllowlist.Status.Deprecated
-            )
+            abi.encodeWithSelector(IAssetAllowlist.AssetNotActive.selector, address(usdc))
         );
-        allowlist.deprecateAsset(address(usdc));
-
-        // Re-admission waits 14 days from the deprecation, whenever it was scheduled.
-        uint256 allowedAt = block.timestamp + Roles.DELAY_3D;
-        vm.warp(allowedAt - 1);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IAssetAllowlist.ReadmissionTooEarly.selector, address(usdc), allowedAt
-            )
-        );
-        allowlist.admitAsset(address(usdc), 2, 2e6);
-        vm.warp(allowedAt);
-        vm.expectEmit(true, false, false, true, address(allowlist));
-        emit IAssetAllowlist.IncrementFloorChanged(address(usdc), 1e6, 2e6, 3);
-        allowlist.admitAsset(address(usdc), 2, 2e6);
-        assertEq(allowlist.incrementFloor(address(usdc)), 2e6);
-        assertEq(_revision(address(usdc)), 3);
-
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IAssetAllowlist.InvalidStatusTransition.selector, bob, IAssetAllowlist.Status.None
-            )
-        );
-        allowlist.deprecateAsset(bob);
+        allowlist.setOpeningBid(address(usdc), 0, 1);
+        (ok,) = address(allowlist).call(abi.encodeWithSignature("deprecateAsset(address)", ETH));
+        assertFalse(ok, "no deprecation function");
+        (ok,) = address(allowlist)
+            .call(
+                abi.encodeWithSignature(
+                    "setDefaultCurrency(bytes32,uint64,address)", bytes32(uint256(1)), 0, ETH
+                )
+            );
+        assertFalse(ok, "no default-currency function");
+        assertTrue(allowlist.isActive(ETH));
     }
 
-    /// @dev `statusClock` (MARKET-1, MARKET-2): `since` is the latest status change, and
-    ///      `inactiveTotal` the seconds spent in closed deprecations: zero on a first admission
-    ///      (ETH's, at construction, too), each deprecation's length added when the asset is
-    ///      admitted again, and an open deprecation not counted until then.
-    function test_StatusClock_AddsEachClosedDeprecation() public {
-        (IAssetAllowlist.Status status, uint256 since, uint256 inactive) =
-            allowlist.statusClock(ETH);
-        assertEq(uint8(status), uint8(IAssetAllowlist.Status.Active));
-        assertEq(inactive, 0);
-
-        vm.warp(1_000_000);
-        allowlist.admitAsset(address(usdc), 0, 1e6);
-        (status, since, inactive) = allowlist.statusClock(address(usdc));
-        assertEq(uint8(status), uint8(IAssetAllowlist.Status.Active));
-        assertEq(since, 1_000_000);
-        assertEq(inactive, 0, "a first admission closes no deprecation");
-
-        uint256 first = Roles.DELAY_3D + 5;
-        allowlist.deprecateAsset(address(usdc));
-        vm.warp(block.timestamp + first);
-        (status, since, inactive) = allowlist.statusClock(address(usdc));
-        assertEq(uint8(status), uint8(IAssetAllowlist.Status.Deprecated));
-        assertEq(since, 1_000_000);
-        assertEq(inactive, 0, "an open deprecation is not counted yet");
-        allowlist.admitAsset(address(usdc), 2, 1e6);
-        (status, since, inactive) = allowlist.statusClock(address(usdc));
-        assertEq(uint8(status), uint8(IAssetAllowlist.Status.Active));
-        assertEq(since, block.timestamp);
-        assertEq(inactive, first);
-
-        uint256 second = Roles.DELAY_3D + 7;
-        vm.warp(block.timestamp + 11);
-        allowlist.deprecateAsset(address(usdc));
-        vm.warp(block.timestamp + second);
-        allowlist.admitAsset(address(usdc), 4, 1e6);
-        (, since, inactive) = allowlist.statusClock(address(usdc));
-        assertEq(since, block.timestamp);
-        assertEq(inactive, first + second, "the active time between is not counted");
+    function test_EveryChangeBumpsTheRevision() public {
+        assertEq(_revision(ETH), 1);
+        allowlist.setIncrementFloor(ETH, 1, 2e15);
+        assertEq(_revision(ETH), 2);
+        allowlist.setOpeningBid(ETH, 2, 0.01 ether);
+        assertEq(_revision(ETH), 3);
+        allowlist.setIncrementFloor(ETH, 3, ETH_FLOOR);
+        // Same floor as at revision 1, but a later revision: a stale write fails.
+        vm.expectRevert(_mismatch(1, 4));
+        allowlist.setIncrementFloor(ETH, 1, 5e15);
     }
 
-    function test_EveryAssetChangeBumpsTheRevision() public {
-        allowlist.admitAsset(address(usdc), 0, 1e6);
-        assertEq(_revision(address(usdc)), 1);
-        allowlist.setIncrementFloor(address(usdc), 1, 2e6);
-        assertEq(_revision(address(usdc)), 2);
-        allowlist.deprecateAsset(address(usdc));
-        assertEq(_revision(address(usdc)), 3);
-        vm.warp(block.timestamp + Roles.DELAY_3D);
-        allowlist.admitAsset(address(usdc), 3, 2e6);
-        assertEq(_revision(address(usdc)), 4);
-        // Same status and floor as after revision 2, but a different revision: stale writes fail.
-        vm.expectRevert(_mismatch(2, 4));
-        allowlist.setIncrementFloor(address(usdc), 2, 5e6);
-    }
-
-    /// @dev The English auction's opening bid lives in the asset's status word (ADR 0007): set
-    ///      compare-and-set on the revision up to the 96-bit storage bound (no price cap, R19);
-    ///      read with the status (`activeOpeningBid`, `defaultCurrencyOpeningBid`), which refuse
-    ///      an inactive asset; a deprecation keeps the value for a re-admission.
+    /// @dev The English auction's opening bid lives in ETH's status word: set compare-and-set
+    ///      on the revision up to the 96-bit storage bound (no price cap), and read with the
+    ///      status (`activeOpeningBid`).
     function test_OpeningBid_LivesInTheStatusWord() public {
         uint256 cap = type(uint96).max;
         vm.expectRevert(
@@ -252,81 +106,11 @@ contract AssetAllowlistTest is EconomicsBase {
         assertEq(allowlist.activeOpeningBid(ETH), 0.05 ether);
         assertEq(allowlist.incrementFloor(ETH), ETH_FLOOR, "the floor is untouched");
 
-        allowlist.setDefaultCurrency(STREAM, 0, ETH);
-        (address asset, uint256 bid) = allowlist.defaultCurrencyOpeningBid(STREAM);
-        assertEq(asset, ETH);
-        assertEq(bid, 0.05 ether);
-        vm.expectRevert(
-            abi.encodeWithSelector(IAssetAllowlist.CurrencyNotConfigured.selector, EDITIONS)
-        );
-        allowlist.defaultCurrencyOpeningBid(EDITIONS);
-
-        allowlist.admitAsset(address(usdc), 0, 1e6);
-        allowlist.setOpeningBid(address(usdc), 1, 5e6);
-        allowlist.setDefaultCurrency(EDITIONS, 0, address(usdc));
-        allowlist.deprecateAsset(address(usdc));
-        vm.expectRevert(
-            abi.encodeWithSelector(IAssetAllowlist.AssetNotActive.selector, address(usdc))
-        );
-        allowlist.activeOpeningBid(address(usdc));
-        vm.expectRevert(
-            abi.encodeWithSelector(IAssetAllowlist.AssetNotActive.selector, address(usdc))
-        );
-        allowlist.defaultCurrencyOpeningBid(EDITIONS);
-        vm.expectRevert(
-            abi.encodeWithSelector(IAssetAllowlist.AssetNotActive.selector, address(usdc))
-        );
-        allowlist.setOpeningBid(address(usdc), 3, 1);
-        assertEq(allowlist.openingBid(address(usdc)), 5e6, "kept while deprecated");
         vm.prank(stranger);
         vm.expectRevert(
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, stranger)
         );
         allowlist.setOpeningBid(ETH, 2, 0);
-    }
-
-    /// @dev Regression for review L-2 (both rounds). Round 2 ported, inverted, from
-    ///      `test_R2_L2_QueuedAdmissionRevivesAfterEmergencyDeprecation`: two admissions are
-    ///      queued while the asset is deprecated; the first executes, the guardian deprecates in
-    ///      an emergency (back to the same status and floor), and the second must not revive it.
-    function test_QueuedAdmissionCannotReviveAfterEmergencyDeprecation() public {
-        allowlist.admitAsset(address(usdc), 0, 1e6);
-        allowlist.deprecateAsset(address(usdc));
-        uint64 queuedAt = _revision(address(usdc));
-
-        bytes4[] memory admit = new bytes4[](1);
-        admit[0] = IAssetAllowlist.admitAsset.selector;
-        bytes4[] memory deprecate = new bytes4[](1);
-        deprecate[0] = IAssetAllowlist.deprecateAsset.selector;
-        manager.setTargetFunctionRole(address(allowlist), admit, Roles.FUNDS_SETTER);
-        manager.setTargetFunctionRole(address(allowlist), deprecate, Roles.NETWORK);
-        address gov = makeAddr("gov");
-        address guard = makeAddr("guardian");
-        manager.grantRole(Roles.FUNDS_SETTER, gov, Roles.DELAY_3D);
-        manager.grantRole(Roles.NETWORK, guard, 0);
-
-        bytes memory first =
-            abi.encodeCall(IAssetAllowlist.admitAsset, (address(usdc), queuedAt, 1e6));
-        bytes memory second =
-            abi.encodeCall(IAssetAllowlist.admitAsset, (address(usdc), queuedAt, 2e6));
-        vm.startPrank(gov);
-        manager.schedule(address(allowlist), first, 0);
-        manager.schedule(address(allowlist), second, 0);
-        vm.warp(block.timestamp + Roles.DELAY_3D);
-        manager.execute(address(allowlist), first);
-        vm.stopPrank();
-        assertTrue(allowlist.isActive(address(usdc)));
-
-        vm.prank(guard);
-        allowlist.deprecateAsset(address(usdc));
-        (IAssetAllowlist.Status status, uint256 floor,) = allowlist.assetConfig(address(usdc));
-        assertEq(uint8(status), uint8(IAssetAllowlist.Status.Deprecated));
-        assertEq(floor, 1e6, "back to the status and floor the second admission expected");
-
-        vm.expectRevert(_mismatch(queuedAt, queuedAt + 2));
-        vm.prank(gov);
-        manager.execute(address(allowlist), second);
-        assertFalse(allowlist.isActive(address(usdc)), "the stale admission stays dead");
     }
 
     function test_IncrementFloorIsCompareAndSet() public {
@@ -339,68 +123,6 @@ contract AssetAllowlistTest is EconomicsBase {
         allowlist.setIncrementFloor(ETH, 1, 0.005 ether);
         vm.expectRevert(IAssetAllowlist.InvalidIncrementFloor.selector);
         allowlist.setIncrementFloor(ETH, 2, 0);
-        vm.expectRevert(
-            abi.encodeWithSelector(IAssetAllowlist.AssetNotActive.selector, address(usdc))
-        );
-        allowlist.setIncrementFloor(address(usdc), 0, 1);
-    }
-
-    function test_DefaultCurrencyIsCompareAndSet() public {
-        vm.expectEmit(true, false, false, true, address(allowlist));
-        emit IAssetAllowlist.DefaultCurrencyChanged(STREAM, address(0), ETH, 1);
-        allowlist.setDefaultCurrency(STREAM, 0, ETH);
-        assertEq(allowlist.defaultCurrency(STREAM), ETH);
-
-        // A second "first" setting is stale even though ETH is also the zero address.
-        vm.expectRevert(_mismatch(0, 1));
-        allowlist.setDefaultCurrency(STREAM, 0, ETH);
-
-        allowlist.admitAsset(address(usdc), 0, 1e6);
-        vm.expectEmit(true, false, false, true, address(allowlist));
-        emit IAssetAllowlist.DefaultCurrencyChanged(STREAM, ETH, address(usdc), 2);
-        allowlist.setDefaultCurrency(STREAM, 1, address(usdc));
-        assertEq(allowlist.defaultCurrency(STREAM), address(usdc));
-        (bool configured, address asset, uint64 revision) = allowlist.defaultCurrencyConfig(STREAM);
-        assertTrue(configured);
-        assertEq(asset, address(usdc));
-        assertEq(revision, 2);
-
-        // Switching back to ETH and then replaying the earlier switch is an ABA: still stale.
-        // The event names the currency switched from.
-        vm.expectEmit(true, false, false, true, address(allowlist));
-        emit IAssetAllowlist.DefaultCurrencyChanged(STREAM, address(usdc), ETH, 3);
-        allowlist.setDefaultCurrency(STREAM, 2, ETH);
-        vm.expectRevert(_mismatch(1, 3));
-        allowlist.setDefaultCurrency(STREAM, 1, address(usdc));
-        // An expected revision ahead of the actual one is as stale as one behind it.
-        vm.expectRevert(_mismatch(4, 3));
-        allowlist.setDefaultCurrency(STREAM, 4, address(usdc));
-        vm.expectRevert(IAssetAllowlist.InvalidProduct.selector);
-        allowlist.setDefaultCurrency(bytes32(0), 0, ETH);
-        vm.expectRevert(abi.encodeWithSelector(IAssetAllowlist.AssetNotActive.selector, bob));
-        allowlist.setDefaultCurrency(EDITIONS, 0, bob);
-    }
-
-    function test_DefaultCurrencyFailsClosed() public {
-        vm.expectRevert(
-            abi.encodeWithSelector(IAssetAllowlist.CurrencyNotConfigured.selector, EDITIONS)
-        );
-        allowlist.defaultCurrency(EDITIONS);
-        (bool configured, address asset, uint64 revision) =
-            allowlist.defaultCurrencyConfig(EDITIONS);
-        assertFalse(configured);
-        assertEq(asset, address(0));
-        assertEq(revision, 0);
-
-        allowlist.admitAsset(address(usdc), 0, 1e6);
-        allowlist.setDefaultCurrency(EDITIONS, 0, address(usdc));
-        allowlist.deprecateAsset(address(usdc));
-        vm.expectRevert(
-            abi.encodeWithSelector(IAssetAllowlist.AssetNotActive.selector, address(usdc))
-        );
-        allowlist.defaultCurrency(EDITIONS);
-        allowlist.setDefaultCurrency(EDITIONS, 1, ETH);
-        assertEq(allowlist.defaultCurrency(EDITIONS), ETH);
     }
 
     function test_GovernedFunctionsRejectOtherCallers() public {
@@ -408,77 +130,64 @@ contract AssetAllowlistTest is EconomicsBase {
         vm.expectRevert(
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, stranger)
         );
-        allowlist.admitAsset(address(usdc), 0, 1);
-        vm.expectRevert(
-            abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, stranger)
-        );
-        allowlist.deprecateAsset(ETH);
-        vm.expectRevert(
-            abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, stranger)
-        );
         allowlist.setIncrementFloor(ETH, 1, 1);
         vm.expectRevert(
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, stranger)
         );
-        allowlist.setDefaultCurrency(STREAM, 0, ETH);
+        allowlist.setOpeningBid(ETH, 1, 1);
         vm.stopPrank();
     }
 
     function test_GovernedFunctionsAreNonPayable() public {
         vm.deal(address(this), 1 ether);
         (bool ok,) = address(allowlist).call{ value: 1 }(
-            abi.encodeCall(IAssetAllowlist.deprecateAsset, (ETH))
+            abi.encodeCall(IAssetAllowlist.setOpeningBid, (ETH, 1, 1))
         );
         assertFalse(ok);
         (ok,) = address(allowlist).call{ value: 1 }("");
         assertFalse(ok);
     }
 
-    function test_TimelockedAdmissionThroughAccessManager() public {
-        bytes4[] memory selectors = new bytes4[](2);
-        selectors[0] = IAssetAllowlist.admitAsset.selector;
-        selectors[1] = IAssetAllowlist.setDefaultCurrency.selector;
+    /// @dev A setter remapped to a delayed role runs only through the AccessManager's schedule.
+    function test_TimelockedSettingThroughAccessManager() public {
+        bytes4[] memory selectors = new bytes4[](1);
+        selectors[0] = IAssetAllowlist.setOpeningBid.selector;
         manager.setTargetFunctionRole(address(allowlist), selectors, Roles.FUNDS_SETTER);
         manager.grantRole(Roles.FUNDS_SETTER, alice, Roles.DELAY_3D);
 
-        bytes memory admit = abi.encodeCall(IAssetAllowlist.admitAsset, (address(usdc), 0, 1e6));
-        bytes32 operation = manager.hashOperation(alice, address(allowlist), admit);
+        bytes memory set = abi.encodeCall(IAssetAllowlist.setOpeningBid, (ETH, 1, 0.05 ether));
+        bytes32 operation = manager.hashOperation(alice, address(allowlist), set);
         vm.startPrank(alice);
-        // A delayed role cannot call directly; the call must be scheduled first.
         vm.expectRevert(
             abi.encodeWithSelector(IAccessManager.AccessManagerNotScheduled.selector, operation)
         );
-        allowlist.admitAsset(address(usdc), 0, 1e6);
-        manager.schedule(address(allowlist), admit, 0);
+        allowlist.setOpeningBid(ETH, 1, 0.05 ether);
+        manager.schedule(address(allowlist), set, 0);
         vm.warp(block.timestamp + Roles.DELAY_3D - 1);
         vm.expectRevert(
             abi.encodeWithSelector(IAccessManager.AccessManagerNotReady.selector, operation)
         );
-        manager.execute(address(allowlist), admit);
+        manager.execute(address(allowlist), set);
         vm.warp(block.timestamp + 1);
-        manager.execute(address(allowlist), admit);
+        manager.execute(address(allowlist), set);
         vm.stopPrank();
-        assertTrue(allowlist.isActive(address(usdc)));
+        assertEq(allowlist.openingBid(ETH), 0.05 ether);
 
         // The admin role no longer reaches the remapped selector directly.
         vm.expectRevert(
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, address(this))
         );
-        allowlist.setDefaultCurrency(STREAM, 0, address(usdc));
-        assertEq(
-            manager.getTargetFunctionRole(address(allowlist), selectors[1]), Roles.FUNDS_SETTER
-        );
+        allowlist.setOpeningBid(ETH, 2, 0.06 ether);
     }
 
     function testFuzz_FloorRoundTrips(uint256 floor) public {
         floor = bound(floor, 1, type(uint256).max);
-        allowlist.admitAsset(address(usdc), 0, floor);
-        assertEq(allowlist.incrementFloor(address(usdc)), floor);
+        allowlist.setIncrementFloor(ETH, 1, floor);
+        assertEq(allowlist.incrementFloor(ETH), floor);
     }
 
-    /// @dev R19: no price cap. Any opening bid that fits its 96-bit storage is accepted whatever
-    ///      the increment floor, including far above the former 1,000-floor cap (1 ETH at the
-    ///      0.001 ETH floor); only a bid above `type(uint96).max` is refused.
+    /// @dev No price cap: any opening bid that fits its 96-bit storage is accepted whatever the
+    ///      increment floor; only a bid above `type(uint96).max` is refused.
     function testFuzz_OpeningBid_NoPriceCap(uint256 bid) public {
         bid = bound(bid, ETH_FLOOR * 1_000 + 1, type(uint96).max);
         vm.expectEmit(address(allowlist));

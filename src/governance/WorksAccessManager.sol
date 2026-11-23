@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
 import { Time } from "@openzeppelin/contracts/utils/types/Time.sol";
@@ -9,7 +9,7 @@ import { Roles } from "./Roles.sol";
 /// @notice The OpenZeppelin 5 `AccessManager` that governs every 6529 Works contract, with one
 ///         authority and one brake (governance spec, GV-1 to GV-9):
 ///         - The network: one address that holds every network role (`Roles.isNetworkRole`)
-///           with that role's fixed delay: no delay, 24 hours, 3 days or 7 days. Nobody else
+///           with that role's class delay: no delay, 24 hours, 3 days or 7 days. Nobody else
 ///           can be granted a network role. It hands over in two steps ({transferNetwork},
 ///           then {acceptNetwork} by the new address).
 ///         - The brake: one optional address that can make one scheduled operation wait

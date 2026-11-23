@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 /// @title StepLadder
-/// @notice The fixed price steps of the 6529 Stream Editions auction (ADR 0005; 6529chain
-///         D138: "the fixed steps are right too, people should see if they would get cards or
-///         not at any point in time"). Every bid sits on a step; step `i` costs
+/// @notice The fixed price steps of the 6529 Stream Editions auction (ADR 0005), fixed
+///         so that anyone can see at any point in time whether a bid would get copies. Every
+///         bid sits on a step; step `i` costs
 ///         `basePrice * mantissa((i % N) * (192 / N)) * 10^(i / N) / 100`, dividing last, where
 ///         `N` is the governed number of steps per decade (24, 48, 96 or 192: about 10%, 4.9%,
 ///         2.4% or 1.2% apart). The mantissa table rounds `100 * 10^(j / 192)` half up for
@@ -17,7 +17,7 @@ pragma solidity ^0.8.24;
 ///      `test/fixtures/edition-auction/ladder.json`, pinned by `test/interfaces/StepLadder.t.sol`).
 ///      The 192 mantissas are packed as 10-bit fields, 24 to a constant (mantissa `j` in bits
 ///      `10 * (j % 24)` of constant `j / 24`): 8 words, the cheapest exact packing measured in
-///      bytecode and gas (lane L1).
+///      bytecode and gas.
 library StepLadder {
     /// @notice Entries in the mantissa table.
     uint256 internal constant MANTISSAS = 192;
@@ -33,7 +33,7 @@ library StepLadder {
     ///         price is a power of ten (`isBasePrice`).
     uint256 internal constant MIN_BASE_PRICE = 1e12;
     /// @notice The highest base price, in wei: 10^28, the largest power of ten that fits the
-    ///         96-bit field a configuration stores it in. A safety bound, not a price cap (R19):
+    ///         96-bit field a configuration stores it in. A safety bound, not a price cap:
     ///         with it, every price, revenue and fee the auction computes fits 256 bits.
     uint256 internal constant BASE_PRICE_BOUND = 1e28;
     /// @notice The fewest steps a ladder may have.
@@ -80,7 +80,7 @@ library StepLadder {
 
     /// @notice Whether `basePrice` is a power of ten from `MIN_BASE_PRICE` to `BASE_PRICE_BOUND`
     ///         (10^12 to 10^28 wei). With a power-of-ten base every price is a table mantissa
-    ///         times a power of ten, so it reads as the table does (ADR 0005 decision 3, readable
+    ///         times a power of ten, so it reads as the table does (ADR 0005: readable
     ///         prices from a fixed table). A base of 0.00015 ETH would price the next steps
     ///         at 0.0001575 and 0.000165 ETH instead of 0.000105 and 0.00011.
     function isBasePrice(uint256 basePrice) internal pure returns (bool) {

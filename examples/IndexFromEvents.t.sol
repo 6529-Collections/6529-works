@@ -1,122 +1,162 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
-// Example: rebuild one work's life from its logs alone.
+// Example: rebuild 6529 Stream's state from its logs alone.
 //
 // An indexer reads logs (eth_getLogs, filtered by the contract addresses in the deployment
-// record) and folds them into state. This example records every log of a whole sale, then
-// rebuilds the work from the logs with no view call, and only at the end compares the result
-// with the contracts' views. The full event catalogue is docs/integrators/events-and-indexing.md.
+// record) and folds them into state. The permanent token emits an event for every change, and
+// the events carry enough to rebuild every getter (ADR 0010). This example records the logs of
+// a few works on the deployed stack (one sold and delivered, then transferred again; one
+// unsold and sent to the museum; the first one's record finalized in WorkFacts), rebuilds them
+// with no view call, and only at the end compares the result with the views. The full event
+// catalogue is docs/integrators/events-and-indexing.md.
 
 import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import { Vm } from "forge-std/Vm.sol";
-import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
-import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
-import { IStream } from "src/interfaces/IStream.sol";
-import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
-import { IntegrationBase } from "test/integration/IntegrationBase.sol";
+import { Facts, MintFacts, Outcome, Work } from "src/interfaces/core/CoreTypes.sol";
+import { IStream } from "src/interfaces/core/IStream.sol";
+import { IWorkFacts } from "src/interfaces/core/IWorkFacts.sol";
+import { IWorkRules } from "src/interfaces/core/IWorkRules.sol";
+import { MediaFile } from "src/interfaces/types/ContentTypes.sol";
+import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
+import { ExampleBase } from "./ExampleBase.sol";
 
-contract ExampleIndexFromEvents is IntegrationBase {
+contract ExampleIndexFromEvents is ExampleBase {
     /// What the indexer keeps for one work.
     struct Indexed {
-        uint256 tokenId;
+        bool minted;
         uint256 artistId;
         bytes32 itemHash;
-        address seller; // the seller split wallet
-        bool recordOpened;
-        uint256 saleId;
-        uint64 endTime; // the latest end: SaleStarted, then each BidPlaced
-        uint256 bids;
-        address highBidder;
-        uint256 highBid;
-        uint256 credited; // outbid refunds credited, not yet claimed
-        bool settled;
-        uint256 price;
-        uint256 fee;
+        bytes32 contentHash;
+        address royaltyReceiver;
+        uint24 royaltyRate;
+        Outcome outcome;
+        uint256 price; // logged only: no getter has it
         address owner;
+        // From WorkFacts: the record.
+        bool opened;
+        bytes32 recordFileId;
+        uint256 mediaCount;
+        bool finalized;
+        address renderer;
     }
 
-    function test_RebuildAWorkFromItsLogs() public {
-        // The chain's side: a sale with two bidders, settled. Every log is recorded.
+    address internal collector = makeAddr("collector");
+
+    mapping(uint256 => Indexed) internal works;
+    mapping(bytes32 => uint256) internal tokenOfContent;
+    uint256 internal supply;
+
+    function test_RebuildStreamFromItsLogs() public {
+        // The chain's side. Every log is recorded.
         vm.recordLogs();
-        Work[] memory works = _one(_work(_actor("artist"), collectionId));
-        (uint256 saleId, uint256 tokenId) = _start(_publish(works), works, 0);
-        records.openRecord(tokenId, works[0].item, works[0].media);
-        _ethBid(saleId, makeAddr("first"), 1 ether);
-        _ethBid(saleId, makeAddr("second"), 2 ether);
-        _settleAtEnd(saleId);
+        uint256 sold = _sell(_original(), collector, 1 ether); // sold for 1 ether, delivered
+        (uint256 unsoldSale, uint256 unsold) = _start(_original());
+        _settleAtEnd(unsoldSale); // no bid: the museum receives it
+        address next = makeAddr("next owner");
+        vm.prank(collector);
+        stream.transferFrom(collector, next, sold);
+        IWorkRules rules = IWorkRules(d.workRules);
+        bytes32 state = rules.workStateHash(address(stream), sold);
+        vm.prank(artist);
+        rules.finalize(address(stream), sold, state);
         Vm.Log[] memory logs = vm.getRecordedLogs();
 
         // The indexer's side: fold the logs, in order, by emitter and topic0.
-        Indexed memory x;
         for (uint256 i; i < logs.length; ++i) {
-            _fold(x, logs[i]);
+            if (logs[i].emitter == address(stream)) _fold(logs[i]);
+            if (logs[i].emitter == address(facts)) _foldFacts(logs[i]);
         }
 
-        // Only now compare with the views.
-        assertEq(x.tokenId, tokenId);
-        assertEq(x.saleId, saleId);
-        assertEq(x.owner, stream.ownerOf(tokenId));
-        assertEq(x.itemHash, stream.consumedItemOf(works[0].item.contentHash));
-        assertEq(x.seller, stream.primaryTerms(tokenId, "").seller);
-        assertTrue(x.recordOpened && records.isOpen(tokenId));
-        assertEq(x.bids, 2);
-        assertEq(x.highBidder, makeAddr("second"));
-        assertEq(x.price, 2 ether);
-        assertEq(x.credited, auction.claimable(makeAddr("first"), address(0)));
-        assertTrue(x.settled);
-        assertEq(x.endTime, auction.auction(saleId).endTime);
+        // The rebuilt state equals the views.
+        uint256[2] memory live = [sold, unsold];
+        for (uint256 j; j < live.length; ++j) {
+            uint256 id = live[j];
+            Work memory work = stream.workOf(id);
+            assertEq(works[id].owner, stream.ownerOf(id));
+            assertEq(works[id].artistId, work.artistId);
+            assertEq(works[id].itemHash, work.itemHash);
+            assertEq(works[id].royaltyReceiver, work.royaltyReceiver);
+            assertEq(works[id].royaltyRate, work.royaltyRate);
+            assertEq(uint8(works[id].outcome), uint8(work.outcome));
+            assertEq(
+                tokenOfContent[works[id].contentHash], stream.tokenOfContent(works[id].contentHash)
+            );
+            Facts memory f = facts.factsOf(address(stream), id);
+            assertEq(works[id].opened, f.opened);
+            assertEq(works[id].recordFileId, f.recordFileId);
+            assertEq(works[id].mediaCount, f.media.length);
+            assertEq(works[id].finalized, f.finalized);
+            assertEq(works[id].renderer, f.renderer);
+        }
+        assertEq(works[sold].price, 1 ether, "the price comes from the log alone");
+        assertEq(uint8(works[unsold].outcome), uint8(Outcome.UNSOLD));
+        assertTrue(works[sold].finalized && !works[unsold].finalized);
+        assertEq(supply, stream.totalSupply());
     }
 
-    function _fold(Indexed memory x, Vm.Log memory log) internal view {
-        bytes32 topic = log.topics[0];
-        if (log.emitter == address(stream)) {
-            if (topic == IStream.WorkMinted.selector) {
-                x.tokenId = uint256(log.topics[1]);
-                x.artistId = uint256(log.topics[3]);
-                // Non-indexed fields, in declaration order.
-                (x.itemHash,,,,,,, x.seller,) = abi.decode(
-                    log.data,
-                    (bytes32, uint64, uint8, bytes32, bytes32, bytes32, bytes32, address, uint24)
-                );
-            } else if (topic == IERC721.Transfer.selector && uint256(log.topics[3]) == x.tokenId) {
-                x.owner = address(uint160(uint256(log.topics[2])));
-            }
-        } else if (log.emitter == address(records)) {
-            if (topic == IWorkRecords.RecordOpened.selector) x.recordOpened = true;
-        } else if (log.emitter == address(auction)) {
-            if (topic == ISaleAdapter.SaleStarted.selector && uint256(log.topics[3]) == x.tokenId) {
-                x.saleId = uint256(log.topics[1]);
-                (,,,, x.endTime) = abi.decode(log.data, (bytes32, address, uint256, uint64, uint64));
-            } else if (
-                topic == IEnglishAuction.BidPlaced.selector && uint256(log.topics[1]) == x.saleId
-            ) {
-                ++x.bids;
-                x.highBidder = address(uint160(uint256(log.topics[2])));
-                (, x.highBid, x.endTime) = abi.decode(log.data, (address, uint256, uint64));
-            } else if (
-                topic == ISaleAdapter.Credited.selector && uint256(log.topics[3]) == x.saleId
-            ) {
-                x.credited += abi.decode(log.data, (uint256));
-            } else if (
-                topic == ISaleAdapter.SaleSettled.selector && uint256(log.topics[1]) == x.saleId
-            ) {
-                x.settled = true;
-                (,,,, x.price,,,, x.fee) = abi.decode(
-                    log.data,
-                    (
-                        address,
-                        address,
-                        uint256,
-                        address,
-                        uint256,
-                        address,
-                        uint256,
-                        address,
-                        uint256
-                    )
-                );
-            }
+    function _fold(Vm.Log memory log) internal {
+        bytes32 t0 = log.topics[0];
+        if (t0 == IStream.WorkMinted.selector) {
+            // tokenId, collectionId, artistId indexed; minter, serial and the facts in data.
+            uint256 id = uint256(log.topics[1]);
+            (,, MintFacts memory f) = abi.decode(log.data, (address, uint32, MintFacts));
+            works[id] = Indexed({
+                minted: true,
+                artistId: uint256(log.topics[3]),
+                itemHash: f.itemHash,
+                contentHash: f.contentHash,
+                royaltyReceiver: f.royaltyReceiver,
+                royaltyRate: f.royaltyRate,
+                outcome: Outcome.NONE,
+                price: 0,
+                owner: works[id].owner, // the mint's Transfer comes first
+                opened: false,
+                recordFileId: bytes32(0),
+                mediaCount: 0,
+                finalized: false,
+                renderer: address(0)
+            });
+            tokenOfContent[f.contentHash] = id; // the newest token of a content wins
+        } else if (t0 == IERC721.Transfer.selector) {
+            address from = address(uint160(uint256(log.topics[1])));
+            address to = address(uint160(uint256(log.topics[2])));
+            uint256 id = uint256(log.topics[3]);
+            works[id].owner = to;
+            if (from == address(0)) supply += 1;
+            if (to == address(0)) supply -= 1; // a burn keeps tokenOfContent naming the token
+        } else if (t0 == IStream.PrimarySale.selector) {
+            (Outcome outcome, uint256 price) = abi.decode(log.data, (Outcome, uint256));
+            works[uint256(log.topics[1])].outcome = outcome;
+            works[uint256(log.topics[1])].price = price;
+        } else if (t0 == IStream.RoyaltySet.selector) {
+            (address receiver, uint24 rate) = abi.decode(log.data, (address, uint24));
+            works[uint256(log.topics[1])].royaltyReceiver = receiver;
+            works[uint256(log.topics[1])].royaltyRate = rate;
+        }
+    }
+
+    /// @dev WorkFacts' events for Stream's works: the record opened (with the whole item and
+    ///      media list), and finalized with the renderer it pins.
+    function _foldFacts(Vm.Log memory log) internal {
+        if (address(uint160(uint256(log.topics[1]))) != address(stream)) return;
+        uint256 id = uint256(log.topics[2]);
+        bytes32 t0 = log.topics[0];
+        if (t0 == IWorkFacts.RecordOpened.selector) {
+            (PackageItem memory item, MediaFile[] memory media) =
+                abi.decode(log.data, (PackageItem, MediaFile[]));
+            works[id].opened = true;
+            works[id].recordFileId = item.recordFileId;
+            works[id].mediaCount = media.length;
+        } else if (t0 == IWorkFacts.RecordSet.selector) {
+            works[id].recordFileId = abi.decode(log.data, (bytes32));
+        } else if (t0 == IWorkFacts.Finalized.selector) {
+            (address renderer,) = abi.decode(log.data, (address, bytes32));
+            works[id].finalized = true;
+            works[id].renderer = renderer;
+        } else if (t0 == IWorkFacts.RendererRepinned.selector) {
+            (address renderer,) = abi.decode(log.data, (address, bytes32));
+            works[id].renderer = renderer;
         }
     }
 }

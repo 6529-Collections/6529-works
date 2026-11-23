@@ -3,28 +3,26 @@ pragma solidity ^0.8.24;
 
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
-import { IUniformEditionAuctionLens } from "src/interfaces/IUniformEditionAuctionLens.sol";
 import { IUniformEditionAuctionStorage } from "src/interfaces/IUniformEditionAuctionStorage.sol";
+import { Edition } from "src/interfaces/core/CoreTypes.sol";
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
-import { EditionTerms, ItemKind, PackageItem } from "src/interfaces/types/PackageTypes.sol";
-import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
-import { Roles } from "src/governance/Roles.sol";
 import { UniformClearingReference as Ref } from "../../helpers/UniformClearingReference.sol";
 import { EditionAuctionStack } from "../EditionAuctionStack.sol";
 
 /// @notice The handler of the edition auction's invariant suite: 6529 Stream Editions and the
-///         uniform-price edition auction on the real stack (`EditionAuctionStack`), each edition
-///         auction beside its master's 1/1 English auction.
-/// @dev Inherited by the invariant test, which targets itself (no handler contract size limit).
-///      Every action is bounded and never reverts (`fail_on_revert`): it predicts its outcome
-///      from the rules (D138-D141, ADR 0005) and the handler's ghost book, runs the call, and
-///      records any disagreement in `violations`.
+///         uniform-price edition auction on the deployed stack (`EditionAuctionStack`), each
+///         edition auction beside its master's 1/1 English auction.
+/// @dev Inherited by the invariant test, which targets itself. Every action is bounded and never
+///      reverts (`fail_on_revert`): it predicts its outcome from the rules (D138-D141, ADR 0005)
+///      and the handler's ghost book, runs the call, and records any disagreement in
+///      `violations`, which the invariant reports.
 ///
 ///      Six edition masters by one artist, in one approved package, with creator caps of 0
 ///      (none), 0, 4, 0, 6 and 2. Five edition bidders and two 1/1 collectors. Bids land on a
 ///      narrow band of low steps, so steps collide, caps bind inside a step and raises leave
-///      holes at the cut step; one bid in sixteen lands far above the band.
+///      holes at the cut step; one bid in sixteen lands far above the band. `open` creates the
+///      edition, and the clearing seals it at the count.
 abstract contract EditionAuctionHandler is EditionAuctionStack {
     uint256 internal constant MASTERS = 6;
     uint256 internal constant BIDDERS = 5;
@@ -41,6 +39,7 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
     /// @dev The most sales `wideBook` spreads in one run (each widens every later check).
     uint256 internal constant WIDE_BOOKS = 2;
     uint256 internal constant DENOMINATOR = 100_000;
+    uint64 internal constant MAX_PAUSE = 3 days;
 
     /// @dev One edition bid as the handler expects it.
     struct GhostBid {
@@ -49,14 +48,10 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         uint256 qty;
         /// @dev Units entered at the step before this bid: its queue position (capped only).
         uint256 pos;
-        bool withdrawn;
         bool claimed;
-        /// @dev When it was placed or last raised (ADR 0005 §12: a withdrawal during a pause
-        ///      needs a placement in a minute that ended before the pause began).
-        uint256 placedAt;
     }
 
-    /// @dev A departure from a step's queue: a raise out of it or a withdrawal.
+    /// @dev A departure from a step's queue: a raise out of it.
     struct Departure {
         uint256 pos;
         uint256 qty;
@@ -74,7 +69,6 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         bool pauseUsed;
         bool cancelled;
         bool masterSettled;
-        bool editionCreated;
         bool settled;
         bool voided;
         /// @dev `wideBook` spread its book wider than one settle call scans.
@@ -108,8 +102,7 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
     mapping(uint256 piece => mapping(uint256 step => uint256)) internal enteredUnits;
     mapping(uint256 piece => mapping(uint256 step => Departure[])) internal departures;
 
-    /// @dev ETH paid into the edition auction, and paid out of it (refunds, withdrawals,
-    ///      revenue and credits).
+    /// @dev ETH paid into the edition auction, and paid out of it (refunds, revenue, credits).
     uint256 internal ghostIn;
     uint256 internal ghostOut;
     mapping(address account => uint256) internal ghostCredit;
@@ -132,9 +125,7 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         scanner = makeAddr("eaScanner");
         Work[] memory works = new Work[](MASTERS);
         for (uint256 i; i < MASTERS; ++i) {
-            works[i] = _work(artist, collectionId);
-            works[i].item.kind = uint8(ItemKind.EDITION_MASTER);
-            works[i].item.edition = _editionTerms(caps[i]);
+            works[i] = _masterWork(artist, caps[i]);
         }
         root = _publish(works);
         _keep(root, works);
@@ -145,12 +136,6 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         // Two pieces start at genesis; the others through `startOneOfOne`.
         _startPiece(0);
         _startPiece(1);
-    }
-
-    function _editionTerms(uint32 cap) internal pure returns (EditionTerms memory t) {
-        t.maxCount = cap;
-        t.currency = CURRENCY_ETH;
-        t.saleKind = SaleKind.UNIFORM_AUCTION;
     }
 
     // ------------------------------------------------------------------ actions: the 1/1
@@ -173,11 +158,12 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         if (!found) return;
         Piece storage p = pieces[i];
         uint256 end = _oneOfOneEnd(i);
-        uint256 window = auction.config().extensionWindow;
         bool snipe = amountSeed % 2 == 0 && end > block.timestamp + 1;
         if (snipe) {
             uint256 room = end - block.timestamp - 1;
-            vm.warp(end - _bound(amountSeed >> 8, 1, window < room ? window : room));
+            vm.warp(
+                end - _bound(amountSeed >> 8, 1, EXTENSION_WINDOW < room ? EXTENSION_WINDOW : room)
+            );
         }
         uint256 before = p.opened ? _endTime(i) : 0;
         uint256 minimum = auction.minimumBid(p.saleId);
@@ -187,7 +173,7 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
             _bound(amountSeed >> 16, minimum, minimum + 1 ether)
         );
         if (snipe) {
-            if (_oneOfOneEnd(i) != block.timestamp + window) {
+            if (_oneOfOneEnd(i) != block.timestamp + EXTENSION_WINDOW) {
                 _violation("the 1/1 anti-snipe did not extend its end");
             }
             ++hits["oneOfOneSnipe"];
@@ -205,52 +191,60 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         Piece storage p = pieces[i];
         IEnglishAuction.Auction memory a = auction.auction(p.saleId);
         auction.settle(p.saleId);
-        address holder = a.bidder != address(0) ? a.recipient : economics.museum();
+        address holder = a.bidder != address(0) ? a.recipient : museum;
         if (stream.ownerOf(p.tokenId) != holder) _violation("the 1/1 went to the wrong holder");
         p.masterSettled = true;
         ++hits[a.bidder != address(0) ? bytes32("settleOneOfOneSold") : bytes32("museum")];
     }
 
-    /// @notice The guardian pauses a live 1/1 for a dispute (once per auction); the edition
+    /// @notice A pauser pauses a live 1/1 for a dispute (once per auction); the edition
     ///         auction's close becomes undetermined.
     function disputePause(uint256 seed) external {
         (bool found, uint256 i) = _pieceWith1of1(seed, IEnglishAuction.AuctionState.ACTIVE);
         if (!found || pieces[i].pauseUsed) return;
-        // A dispute is raised some time after the bids it concerns: a minute on, so the bids
-        // already placed may leave during the pause (ADR 0005 §12), and later ones may not.
         vm.warp(block.timestamp + 1 minutes);
         if (_state1of1(i) != IEnglishAuction.AuctionState.ACTIVE) return;
-        vm.prank(guardian1);
-        auction.pause(pieces[i].saleId, keccak256(abi.encode("edition auction dispute", i)));
+        vm.prank(pauser1);
+        (bool ok,) = address(auction)
+            .call(
+                abi.encodeWithSignature(
+                    "pause(uint256,bytes32)",
+                    pieces[i].saleId,
+                    keccak256(abi.encode("edition auction dispute", i))
+                )
+            );
+        if (!ok) {
+            _violation("a pauser could not pause a live 1/1");
+            return;
+        }
         pieces[i].pauseUsed = true;
         ++hits["disputePause"];
     }
 
-    /// @notice Decides a paused 1/1's dispute: upheld a third of the time (the governed cancel,
-    ///         which voids the edition auction), otherwise rejected (the governed resume).
+    /// @notice The network decides a paused 1/1's dispute: upheld a third of the time (cancel,
+    ///         which voids the edition auction), otherwise rejected (resume).
     function resolveDispute(uint256 seed, uint256 mode) external {
         (bool found, uint256 i) = _pieceWith1of1(seed, IEnglishAuction.AuctionState.PAUSED);
         if (!found) return;
         Piece storage p = pieces[i];
-        IEnglishAuction.Auction memory a = auction.auction(p.saleId);
-        if (block.timestamp + Roles.DELAY_24H > a.pausedAt + auction.MAX_PAUSE()) return;
         if (mode % 3 == 0) {
             bytes32 outcome = _platformStatement(
                 address(stream), p.tokenId, StatementKinds.DISPUTE_OUTCOME, "ar://ea-outcome"
             );
-            _govern(hotAdmin, address(auction), abi.encodeCall(auction.cancel, (p.saleId, outcome)));
+            _asNetwork(address(auction), abi.encodeCall(auction.cancel, (p.saleId, outcome)));
             p.cancelled = true;
             ++hits["cancel"];
             return;
         }
-        _govern(hotAdmin, address(auction), abi.encodeCall(auction.resume, (p.saleId)));
+        _asNetwork(address(auction), abi.encodeCall(auction.resume, (p.saleId)));
         ++hits["resume"];
     }
 
     // ------------------------------------------------------------------ actions: editions
 
     /// @notice Anyone opens a started master's edition auction until the 1/1's end plus the
-    ///         offset (an unopened one first); a late or second open is refused.
+    ///         offset (an unopened one first), which creates the edition; a late or second open
+    ///         is refused.
     function open(uint256 seed, uint256 callerSeed) external {
         for (uint256 k; k < 2 * MASTERS; ++k) {
             uint256 i = (seed % MASTERS + k) % MASTERS;
@@ -263,6 +257,10 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
             ) {
                 if (!expected) _violation("an edition auction opened late or twice");
                 if (saleId != p.editionSaleId) _violation("the sale ID is not saleIdOf");
+                Edition memory e = editions.editionOf(p.tokenId);
+                if (e.minter != address(editionAuction) || e.supplySealed || e.minted != 0) {
+                    _violation("the open did not create the edition");
+                }
                 p.opened = true;
                 ++hits["open"];
             } catch {
@@ -292,12 +290,9 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         (bool found, uint256 i) = _biddable(seed);
         if (!found || book[i].length == 0) return;
         uint256 index = bidSeed % book[i].length;
-        GhostBid storage b = book[i][index];
-        if (b.withdrawn) return;
-        uint256 next = b.step + 1 + stepSeed % 6;
-        uint256 id = index + 1;
+        uint256 next = book[i][index].step + 1 + stepSeed % 6;
         vm.prank(collectors[0]);
-        try ea.raise(pieces[i].editionSaleId, id, next) {
+        try ea.raise(pieces[i].editionSaleId, index + 1, next) {
             _violation("a stranger raised another's bid");
         } catch {
             ++hits["raiseRefused"];
@@ -309,8 +304,7 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
     ///         holes at the cut step: bids of 1, 1, `c - 3` and 2 units on one step above every
     ///         other, the first two then raised two steps higher. The step is rationed (it sells
     ///         `c - 2` of its `c - 1` live units), the sweep closes both holes, the third bid wins
-    ///         in full and the fourth, the marginal bid, 1 of its 2 (FIFO with holes, owner
-    ///         decision 1). Without the sweep the third bid would win nothing.
+    ///         in full and the fourth, the marginal bid, 1 of its 2.
     function fifoHole(uint256 seed) external {
         for (uint256 k; k < MASTERS; ++k) {
             uint256 i = (seed % MASTERS + k) % MASTERS;
@@ -332,8 +326,7 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
     /// @notice Spreads a sale that is still taking bids wider than one settle call scans (24
     ///         words of eight steps): one unit at step 0 and one far up the ladder, so its
     ///         settlement scans over two calls, the sale SETTLING in between. At most
-    ///         `WIDE_BOOKS` sales a run, never one `fifoHole` serves (a cap of 4 or more), whose
-    ///         far unit would take the clearing above the hole.
+    ///         `WIDE_BOOKS` sales a run, never one `fifoHole` serves (a cap of 4 or more).
     function wideBook(uint256 seed) external {
         if (wideBooks >= WIDE_BOOKS) return;
         (bool found, uint256 i) = _biddable(seed);
@@ -347,32 +340,8 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         ++hits["wideBook"];
     }
 
-    /// @dev The bidder of bid `index` raises it to `next`, paying exactly the difference; in a
-    ///      capped sale it leaves a departure at its old step and rejoins at the back of `next`.
-    function _raiseBid(uint256 i, uint256 index, uint256 next) internal {
-        GhostBid storage b = book[i][index];
-        uint256 cost = b.qty * (_price(i, next) - _price(i, b.step));
-        _softClose(i);
-        vm.deal(b.bidder, b.bidder.balance + cost);
-        vm.prank(b.bidder);
-        try ea.raise{ value: cost }(pieces[i].editionSaleId, index + 1, next) {
-            ghostIn += cost;
-            _depart(i, b.step, b.pos, b.qty);
-            b.step = next;
-            b.placedAt = block.timestamp;
-            b.pos = pieces[i].cap == 0 ? 0 : enteredUnits[i][next];
-            enteredUnits[i][next] += b.qty;
-            liveUnits[i][next] += b.qty;
-            _widen(i, next);
-            ++hits["raise"];
-        } catch {
-            _violation("a valid raise failed");
-        }
-    }
-
     /// @notice A bidder tries to take an edition bid back, during a dispute pause of the 1/1 or
-    ///         not: bids are firm (R21), so the adapter has no withdrawal and the call fails,
-    ///         leaving the bid live.
+    ///         not: bids are firm (R21), so the adapter has no withdrawal and the call fails.
     function withdraw(uint256 seed, uint256 bidSeed) external {
         for (uint256 k; k < MASTERS; ++k) {
             uint256 i = (seed % MASTERS + k) % MASTERS;
@@ -380,7 +349,7 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
             if (!p.opened || p.settled || p.voided || book[i].length == 0) continue;
             uint256 index = bidSeed % book[i].length;
             GhostBid storage b = book[i][index];
-            if (b.withdrawn || b.claimed) continue;
+            if (b.claimed) continue;
             vm.prank(b.bidder);
             (bool ok,) = address(editionAuction)
                 .call(
@@ -394,23 +363,9 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         }
     }
 
-    /// @notice Anyone creates the edition of a settled master.
-    function createEdition(uint256 seed) external {
-        for (uint256 k; k < MASTERS; ++k) {
-            uint256 i = (seed % MASTERS + k) % MASTERS;
-            Piece storage p = pieces[i];
-            if (!p.masterSettled || p.editionCreated) continue;
-            editions.createEdition(p.tokenId, _package(root)[i].item);
-            p.editionCreated = true;
-            ++hits["createEdition"];
-            return;
-        }
-    }
-
-    /// @notice Settles (or voids) an edition auction with the departure hint, in one call or
-    ///         two chunks, and checks the result against the brute-force reference. A third of
-    ///         the time it first tries one that may not settle yet: before the close, before
-    ///         the 1/1 settles, or before its edition exists, all refused.
+    /// @notice Settles (or voids) an edition auction with the departure hint, and checks the
+    ///         result against the brute-force reference. A third of the time it first tries one
+    ///         that may not settle yet (before the close or before the 1/1 settles): refused.
     function settle(uint256 seed, uint256 mode) external {
         for (uint256 k; k < MASTERS; ++k) {
             uint256 i = (seed % MASTERS + k) % MASTERS;
@@ -422,20 +377,13 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
             }
             bool closed = block.timestamp >= _endTime(i);
             bool final_ = _state1of1(i) == IEnglishAuction.AuctionState.SETTLED;
-            (uint256 refK,,) = _reference(i);
-            if (closed && final_ && (refK == 0 || p.editionCreated)) {
+            if (closed && final_) {
                 _settle(i, mode);
                 return;
             }
             if (mode % 3 != 0) continue;
-            uint256[] memory order = _hint(i);
-            try ea.settle(p.editionSaleId, order) returns (bool done) {
-                // Once the sale may settle but before its edition exists, a wide book's scan
-                // advances (the call that would finish it waits for the edition).
-                if (done || !closed || !final_ || !_scansOverCalls(i)) {
-                    _violation("an edition auction settled early");
-                }
-                ++hits["scanBeforeEdition"];
+            try ea.settle(p.editionSaleId, _hint(i)) {
+                _violation("an edition auction settled early");
             } catch {
                 ++hits[!closed ? bytes32("settleTooEarly") : bytes32("settleWaits")];
             }
@@ -443,12 +391,9 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         }
     }
 
-    /// @notice Anyone abandons an edition auction (R16, EA-19), a quarter of the time after
-    ///         warping to its close plus 21 days. The handler's model predicts the outcome: due
-    ///         once the wait has passed, the sale has paid nothing (open, or a scan still
-    ///         running), its 1/1 auction is settled or cancelled, and not both its master settled
-    ///         and its edition created. Then, with the master settled, the call creates the
-    ///         edition (the sale settles as usual); otherwise it voids the sale.
+    /// @notice Anyone abandons an edition auction (R16), a quarter of the time after warping to
+    ///         its close plus 21 days. Due only once the wait has passed for a sale that paid
+    ///         nothing whose 1/1 was cancelled; abandoning voids it.
     function abandon(uint256 seed, uint256 warpSeed) external {
         for (uint256 k; k < MASTERS; ++k) {
             uint256 i = (seed % MASTERS + k) % MASTERS;
@@ -457,62 +402,27 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
             uint256 deadline = _closeAt(i) + 21 days;
             if (warpSeed % 4 == 0 && block.timestamp < deadline) {
                 vm.warp(deadline);
-                // A dispute pause that lapsed in the jump moves the 1/1's end, and so the
-                // sale's: the deadline is read again.
                 deadline = _closeAt(i) + 21 days;
             }
-            IEnglishAuction.AuctionState s = _state1of1(i);
             IUniformEditionAuction.AuctionStatus st = ea.auction(p.editionSaleId).status;
             bool unpaid = st == IUniformEditionAuction.AuctionStatus.OPEN
                 || st == IUniformEditionAuction.AuctionStatus.CLOSED
                 || (st == IUniformEditionAuction.AuctionStatus.SETTLING
-                    && _lens()
-                            .storageWord(
-                                IUniformEditionAuctionStorage.Space.SCAN, p.editionSaleId, 0
-                            ) != 0);
+                    && eaLens.storageWord(
+                            IUniformEditionAuctionStorage.Space.SCAN, p.editionSaleId, 0
+                        ) != 0);
             bool due = unpaid && block.timestamp >= deadline
-                && s != IEnglishAuction.AuctionState.ACTIVE
-                && s != IEnglishAuction.AuctionState.PAUSED
-                && s != IEnglishAuction.AuctionState.ENDED && !(p.masterSettled && p.editionCreated);
-            try editionAuction.abandon(p.editionSaleId, abi.encode(_package(root)[i].item)) {
+                && _state1of1(i) == IEnglishAuction.AuctionState.CANCELLED;
+            try editionAuction.abandon(p.editionSaleId) {
                 if (!due) _violation("abandoned an edition auction that could still settle");
-                if (p.masterSettled) {
-                    if (!editions.exists(p.tokenId)) {
-                        _violation("abandon did not create the edition");
-                    }
-                    p.editionCreated = true;
-                    ++hits["abandonCreates"];
-                } else {
-                    p.voided = true;
-                    ++hits["abandon"];
-                }
-            } catch (bytes memory why) {
-                if (due) _violation(_abandonDiag(i, why, deadline));
+                p.voided = true;
+                ++hits["abandon"];
+            } catch {
+                if (due) _violation("refused a due abandonment");
                 ++hits["abandonRefused"];
             }
             return;
         }
-    }
-
-    function _abandonDiag(uint256 i, bytes memory why, uint256 deadline)
-        internal
-        view
-        returns (string memory)
-    {
-        uint256 sale = pieces[i].editionSaleId;
-        (, uint256 at) = ea.abandonable(sale);
-        return string.concat(
-            "refused a due abandonment ",
-            vm.toString(why),
-            " deadline ",
-            vm.toString(deadline),
-            " lens ",
-            vm.toString(at),
-            " end ",
-            vm.toString(uint256(ea.endTimes(sale).endTime)),
-            " now ",
-            vm.toString(block.timestamp)
-        );
     }
 
     /// @notice The bidder claims a bid of a settled or void auction (to itself), or anyone
@@ -524,8 +434,7 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
             if (!(p.settled || p.voided)) continue;
             for (uint256 j; j < book[i].length; ++j) {
                 uint256 index = (bidSeed % book[i].length + j) % book[i].length;
-                GhostBid storage b = book[i][index];
-                if (b.withdrawn || b.claimed) continue;
+                if (book[i][index].claimed) continue;
                 _claim(i, index, mode);
                 return;
             }
@@ -596,7 +505,7 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
             if (id != book[i].length + 1) _violation("bid IDs are not sequential");
             ghostIn += cost;
             uint256 pos = p.cap == 0 ? 0 : enteredUnits[i][step];
-            book[i].push(GhostBid(bidder, step, qty, pos, false, false, block.timestamp));
+            book[i].push(GhostBid(bidder, step, qty, pos, false));
             enteredUnits[i][step] += qty;
             liveUnits[i][step] += qty;
             _widen(i, step);
@@ -606,12 +515,32 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         }
     }
 
+    /// @dev The bidder of bid `index` raises it to `next`, paying exactly the difference; in a
+    ///      capped sale it leaves a departure at its old step and rejoins at the back of `next`.
+    function _raiseBid(uint256 i, uint256 index, uint256 next) internal {
+        GhostBid storage b = book[i][index];
+        uint256 cost = b.qty * (_price(i, next) - _price(i, b.step));
+        _softClose(i);
+        vm.deal(b.bidder, b.bidder.balance + cost);
+        vm.prank(b.bidder);
+        try ea.raise{ value: cost }(pieces[i].editionSaleId, index + 1, next) {
+            ghostIn += cost;
+            liveUnits[i][b.step] -= b.qty;
+            if (pieces[i].cap != 0) departures[i][b.step].push(Departure(b.pos, b.qty));
+            b.step = next;
+            b.pos = pieces[i].cap == 0 ? 0 : enteredUnits[i][next];
+            enteredUnits[i][next] += b.qty;
+            liveUnits[i][next] += b.qty;
+            _widen(i, next);
+            ++hits["raise"];
+        } catch {
+            _violation("a valid raise failed");
+        }
+    }
+
     /// @dev D141: a bid or raise within `softWindow` of the end sets the soft end to
-    ///      `min(now + softWindow, backstop)`, the backstop being the 1/1's end plus the offset
-    ///      plus `maxExtension`. While the 1/1 is paused bids are accepted at any time and move
-    ///      nothing. Called just before a bid lands. A bid exactly `softWindow` before the end
-    ///      would only set the soft end to the end itself; the adapter leaves it unset then, and
-    ///      the end is the same either way.
+    ///      `min(now + softWindow, backstop)`. While the 1/1 is paused bids are accepted at any
+    ///      time and move nothing. Called just before a bid lands.
     function _softClose(uint256 i) internal {
         if (_state1of1(i) == IEnglishAuction.AuctionState.PAUSED) return;
         IUniformEditionAuction.AuctionConfig memory t = _terms(i);
@@ -627,11 +556,6 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         uint256 end = _endTime(i);
         uint256 into = _bound(seed, 1, _terms(i).softWindow);
         if (end > block.timestamp + into) vm.warp(end - into);
-    }
-
-    function _depart(uint256 i, uint256 step, uint256 pos, uint256 qty) internal {
-        liveUnits[i][step] -= qty;
-        if (pieces[i].cap != 0) departures[i][step].push(Departure(pos, qty));
     }
 
     function _widen(uint256 i, uint256 step) internal {
@@ -656,7 +580,8 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         p.clearStep = c.step;
         p.price = c.price;
         uint256 revenue = uint256(c.count) * c.price;
-        uint256 fee = revenue * ea.auction(p.editionSaleId).feeShare / DENOMINATOR;
+        uint256 share = ea.auction(p.editionSaleId).feeShare;
+        uint256 fee = revenue - revenue * (DENOMINATOR - share) / DENOMINATOR;
         if (networkFee.balance - feeBefore != fee) {
             _violation("the network was not paid its share");
         }
@@ -670,18 +595,13 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         if (c.rationed && departures[i][c.step].length != 0) ++hits["holeSwept"];
     }
 
-    /// @dev Settles as keepers would. Settlement runs in calls of bounded gas, and each settler
-    ///      (`msg.sender`) sweeps the cut step's departures on its own; the first to sweep them
-    ///      all settles the sale. The order a settler that has not swept passes must equal
-    ///      `settlementOrder`, the handler's own sort. By `mode`, when there are departures:
-    ///      0. one keeper settles, each call continuing its own sweep (`settlementOrderFor`);
-    ///      1. a keeper sweeps half, a second keeper settles alone from scratch, and the first
-    ///         keeper's next call returns true and changes nothing (a handoff);
-    ///      2. a griefer passes an order that skips the first departure: accepted, but its sweep
-    ///         can never finish, and it leaves the keepers' untouched (a stranded sweep);
-    ///      3. a reordered order is refused; two keepers interleave their chunks.
-    ///      Whatever came before, a keeper settles within a bounded number of calls
-    ///      (completability).
+    /// @dev Settles as keepers would. Each settler (`msg.sender`) sweeps the cut step's
+    ///      departures on its own; the first to sweep them all settles the sale. By `mode`, when
+    ///      there are departures: 0. one keeper settles; 1. a keeper sweeps half, a second
+    ///      settles alone from scratch, the first's next call returns true (a handoff); 2. a
+    ///      griefer's order skips the first departure: accepted, never finishing, and leaving
+    ///      the keepers' untouched; 3. a reordered order is refused; two keepers interleave.
+    ///      Whatever came before, a keeper settles within a bounded number of calls.
     function _sweep(uint256 i, uint256 mode) internal {
         uint256 sale = pieces[i].editionSaleId;
         uint256[] memory order = _hint(i);
@@ -694,7 +614,7 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
             if (_settleAs(keepers[0], sale, _slice(order, 0, order.length / 2))) {
                 _violation("half a sweep settled");
             }
-            (uint256 swept,,) = _lens().sweepOf(sale, keepers[0]);
+            (uint256 swept,,) = eaLens.sweepOf(sale, keepers[0]);
             if (ea.settlement(sale).rationed && swept != order.length / 2) {
                 _violation("a settler's progress is not its own swept departures");
             }
@@ -707,7 +627,7 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
             if (_settleAs(griefer, sale, _orderFor(sale, griefer))) {
                 _violation("a stranded sweep finished");
             }
-            (uint256 kept,,) = _lens().sweepOf(sale, keepers[0]);
+            (uint256 kept,,) = eaLens.sweepOf(sale, keepers[0]);
             if (kept != 0) _violation("one settler's call moved another's sweep");
             ++hits["sweepStranded"];
         } else if (kind == 3) {
@@ -729,7 +649,7 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
             _violation("a keeper could not complete settlement");
             return;
         }
-        (uint256 left, uint256 next, uint256 cutoff) = _lens().sweepOf(sale, finisher);
+        (uint256 left, uint256 next, uint256 cutoff) = eaLens.sweepOf(sale, finisher);
         if (left != 0 || next != 0 || cutoff != 0) _violation("the finisher kept a sweep slot");
         if (kind == 1) {
             if (!_settleAs(keepers[0], sale, _orderFor(sale, keepers[0]))) {
@@ -740,14 +660,11 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         if (kind == 2) ++hits["completedAfterGrief"];
     }
 
-    /// @dev A book spread over more than one call's scan (24 words of eight steps): anyone's
-    ///      first settle call, with no order, only scans part of it (or an early call already
-    ///      did, while the edition did not exist yet), and the sale is SETTLING with its scan in
-    ///      progress, no result stored and every claim refused. The keepers' calls then finish
-    ///      the scan, clear and sweep as `_sweep` describes.
+    /// @dev A book spread over more than one call's scan: anyone's first settle call, with no
+    ///      order, only scans part of it, the sale is SETTLING with its scan in progress, no
+    ///      result stored and every claim refused.
     function _scanOverCalls(uint256 i) internal {
         uint256 sale = pieces[i].editionSaleId;
-        // CLOSED (OPEN past its end) until the first settle call.
         if (ea.auction(sale).status != IUniformEditionAuction.AuctionStatus.SETTLING) {
             if (!_scansOverCalls(i)) return;
             vm.prank(scanner);
@@ -757,19 +674,19 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
             _violation("a wide book's first call left the sale outside SETTLING");
         }
         if (
-            IUniformEditionAuctionLens(address(editionAuction))
-                        .storageWord(IUniformEditionAuctionStorage.Space.SCAN, sale, 0) == 0
+            eaLens.storageWord(IUniformEditionAuctionStorage.Space.SCAN, sale, 0) == 0
                 || ea.settlement(sale).count != 0
         ) {
             _violation("a partial scan stored no progress, or a result");
+        }
+        if (editions.editionOf(pieces[i].tokenId).supplySealed) {
+            _violation("a partial scan sealed the edition");
         }
         _claimsRefusedWhileSettling(i);
         ++hits["scanChunked"];
     }
 
-    /// @dev Whether settling sale `i`'s book takes more than one call's scan: it spans more than
-    ///      24 words, and the top 24 hold no used step below the demand reaching the cap (where
-    ///      the scan ends).
+    /// @dev Whether settling sale `i`'s book takes more than one call's scan.
     function _scansOverCalls(uint256 i) internal view returns (bool) {
         (uint256 low, uint256[] memory units) = ea.stepTotals(pieces[i].editionSaleId);
         if (units.length == 0) return false;
@@ -786,8 +703,7 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         return true;
     }
 
-    /// @dev While a sale is SETTLING, its scan or a sweep unfinished, no bid can be claimed, by
-    ///      its bidder or pushed by anyone.
+    /// @dev While a sale is SETTLING, no bid can be claimed, by its bidder or pushed by anyone.
     function _claimsRefusedWhileSettling(uint256 i) internal {
         Piece storage p = pieces[i];
         if (ea.auction(p.editionSaleId).status != IUniformEditionAuction.AuctionStatus.SETTLING) {
@@ -795,7 +711,6 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         }
         for (uint256 j; j < book[i].length; ++j) {
             GhostBid storage b = book[i][j];
-            if (b.withdrawn) continue;
             vm.prank(b.bidder);
             try ea.claimBid(p.editionSaleId, j + 1, b.bidder) {
                 _violation("a bid was claimed while the sale was SETTLING");
@@ -817,8 +732,6 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         }
     }
 
-    /// @dev Settles as `settler`, each call continuing its own sweep, until the sale settles or
-    ///      64 calls pass.
     function _finish(address settler, uint256 sale) internal returns (bool done) {
         for (uint256 calls; !done && calls < 64; ++calls) {
             done = _settleAs(settler, sale, _orderFor(sale, settler));
@@ -831,10 +744,6 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
     {
         vm.prank(settler);
         return ea.settle(sale, order);
-    }
-
-    function _lens() internal view returns (IUniformEditionAuctionLens) {
-        return IUniformEditionAuctionLens(address(editionAuction));
     }
 
     function _reversed(uint256[] memory list) internal pure returns (uint256[] memory out) {
@@ -857,9 +766,8 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
     }
 
     /// @dev A cancelled 1/1 takes no more edition bids once the adapter reads its state (within
-    ///      the soft window of the close, `UniformEditionAuction._end`; earlier the adapter skips
-    ///      that read, and such a bid is refunded when the sale voids), and settling voids its
-    ///      edition auction.
+    ///      the soft window of the close; earlier such a bid is refunded when the sale voids),
+    ///      and settling voids its edition auction.
     function _void(uint256 i) internal {
         Piece storage p = pieces[i];
         if (block.timestamp + _terms(i).softWindow >= _endTime(i)) {
@@ -871,8 +779,6 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
             } catch {
                 ++hits["cancelledBidRefused"];
             }
-        } else {
-            ++hits["cancelledBidUnread"];
         }
         ea.settle(p.editionSaleId, new uint256[](0));
         if (ea.auction(p.editionSaleId).status != IUniformEditionAuction.AuctionStatus.VOID) {
@@ -892,7 +798,7 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         if (o.unitsWon != won || o.refund != refund || !o.isFinal) {
             _violation("bidOutcome differs from the claim");
         }
-        uint256 copiesBefore = won == 0 ? 0 : editions.balanceOf(b.bidder, p.tokenId);
+        uint256 copiesBefore = editions.balanceOf(b.bidder, p.tokenId);
         if (mode % 3 == 0) {
             vm.prank(collectors[1]);
             ea.claimBidFor(p.editionSaleId, id);
@@ -907,7 +813,7 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
             ghostOut += refund;
             ++hits["claim"];
         }
-        if (won != 0 && editions.balanceOf(b.bidder, p.tokenId) - copiesBefore != won) {
+        if (editions.balanceOf(b.bidder, p.tokenId) - copiesBefore != won) {
             _violation("a claim minted the wrong number of copies");
         }
         b.claimed = true;
@@ -928,7 +834,6 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
     function _reference(uint256 i) internal view returns (uint256 k, uint256 price, uint256 best) {
         Piece storage p = pieces[i];
         if (p.lo == type(uint256).max) return (0, 0, 0);
-        // Only the steps with live units: a wide book spans hundreds of empty steps.
         uint256 n;
         for (uint256 s = p.lo; s <= p.hi; ++s) {
             if (liveUnits[i][s] != 0) ++n;
@@ -956,8 +861,7 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
     }
 
     /// @dev The settler's hint: the indexes of the clearing step's departures, in position
-    ///      order. Empty unless the reference clearing is rationed (the cap binds inside the
-    ///      clearing step), the only case in which settlement sweeps departures.
+    ///      order. Empty unless the reference clearing is rationed.
     function _hint(uint256 i) internal view returns (uint256[] memory order) {
         Piece storage p = pieces[i];
         if (p.cap == 0) return order;
@@ -983,12 +887,11 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
     }
 
     /// @dev The units bid `index` wins once settled: all of a bid above the clearing step, none
-    ///      below, and at the step the reference's fill, in arrival order, of what the step
-    ///      sells.
+    ///      below, and at the step the reference's fill, in arrival order, of what it sells.
     function _expectedWon(uint256 i, uint256 index) internal view returns (uint256) {
         Piece storage p = pieces[i];
         GhostBid storage b = book[i][index];
-        if (p.k == 0 || b.withdrawn || b.step < p.clearStep) return 0;
+        if (p.k == 0 || b.step < p.clearStep) return 0;
         if (b.step > p.clearStep) return b.qty;
         uint256 above;
         for (uint256 s = p.clearStep + 1; s <= p.hi; ++s) {
@@ -998,8 +901,6 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         return Ref.fillInArrivalOrder(positions, quantities, p.k - above)[me];
     }
 
-    /// @dev The live bids at the clearing step: their positions (entry order for an uncapped
-    ///      auction, whose step is never split) and quantities, and where bid `index` is.
     function _cutQueue(uint256 i, uint256 index)
         internal
         view
@@ -1009,13 +910,13 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         GhostBid[] storage bids = book[i];
         uint256 n;
         for (uint256 j; j < bids.length; ++j) {
-            if (!bids[j].withdrawn && bids[j].step == p.clearStep) ++n;
+            if (bids[j].step == p.clearStep) ++n;
         }
         positions = new uint256[](n);
         quantities = new uint256[](n);
         n = 0;
         for (uint256 j; j < bids.length; ++j) {
-            if (bids[j].withdrawn || bids[j].step != p.clearStep) continue;
+            if (bids[j].step != p.clearStep) continue;
             if (j == index) me = n;
             positions[n] = p.cap == 0 ? j : bids[j].pos;
             quantities[n++] = bids[j].qty;
@@ -1024,7 +925,6 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
 
     function _stepAt(uint256 i, uint256 price) internal view returns (uint256) {
         Piece storage p = pieces[i];
-        // The clearing price is a live unit's: its step has live units.
         for (uint256 s = p.lo; s <= p.hi; ++s) {
             if (liveUnits[i][s] != 0 && _price(i, s) == price) return s;
         }
@@ -1036,7 +936,6 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         return seed % 16 == 0 ? FAR + (seed >> 4) % 4 : (seed >> 4) % BAND;
     }
 
-    /// @dev The first piece, from `seed`, whose edition auction takes bids now.
     function _biddable(uint256 seed) internal view returns (bool, uint256) {
         for (uint256 k; k < MASTERS; ++k) {
             uint256 i = (seed % MASTERS + k) % MASTERS;
@@ -1065,7 +964,7 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         return auction.auction(pieces[i].saleId).endTime;
     }
 
-    /// @dev The 1/1's end plus the locked offset: the earliest the edition auction can close.
+    /// @dev The 1/1's end plus the fixed offset: the earliest the edition auction can close.
     function _closeAt(uint256 i) internal view returns (uint256) {
         return _oneOfOneEnd(i) + 15 minutes;
     }
@@ -1085,9 +984,8 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         return s == IEnglishAuction.AuctionState.PAUSED || block.timestamp < _endTime(i);
     }
 
-    /// @dev An auction may open from the 1/1's start until the edition close, which before it
-    ///      opens is the 1/1's end plus the current offset (at any time while the 1/1 is paused),
-    ///      never once the 1/1 is cancelled.
+    /// @dev An auction may open from the 1/1's start until its end plus the offset (at any time
+    ///      while the 1/1 is paused), never once the 1/1 is cancelled.
     function _openable(uint256 i) internal view returns (bool) {
         IEnglishAuction.AuctionState s = _state1of1(i);
         if (s == IEnglishAuction.AuctionState.CANCELLED) return false;
@@ -1124,15 +1022,15 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
     }
 
     /// @dev ETH conservation: the adapter's balance is what was paid in minus what was paid
-    ///      out, and exactly what it owes: every unclaimed, unwithdrawn bid's escrow, less its
-    ///      won units at the clearing price once settled, plus the credits.
+    ///      out, and exactly what it owes: every unclaimed bid's escrow, less its won units at
+    ///      the clearing price once settled, plus the credits.
     function _assertConservation() internal view {
         uint256 owed = ghostCredits;
         for (uint256 i; i < MASTERS; ++i) {
             Piece storage p = pieces[i];
             for (uint256 j; j < book[i].length; ++j) {
                 GhostBid storage b = book[i][j];
-                if (b.withdrawn || b.claimed) continue;
+                if (b.claimed) continue;
                 uint256 escrow = b.qty * _price(i, b.step);
                 owed += p.settled ? escrow - _expectedWon(i, j) * p.price : escrow;
             }
@@ -1143,13 +1041,12 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
 
     /// @dev The clocks: the 1/1's end read live, `closeAt` its end plus the offset, the soft end
     ///      the handler expects, `endTime = max(closeAt, softEnd)` within the backstop, and
-    ///      bidding and withdrawals open exactly when the rules say.
+    ///      bidding open exactly when the rules say.
     function _assertTiming(uint256 i) internal view {
         Piece storage p = pieces[i];
         if (p.settled || p.voided) return;
         IUniformEditionAuction.EndTimes memory e = ea.endTimes(p.editionSaleId);
         IUniformEditionAuction.AuctionConfig memory t = _terms(i);
-        IEnglishAuction.AuctionState s = _state1of1(i);
         assertEq(e.oneOfOneEnd, _oneOfOneEnd(i), "the 1/1's end is read live");
         assertEq(e.closeAt, _closeAt(i), "closeAt is the 1/1's end plus the offset");
         assertEq(e.softEnd, p.softEnd, "the soft end");
@@ -1157,13 +1054,12 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         assertEq(e.backstop, e.closeAt + t.maxExtension, "the backstop");
         assertGe(e.endTime, e.closeAt, "never before the 1/1's end plus the offset");
         assertLe(e.endTime, e.backstop, "the soft close stays within the backstop");
-        assertEq(uint8(e.oneOfOneState), uint8(s), "the 1/1's state");
+        assertEq(uint8(e.oneOfOneState), uint8(_state1of1(i)), "the 1/1's state");
         assertEq(e.biddingOpen, _biddingOpen(i), "bidding open exactly when the rules say");
     }
 
-    /// @dev Before settlement the live result equals the per-unit reference (so it is the
-    ///      largest count within the breadth margin of the best revenue, and its best revenue is
-    ///      R*), within the cap; after it, the stored result never changes.
+    /// @dev Before settlement the live result equals the per-unit reference, within the cap;
+    ///      after it, the stored result never changes.
     function _assertClearing(uint256 i) internal view {
         Piece storage p = pieces[i];
         if (p.voided) return;
@@ -1182,25 +1078,36 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         if (p.cap != 0) assertLe(c.count, p.cap, "the cap");
     }
 
-    /// @dev Never more copies than the clearing count; exactly that many once every bid is
-    ///      claimed; the units won sum to `k`, filled at the cut step in arrival order.
+    /// @dev The edition: created at open, unsealed until the clearing, then sealed at `k` (or at
+    ///      zero when voided); never more copies than `k`; exactly `k` once every bid is
+    ///      claimed; the units won sum to `k`.
     function _assertSupply(uint256 i) internal view {
         Piece storage p = pieces[i];
-        uint256 minted = p.editionCreated ? editions.edition(p.tokenId).minted : 0;
-        assertEq(minted, p.claimedWon, "copies minted equal the units claimed");
-        if (!p.settled) {
-            assertEq(minted, 0, "nothing mints before settlement");
+        Edition memory e = editions.editionOf(p.tokenId);
+        assertEq(e.minter, address(editionAuction), "the adapter is the edition's minter");
+        assertEq(e.minted, p.claimedWon, "copies minted equal the units claimed");
+        if (p.voided) {
+            assertEq(e.minted, 0, "a void sale mints nothing");
+            assertTrue(e.supplySealed && e.maxSupply == 0, "a void sale seals at zero");
             return;
         }
-        assertLe(minted, p.k, "never more copies than k");
+        if (!p.settled) {
+            assertEq(e.minted, 0, "nothing mints before settlement");
+            assertEq(
+                e.maxSupply, p.cap == 0 ? type(uint40).max : p.cap, "the cap until the clearing"
+            );
+            return;
+        }
+        assertTrue(e.supplySealed, "sealed at the clearing");
+        assertEq(e.maxSupply, p.k, "sealed at k");
+        assertLe(e.minted, p.k, "never more copies than k");
         uint256 total;
         uint256 unclaimed;
         for (uint256 j; j < book[i].length; ++j) {
-            if (book[i][j].withdrawn) continue;
             total += _expectedWon(i, j);
             if (!book[i][j].claimed) ++unclaimed;
         }
         assertEq(total, p.k, "the units won sum to k");
-        if (unclaimed == 0) assertEq(minted, p.k, "exactly k copies once every bid is claimed");
+        if (unclaimed == 0) assertEq(e.minted, p.k, "exactly k copies once every bid is claimed");
     }
 }

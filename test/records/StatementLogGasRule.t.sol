@@ -10,7 +10,7 @@ import { OZERC721Mock, OZERC1155Mock } from "../mocks/records/RecordsMocks.sol";
 import { ERC1271WalletMock } from "../mocks/libraries/AdversarialTargets.sol";
 
 /// @notice The statement log's gas rule (DSP-26): every call out (the item fallback's ERC-165
-///         probe and `coreOf`, the dispute subject's ERC-165 probes and `ownerOf`, the OWNER
+///         probe and `itemHashOf`, the dispute subject's ERC-165 probes and `ownerOf`, the OWNER
 ///         reads and the relayed ERC-1271 check) goes to a dependency wrapped in a `Burner`
 ///         costing 1x, 2x, 4x, 10x and 100x its base. The answer never changes with the cost,
 ///         and running short reverts with `BoundedCall.BoundedCallShortfall`: never "no outcome",

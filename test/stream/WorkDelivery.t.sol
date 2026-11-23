@@ -2,361 +2,263 @@
 pragma solidity ^0.8.24;
 
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
-import { IWorkDelivery, IWorkLocators } from "src/interfaces/IWorkDelivery.sol";
-import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
-import { LocatorKind } from "src/interfaces/types/ContentTypes.sol";
-import { Dependency } from "src/libraries/Dependency.sol";
-import { Burner, GasRuleAssertions } from "test/helpers/GasRule.sol";
-import { ContentAddresses as CA } from "test/helpers/ContentAddresses.sol";
-import { RecordsFixture } from "./RecordsFixture.sol";
+import { IERC4906 } from "@openzeppelin/contracts/interfaces/IERC4906.sol";
+import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import { IWorkDelivery } from "src/interfaces/IWorkDelivery.sol";
+import { Facts } from "src/interfaces/core/CoreTypes.sol";
+import { ILocators } from "src/interfaces/core/ILocators.sol";
+import { FileRole, Locator, LocatorKind, MediaFile } from "src/interfaces/types/ContentTypes.sol";
+import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
+import { ContentAddresses as CA } from "../helpers/ContentAddresses.sol";
+import { RulesFixture } from "../records/RulesFixture.sol";
 
-/// @notice A delivery contract whose `preferredLocator` answer is set by the test: raw bytes
-///         (mode 0), a revert (1) or a call that burns every gas unit it is given (2).
-contract DeliveryStub {
-    address public records;
-    address public predecessor;
-    uint8 public mode;
-    bytes internal _raw;
-
-    constructor(address records_, address predecessor_) {
-        records = records_;
-        predecessor = predecessor_;
-    }
-
-    function set(uint8 mode_, bytes memory raw) external {
-        mode = mode_;
-        _raw = raw;
-    }
-
-    function supportsInterface(bytes4 id) external pure returns (bool) {
-        return id == type(IWorkDelivery).interfaceId || id == 0x01ffc9a7;
-    }
-
-    function preferredLocator(uint256, bytes32) external view returns (bytes memory) {
-        uint8 m = mode;
-        if (m == 1) revert("delivery down");
-        if (m == 2) {
-            uint256 i;
-            while (true) {
-                ++i;
-            }
-        }
-        bytes memory raw = _raw;
-        assembly ("memory-safe") {
-            return(add(raw, 0x20), mload(raw))
-        }
-    }
-}
-
-/// @notice A successor that keeps its predecessor's locators by reading them through, as
-///         `IWorkDelivery` obliges every successor to.
-contract ReadThroughDelivery {
-    address public immutable records;
-    address public immutable predecessor;
-
-    constructor(address records_, address predecessor_) {
-        records = records_;
-        predecessor = predecessor_;
-    }
-
-    function supportsInterface(bytes4 id) external pure returns (bool) {
-        return id == type(IWorkDelivery).interfaceId || id == 0x01ffc9a7;
-    }
-
-    function preferredLocator(uint256 tokenId, bytes32 fileId)
-        external
-        view
-        returns (IWorkDelivery.Location memory, uint256)
-    {
-        return IWorkDelivery(predecessor).preferredLocator(tokenId, fileId);
-    }
-}
-
-/// @notice The delivery contract behind `WorkRecords` (study B design iv-b): the governed
-///         compare-and-set swap, the refresh hooks, the fail-soft forwarding of
-///         `preferredLocator` and its gas rule, locator provenance, and a successor that keeps
-///         the predecessor's locators.
-contract WorkDeliveryTest is RecordsFixture, GasRuleAssertions {
-    event BatchMetadataUpdate(uint256 _fromTokenId, uint256 _toTokenId);
-
+/// @notice `WorkDelivery`, keyed by token: locators, quotas, preferences and dead marks, with
+///         every fact read from `StreamWorkFacts6529`.
+contract WorkDeliveryTest is RulesFixture {
     uint256 internal constant NONE = type(uint256).max;
+    address internal s;
 
-    function setUp() public override(RecordsFixture) {
-        RecordsFixture.setUp();
+    function setUp() public override {
+        super.setUp();
+        s = address(stream);
     }
 
-    function _primary(uint256 tokenId) internal view returns (bytes32) {
-        return records.mediaOf(tokenId)[0].fileId;
+    function _open(uint256 salt) internal returns (uint256 id, bytes32 file) {
+        MediaFile[] memory media;
+        (id,, media) = _work(stream, salt);
+        file = media[0].fileId;
     }
 
-    function _stub() internal returns (DeliveryStub stub) {
-        stub = new DeliveryStub(address(records), address(delivery));
-        vm.prank(governor);
-        records.setDelivery(address(delivery), address(stub));
+    function _ar(uint256 i) internal pure returns (Locator memory) {
+        return Locator(LocatorKind.ARWEAVE, CA.arweave(vm.toString(i)));
     }
 
-    function _encode(uint8 kind, string memory uri, uint256 index)
-        internal
-        pure
-        returns (bytes memory)
-    {
-        return abi.encode(IWorkDelivery.Location(kind, uri), index);
+    function _ipfs(uint256 i) internal pure returns (Locator memory) {
+        return Locator(LocatorKind.IPFS, CA.ipfs(vm.toString(i)));
     }
 
-    function _location(uint256 tokenId, bytes32 file)
+    function _preferred(uint256 id, bytes32 file)
         internal
         view
-        returns (uint8 kind, string memory uri, uint256 index)
+        returns (ILocators.Location memory l, uint256 index)
     {
-        IWorkDelivery.Location memory l;
-        (l, index) = records.preferredLocator(tokenId, file);
-        return (l.kind, l.uri, index);
+        return ILocators(address(delivery)).preferredLocator(s, id, file);
     }
 
-    // ------------------------------------------------------------------------- the swap
-
-    function test_constructor_deploysTheFirstDelivery() public view {
-        assertEq(records.delivery(), address(delivery));
-        assertEq(delivery.records(), address(records));
-        assertEq(delivery.predecessor(), address(0));
-        assertTrue(delivery.supportsInterface(type(IWorkDelivery).interfaceId));
-        assertTrue(delivery.supportsInterface(type(IWorkLocators).interfaceId));
-        assertEq(address(delivery.authority()), address(manager));
-    }
-
-    function test_setDelivery_swapsAndRefreshesEveryToken() public {
-        _work(1);
-        _work(2);
-        DeliveryStub stub = new DeliveryStub(address(records), address(delivery));
-        vm.expectEmit(address(records));
-        emit IWorkRecords.DeliverySet(address(delivery), address(stub));
-        vm.expectEmit(address(stream));
-        emit BatchMetadataUpdate(1, 2);
-        vm.prank(governor);
-        records.setDelivery(address(delivery), address(stub));
-        assertEq(records.delivery(), address(stub));
-    }
-
-    function test_setDelivery_refusals() public {
-        DeliveryStub good = new DeliveryStub(address(records), address(delivery));
-        vm.prank(outsider);
-        vm.expectRevert(
-            abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, outsider)
-        );
-        records.setDelivery(address(delivery), address(good));
-
-        vm.startPrank(governor);
-        vm.expectRevert(IWorkRecords.DeliveryMismatch.selector);
-        records.setDelivery(address(good), address(good));
-
-        DeliveryStub otherRecords = new DeliveryStub(address(0xBEEF), address(delivery));
-        vm.expectRevert(
-            abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(otherRecords))
-        );
-        records.setDelivery(address(delivery), address(otherRecords));
-
-        // A successor must name the delivery it replaces, so no swap forgets the chain.
-        DeliveryStub orphan = new DeliveryStub(address(records), address(0));
-        vm.expectRevert(
-            abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(orphan))
-        );
-        records.setDelivery(address(delivery), address(orphan));
-
-        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, outsider));
-        records.setDelivery(address(delivery), outsider);
-        vm.stopPrank();
-        assertEq(records.delivery(), address(delivery));
-    }
-
-    function test_refreshHooks_onlyTheDelivery() public {
-        (uint256 tokenId,) = _work(1);
-        _work(2);
-        vm.expectRevert(IWorkRecords.NotDelivery.selector);
-        vm.prank(outsider);
-        records.refreshMetadata(tokenId);
-        vm.expectRevert(IWorkRecords.NotDelivery.selector);
-        vm.prank(outsider);
-        records.refreshAllMetadata();
-        vm.expectEmit(address(stream));
-        emit BatchMetadataUpdate(1, 2);
-        vm.prank(address(delivery));
-        records.refreshAllMetadata();
-    }
-
-    // ------------------------------------------------------------------ fail-soft forwarding
-
-    /// @dev Every answer that is not a canonical, allowed location yields the work's own answer:
-    ///      the empty locator for an unsynced work, the implicit ONCHAIN copy once synced. A
-    ///      revert does the same. Removing any check of `_isLocation` makes one row serve the
-    ///      delivery contract's bytes.
-    function test_preferredLocator_failSoftOnEveryMalformedAnswer() public {
-        (uint256 tokenId,) = _work(1);
-        bytes32 file = _primary(tokenId);
-        DeliveryStub stub = _stub();
-        bytes memory longUri = new bytes(2049);
-        for (uint256 i; i < longUri.length; ++i) {
-            longUri[i] = "a";
-        }
-        bytes[] memory bad = new bytes[](12);
-        bad[0] = "";
-        bad[1] = abi.encode(uint256(1));
-        bad[2] = bytes.concat(_encode(1, "ar://x", 0), bytes1(0)); // trailing byte
-        bad[3] = _encode(0, "ar://x", NONE); // NONE with a URI
-        bad[4] = _encode(1, "", 0); // a kind with no URI
-        bad[5] = _encode(3, "", NONE); // ONCHAIN for an unsynced work
-        bad[6] = _encode(3, "ar://x", NONE); // ONCHAIN with a URI
-        bad[7] = _encode(1, string(longUri), 0); // URI over Limits.MAX_URI_BYTES
-        bad[8] = _encode(0, "", 0); // NONE with an index
-        bad[9] = abi.encode(uint256(0x40), uint256(0), uint256(256), uint256(0x40), uint256(0));
-        bad[10] = abi.encode(uint256(0x60), uint256(0), uint256(1), uint256(0x40), uint256(0));
-        bad[11] = abi.encode(uint256(0x40), uint256(0), uint256(1), uint256(0x20), uint256(0));
-        for (uint256 i; i < bad.length; ++i) {
-            stub.set(0, bad[i]);
-            (uint8 kind, string memory uri, uint256 index) = _location(tokenId, file);
-            assertEq(kind, uint8(LocatorKind.NONE), vm.toString(i));
-            assertEq(bytes(uri).length, 0, vm.toString(i));
-            assertEq(index, NONE, vm.toString(i));
-        }
-        stub.set(1, "");
-        (uint8 k,, uint256 idx) = _location(tokenId, file);
-        assertEq(k, uint8(LocatorKind.NONE));
-        assertEq(idx, NONE);
-
-        records.syncOnChain(tokenId, 0, type(uint256).max);
-        for (uint256 i; i < bad.length; ++i) {
-            if (i == 5) continue; // ONCHAIN is now allowed
-            stub.set(0, bad[i]);
-            (uint8 kind, string memory uri, uint256 index) = _location(tokenId, file);
-            assertEq(kind, uint8(LocatorKind.ONCHAIN), vm.toString(i));
-            assertEq(bytes(uri).length, 0, vm.toString(i));
-            assertEq(index, NONE, vm.toString(i));
-        }
-        stub.set(1, "");
-        (k,, idx) = _location(tokenId, file);
-        assertEq(k, uint8(LocatorKind.ONCHAIN));
-    }
-
-    /// @dev Well-formed answers pass through unchanged, a kind `LocatorKind` does not name
-    ///      included (a future storage network), and ONCHAIN once the work is synced.
-    function test_preferredLocator_passesWellFormedAnswersThrough() public {
-        (uint256 tokenId,) = _work(1);
-        bytes32 file = _primary(tokenId);
-        DeliveryStub stub = _stub();
-        stub.set(0, _encode(1, "ar://copy", 4));
-        (uint8 kind, string memory uri, uint256 index) = _location(tokenId, file);
-        assertEq(kind, 1);
-        assertEq(uri, "ar://copy");
-        assertEq(index, 4);
-        stub.set(0, _encode(9, "bzz://future", 0));
-        (kind, uri,) = _location(tokenId, file);
-        assertEq(kind, 9);
-        assertEq(uri, "bzz://future");
-        stub.set(0, _encode(0, "", NONE));
-        (kind,, index) = _location(tokenId, file);
-        assertEq(kind, 0);
-        records.syncOnChain(tokenId, 0, type(uint256).max);
-        stub.set(0, _encode(3, "", NONE));
-        (kind,, index) = _location(tokenId, file);
-        assertEq(kind, 3);
-        assertEq(index, NONE);
-        // The facts are checked before the delivery contract is asked.
-        vm.expectRevert(
-            abi.encodeWithSelector(IWorkRecords.FileNotInWork.selector, tokenId, bytes32(0))
-        );
-        records.preferredLocator(tokenId, bytes32(0));
-    }
-
-    /// @dev Gas rule: with the delivery contract costing 1x to 100x its base, the answer is the
-    ///      same; with too little gas the call reverts with the shortfall error, never falls back
-    ///      to the work's own answer.
-    function test_GasRule_preferredLocatorForwarding() public {
-        (uint256 tokenId,) = _work(1);
-        bytes32 file = _primary(tokenId);
+    function _finalize(uint256 id) internal {
+        bytes32 state = _state(id);
         vm.prank(artist);
-        delivery.addLocator(tokenId, file, CA.ar("artist copy"));
-        // The successor reads the artist's copy from the predecessor it names.
-        ReadThroughDelivery through = new ReadThroughDelivery(address(records), address(delivery));
-        Burner burner = new Burner(address(through), 20_000);
-        vm.prank(governor);
-        records.setDelivery(address(delivery), address(burner));
-        bytes memory data = abi.encodeCall(records.preferredLocator, (tokenId, file));
-        Outcome memory o = _assertSameAtEveryMultiple(burner, outsider, address(records), data);
-        assertTrue(o.ok);
-        (IWorkDelivery.Location memory l,) = abi.decode(o.data, (IWorkDelivery.Location, uint256));
-        assertEq(l.uri, CA.arweave("artist copy"));
-        for (uint256 i; i < 3; ++i) {
-            burner.burnerSetMultiple(i == 0 ? 1 : i == 1 ? 4 : 10);
-            _assertShortfallNeverAnswers(burner, outsider, address(records), data);
-        }
+        rules.finalize(s, id, state);
     }
 
-    /// @dev A delivery contract that burns all it is given makes the call revert (shortfall),
-    ///      never serve the fallback as if it had answered.
-    function test_GasRule_aBurningDeliveryRevertsNeverFallsBack() public {
-        (uint256 tokenId,) = _work(1);
-        bytes32 file = _primary(tokenId);
-        _stub().set(2, "");
-        vm.expectRevert();
-        this.locate{ gas: 5_000_000 }(tokenId, file);
-    }
+    // ---------------------------------------------------------------------- adding
 
-    function locate(uint256 tokenId, bytes32 file) external view returns (uint8 kind) {
-        (kind,,) = _location(tokenId, file);
-    }
-
-    // -------------------------------------------------------------- provenance and successors
-
-    function test_locatorCounts_recordWhoAddedEach() public {
-        (uint256 tokenId,) = _work(1);
-        bytes32 file = _primary(tokenId);
-        vm.prank(platform);
-        delivery.addLocator(tokenId, file, CA.ipfsLocator("p0"));
+    function test_AddLocator_TheArtistBeforeFinalizeThePlatformAlways() public {
+        (uint256 id, bytes32 file) = _open(1);
+        Locator memory l = _ar(1);
+        vm.expectEmit(address(delivery));
+        emit IWorkDelivery.LocatorAdded(s, id, file, 0, l, artist, true);
+        vm.expectEmit(s);
+        emit IERC4906.MetadataUpdate(id);
         vm.prank(artist);
-        delivery.addLocator(tokenId, file, CA.ar("a1"));
-        (uint256 a, uint256 p, uint256 mask) = delivery.locatorCounts(tokenId, file);
+        delivery.addLocator(s, id, file, l);
+        vm.prank(stranger);
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, stranger)
+        );
+        delivery.addLocator(s, id, file, _ar(2));
+        // The platform (the network's role here).
+        delivery.addLocator(s, id, file, _ipfs(2));
+        (uint256 a, uint256 p, uint256 byArtist) = delivery.locatorCounts(s, id, file);
         assertEq(a, 1);
         assertEq(p, 1);
-        assertEq(mask, 2);
-    }
-
-    /// @dev A successor that reads its predecessor keeps every artist's locator: the served
-    ///      locator and the metadata are the same after the swap.
-    function test_successor_keepsThePredecessorsLocators() public {
-        (uint256 tokenId,) = _work(1);
-        bytes32 file = _primary(tokenId);
+        assertEq(byArtist, 1);
+        _finalize(id);
+        Locator memory late = _ar(3);
         vm.prank(artist);
-        delivery.addLocator(tokenId, file, CA.ar("kept"));
-        (uint8 k0, string memory u0, uint256 i0) = _location(tokenId, file);
-        ReadThroughDelivery next = new ReadThroughDelivery(address(records), address(delivery));
-        vm.prank(governor);
-        records.setDelivery(address(delivery), address(next));
-        (uint8 k1, string memory u1, uint256 i1) = _location(tokenId, file);
-        assertEq(k1, k0);
-        assertEq(u1, u0);
-        assertEq(i1, i0);
-        assertEq(u1, CA.arweave("kept"));
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, artist)
+        );
+        delivery.addLocator(s, id, file, late);
+        delivery.addLocator(s, id, file, late);
+        assertEq(delivery.locators(s, id, file).length, 3);
     }
 
-    /// @dev The delivery contract has no write path into a fact: a hostile one that answers
-    ///      garbage leaves the record, media, license, rate, pin and state hash unchanged.
-    function test_aHostileDeliveryChangesNoFact() public {
-        (uint256 tokenId,) = _work(1);
-        bytes32 file = _primary(tokenId);
-        bytes32 state = records.workStateHash(tokenId);
-        bytes memory before = abi.encode(
-            records.record(tokenId), records.mediaOf(tokenId), records.licenseOf(tokenId)
+    function test_AddLocator_SeparateQuotasThenThePlatformTakesTheRestAfterFinalize() public {
+        (uint256 id, bytes32 file) = _open(1);
+        for (uint256 i; i < 8; ++i) {
+            vm.prank(artist);
+            delivery.addLocator(s, id, file, _ar(i));
+        }
+        Locator memory ninth = _ar(8);
+        vm.prank(artist);
+        vm.expectRevert(IWorkDelivery.InvalidLocator.selector);
+        delivery.addLocator(s, id, file, ninth);
+        for (uint256 i = 10; i < 14; ++i) {
+            delivery.addLocator(s, id, file, _ipfs(i));
+        }
+        _finalize(id);
+        for (uint256 i = 20; i < 24; ++i) {
+            delivery.addLocator(s, id, file, _ipfs(i));
+        }
+        Locator memory over = _ipfs(30);
+        vm.expectRevert(IWorkDelivery.InvalidLocator.selector);
+        delivery.addLocator(s, id, file, over);
+        assertEq(delivery.locators(s, id, file).length, 16);
+    }
+
+    function test_AddLocator_Refusals() public {
+        (uint256 id, bytes32 file) = _open(1);
+        delivery.addLocator(s, id, file, _ar(1));
+        Locator memory dup = _ar(1);
+        vm.expectRevert(IWorkDelivery.InvalidLocator.selector);
+        delivery.addLocator(s, id, file, dup);
+        vm.expectRevert(IWorkDelivery.InvalidLocator.selector);
+        delivery.addLocator(s, id, file, Locator(LocatorKind.ONCHAIN, ""));
+        vm.expectRevert(IWorkDelivery.InvalidLocator.selector);
+        delivery.addLocator(s, id, file, Locator(LocatorKind.NONE, CA.arweave("x")));
+        vm.expectRevert(IWorkDelivery.InvalidLocator.selector);
+        delivery.addLocator(s, id, file, Locator(LocatorKind.ARWEAVE, "https://example.com/x"));
+        vm.expectRevert(IWorkDelivery.InvalidLocator.selector);
+        delivery.addLocator(s, id, file, Locator(LocatorKind.IPFS, CA.arweave("y")));
+        Locator memory ok = _ar(2);
+        vm.expectRevert(
+            abi.encodeWithSelector(IWorkDelivery.FileNotInWork.selector, s, id, bytes32(0))
         );
-        DeliveryStub stub = _stub();
-        stub.set(0, hex"deadbeef");
-        records.preferredLocator(tokenId, file);
-        vm.prank(address(stub));
-        records.refreshMetadata(tokenId);
-        assertEq(records.workStateHash(tokenId), state);
-        assertEq(
-            abi.encode(
-                records.record(tokenId), records.mediaOf(tokenId), records.licenseOf(tokenId)
-            ),
-            before
-        );
+        delivery.addLocator(s, id, bytes32(0), ok);
+        uint256 unopened = _mintItem(stream, _item(9, _single(9)));
+        vm.expectRevert(abi.encodeWithSelector(IWorkDelivery.RecordNotOpen.selector, s, unopened));
+        delivery.addLocator(s, unopened, file, ok);
+    }
+
+    /// @dev The same token ID in two token contracts keeps two sets of locators; a token whose
+    ///      RECORDS module is not this delivery's cannot be served (its refresh is refused).
+    function test_KeyedByToken() public {
+        (uint256 id, bytes32 file) = _open(1);
+        delivery.addLocator(s, id, file, _ar(1));
+        MediaFile[] memory media;
+        (,, media) = _work(bare, 1);
+        assertEq(delivery.locators(address(bare), id, file).length, 0);
+        Locator memory l = _ar(2);
+        vm.expectRevert();
+        delivery.addLocator(address(bare), id, media[0].fileId, l);
+    }
+
+    // ---------------------------------------------------------------- preferences
+
+    function test_PreferredLocator_TheMostSpecificLiveChoiceWins() public {
+        (uint256 id, bytes32 file) = _open(1);
+        (ILocators.Location memory l, uint256 index) = _preferred(id, file);
+        assertEq(l.kind, 0);
+        assertEq(index, NONE);
+        delivery.addLocator(s, id, file, _ar(1));
+        delivery.addLocator(s, id, file, _ipfs(2));
+        delivery.addLocator(s, id, file, _ar(3));
+        (, index) = _preferred(id, file);
+        assertEq(index, 0, "first live");
+        delivery.setPreferredKind(s, LocatorKind.IPFS);
+        (, index) = _preferred(id, file);
+        assertEq(index, 1, "token kind");
+        delivery.setCollectionPreferredKind(s, 1, LocatorKind.ARWEAVE);
+        (, index) = _preferred(id, file);
+        assertEq(index, 0, "collection kind");
+        delivery.setFilePreference(s, id, file, 2);
+        (l, index) = _preferred(id, file);
+        assertEq(index, 2, "file preference");
+        assertEq(l.uri, CA.arweave("3"));
+        delivery.markLocatorDead(s, id, file, 2);
+        (, index) = _preferred(id, file);
+        assertEq(index, 0, "a dead preference is passed over");
+        delivery.markLocatorDead(s, id, file, 0);
+        (, index) = _preferred(id, file);
+        assertEq(index, 1, "collection kind has no live match; token kind");
+    }
+
+    function test_PreferredLocator_OnChainOnlyOnceRecordedComplete() public {
+        (uint256 id, bytes32 file) = _open(1);
+        delivery.setPreferredKind(s, LocatorKind.ONCHAIN);
+        (ILocators.Location memory l, uint256 index) = _preferred(id, file);
+        assertEq(l.kind, 0);
+        facts.markOnChainComplete(s, id);
+        (l, index) = _preferred(id, file);
+        assertEq(l.kind, uint8(LocatorKind.ONCHAIN));
+        assertEq(index, NONE);
+        assertEq(bytes(l.uri).length, 0);
+    }
+
+    function test_Setters_TheStorageOperatorOnlyAndTheyRefresh() public {
+        (uint256 id, bytes32 file) = _open(1);
+        delivery.addLocator(s, id, file, _ar(1));
+        bytes[] memory calls = new bytes[](4);
+        calls[0] = abi.encodeCall(IWorkDelivery.setPreferredKind, (s, LocatorKind.IPFS));
+        calls[1] =
+            abi.encodeCall(IWorkDelivery.setCollectionPreferredKind, (s, 1, LocatorKind.IPFS));
+        calls[2] = abi.encodeCall(IWorkDelivery.setFilePreference, (s, id, file, 0));
+        calls[3] = abi.encodeCall(IWorkDelivery.markLocatorDead, (s, id, file, 0));
+        for (uint256 i; i < calls.length; ++i) {
+            vm.prank(stranger);
+            (bool ok,) = address(delivery).call(calls[i]);
+            assertFalse(ok);
+        }
+        vm.expectEmit(address(delivery));
+        emit IWorkDelivery.PreferredKindSet(s, LocatorKind.NONE, LocatorKind.IPFS);
+        vm.expectEmit(s);
+        emit IERC4906.MetadataUpdate(1);
+        delivery.setPreferredKind(s, LocatorKind.IPFS);
+        vm.expectEmit(address(delivery));
+        emit IWorkDelivery.FilePreferenceSet(s, id, file, NONE, 0);
+        delivery.setFilePreference(s, id, file, 0);
+        assertEq(delivery.filePreference(s, id, file), 0);
+        delivery.setFilePreference(s, id, file, NONE);
+        assertEq(delivery.filePreference(s, id, file), NONE);
+        vm.expectEmit(address(delivery));
+        emit IWorkDelivery.LocatorDead(s, id, file, 0);
+        delivery.markLocatorDead(s, id, file, 0);
+        assertEq(delivery.deadLocators(s, id, file), 1);
+        vm.expectRevert(IWorkDelivery.InvalidLocator.selector);
+        delivery.markLocatorDead(s, id, file, 0);
+        vm.expectRevert(IWorkDelivery.InvalidLocator.selector);
+        delivery.setFilePreference(s, id, file, 0);
+        vm.expectRevert(IWorkDelivery.InvalidLocator.selector);
+        delivery.setFilePreference(s, id, file, 5);
+        vm.expectRevert(abi.encodeWithSelector(IWorkDelivery.UnknownCollection.selector, s, 7));
+        delivery.setCollectionPreferredKind(s, 7, LocatorKind.IPFS);
+        assertEq(uint8(delivery.preferredKind(s)), uint8(LocatorKind.IPFS));
+        assertEq(uint8(delivery.collectionPreferredKind(s, 1)), 0);
+    }
+
+    function test_SupportsInterface_TheExactIds() public view {
+        assertTrue(delivery.supportsInterface(type(IWorkDelivery).interfaceId));
+        assertTrue(delivery.supportsInterface(type(ILocators).interfaceId));
+        assertTrue(delivery.supportsInterface(type(IERC165).interfaceId));
+        assertFalse(delivery.supportsInterface(0xffffffff));
+        assertEq(delivery.records(), address(rules));
+        assertEq(delivery.facts(), address(facts));
+        assertEq(delivery.directory(), address(directory));
+    }
+
+    /// @dev Nothing the delivery contract does changes a fact of the work.
+    function test_NoFactChanges() public {
+        (uint256 id, bytes32 file) = _open(1);
+        bytes32 before = keccak256(abi.encode(facts.factsOf(s, id)));
+        delivery.addLocator(s, id, file, _ar(1));
+        delivery.setPreferredKind(s, LocatorKind.ONCHAIN);
+        delivery.markLocatorDead(s, id, file, 0);
+        Facts memory f = facts.factsOf(s, id);
+        assertEq(keccak256(abi.encode(f)), before);
+    }
+
+    function test_AMultiFileWorkServesEachFile() public {
+        MediaFile[] memory media = new MediaFile[](2);
+        media[0] = _mediaFile(1, FileRole.PRIMARY, true);
+        media[1] = _mediaFile(2, FileRole.PREVIEW, false);
+        PackageItem memory item = _item(1, media);
+        uint256 id = _mintItem(stream, item);
+        facts.open(s, id, item, media);
+        delivery.addLocator(s, id, media[1].fileId, _ipfs(1));
+        (ILocators.Location memory l,) = _preferred(id, media[1].fileId);
+        assertEq(l.kind, uint8(LocatorKind.IPFS));
+        (l,) = _preferred(id, media[0].fileId);
+        assertEq(l.kind, 0);
     }
 }

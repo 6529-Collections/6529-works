@@ -3,25 +3,21 @@ pragma solidity ^0.8.24;
 
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
-import { Editions } from "../../src/editions/Editions.sol";
-import { ISplitWallet } from "../../src/economics/interfaces/ISplitWallet.sol";
-import { IArtistRegistry } from "../../src/interfaces/IArtistRegistry.sol";
-import { IArtistRoleResolver } from "../../src/interfaces/IArtistRoleResolver.sol";
-import { IEditions } from "../../src/interfaces/IEditions.sol";
-import { IStatementLog, HashRef, Role, Statement } from "../../src/interfaces/IStatementLog.sol";
-import { IStream } from "../../src/interfaces/IStream.sol";
-import { IWorkRecords } from "../../src/interfaces/IWorkRecords.sol";
-import { WorkTerms } from "../../src/interfaces/types/EconomicsTypes.sol";
-import { EditionTerms, PackageItem } from "../../src/interfaces/types/PackageTypes.sol";
-import { SaleKind } from "../../src/interfaces/types/SaleTypes.sol";
-import { StatementKinds } from "../../src/interfaces/types/StatementKinds.sol";
-import { WorksHashing } from "../../src/interfaces/types/WorksHashing.sol";
-import { StatementLog } from "../../src/records/StatementLog.sol";
-import { Actor, MedusaBase, SaleAdapter } from "./MedusaBase.sol";
+import { StreamEditions6529 } from "src/core/StreamEditions6529.sol";
+import { Stream6529 } from "src/core/Stream6529.sol";
+import { Edition, Minter, MintFacts } from "src/interfaces/core/CoreTypes.sol";
+import { IArtistRoleResolver } from "src/interfaces/IArtistRoleResolver.sol";
+import { HashRef, Role, Statement } from "src/interfaces/IStatementLog.sol";
+import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
+import { StatementLog } from "src/records/StatementLog.sol";
+import { MockRenderer, MockSale, MockTerms } from "../mocks/core/CoreMocks.sol";
+import { Actor, MedusaBase } from "./MedusaBase.sol";
+import { CoreNoPins } from "./StreamCoreMedusa.sol";
 
-/// @dev The log's authority: the curator may call `appendCurator`, the platform `appendPlatform`,
-///      the governor `appendGovernanceManifest` and `setArtistResolver`, all at once; a second
-///      platform key holds its role with a delay, so it can never write at once (DSP-3).
+/// @dev The one authority of the log, 6529 Stream and Editions: the curator may call
+///      `appendCurator` and the platform `appendPlatform`, at once; a second platform key holds
+///      its role with a delay, so it can never write at once (DSP-3); the governor may call
+///      everything else, at once.
 contract LogGate {
     address public curator;
     address public platform;
@@ -53,30 +49,6 @@ contract LogGate {
     }
 }
 
-/// @dev The ERC-721 subjects' token: the harness sets each ID's owner.
-contract Deed {
-    address internal immutable _keeper;
-    mapping(uint256 id => address) internal _owners;
-
-    constructor() {
-        _keeper = msg.sender;
-    }
-
-    function setOwner(uint256 id, address owner) external {
-        require(msg.sender == _keeper, "not keeper");
-        _owners[id] = owner;
-    }
-
-    function ownerOf(uint256 id) external view returns (address owner) {
-        owner = _owners[id];
-        require(owner != address(0), "no token");
-    }
-
-    function supportsInterface(bytes4 id) external pure returns (bool) {
-        return id == type(IERC721).interfaceId || id == type(IERC165).interfaceId;
-    }
-}
-
 /// @dev The artist resolver: one artist account speaks as the artist of every subject.
 contract ArtistBook {
     address public artist;
@@ -94,104 +66,36 @@ contract ArtistBook {
     }
 }
 
-/// @dev What Editions reads of 6529 Stream, set by the harness: three settled EDITION_MASTER
-///      works, each having consumed its content, and the link Editions writes back.
-contract MasterBook {
-    address internal immutable _keeper;
-    address public artistRegistry;
-    address public economics;
-    address public workRecords;
-    mapping(uint256 workId => bytes32) public itemHashOf;
-    mapping(bytes32 contentHash => bytes32) public consumedItemOf;
-    mapping(uint256 workId => address) internal _linked;
-
-    constructor(address registry, address economics_, address records) {
-        _keeper = msg.sender;
-        (artistRegistry, economics, workRecords) = (registry, economics_, records);
-    }
-
-    function setMaster(uint256 workId, bytes32 itemHash, bytes32 contentHash) external {
-        require(msg.sender == _keeper, "not keeper");
-        itemHashOf[workId] = itemHash;
-        consumedItemOf[contentHash] = itemHash;
-    }
-
-    function splitFactory() external view returns (address) {
-        return address(this);
-    }
-
-    function coreOf(uint256 workId)
-        external
-        view
-        returns (bytes32, uint256, uint256, uint8, uint8, uint32)
-    {
-        return (itemHashOf[workId], 1, 1, 1, 0, 5_000);
-    }
-
-    function primarySaleSettled(uint256 workId) external view returns (bool) {
-        return itemHashOf[workId] != 0;
-    }
-
-    function linkEdition(uint256 workId, uint256) external {
-        _linked[workId] = msg.sender;
-    }
-
-    function editionOf(uint256 workId) external view returns (address, uint256) {
-        return (_linked[workId], workId);
-    }
-
-    function supportsInterface(bytes4 id) external pure returns (bool) {
-        return id == type(IStream).interfaceId || id == type(IERC165).interfaceId;
-    }
-}
-
-/// @dev The economics resolver and the records satellite as Editions reads them.
-contract EditionsEconomics {
-    address public seller;
-
-    constructor(address seller_) {
-        seller = seller_;
-    }
-
-    function newWorkTerms(bytes32, ISplitWallet.Payee[] calldata)
-        external
-        view
-        returns (WorkTerms memory)
-    {
-        return WorkTerms(seller, address(0), 0, seller, 0);
-    }
-
-    function supportsInterface(bytes4 id) external pure returns (bool) {
-        return id == type(IWorkRecords).interfaceId || id == type(IERC165).interfaceId;
-    }
-}
-
 /// @dev Stateful harness for Medusa (docs/testing/README.md, second fuzzer) over the real
-///      `StatementLog` and the real `Editions`, with harness-local stand-ins for the authority,
-///      an ERC-721 subject token, the artist resolver, and what Editions reads of 6529 Stream.
+///      `StatementLog`, the real core `Stream6529` as the subject token (works minted, moved and
+///      burned by a sale contract) and the real core `StreamEditions6529` of those works, with
+///      stand-ins for the authority, the artist resolver, the record contract, the renderer and
+///      TERMS.
 ///
-///      The model is written from docs/spec/disputes-and-statements.md (DSP-1, DSP-3, DSP-4,
-///      DSP-9, DSP-10, INV-DSP-7) and docs/spec/editions-and-sales.md (ED-5, ED-25, INV-ED-2,
-///      INV-ED-6), not from the code or from the Forge handlers: it predicts every call's
-///      outcome, recomputes each subject's head with the spec's entry-hash formula, and tracks
-///      every nonce, every edition's count, binding, maximum and seal, and every holder's copies.
+///      The model is written from docs/spec/disputes-and-statements.md (DSP-1, DSP-3 to DSP-5,
+///      DSP-9, DSP-10, INV-DSP-7), the log's NatSpec on dispute subjects and the item fallback,
+///      and the core Editions guarantees (ADR 0010; ED-5, ED-25, INV-ED-2, INV-ED-6), not from
+///      the code or from the Forge handlers: it predicts every call's outcome, recomputes each
+///      subject's head with the spec's entry-hash formula, tracks every nonce, which works are
+///      live and who holds them, and every edition's minter, count, maximum, seal and holders.
 contract LogMedusa is MedusaBase {
-    uint256 internal constant SUBJECTS = 5;
-    uint256 internal constant EDITIONS = 3;
-    uint256 internal constant ADAPTERS = 3;
+    uint256 internal constant SUBJECTS = 6;
+    uint256 internal constant WORKS = 3;
+    uint256 internal constant ED_SALES = 3;
+    uint256 internal constant HOLDERS = 2;
     uint256 internal constant UNCAPPED = type(uint40).max;
     bytes32 internal constant KIND = keccak256("NOTE");
-    bytes32 internal constant OTHER_KIND = keccak256("ENGLISH_AUCTION");
     bytes32 internal constant ENTRY_DOMAIN = keccak256("6529.works.StatementLog.entry.v1");
     bytes32 internal constant HEAD_DOMAIN = keccak256("6529.works.StatementLog.head.v1");
 
     StatementLog public log;
-    Editions public editions;
+    Stream6529 public stream;
+    StreamEditions6529 public editions;
     LogGate public gate;
-    Deed public deed;
     ArtistBook public artists;
-    MasterBook public masters;
-    SaleAdapter[ADAPTERS] public adapters;
+    MockSale public workSale;
+    MockTerms public terms;
+    MockSale[ED_SALES] public edSales;
 
     Actor public artist;
     Actor public owner;
@@ -202,7 +106,7 @@ contract LogMedusa is MedusaBase {
     Actor public stranger;
     Actor public buyer;
     uint256[4] internal _nonces = [uint256(0), 1, 255, 256];
-    uint32[EDITIONS] internal _caps = [uint32(5), 12, 0];
+    uint40[3] internal _caps = [uint40(5), 12, 0];
 
     // The statement model.
     mapping(uint256 subject => uint64) public mCount;
@@ -214,10 +118,16 @@ contract LogMedusa is MedusaBase {
     bytes32 public mGovernanceHead;
     bool public roleViolation;
 
-    // The edition model.
-    mapping(uint256 adapter => uint8) public mStatus; // 0 none, 1 admitted, 2 removed
-    mapping(uint256 id => bool) public mExists;
-    mapping(uint256 id => uint256) public mBound; // adapter index + 1, zero while unbound
+    // The works model: work `k` (1..3) is minted from item `itemOf(k)`; 0 none, 1 live, 2 burned.
+    mapping(uint256 work => uint8) public mWork;
+    mapping(uint256 work => address) public mHolder;
+
+    // The editions model.
+    uint256 public mRebindDelay = 14 days;
+    uint256 public mModuleDelay = 7 days;
+    mapping(uint256 sale => uint256) public mActiveFrom;
+    mapping(uint256 sale => uint256) public mRemovedAt;
+    mapping(uint256 id => uint256) public mMinter; // sale index + 1, zero while not created
     mapping(uint256 id => uint256) public mMinted;
     mapping(uint256 id => uint256) public mLimit;
     mapping(uint256 id => bool) public mSealed;
@@ -234,20 +144,88 @@ contract LogMedusa is MedusaBase {
         stranger = new Actor();
         buyer = new Actor();
         gate = new LogGate(address(curator), address(platform), address(delayed), address(governor));
-        deed = new Deed();
-        for (uint256 id = 1; id <= 3; ++id) {
-            deed.setOwner(id, address(owner));
-        }
         artists = new ArtistBook(address(artist));
         log = new StatementLog(address(gate), address(artists), address(artists).codehash);
-        _setUpEditions();
+
+        workSale = new MockSale();
+        terms = new MockTerms();
+        address[] memory minters = new address[](1);
+        minters[0] = address(workSale);
+        stream = new Stream6529(
+            address(gate),
+            address(new CoreNoPins()),
+            address(governor),
+            address(new MockRenderer()),
+            address(terms),
+            address(0),
+            minters
+        );
+        _must(governor, address(stream), abi.encodeCall(stream.createCollection, ("Works", 0)));
+
+        minters = new address[](ED_SALES);
+        for (uint256 a; a < ED_SALES; ++a) {
+            edSales[a] = new MockSale();
+            minters[a] = address(edSales[a]);
+            mActiveFrom[a] = block.timestamp;
+        }
+        editions = new StreamEditions6529(
+            address(gate), address(stream), address(governor), address(terms), minters
+        );
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Actions: the works (subjects of the log, masters of the editions)
+    // ---------------------------------------------------------------------------------------
+
+    /// The next work, minted by the sale contract to the owner (works 1 to 3 only).
+    function mintWork() public {
+        uint256 k = stream.totalMinted() + 1;
+        if (k > WORKS) return;
+        MintFacts memory f;
+        f.itemHash = itemOf(k);
+        f.contentHash = keccak256(abi.encode("content", k));
+        f.artistId = 1;
+        f.collectionId = 1;
+        (bool ok,) = address(workSale)
+            .call(abi.encodeCall(MockSale.mintTo, (address(stream), address(owner), f)));
+        _record(ok, true, "mintWork");
+        if (!ok) return;
+        mWork[k] = 1;
+        mHolder[k] = address(owner);
+    }
+
+    /// The holder moves a work between the owner and the stranger, so OWNER authority follows
+    /// the current holder.
+    function moveWork(uint8 workSel) public {
+        uint256 k = 1 + workSel % WORKS;
+        if (mWork[k] != 1) return;
+        Actor from = mHolder[k] == address(owner) ? owner : stranger;
+        address to = address(from) == address(owner) ? address(stranger) : address(owner);
+        bytes memory data = abi.encodeCall(IERC721.transferFrom, (address(from), to, k));
+        (bool ok,) = _expect(from, address(stream), data, true, "moveWork");
+        if (ok) mHolder[k] = to;
+    }
+
+    /// The owner gives a work back to the sale contract, which burns it: its ID is gone for
+    /// good, and the log's item fallback for it answers nothing.
+    function burnWork(uint8 workSel) public {
+        uint256 k = 1 + workSel % WORKS;
+        if (mWork[k] != 1) return;
+        Actor from = mHolder[k] == address(owner) ? owner : stranger;
+        bytes memory data =
+            abi.encodeCall(IERC721.transferFrom, (address(from), address(workSale), k));
+        _must(from, address(stream), data);
+        (bool ok,) = address(workSale).call(abi.encodeCall(MockSale.burn, (address(stream), k)));
+        _record(ok, true, "burnWork");
+        if (ok) mWork[k] = 2;
+        mHolder[k] = address(0);
     }
 
     // ---------------------------------------------------------------------------------------
     // Actions: the statement log
     // ---------------------------------------------------------------------------------------
 
-    /// `append`: only ARTIST (the resolver's artist) and OWNER (the subject's owner) (DSP-3);
+    /// `append`: only ARTIST (the resolver's artist) and OWNER (the subject's holder) (DSP-3);
     /// the reserved kinds are refused on this path (DSP-4).
     function append(uint8 roleSel, uint8 whoSel, uint8 subject, uint8 kindSel, uint8 shape) public {
         Role role = Role(roleSel % 5);
@@ -342,52 +320,51 @@ contract LogMedusa is MedusaBase {
         ++mGovernanceCount;
     }
 
-    /// The subject token's IDs change hands, so OWNER authority follows the current owner.
-    function moveDeed(uint8 idSel, bool toStranger) public {
-        deed.setOwner(1 + idSel % 3, toStranger ? address(stranger) : address(owner));
-    }
-
     // ---------------------------------------------------------------------------------------
     // Actions: editions
     // ---------------------------------------------------------------------------------------
 
-    /// `createEdition`: anyone, once, for a settled master with its stored EDITION_MASTER item.
-    function createEdition(uint8 idSel) public {
-        uint256 id = 1 + idSel % EDITIONS;
-        bytes memory data = abi.encodeCall(editions.createEdition, (id, _masterItem(id)));
-        (bool ok,) = _expect(stranger, address(editions), data, !mExists[id], "createEdition");
+    /// `create` by an edition sale contract: an active minter, once, for a live master, with a
+    /// valid royalty; it becomes the edition's only minter. A cap of zero means none.
+    function createEdition(uint8 saleSel, uint8 idSel, bool badRoyalty) public {
+        uint256 a = saleSel % ED_SALES;
+        uint256 id = 1 + idSel % WORKS;
+        uint40 cap = _caps[id - 1];
+        uint24 rate = badRoyalty ? 1 : 5_000;
+        address receiver = badRoyalty ? address(0) : address(0xFEE);
+        bool expected = _canMint(a) && mWork[id] == 1 && mMinter[id] == 0 && !badRoyalty;
+        (bool ok,) = address(edSales[a])
+            .call(
+                abi.encodeCall(MockSale.createEdition, (address(editions), id, cap, receiver, rate))
+            );
+        _record(ok, expected, "createEdition");
         if (!ok) return;
-        mExists[id] = true;
-        if (!mSealed[id]) mLimit[id] = _caps[id - 1] == 0 ? UNCAPPED : _caps[id - 1];
+        mMinter[id] = a + 1;
+        mLimit[id] = cap == 0 ? UNCAPPED : cap;
     }
 
-    /// `mint` by an adapter: one ever admitted, of the edition's sale kind, the edition's bound
-    /// adapter (an unbound edition binds its first admitted minter), a removed one only after
-    /// it sealed, and never past the maximum (ED-5, ED-25, INV-ED-2).
-    function mint(uint8 adapterSel, uint8 idSel, uint8 amount, bool toBuyer) public {
-        uint256 a = adapterSel % ADAPTERS;
-        uint256 id = 1 + idSel % EDITIONS;
-        address to = toBuyer ? address(buyer) : address(adapters[a]);
-        uint256 bound = mBound[id];
-        bool allowed = mStatus[a] != 0 && amount != 0 && mExists[id] && a != 2
-            && (bound == 0 ? mStatus[a] == 1 : bound == a + 1) && (mStatus[a] != 2 || mSealed[id])
+    /// `mint` by an edition sale contract: only the edition's minter, while it may mint or once
+    /// it sealed, never past the maximum (ED-5, ED-25, INV-ED-2).
+    function mint(uint8 saleSel, uint8 idSel, uint8 amount, bool toBuyer) public {
+        uint256 a = saleSel % ED_SALES;
+        uint256 id = 1 + idSel % WORKS;
+        address to = toBuyer ? address(buyer) : address(owner);
+        bool allowed = mMinter[id] == a + 1 && (mSealed[id] || _canMint(a))
             && amount <= mLimit[id] - mMinted[id];
-        bytes memory data = abi.encodeCall(
-            editions.mint, (to, id, uint256(amount), abi.encode(address(0), uint256(1)))
-        );
-        (bool ok,) = adapters[a].act(address(editions), data);
+        (bool ok,) = address(edSales[a])
+            .call(abi.encodeCall(MockSale.mintEdition, (address(editions), to, id, amount, 1)));
         _record(ok, allowed, "edition mint");
         if (!ok) return;
-        if (bound == 0) mBound[id] = a + 1;
         mMinted[id] += amount;
         mCopies[id][to] += amount;
     }
 
-    /// `sealSupply`: the bound adapter, admitted or removed, once, between the copies minted and
-    /// the current maximum (ED-25).
-    function seal(uint8 adapterSel, uint8 idSel, uint8 countSel) public {
-        uint256 a = adapterSel % ADAPTERS;
-        uint256 id = 1 + idSel % EDITIONS;
+    /// `seal`: the edition's minter, while it is active, once, between the copies minted and
+    /// the current maximum (ED-25). A removed minter no longer seals, nor one added again that
+    /// is still waiting.
+    function seal(uint8 saleSel, uint8 idSel, uint8 countSel) public {
+        uint256 a = saleSel % ED_SALES;
+        uint256 id = 1 + idSel % WORKS;
         uint256 minted = mMinted[id];
         uint256 limit = mLimit[id];
         uint256 k = countSel % 5;
@@ -397,41 +374,78 @@ contract LogMedusa is MedusaBase {
                 ? limit
                 : k == 2 ? minted + (limit - minted) / 2 : k == 3 ? minted + 1 : limit + 1;
         if (k == 3 && minted != 0) count = minted - 1;
-        bool allowed = mStatus[a] != 0 && mBound[id] == a + 1 && !mSealed[id] && count >= minted
+        if (count > type(uint40).max) count = type(uint40).max;
+        bool allowed = mMinter[id] == a + 1 && _canMint(a) && !mSealed[id] && count >= minted
             && count <= limit;
-        bytes memory data = abi.encodeCall(editions.sealSupply, (id, count));
-        (bool ok,) = adapters[a].act(address(editions), data);
-        _record(ok, allowed, "sealSupply");
+        (bool ok,) = address(edSales[a])
+            .call(abi.encodeCall(MockSale.seal, (address(editions), id, uint40(count))));
+        _record(ok, allowed, "seal");
         if (!ok) return;
         if (mSealed[id]) sealReopened = true;
         mSealed[id] = true;
         mLimit[id] = count;
     }
 
-    /// `burn` by an adapter ever admitted, from its own copies.
-    function burnCopies(uint8 adapterSel, uint8 idSel, uint8 amount) public {
-        uint256 a = adapterSel % ADAPTERS;
-        uint256 id = 1 + idSel % EDITIONS;
-        address holder = address(adapters[a]);
-        bool allowed =
-            mStatus[a] != 0 && amount != 0 && mExists[id] && amount <= mCopies[id][holder];
+    /// `burn` by a holder, of its own copies.
+    function burnCopies(bool buyerSel, uint8 idSel, uint8 amount) public {
+        uint256 id = 1 + idSel % WORKS;
+        Actor holder = buyerSel ? buyer : owner;
+        bool allowed = amount <= mCopies[id][address(holder)];
         bytes memory data = abi.encodeCall(editions.burn, (id, uint256(amount)));
-        (bool ok,) = adapters[a].act(address(editions), data);
-        _record(ok, allowed, "edition burn");
-        if (ok) mCopies[id][holder] -= amount;
+        (bool ok,) = _expect(holder, address(editions), data, allowed, "edition burn");
+        if (ok) mCopies[id][address(holder)] -= amount;
     }
 
-    /// `setAdmittedMinter`: governed; an unchanged admission is a silent no-op.
-    function setAdmitted(uint8 adapterSel, bool admitted, bool asGovernor) public {
-        uint256 a = adapterSel % ADAPTERS;
-        bytes memory data =
-            abi.encodeCall(editions.setAdmittedMinter, (address(adapters[a]), admitted));
-        (bool ok,) = _expect(
-            asGovernor ? governor : stranger, address(editions), data, asGovernor, "setAdmitted"
-        );
-        if (!ok) return;
-        if (admitted) mStatus[a] = 1;
-        else if (mStatus[a] == 1) mStatus[a] = 2;
+    /// `removeMinter` and `addMinter` on Editions: governed; a minter added again waits the
+    /// module delay in force now.
+    function setMinter(uint8 saleSel, bool add, bool asGovernor) public {
+        uint256 a = saleSel % ED_SALES;
+        address sale = address(edSales[a]);
+        Actor who = asGovernor ? governor : stranger;
+        if (add) {
+            bool expected = asGovernor && mRemovedAt[a] != 0;
+            (bool ok,) = _expect(
+                who, address(editions), abi.encodeCall(editions.addMinter, (sale)), expected, "add"
+            );
+            if (ok) (mActiveFrom[a], mRemovedAt[a]) = (block.timestamp + mModuleDelay, 0);
+        } else {
+            bool expected = asGovernor && mRemovedAt[a] == 0;
+            (bool ok,) = _expect(
+                who,
+                address(editions),
+                abi.encodeCall(editions.removeMinter, (sale)),
+                expected,
+                "remove"
+            );
+            if (ok) mRemovedAt[a] = block.timestamp;
+        }
+    }
+
+    /// The network's delays on Editions: the rebind delay and the module delay.
+    function setDelays(uint32 rebindDelay, uint32 moduleDelay, bool asGovernor) public {
+        uint48 r = uint48(rebindDelay % 30 days);
+        uint48 m = uint48(moduleDelay % 30 days);
+        Actor who = asGovernor ? governor : stranger;
+        bytes memory data = abi.encodeCall(editions.setRebindDelay, (r));
+        (bool ok,) = _expect(who, address(editions), data, asGovernor, "setRebindDelay");
+        if (ok) mRebindDelay = r;
+        data = abi.encodeCall(editions.setModuleDelay, (m));
+        (ok,) = _expect(who, address(editions), data, asGovernor, "setModuleDelay");
+        if (ok) mModuleDelay = m;
+    }
+
+    /// `rebind`: the network moves an edition with no seal, whose minter was
+    /// removed at least the rebind delay ago, to an active minter.
+    function rebind(uint8 idSel, uint8 toSel, bool asGovernor) public {
+        uint256 id = 1 + idSel % WORKS;
+        uint256 to = toSel % ED_SALES;
+        uint256 prev = mMinter[id];
+        bool expected = asGovernor && prev != 0 && !mSealed[id] && mRemovedAt[prev - 1] != 0
+            && block.timestamp >= mRemovedAt[prev - 1] + mRebindDelay && _canMint(to);
+        bytes memory data = abi.encodeCall(editions.rebind, (id, address(edSales[to])));
+        (bool ok,) =
+            _expect(asGovernor ? governor : stranger, address(editions), data, expected, "rebind");
+        if (ok) mMinter[id] = to + 1;
     }
 
     // ---------------------------------------------------------------------------------------
@@ -456,6 +470,21 @@ contract LogMedusa is MedusaBase {
         return n == mGovernanceCount && h == mGovernanceHead;
     }
 
+    /// The latest outcome about a work is its own, or, while it has none and is live, the one
+    /// about the item it was minted from (read through `IStream.itemHashOf`); a burned or
+    /// unminted work has only its own. Editions and work-ID subjects answer their own.
+    function property_DisputeOutcomesFollowTheWork() public view returns (bool) {
+        for (uint256 s; s < SUBJECTS; ++s) {
+            (address token, uint256 id) = _subject(s);
+            bytes32 expected = mDispute[s];
+            if (expected == 0 && token == address(stream) && mWork[id] == 1) {
+                expected = _itemDispute(id);
+            }
+            if (log.latestDisputeOutcome(token, id) != expected) return false;
+        }
+        return true;
+    }
+
     /// DSP-3, DSP-4: no entry was ever written by a writer the rules refuse, or with a reserved
     /// kind outside its role.
     function property_RolesWriteOnlyTheirKinds() public view returns (bool) {
@@ -473,35 +502,39 @@ contract LogMedusa is MedusaBase {
         return true;
     }
 
-    /// INV-ED-2: each edition's count is every copy minted, never past its maximum, and the
-    /// holders' balances are what the model minted and burned.
+    /// INV-ED-2: each edition's minter, count and maximum are the model's, the count never past
+    /// the cap or the maximum, and the holders' balances are what the model minted and burned.
     function property_EditionSupplyAccounting() public view returns (bool) {
-        for (uint256 id = 1; id <= EDITIONS; ++id) {
-            if (editions.exists(id) != mExists[id]) return false;
-            if (!mExists[id]) continue;
-            IEditions.Edition memory e = editions.edition(id);
+        for (uint256 id = 1; id <= WORKS; ++id) {
+            Edition memory e = editions.editionOf(id);
+            address minter = mMinter[id] == 0 ? address(0) : address(edSales[mMinter[id] - 1]);
+            if (e.minter != minter) return false;
+            if (minter == address(0)) continue;
             if (e.minted != mMinted[id] || e.maxSupply != mLimit[id] || e.minted > e.maxSupply) {
                 return false;
             }
-            uint32 cap = _caps[id - 1];
+            uint40 cap = _caps[id - 1];
             if (cap != 0 && e.minted > cap) return false;
             if (editions.balanceOf(address(buyer), id) != mCopies[id][address(buyer)]) {
                 return false;
             }
-            for (uint256 a; a < ADAPTERS; ++a) {
-                address holder = address(adapters[a]);
-                if (editions.balanceOf(holder, id) != mCopies[id][holder]) return false;
+            if (editions.balanceOf(address(owner), id) != mCopies[id][address(owner)]) {
+                return false;
             }
         }
-        return true;
+        for (uint256 a; a < ED_SALES; ++a) {
+            Minter memory m = editions.minterOf(address(edSales[a]));
+            if (m.activeFrom != mActiveFrom[a] || m.removedAt != mRemovedAt[a]) return false;
+        }
+        return editions.rebindDelay() == mRebindDelay && editions.moduleDelay() == mModuleDelay;
     }
 
     /// INV-ED-6, ED-25: a sealed edition stays sealed at its count and never mints past it.
     function property_SealedSupplyHolds() public view returns (bool) {
         if (sealReopened) return false;
-        for (uint256 id = 1; id <= EDITIONS; ++id) {
-            if (!mExists[id]) continue;
-            IEditions.Edition memory e = editions.edition(id);
+        for (uint256 id = 1; id <= WORKS; ++id) {
+            if (mMinter[id] == 0) continue;
+            Edition memory e = editions.editionOf(id);
             if (e.supplySealed != mSealed[id]) return false;
             if (mSealed[id] && (e.maxSupply != mLimit[id] || e.minted > mLimit[id])) return false;
         }
@@ -511,6 +544,16 @@ contract LogMedusa is MedusaBase {
     // ---------------------------------------------------------------------------------------
     // Model helpers: statements
     // ---------------------------------------------------------------------------------------
+
+    /// The item work `k` is minted from.
+    function itemOf(uint256 k) public pure returns (bytes32) {
+        return keccak256(abi.encode("item", k));
+    }
+
+    /// The model's latest outcome about work `k`'s item: subject 4 is work 1's item.
+    function _itemDispute(uint256 k) internal view returns (bytes32) {
+        return k == 1 ? mDispute[4] : bytes32(0);
+    }
 
     /// Applies an accepted entry to the subject's chain with the spec's formulas (DSP-10).
     function _applyEntry(uint256 s, Role role, address signer, Statement memory st, bool allowed)
@@ -553,13 +596,16 @@ contract LogMedusa is MedusaBase {
         );
     }
 
-    /// Who may speak as `role` about subject `s` (DSP-3): the resolver's artist, the token's
-    /// current owner (none for a work-ID subject), or the role's zero-delay holder.
+    /// Who may speak as `role` about subject `s` (DSP-3): the resolver's artist, the holder of
+    /// a live work or of a copy of the edition (none for a work-ID subject), or the role's
+    /// zero-delay holder.
     function _authorized(Role role, address who, uint256 s) internal view returns (bool) {
         if (role == Role.ARTIST) return who == address(artist);
         if (role == Role.OWNER) {
             (address token, uint256 id) = _subject(s);
-            return token == address(deed) && id != 0 && deed.ownerOf(id) == who;
+            if (token == address(stream)) return mWork[id] == 1 && mHolder[id] == who;
+            if (token == address(editions)) return mCopies[id][who] != 0;
+            return false;
         }
         if (role == Role.CURATOR) return who == address(curator);
         if (role == Role.PLATFORM) return who == address(platform);
@@ -568,11 +614,16 @@ contract LogMedusa is MedusaBase {
 
     /// Whether the statement may be written as `role` (DSP-4 and the validity rules): a real
     /// subject, a kind, a schema, a tagged digest, exactly one locator, and the reserved kinds
-    /// only for their role, the manifest kind never.
-    function _writable(Role role, Statement memory st) internal pure returns (bool) {
+    /// only for their role, the manifest kind never. A dispute outcome about a work needs it
+    /// live; one about an edition is refused (its master carries it).
+    function _writable(Role role, Statement memory st) internal view returns (bool) {
         if (st.token == address(0) && st.id == 0) return false;
         if (st.kind == StatementKinds.GOVERNANCE_MANIFEST) return false;
-        if (st.kind == StatementKinds.DISPUTE_OUTCOME && role != Role.PLATFORM) return false;
+        if (st.kind == StatementKinds.DISPUTE_OUTCOME) {
+            if (role != Role.PLATFORM) return false;
+            if (st.token == address(editions)) return false;
+            if (st.token == address(stream) && mWork[st.id] != 1) return false;
+        }
         if (st.kind == StatementKinds.CURATION_EVIDENCE && role != Role.CURATOR) return false;
         bool hasUri = bytes(st.uri).length != 0;
         return st.schema != 0 && st.content.digest != 0 && st.content.algorithm != 0
@@ -603,21 +654,30 @@ contract LogMedusa is MedusaBase {
         st.supersedes = bytes32(uint256(shape >> 4));
     }
 
+    /// Subjects: works 1 to 3 of 6529 Stream; edition 1; work 1's item (a work-ID subject);
+    /// and the invalid empty subject.
     function _subject(uint256 s) internal view returns (address token, uint256 id) {
-        if (s < 3) return (address(deed), s + 1);
-        if (s == 3) return (address(0), 7);
+        if (s < 3) return (address(stream), s + 1);
+        if (s == 3) return (address(editions), 1);
+        if (s == 4) return (address(0), uint256(itemOf(1)));
         return (address(0), 0);
     }
 
     function _speaker(uint8 sel) internal view returns (Actor) {
-        uint256 k = sel % 7;
+        uint256 k = sel % 8;
         if (k == 0) return artist;
         if (k == 1) return owner;
         if (k == 2) return curator;
         if (k == 3) return platform;
         if (k == 4) return delayed;
         if (k == 5) return governor;
+        if (k == 6) return buyer;
         return stranger;
+    }
+
+    /// Edition minter `a` may mint now: added, active, not removed.
+    function _canMint(uint256 a) internal view returns (bool) {
+        return mActiveFrom[a] != 0 && block.timestamp >= mActiveFrom[a] && mRemovedAt[a] == 0;
     }
 
     /// The spec's `hashStruct(Statement)` (DSP-10), computed here.
@@ -678,50 +738,5 @@ contract LogMedusa is MedusaBase {
             )
         );
         return keccak256(abi.encodePacked("\x19\x01", domain, structHash));
-    }
-
-    // ---------------------------------------------------------------------------------------
-    // Model helpers: editions
-    // ---------------------------------------------------------------------------------------
-
-    function _setUpEditions() internal {
-        EditionsEconomics econ = new EditionsEconomics(address(buyer));
-        masters = new MasterBook(address(this), address(econ), address(econ));
-        for (uint256 id = 1; id <= EDITIONS; ++id) {
-            PackageItem memory item = _masterItem(id);
-            masters.setMaster(id, WorksHashing.itemHash(item), item.contentHash);
-        }
-        editions = new Editions(
-            address(gate), address(masters), address(masters).codehash, address(governor)
-        );
-        _must(
-            governor, address(editions), abi.encodeCall(editions.bindWorkRecords, (address(econ)))
-        );
-        adapters[0] = new SaleAdapter(SaleKind.UNIFORM_AUCTION);
-        adapters[1] = new SaleAdapter(SaleKind.UNIFORM_AUCTION);
-        adapters[2] = new SaleAdapter(OTHER_KIND);
-        for (uint256 a; a < 2; ++a) {
-            bytes memory data =
-                abi.encodeCall(editions.setAdmittedMinter, (address(adapters[a]), true));
-            _must(governor, address(editions), data);
-            mStatus[a] = 1;
-        }
-    }
-
-    function _masterItem(uint256 id) internal view returns (PackageItem memory item) {
-        item.kind = 1;
-        item.collectionId = 1;
-        item.contentHash = keccak256(abi.encode("master", id));
-        item.mediaHash = keccak256(abi.encode("media", id));
-        item.edition = EditionTerms(_caps[id - 1], address(0), SaleKind.UNIFORM_AUCTION, "");
-    }
-
-    /// The artist registry Editions reads once at deployment (`activeAuthorityOf`).
-    function activeAuthorityOf(uint256) external view returns (address) {
-        return address(artist);
-    }
-
-    function supportsInterface(bytes4 id) external pure returns (bool) {
-        return id == type(IArtistRegistry).interfaceId || id == type(IERC165).interfaceId;
     }
 }

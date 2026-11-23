@@ -1,21 +1,23 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 import { Script } from "forge-std/Script.sol";
 import { console2 } from "forge-std/console2.sol";
 import { Base64 } from "@openzeppelin/contracts/utils/Base64.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
+import { ISplitFactory } from "src/economics/interfaces/ISplitFactory.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
-import { IEditions } from "src/interfaces/IEditions.sol";
+import { IWorkFacts } from "src/interfaces/core/IWorkFacts.sol";
+import { IWorkRules } from "src/interfaces/core/IWorkRules.sol";
+import { IGovernedVault } from "src/economics/interfaces/IGovernedVault.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IEntropyModule } from "src/interfaces/IEntropyModule.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { IStatementLog, Statement } from "src/interfaces/IStatementLog.sol";
 import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
 import { IUniformEditionAuctionLens } from "src/interfaces/IUniformEditionAuctionLens.sol";
-import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { FileRole, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import { HASH_SHA256, HashRef } from "src/interfaces/types/HashRef.sol";
@@ -32,7 +34,7 @@ import {
     SeedPolicy,
     StreamMintRequest
 } from "src/interfaces/types/PackageTypes.sol";
-import { Payment, PaymentMethod, SaleKind } from "src/interfaces/types/SaleTypes.sol";
+import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 
@@ -56,13 +58,14 @@ interface IDigests {
 }
 
 /// @title Flows
-/// @notice Encodes the v1 flows run on a Sepolia rehearsal deployment (r4 by default, `RECORD`;
-///         set `FLOWS_RECORD` for another record): the content uploads, one curated package of
-///         ten works, its approval and acceptance, the 1/1 starts and bids, the edition auctions
-///         that run beside the edition masters' 1/1s (open, bids, raises, settlement with the
+/// @notice Encodes the flows run on a Sepolia rehearsal of the plain core (ADR 0010; round r6
+///         on), against the deployment record `FLOWS_RECORD` names (`script/DeployCore.s.sol`
+///         writes it): the content uploads, one curated package of ten works, its approval and
+///         acceptance, the 1/1 starts and bids, the edition auctions that run beside the edition
+///         masters' 1/1s (open, which creates the edition; bids, raises, settlement with the
 ///         per-settler departure sweep, claims), a pauser's dispute pause and the network's
-///         scheduled cancel that voids an edition sale, record opening, the VRF request, and the
-///         linked edition.
+///         cancel that voids an edition sale, record opening and finalizing, the VRF request, and
+///         the releases to the artist and the network.
 /// @dev It holds no key. Only `broadcastB64Chunk` broadcasts, from the script's sender; every
 ///      other entry point reads the live chain (run it with `--rpc-url`) and prints lines for a
 ///      driver to act on:
@@ -77,21 +80,19 @@ interface IDigests {
 ///      files, items and root, so every step can be re-run and re-derived.
 ///      `script/sepolia/flows.ps1` is the driver.
 contract Flows is Script {
+    /// @notice The deployment in the record has no entropy module (deployed without VRF).
+    error NoEntropyModule();
+
     using Strings for uint256;
     using Strings for address;
 
-    /// @dev The deployment record the flows run against: r4 unless `FLOWS_RECORD` names another
-    ///      (r3 is `deployments/11155111/1792095396.json`). The package is rc.2's (uniform edition
-    ///      auction terms, three edition masters), so the package step runs on r4 and later
-    ///      instances only; r1 to r3 registered earlier packages.
-    string internal constant RECORD = "deployments/11155111/1793536584.json";
     /// @dev Seeds every file, record and evidence hash. It is kept from r1 so that every instance
     ///      shares one package (same files and root).
     string internal constant LABEL = "6529-works/sepolia-r1/flows";
     /// @dev The rehearsals' artist (a throwaway testnet key).
     address internal constant DEFAULT_ARTIST = 0x111Cb972e6734feA580D403555a2a0ed4Cd3Ae1B;
-    /// @dev Curation signer 1 of r1, r2 and r3 (holds CURATION_SIGNER).
-    address internal constant DEFAULT_SIGNER = 0xc7091A91Fa76f7494a3b847B6A08f164C7097830;
+    /// @dev Curation signer 1 of r5 and r6 (holds CURATION_SIGNER); `FLOWS_SIGNER` overrides.
+    address internal constant DEFAULT_SIGNER = 0xa901A777C41e36B4Bd1caD3101140D8D12C5f9C9;
     uint256 internal constant ITEMS = 10;
     /// @dev The capped master's creator cap on its edition count; the other masters have none.
     uint32 internal constant EDITION_CAP = 3;
@@ -112,17 +113,19 @@ contract Flows is Script {
 
     struct Addrs {
         address store;
+        address facts;
         address registry;
         address verifier;
         address statements;
         address artists;
         address stream;
-        address records;
+        address rules;
         address editions;
         address auction;
         address entropy;
         address editionAuction;
-        address manager;
+        address splits;
+        address feeVault;
         bytes32 cc0TextFileId;
     }
 
@@ -141,24 +144,31 @@ contract Flows is Script {
 
     // ------------------------------------------------------------------ inputs
 
+    /// @dev The deployment record (`FLOWS_RECORD`): one `<name>: <address>` object, as
+    ///      `script/DeployCore.s.sol` writes it.
+    function _record() internal view returns (string memory) {
+        return vm.readFile(vm.envString("FLOWS_RECORD"));
+    }
+
     function _addrs() internal view returns (Addrs memory a) {
-        string memory json = vm.readFile(vm.envOr("FLOWS_RECORD", string(RECORD)));
-        a.store = vm.parseJsonAddress(json, ".contracts.ContentStore.address");
-        a.registry = vm.parseJsonAddress(json, ".contracts.PackageRegistry.address");
-        a.verifier = vm.parseJsonAddress(json, ".contracts.CurationVerifier.address");
-        a.statements = vm.parseJsonAddress(json, ".contracts.StatementLog.address");
-        a.artists = vm.parseJsonAddress(json, ".contracts.ArtistRegistry.address");
-        a.stream = vm.parseJsonAddress(json, ".contracts.Stream.address");
-        a.records = vm.parseJsonAddress(json, ".contracts.WorkRecords.address");
-        a.editions = vm.parseJsonAddress(json, ".contracts.Editions.address");
-        a.auction = vm.parseJsonAddress(json, ".contracts.EnglishAuction.address");
-        a.entropy = vm.parseJsonAddress(json, ".contracts.EntropyModule.address");
-        a.manager = vm.parseJsonAddress(json, ".contracts.WorksAccessManager.address");
-        // rc.2 and later (r4 on): the uniform edition auction.
-        if (vm.keyExistsJson(json, ".contracts.UniformEditionAuction")) {
-            a.editionAuction = vm.parseJsonAddress(json, ".contracts.UniformEditionAuction.address");
+        string memory json = _record();
+        a.store = vm.parseJsonAddress(json, ".ContentStore");
+        a.facts = vm.parseJsonAddress(json, ".StreamWorkFacts6529");
+        a.registry = vm.parseJsonAddress(json, ".PackageRegistry");
+        a.verifier = vm.parseJsonAddress(json, ".CurationVerifier");
+        a.statements = vm.parseJsonAddress(json, ".StatementLog");
+        a.artists = vm.parseJsonAddress(json, ".Accounts");
+        a.stream = vm.parseJsonAddress(json, ".Stream6529");
+        a.rules = vm.parseJsonAddress(json, ".WorkRules");
+        a.editions = vm.parseJsonAddress(json, ".StreamEditions6529");
+        a.auction = vm.parseJsonAddress(json, ".EnglishAuction");
+        a.editionAuction = vm.parseJsonAddress(json, ".UniformEditionAuction");
+        a.splits = vm.parseJsonAddress(json, ".SplitFactory");
+        a.feeVault = vm.parseJsonAddress(json, ".FeeRecipientVault");
+        if (vm.keyExistsJson(json, ".EntropyModule")) {
+            a.entropy = vm.parseJsonAddress(json, ".EntropyModule");
         }
-        a.cc0TextFileId = vm.parseJsonBytes32(json, ".cc0TextFileId");
+        a.cc0TextFileId = IWorkFacts(a.facts).cc0TextFileId();
     }
 
     function _artist() internal view returns (address) {
@@ -553,8 +563,7 @@ contract Flows is Script {
         );
     }
 
-    /// @dev The curation signer's approval digest. Since #55 it binds the signer's current epoch
-    ///      (r1 and r2 predate that).
+    /// @dev The curation signer's approval digest; it binds the signer's current epoch.
     function _signApproval(Addrs memory a, bytes32 root) internal view {
         address signer = vm.envOr("FLOWS_SIGNER", DEFAULT_SIGNER);
         ICurationDigest verifier = ICurationDigest(a.verifier);
@@ -675,7 +684,7 @@ contract Flows is Script {
         Work[] memory works = _works(a);
         bytes32[] memory leaves = _leaves(works);
         // The move proof names the signing wallet (IAccounts): the account's root, or the
-        // consolidated wallet `FLOWS_MOVE_SIGNER` names (r5 on).
+        // consolidated wallet `FLOWS_MOVE_SIGNER` names.
         IArtistRegistry artists = IArtistRegistry(a.artists);
         address root = _moveSigner(a, artists.artistIdOf(_artist()));
         return abi.encode(
@@ -696,15 +705,13 @@ contract Flows is Script {
     }
 
     /// @notice `SaleStarter.start` of item `index` (anyone sends it): the auction, the seller and
-    ///         royalty vaults and the record in one transaction (r5 on).
+    ///         royalty vaults and the record in one transaction.
     function starterTx(uint256 index, uint256 nonce, uint64 deadline, bytes calldata signature)
         external
         view
     {
         Addrs memory a = _addrs();
-        address starter = vm.parseJsonAddress(
-            vm.readFile(vm.envOr("FLOWS_RECORD", string(RECORD))), ".contracts.SaleStarter.address"
-        );
+        address starter = vm.parseJsonAddress(_record(), ".SaleStarter");
         _tx(
             string.concat("saleStarter-", index.toString()),
             "any",
@@ -754,12 +761,7 @@ contract Flows is Script {
             amount,
             abi.encodeCall(
                 IEnglishAuction.startWithBid,
-                (
-                    a.stream,
-                    _mintData(a, index, nonce, deadline, signature),
-                    address(0),
-                    Payment(PaymentMethod.DIRECT, bidder, amount, 0, 0, "")
-                )
+                (a.stream, _mintData(a, index, nonce, deadline, signature), address(0))
             )
         );
     }
@@ -775,10 +777,7 @@ contract Flows is Script {
             bidder.toHexString(),
             a.auction,
             amount,
-            abi.encodeCall(
-                IEnglishAuction.bid,
-                (saleId, address(0), Payment(PaymentMethod.DIRECT, bidder, amount, 0, 0, ""))
-            )
+            abi.encodeCall(IEnglishAuction.bid, (saleId, address(0)))
         );
     }
 
@@ -798,22 +797,40 @@ contract Flows is Script {
 
     // ------------------------------------------------------------------ 4. records and VRF
 
-    /// @notice `openRecord` of Stream token `tokenId`, minted from item `index` (anyone).
+    /// @notice `StreamWorkFacts6529.open` of Stream token `tokenId`, minted from item `index`
+    ///         (anyone).
     function openRecordTx(uint256 index, uint256 tokenId) external view {
         Addrs memory a = _addrs();
         Work memory w = _works(a)[index];
         _tx(
             string.concat("openRecord-", tokenId.toString()),
             "any",
-            a.records,
+            a.facts,
             0,
-            abi.encodeWithSelector(IWorkRecords.openRecord.selector, tokenId, w.item, w.media)
+            abi.encodeCall(IWorkFacts.open, (a.stream, tokenId, w.item, w.media))
+        );
+    }
+
+    /// @notice The artist finalizes Stream token `tokenId`'s record at its current state
+    ///         (`WorkRules.finalize`; a wallet of the artist's account sends it). It pins the
+    ///         token's current renderer.
+    function finalizeTx(uint256 tokenId) external view {
+        Addrs memory a = _addrs();
+        bytes32 state = IWorkRules(a.rules).workStateHash(a.stream, tokenId);
+        _info("stateHash", vm.toString(state));
+        _tx(
+            string.concat("finalize-", tokenId.toString()),
+            "artist",
+            a.rules,
+            0,
+            abi.encodeCall(IWorkRules.finalize, (a.stream, tokenId, state))
         );
     }
 
     /// @notice `requestSeed` for the VRF item (anyone).
     function requestSeedTx() external view {
         Addrs memory a = _addrs();
+        if (a.entropy == address(0)) revert NoEntropyModule();
         Work[] memory works = _works(a);
         bytes32[] memory leaves = _leaves(works);
         _info("itemHash", vm.toString(WorksHashing.itemHash(works[ITEM_VRF].item)));
@@ -829,24 +846,7 @@ contract Flows is Script {
         );
     }
 
-    // ------------------------------------------------------------------ 5. the edition
-
-    /// @notice `createEdition` for the master item `index` minted as Stream token `workId`
-    ///         (anyone: the keeper, after the master's 1/1 sale settled).
-    function createEditionTx(uint256 index, uint256 workId) external view {
-        Addrs memory a = _addrs();
-        require(_isMaster(index), "not an edition master item");
-        Work[] memory works = _works(a);
-        _tx(
-            string.concat("createEdition-", workId.toString()),
-            "any",
-            a.editions,
-            0,
-            abi.encodeCall(IEditions.createEdition, (workId, works[index].item))
-        );
-    }
-
-    // ------------------------------------------------------------------ 6. the edition auction
+    // ------------------------------------------------------------------ 5. the edition auction
 
     function _uea(Addrs memory a) internal pure returns (IUniformEditionAuction) {
         require(a.editionAuction != address(0), "record has no UniformEditionAuction");
@@ -859,7 +859,8 @@ contract Flows is Script {
     }
 
     /// @notice `open` of the edition auction beside master token `tokenId`, minted from item
-    ///         `index` (anyone: the keeper batches it with the 1/1's start).
+    ///         `index` (anyone: the keeper batches it with the 1/1's start). It creates the
+    ///         edition and deploys the seller and royalty vaults.
     function openEditionTx(uint256 index, uint256 tokenId) external view {
         Addrs memory a = _addrs();
         require(_isMaster(index), "not an edition master item");
@@ -868,7 +869,7 @@ contract Flows is Script {
         _info("saleId", saleId.toString());
         Work[] memory works = _works(a);
         bytes32[] memory leaves = _leaves(works);
-        // C23: the item, its package root and its proof.
+        // The item, its package root and its proof.
         bytes memory data = abi.encode(works[index].item, _root(leaves), _proof(leaves, index));
         _tx(
             string.concat("openEdition-", tokenId.toString()),
@@ -1002,15 +1003,19 @@ contract Flows is Script {
         _info("isFinal", o.isFinal ? "true" : "false");
     }
 
-    /// @notice `account` claims its ETH credits from `adapter` (the English auction's outbid
-    ///         refunds, or the edition auction's `claimBidFor` refunds) to itself.
-    function claimCreditsTx(address adapter, address account) external pure {
+    /// @notice `account` claims its ETH credits to itself: from the English auction (outbid
+    ///         refunds, `claim(to)`) or the edition auction (`claimBidFor` refunds,
+    ///         `claim(currency, to)`).
+    function claimCreditsTx(address adapter, address account) external view {
+        Addrs memory a = _addrs();
         _tx(
             "claimCredits",
             account.toHexString(),
             adapter,
             0,
-            abi.encodeWithSignature("claim(address,address)", CURRENCY_ETH, account)
+            adapter == a.auction
+                ? abi.encodeCall(IEnglishAuction.claim, (account))
+                : abi.encodeWithSignature("claim(address,address)", CURRENCY_ETH, account)
         );
     }
 
@@ -1060,6 +1065,37 @@ contract Flows is Script {
         }
     }
 
+    // ------------------------------------------------------------------ 6. payouts
+
+    /// @notice The artist releases its share of item `index`'s seller vault. The split ledger
+    ///         pays the payout address the accounts module answers through Directory, and only
+    ///         that address may release it.
+    function releaseTx(uint256 index) external view {
+        Addrs memory a = _addrs();
+        ISplitWallet.Payee[] memory payees = _works(a)[index].item.payees;
+        _info("vault", vm.toString(ISplitFactory(a.splits).walletFor(payees, bytes32(0))));
+        _tx(
+            string.concat("release-", index.toString()),
+            "artist",
+            a.splits,
+            0,
+            abi.encodeCall(ISplitWallet.release, (payees, bytes32(0), CURRENCY_ETH, 0))
+        );
+    }
+
+    /// @notice The network fee vault forwards its whole ETH balance to its destination (anyone).
+    function forwardTx() external view {
+        Addrs memory a = _addrs();
+        _info("destination", vm.toString(IGovernedVault(a.feeVault).destination()));
+        _tx(
+            "forwardFees",
+            "any",
+            a.feeVault,
+            0,
+            abi.encodeCall(IGovernedVault.forward, (CURRENCY_ETH, type(uint256).max))
+        );
+    }
+
     // ------------------------------------------------------------------ 7. disputes
 
     /// @dev The disputed 1/1's English auction sale.
@@ -1080,9 +1116,10 @@ contract Flows is Script {
             from,
             a.auction,
             0,
-            abi.encodeCall(
-                IEnglishAuction.pause,
-                (_oneOfOneSale(a, tokenId), keccak256(abi.encode(LABEL, "dispute", tokenId)))
+            abi.encodeWithSignature(
+                "pause(uint256,bytes32)",
+                _oneOfOneSale(a, tokenId),
+                keccak256(abi.encode(LABEL, "dispute", tokenId))
             )
         );
     }
@@ -1135,8 +1172,8 @@ contract Flows is Script {
         return abi.encodeCall(IEnglishAuction.cancel, (_oneOfOneSale(a, tokenId), outcome));
     }
 
-    /// @notice The network cancels `tokenId`'s paused 1/1 (NETWORK: no delay, at any moment of
-    ///         the pause, C30). `network` is the network Safe.
+    /// @notice The network cancels `tokenId`'s paused 1/1 (no delay, at any moment of the
+    ///         pause). `network` is the network Safe.
     function cancelTx(uint256 tokenId, address network) external view {
         Addrs memory a = _addrs();
         _tx(

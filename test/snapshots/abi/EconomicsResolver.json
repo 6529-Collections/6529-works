@@ -80,19 +80,6 @@
     "type": "error"
   },
   {
-    "id": "0x8a6ce247",
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "currency",
-        "type": "address"
-      }
-    ],
-    "name": "CurrencyNotAllowed",
-    "signature": "CurrencyNotAllowed(address)",
-    "type": "error"
-  },
-  {
     "id": "0xf7293a48",
     "inputs": [
       {
@@ -388,9 +375,9 @@
     "type": "function"
   },
   {
-    "id": "0x9eed6a12",
+    "id": "0x65a88835",
     "inputs": [],
-    "name": "FEDERATED_FEE_SHARE",
+    "name": "INDEPENDENT_FEE_SHARE",
     "outputs": [
       {
         "internalType": "uint32",
@@ -398,7 +385,7 @@
         "type": "uint32"
       }
     ],
-    "signature": "FEDERATED_FEE_SHARE()",
+    "signature": "INDEPENDENT_FEE_SHARE()",
     "stateMutability": "view",
     "type": "function"
   },
@@ -651,32 +638,6 @@
       }
     ],
     "signature": "newWorkTerms(bytes32,(uint256,address,uint32)[])",
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "id": "0x6dd5e5c8",
-    "inputs": [
-      {
-        "internalType": "bytes32",
-        "name": "product",
-        "type": "bytes32"
-      },
-      {
-        "internalType": "address",
-        "name": "requested",
-        "type": "address"
-      }
-    ],
-    "name": "resolveCurrency",
-    "outputs": [
-      {
-        "internalType": "address",
-        "name": "currency",
-        "type": "address"
-      }
-    ],
-    "signature": "resolveCurrency(bytes32,address)",
     "stateMutability": "view",
     "type": "function"
   },

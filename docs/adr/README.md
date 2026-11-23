@@ -2,15 +2,14 @@
 
 | ADR | Title | Status |
 | --- | --- | --- |
-| [0001](0001-v1-scope.md) | 6529 Works v1 scope | Accepted (11 October 2026); amended by 0002, 0003, 0004, 0005, 0006, 0007, 0008 and 0009, and on 1 November 2026 (the size budget; Main Stage the only way into 6529 Stream) |
+| [0001](0001-v1-scope.md) | 6529 Works v1 scope | Accepted (11 October 2026); amended by 0002, 0003, 0004, 0005, 0006, 0007, 0008 0009 and 0010, and on 1 November 2026 (the size budget; Main Stage the only way into 6529 Stream) |
 | [0002](0002-access-manager-hardening.md) | AccessManager hardening as implemented | Accepted (11 October 2026); extended by 0003; amended by 0007; superseded in substance by 0009 |
 | [0003](0003-build-time-decisions.md) | Build-time decisions for v1 | Accepted (11 October 2026); gas budgets amended by 0004; sales, MARKET-6 and selectors amended by 0005 |
-| [0004](0004-gas-budgets-under-glamsterdam.md) | Gas budgets under Glamsterdam | Accepted (13 October 2026); rows and budgets added by 0005; gas rule and start margin amended by 0007 |
+| [0004](0004-gas-budgets-under-glamsterdam.md) | Gas budgets under Glamsterdam | Accepted (13 October 2026); rows and budgets added by 0005; gas rule and start margin amended by 0007; start budget replaced by 0010 (370,000 gas, 8 slots) |
 | [0005](0005-stream-editions-auction.md) | The edition auction and 6529 Stream Editions | Accepted (31 October 2026); amended 31 October and 1 November 2026 (§6 to §11), by 0007 (§14), by 0008 (decision 9) and by 0009 |
 | [0006](0006-work-powers-and-conventions.md) | Work powers and conventions | Accepted by owner instruction (13 November 2026); amended by 0007 (`RENDERER_REPIN`) and by 0009 |
-| [0007](0007-permanence.md) | Permanence | Accepted by owner instruction (14-15 November 2026); P6 specified by 0008; amended by 0009 |
-| [0008](0008-federation.md) | 6529 Stream Federated in v1 | Accepted by owner instruction (15 November 2026); budget raised 16 November 2026; amended by 0009 |
-| [0009](0009-second-permanence-pass.md) | The second permanence pass | Accepted by owner instruction (16 November 2026) |
+| [0007](0007-permanence.md) | Permanence | Accepted by owner instruction (14-15 November 2026); P6 specified by 0008; amended by 0009 and 0010 |
+| [0008](0008-independent-stream.md) | 6529 Independent Stream in v1 | Accepted by owner instruction (15 November 2026); budget raised 16 November 2026; amended by 0009; templates amended by 0010 |
+| [0009](0009-second-permanence-pass.md) | The second permanence pass | Accepted by owner instruction (16 November 2026); its compiled waits in permanent contracts became network settings in 0010 |
+| [0010](0010-plain-permanent-core.md) | A plain permanent core | Accepted by owner instruction (22 November 2026) |
 
-Earlier decisions for the RC1 reference implementation are in the ADR index of the
-private 6529Stream repository.

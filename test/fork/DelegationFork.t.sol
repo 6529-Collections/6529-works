@@ -1,17 +1,21 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { DeployGuards } from "script/DeployGuards.sol";
 import { ConsolidationAdapter, IDelegationManagement } from "src/identity/ConsolidationAdapter.sol";
 import { ArtistIdentity } from "src/interfaces/types/IdentityTypes.sol";
-import { DeployGuards } from "script/DeployGuards.sol";
+import { SignatureVerifier } from "src/libraries/SignatureVerifier.sol";
 import { DelegationManagementMock } from "../mocks/identity/DelegationManagementMock.sol";
-import { WorksForkBase } from "./WorksForkBase.sol";
+import { CoreForkBase } from "./WorksForkBase.sol";
 
-/// @notice The real 6529 delegation contract, read through the real `ConsolidationAdapter` that
-///         `DeployV1` deploys: two-way, one-way, specific-collection and expired registrations,
-///         revocation, a consolidated wallet acting for an account, and the identity lane's mock
-///         checked against the real contract.
-abstract contract DelegationForkTests is WorksForkBase {
+/// @notice The real 6529 delegation contract, read through the `ConsolidationAdapter` that
+///         `DeployCore` deploys and the `Accounts` module that asks it: a two-way,
+///         all-collections consolidation counts at once; one-way, specific-collection and
+///         expired registrations do not; revocation ends it; the read is bounded to
+///         `MAX_REGISTRATIONS_READ` registrations per direction; the identity lane's mock
+///         answers as the real contract for the same history; and a consolidated wallet acts
+///         for an artist's account (it signs the artist's move, and moves the root to itself).
+abstract contract DelegationForkTests is CoreForkBase {
     address internal constant ALL = 0x8888888888888888888888888888888888888888;
     uint256 internal constant CONSOLIDATION = 999;
 
@@ -29,15 +33,16 @@ abstract contract DelegationForkTests is WorksForkBase {
         _register(d, b, a, expiry);
     }
 
-    function test_TheDelegationContractIsTheCanonicalCode() public onFork {
+    /// @notice The deployment reads the canonical delegation code through its adapter.
+    function test_Delegation_TheContractIsTheCanonicalCode() public view {
         assertEq(_delegationAddress().codehash, DeployGuards.CANONICAL_DELEGATION_CODEHASH);
         assertEq(address(consolidation.delegation()), _delegationAddress());
-        assertEq(address(artists.consolidationSource()), address(consolidation));
+        assertEq(address(accounts.consolidationSource()), address(consolidation));
     }
 
-    /// @dev A two-way, all-collections consolidation counts at once (no minimum age), and the
-    ///      contract's own `checkConsolidationStatus` agrees.
-    function test_AdapterReadsALiveTwoWayConsolidation() public onFork {
+    /// @notice A two-way, all-collections consolidation counts at once (no minimum age), and
+    ///         the contract's own `checkConsolidationStatus` agrees; one way does not count.
+    function test_Delegation_AdapterReadsALiveTwoWayConsolidation() public {
         address a = makeAddr("forkConsolidatorA");
         address b = makeAddr("forkConsolidatorB");
         _register(delegation, a, b, type(uint64).max);
@@ -48,9 +53,9 @@ abstract contract DelegationForkTests is WorksForkBase {
         assertTrue(delegation.checkConsolidationStatus(a, b, ALL), "the contract agrees");
     }
 
-    /// @dev A specific-collection consolidation and an expired one do not count, although the
-    ///      contract's own check reports the specific one.
-    function test_SpecificOrExpiredDoesNotCount() public onFork {
+    /// @notice A specific-collection consolidation and an expired one do not count, although
+    ///         the contract's own check reports the specific one.
+    function test_Delegation_SpecificOrExpiredDoesNotCount() public {
         address collection = makeAddr("forkSpecificCollection");
         address c = makeAddr("forkSpecificC");
         address d = makeAddr("forkSpecificD");
@@ -73,8 +78,8 @@ abstract contract DelegationForkTests is WorksForkBase {
         assertFalse(consolidation.isConsolidated(e, f), "expired");
     }
 
-    /// @dev A revocation deletes the pair's registrations: the consolidation ends at once.
-    function test_RevocationEndsTheConsolidation() public onFork {
+    /// @notice A revocation deletes the pair's registrations: the consolidation ends at once.
+    function test_Delegation_RevocationEndsTheConsolidation() public {
         address a = makeAddr("forkRevokeA");
         address b = makeAddr("forkRevokeB");
         _consolidate(delegation, a, b, type(uint64).max);
@@ -84,9 +89,35 @@ abstract contract DelegationForkTests is WorksForkBase {
         assertFalse(consolidation.isConsolidated(a, b));
     }
 
-    /// @dev The identity lane's reduction (the integration mock) answers as the real contract
-    ///      does for the same history: registrations, revocations, re-registrations, expiries.
-    function test_TheReductionMatchesTheRealContract() public onFork {
+    /// @notice The adapter reads at most `MAX_REGISTRATIONS_READ` registrations of a pair per
+    ///         direction: a live registration behind that many expired ones is not read.
+    function test_Delegation_TheReadIsBounded() public {
+        address a = makeAddr("forkBoundA");
+        address b = makeAddr("forkBoundB");
+        uint256 bound = consolidation.MAX_REGISTRATIONS_READ();
+        _register(delegation, b, a, type(uint64).max);
+        for (uint256 i; i < bound - 1; ++i) {
+            _register(delegation, a, b, block.timestamp + 1 days);
+        }
+        _register(delegation, a, b, type(uint64).max);
+        vm.warp(block.timestamp + 2 days);
+        assertTrue(consolidation.isConsolidated(a, b), "the last read registration is live");
+
+        address c = makeAddr("forkBoundC");
+        _register(delegation, c, a, type(uint64).max);
+        for (uint256 i; i < bound; ++i) {
+            _register(delegation, a, c, block.timestamp + 1 days);
+        }
+        _register(delegation, a, c, type(uint64).max);
+        vm.warp(block.timestamp + 2 days);
+        assertFalse(consolidation.isConsolidated(a, c), "past the bound");
+        assertTrue(delegation.checkConsolidationStatus(a, c, ALL), "the contract still counts it");
+    }
+
+    /// @notice The identity lane's reduction (the integration mock) answers as the real
+    ///         contract does for the same history: registrations, revocations,
+    ///         re-registrations, expiries.
+    function test_Delegation_TheMockMatchesTheRealContract() public {
         DelegationManagementMock local = new DelegationManagementMock();
         ConsolidationAdapter mirror =
             new ConsolidationAdapter(IDelegationManagement(address(local)));
@@ -134,29 +165,52 @@ abstract contract DelegationForkTests is WorksForkBase {
         }
     }
 
-    /// @dev On the real contract, a wallet consolidated with the artist's root acts for the
-    ///      account at once: it moves the root to itself, executed after the 2-day wait.
-    function test_AConsolidatedWalletActsForTheAccountOnTheRealContract() public onFork {
+    /// @notice A wallet consolidated with the artist's root on the real contract signs the
+    ///         artist's move, which starts the work; without the consolidation the same proof
+    ///         is refused.
+    function test_Delegation_AConsolidatedWalletSignsTheArtistsMove() public {
+        address artist = _actor("forkMoveArtist");
+        address wallet = _actor("forkMoveWallet");
+        Work[] memory works = _one(_work(artist, collectionId));
+        bytes32 root = _publish(works);
+        uint256 id = accounts.artistIdOf(artist);
+        bytes memory request = _mintDataSignedBy(root, works, 0, wallet, 0);
+        vm.expectRevert(abi.encodeWithSelector(SignatureVerifier.InvalidSignature.selector, wallet));
+        auction.start(address(stream), request);
+
+        _consolidate(delegation, artist, wallet, type(uint64).max);
+        assertTrue(accounts.isWallet(id, wallet));
+        auction.start(address(stream), request);
+        assertEq(stream.workOf(stream.totalMinted()).artistId, id);
+    }
+
+    /// @notice On the real contract, a wallet consolidated with the artist's root moves the
+    ///         root to itself, executed after the own-change delay.
+    function test_Delegation_AConsolidatedWalletMovesTheRoot() public {
         address artist = _actor("forkArtist");
         address wallet = _actor("forkArtistWallet");
         _publish(_one(_work(artist, collectionId)));
-        uint256 id = artists.artistIdOf(artist);
+        uint256 id = accounts.artistIdOf(artist);
         assertEq(id, uint160(artist));
-        assertFalse(artists.isWallet(id, wallet));
+        assertFalse(accounts.isWallet(id, wallet));
         _consolidate(delegation, artist, wallet, type(uint64).max);
-        assertTrue(artists.isWallet(id, wallet));
+        assertTrue(accounts.isWallet(id, wallet));
 
         ArtistIdentity memory identity =
             ArtistIdentity(wallet, wallet, _profileId(artist), _profileDoc(artist));
         uint64 deadline = uint64(block.timestamp + 1 days);
-        bytes32 digest = artists.changeDigest(id, identity, artists.changeNonce(id), deadline);
-        artists.stageChange(id, identity, deadline, abi.encodePacked(wallet, _sign(wallet, digest)));
-        vm.warp(block.timestamp + 2 days);
-        artists.executeChange(id);
-        assertEq(artists.authorityOf(id), wallet, "the root moved to the consolidated wallet");
+        bytes32 digest = accounts.changeDigest(id, identity, accounts.changeNonce(id), deadline);
+        accounts.stageChange(
+            id, identity, deadline, abi.encodePacked(wallet, _sign(wallet, digest))
+        );
+        vm.warp(block.timestamp + accounts.OWN_CHANGE_DELAY());
+        accounts.executeChange(id);
+        assertEq(accounts.authorityOf(id), wallet, "the root moved to the consolidated wallet");
     }
 }
 
+/// @dev Gated by `FORK_MAINNET_RPC`: the canonical contract at
+///      `0x2202CB9c00487e7e8EF21e6d8E914B32e709f43d`.
 contract DelegationMainnetForkTest is DelegationForkTests {
     function _rpcVar() internal pure override returns (string memory) {
         return "FORK_MAINNET_RPC";
@@ -167,6 +221,8 @@ contract DelegationMainnetForkTest is DelegationForkTests {
     }
 }
 
+/// @dev Gated by `FORK_SEPOLIA_RPC`: the official Sepolia deployment at
+///      `0x8f86c644f845A077999939C69Bc787662377d915` (byte-identical runtime code).
 contract DelegationSepoliaForkTest is DelegationForkTests {
     function _rpcVar() internal pure override returns (string memory) {
         return "FORK_SEPOLIA_RPC";

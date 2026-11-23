@@ -1,0 +1,198 @@
+{
+  "structs": {
+    "struct Accounts.Artist": [
+      {
+        "label": "root",
+        "offset": 0,
+        "slot": 0,
+        "type": "address"
+      },
+      {
+        "label": "frozenUntil",
+        "offset": 20,
+        "slot": 0,
+        "type": "uint48"
+      },
+      {
+        "label": "replacing",
+        "offset": 26,
+        "slot": 0,
+        "type": "bool"
+      },
+      {
+        "label": "payout",
+        "offset": 0,
+        "slot": 1,
+        "type": "address"
+      },
+      {
+        "label": "nonce",
+        "offset": 20,
+        "slot": 1,
+        "type": "uint64"
+      },
+      {
+        "label": "profileId",
+        "offset": 0,
+        "slot": 2,
+        "type": "bytes32"
+      },
+      {
+        "label": "profileDocHash",
+        "offset": 0,
+        "slot": 3,
+        "type": "bytes32"
+      }
+    ],
+    "struct ArtistIdentity": [
+      {
+        "label": "root",
+        "offset": 0,
+        "slot": 0,
+        "type": "address"
+      },
+      {
+        "label": "payout",
+        "offset": 0,
+        "slot": 1,
+        "type": "address"
+      },
+      {
+        "label": "profileId",
+        "offset": 0,
+        "slot": 2,
+        "type": "bytes32"
+      },
+      {
+        "label": "profileDocHash",
+        "offset": 0,
+        "slot": 3,
+        "type": "bytes32"
+      }
+    ],
+    "struct PendingChange": [
+      {
+        "label": "kind",
+        "offset": 0,
+        "slot": 0,
+        "type": "enum ChangeKind"
+      },
+      {
+        "label": "executableAt",
+        "offset": 1,
+        "slot": 0,
+        "type": "uint48"
+      },
+      {
+        "label": "contestedAt",
+        "offset": 7,
+        "slot": 0,
+        "type": "uint48"
+      },
+      {
+        "label": "next",
+        "offset": 0,
+        "slot": 1,
+        "type": "struct ArtistIdentity"
+      },
+      {
+        "label": "evidenceHash",
+        "offset": 0,
+        "slot": 5,
+        "type": "bytes32"
+      },
+      {
+        "label": "priorOutcome",
+        "offset": 0,
+        "slot": 6,
+        "type": "bytes32"
+      }
+    ]
+  },
+  "variables": [
+    {
+      "contract": "Accounts",
+      "label": "_authority",
+      "offset": 0,
+      "slot": 0,
+      "type": "address"
+    },
+    {
+      "contract": "Accounts",
+      "label": "_consumingSchedule",
+      "offset": 20,
+      "slot": 0,
+      "type": "bool"
+    },
+    {
+      "contract": "Accounts",
+      "label": "_nameFallback",
+      "offset": 0,
+      "slot": 1,
+      "type": "string"
+    },
+    {
+      "contract": "Accounts",
+      "label": "_versionFallback",
+      "offset": 0,
+      "slot": 2,
+      "type": "string"
+    },
+    {
+      "contract": "Accounts",
+      "label": "_artists",
+      "offset": 0,
+      "slot": 3,
+      "type": "mapping(uint256 => struct Accounts.Artist)"
+    },
+    {
+      "contract": "Accounts",
+      "label": "_pending",
+      "offset": 0,
+      "slot": 4,
+      "type": "mapping(uint256 => struct PendingChange)"
+    },
+    {
+      "contract": "Accounts",
+      "label": "_acceptanceUsed",
+      "offset": 0,
+      "slot": 5,
+      "type": "mapping(bytes32 => bool)"
+    },
+    {
+      "contract": "Accounts",
+      "label": "artistIdOf",
+      "offset": 0,
+      "slot": 6,
+      "type": "mapping(address => uint256)"
+    },
+    {
+      "contract": "Accounts",
+      "label": "reservedFor",
+      "offset": 0,
+      "slot": 7,
+      "type": "mapping(address => uint256)"
+    },
+    {
+      "contract": "Accounts",
+      "label": "consolidationSource",
+      "offset": 0,
+      "slot": 8,
+      "type": "contract IConsolidationSource"
+    },
+    {
+      "contract": "Accounts",
+      "label": "consolidationSourceCodeHash",
+      "offset": 0,
+      "slot": 9,
+      "type": "bytes32"
+    },
+    {
+      "contract": "Accounts",
+      "label": "packageRegistry",
+      "offset": 0,
+      "slot": 10,
+      "type": "address"
+    }
+  ]
+}

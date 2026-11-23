@@ -7,7 +7,7 @@ become lower-only) and adds to §10 (the lead artist may renounce powers over a 
 ## Context
 
 `WorkRecords` is 6529 Stream's records satellite. 6529 Stream binds it once
-(`Stream.bindWorkRecords` reverts with `AlreadyBound` after the first call), and 6529 Stream
+(`Stream6529.bindWorkRecords` reverts with `AlreadyBound` after the first call), and 6529 Stream
 Editions binds the same contract once; no contract in v1 is upgradeable. Whatever a work's
 record can do after launch is therefore fixed by the `WorkRecords` that launches. Two
 additions could only be made now:

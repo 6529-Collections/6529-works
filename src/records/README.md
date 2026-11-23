@@ -16,7 +16,7 @@ are under [Relayed artist statement](../../docs/spec/disputes-and-statements.md#
 | [`IStatementLog`](../interfaces/IStatementLog.sol) | `Role`, `Statement`, events, errors and the external surface. |
 | [`HashRef`](../interfaces/types/HashRef.sol) | The content hash type and the numbers of its well-known algorithm IDs; the log accepts any non-zero ID and never interprets it (DSP-2). |
 | [`StatementKinds`](../interfaces/types/StatementKinds.sol) | Well-known kind labels (constants only); three are reserved: `DISPUTE_OUTCOME`, `CURATION_EVIDENCE` and `GOVERNANCE_MANIFEST`. Five are convention kinds (content-change proposal and acceptance, catalogue entry, citation, custody attestation), accepted under every role, whose writers and schemas readers apply ([Declarations and conventions](../../docs/spec/declarations-and-conventions.md)). |
-| [`IArtistRoleResolver`](../interfaces/IArtistRoleResolver.sol) | The one question the log asks about ARTIST statements; `ArtistRegistry` implements it. |
+| [`IArtistRoleResolver`](../interfaces/IArtistRoleResolver.sol) | The one question the log asks about ARTIST statements; the accounts module (`Accounts`) implements it. |
 
 ## Entry points
 
@@ -48,15 +48,17 @@ events in [StatementLog events](../../docs/integrators/events-and-indexing.md#st
   and OWNER never consult it, which is the whole of the "no governance path to an artist
   statement" guarantee; keep it that way. The trust boundary for ARTIST entries is in
   [trust assumptions](../../docs/audit/trust-assumptions.md#resolvers-and-renderer-pins).
-- **Calls out** (ERC-165 probes, `ownerOf`, `balanceOf`, `coreOf`, ERC-1271) forward all gas
-  through `BoundedCall`'s forward-all family and copy at most 32 bytes (192 for `coreOf`); a
+- **Calls out** (ERC-165 probes, `ownerOf`, `balanceOf`, `itemHashOf`, ERC-1271) forward all
+  gas through `BoundedCall`'s forward-all family and copy at most 32 bytes (36 for `itemHashOf`,
+  so its revert can be read); a
   read that runs short reverts with `BoundedCallShortfall` (DSP-26). Only a full 32-byte
   `ownerOf` answer counts as ERC-721, anything else falls through to `balanceOf`.
   [`StatementLogOwnerRead.t.sol`](../../test/records/StatementLogOwnerRead.t.sol) covers real
   tokens and bombs; [`StatementLogGasRule.t.sol`](../../test/records/StatementLogGasRule.t.sol)
   stresses every call out at 1x to 100x its cost and short of gas.
-- **What the log needs from Stream:** ERC-165 `IStream`, `coreOf(uint256)` answering six static
-  words with the item hash first, and `IStream.UnknownWork(uint256)`. Nothing else.
+- **What the log needs from Stream:** ERC-165 `IStream` (`src/interfaces/core/IStream.sol`),
+  `itemHashOf(uint256)` answering one word, and OpenZeppelin's
+  `ERC721NonexistentToken(uint256)` for a burned or unminted token. Nothing else.
 - **Logs only:** every state change is reconstructible from `StatementAppended`,
   `StatementRelayed`, `NonceRevoked` and `ArtistResolverSet` without a call.
 - **Supersession is not checked on-chain** (one more write per entry); readers verify
@@ -65,11 +67,11 @@ events in [StatementLog events](../../docs/integrators/events-and-indexing.md#st
 - **Gas:** `test_Gas_PerAppend` in [`StatementLog.t.sol`](../../test/records/StatementLog.t.sol)
   prints each path's execution gas; the spec holds the gated figure.
 - **Bytecode:** wide margin; figures in the
-  [audit scope](../../docs/audit/scope.md#curation-identity-and-records).
+  [audit scope](../../docs/audit/scope.md#modules).
 - **Tests:** `forge test --match-path 'test/records/**'`: unit, policy, gas rule, golden vectors and a
   handler-based invariant suite whose model ([`StatementModel.sol`](../../test/records/StatementModel.sol))
   rebuilds hashes and heads from events. Dispute paths end to end:
-  [`Dispute.t.sol`](../../test/integration/Dispute.t.sol). Coverage and mutation testing:
+  `Dispute.t.sol`. Coverage and mutation testing:
   [Testing](../../docs/testing/README.md).
 
 ## See also

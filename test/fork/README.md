@@ -1,18 +1,18 @@
 # fork
 
-Tests against the real external systems v1 depends on, on a local fork of Ethereum mainnet or
-Sepolia. Nothing is broadcast: a fork is a local copy of the chain, so a test may write to it
-(register delegations, create a VRF subscription, deploy the whole system) without sending a
-transaction.
+Tests against the real external systems the plain-core stack depends on, on a local fork of
+Ethereum mainnet or Sepolia. Nothing is broadcast: a fork is a local copy of the chain, so a test
+may write to it (create Safes, register delegations, create a VRF subscription, deploy the whole
+system) without sending a transaction.
 
-They are opt-in. Without an RPC URL every test here is skipped and costs nothing, so the default
-`forge test` (and CI) never touches the network.
+They are opt-in. Without an RPC URL every suite skips in `setUp` (one skipped `setUp` per suite)
+and costs nothing, so the default `forge test` (and CI) never touches the network.
 
 | Variable | What it enables |
 | --- | --- |
-| `FORK_MAINNET_RPC` | The mainnet tests: the delegation contract, Permit2 and the Safe tests. |
-| `FORK_SEPOLIA_RPC` | The Sepolia tests: the delegation contract, Permit2, the VRF coordinator and the deploy simulation. |
-| `FORK_MAINNET_RPC_BLOCK`, `FORK_SEPOLIA_RPC_BLOCK` | Optional: the block to fork at (default: eight blocks behind the head, which every node behind a load-balanced public endpoint already serves). A pinned block lets Foundry cache the RPC reads between runs. |
+| `FORK_MAINNET_RPC` | The Safe suites and the delegation suite on mainnet. |
+| `FORK_SEPOLIA_RPC` | The delegation suite on Sepolia, the VRF suite and the deploy simulation. |
+| `FORK_MAINNET_RPC_BLOCK`, `FORK_SEPOLIA_RPC_BLOCK` | Optional: the block to fork at (default: eight blocks behind the head, which every node behind a load-balanced public endpoint already serves). |
 
 ```bash
 export FORK_MAINNET_RPC=https://ethereum-rpc.publicnode.com
@@ -21,29 +21,29 @@ forge test --match-path "test/fork/*" -vv
 ```
 
 PowerShell: `$env:FORK_SEPOLIA_RPC = "https://ethereum-sepolia-rpc.publicnode.com"`, and the same
-for `FORK_MAINNET_RPC`. publicnode serves no archive state, so a `_BLOCK` pin must be within about
-128 blocks of the head on its first run (Foundry's RPC cache serves later runs). Any archive-free RPC works; a public endpoint may rate-limit, so rerun a
-test that fails with an RPC error before reading anything into it. The whole directory takes
-about 20 seconds against the public endpoints.
+for `FORK_MAINNET_RPC`. Never commit an RPC URL. publicnode serves no archive state, so do not
+pin an old block: a `_BLOCK` pin must be within about 128 blocks of the head on its first run
+(Foundry's RPC cache serves later runs). Any archive-free RPC works; a public endpoint may
+rate-limit, so rerun a test that fails with an RPC error before reading anything into it. The
+whole directory takes about 15 seconds against the public endpoints, after compilation.
 
 ## What runs
 
-The system is deployed by the same deploy library as the integration tests
-([`WorksForkBase.sol`](WorksForkBase.sol) overrides only the external systems), against:
+Every suite but the deploy simulation deploys the system with the integration base
+([`../integration/CoreIntegrationBase.sol`](../integration/CoreIntegrationBase.sol): `DeployCore.deploy`,
+the committed genesis policy, `VerifyCore`); [`WorksForkBase.sol`](WorksForkBase.sol)
+(`CoreForkBase`) selects the fork, swaps the delegation mock for the chain's real contract and
+lets a suite put external accounts in place before the deployment.
 
 | File | Real dependency | What is checked |
 | --- | --- | --- |
-| [`DelegationFork.t.sol`](DelegationFork.t.sol) | The 6529 delegation contract (mainnet `0x2202CB9c00487e7e8EF21e6d8E914B32e709f43d`, Sepolia `0x8f86c644f845A077999939C69Bc787662377d915`), read through the deployed `ConsolidationAdapter` | Its code hash is the pinned one; a two-way consolidation counts from the later registration and is established 30 days later; one-way, specific-collection and expired registrations do not count; revocation ends it; a full bounded scan fits the read stipend; the integration mock answers as the real contract for the same history; and a consolidated wallet signs a recovery the artist registry executes. |
-| [`Permit2Fork.t.sol`](Permit2Fork.t.sol) | Canonical Permit2 (`0x000000000022D473030F116dDEE9F6B43aC78BA3`) | Its EIP-712 domain; relayed, witness-bound intents signed with test keys for an ERC-20 auction's start-with-bid and a later bid; an expired intent is refused. The digests are computed from the EIP-712 definitions, not from the integration mock. |
-| [`VrfFork.t.sol`](VrfFork.t.sol) | Chainlink VRF v2.5 coordinator on Sepolia (`0x9DdfaCa8183c41ad55329BdeeD9F6A8d53168B1B`) | The code hash sepolia-r3 pinned; a new native-funded subscription with the entropy module as consumer; `requestSeed` reaches the coordinator, which logs the request with r3's gas lane, confirmations and callback gas; a simulated fulfilment (the real one needs the oracle's VRF proof) delivered within the callback gas lets the VRF work start and its seed render; nobody but the coordinator fulfils. |
-| [`DeploySimulationFork.t.sol`](DeploySimulationFork.t.sol) | Everything `Deploy.s.sol` touches on Sepolia | The full deploy script with sepolia-r3's inputs (its accounts on the committed policy, fee recipient, marketplace owner, VRF gas lane and limits, epoch-0 manifest; r3's fee Safe as the museum, which r3 predates; a new VRF subscription, as the runbook creates for each deployment) under a fresh namespace: every off-anvil guard passes against the live Safes and dependencies (the Safe singleton, module and guard checks included), and `Verify.s.sol` confirms the simulated deployment five days later, once the new entropy module is its subscription's only consumer. |
-| [`SafeNetwork.t.sol`](SafeNetwork.t.sol), [`SafeAccounts.t.sol`](SafeAccounts.t.sol) (base [`SafeForkBase.sol`](SafeForkBase.sol)) | Safe v1.4.1 (singleton, proxy factory, `MultiSendCallOnly`, `CompatibilityFallbackHandler`), code-hash pinned | The network as a 2-of-3 Safe: genesis acceptance by a Safe transaction, delayed setters scheduled and executed through the manager in MultiSend batches, a stale revision reverting the whole batch, the no-delay signer kill, unpause, the brake, handover to a second Safe. A Safe as an artist wallet signing wallet-prefixed ERC-1271 proofs (acceptance, move, royalty consent), a relayed statement and a signed release, invalidated by an owner swap. A Safe as payee, bidder and 721/1155 receiver, museum and fee destination. |
+| [`SafeNetwork.t.sol`](SafeNetwork.t.sol) (base [`SafeForkBase.sol`](SafeForkBase.sol)) | Safe v1.4.1 singleton, proxy factory, `MultiSendCallOnly`, `CompatibilityFallbackHandler` at their canonical addresses, code-hash pinned | The network as a 2-of-3 Safe governing the deployed stack by Safe transactions: it proposes a module and anyone activates it once `moduleDelay()` has passed; it removes the English auction as a minter at once and rescues the unsold work it held once `rescueDelay()` has passed; it changes three settings in one MultiSend batch, and a batch with one failing call changes nothing; it schedules and executes a 3-day setter through the manager; it hands the network to a second Safe, which accepts by a Safe transaction. Planted faults: one signature of three ("GS020") and an owner key calling the core directly are refused. |
+| [`SafeAccounts.t.sol`](SafeAccounts.t.sol) | The same Safe contracts | A Safe as an artist's account signing ERC-1271 proofs: package acceptance (which creates the account), the move that starts the work, and consent to a royalty-rate change the network Safe executes through the manager; a proof below the threshold or by non-owners is refused. The artist Safe releases its share by a Safe transaction (nobody else can) and by a relayed signed release, which stops verifying after an owner swap. A Safe bids, is credited when outbid, claims, wins and receives the 721 within the auction's delivery gas. The fee and museum vaults forward ETH and an unbid work to their Safes. |
+| [`SafeCoreNetwork.t.sol`](SafeCoreNetwork.t.sol) | Safe v1.4.1 singleton, proxy factory and fallback handler | `CoreNetworkFlows` (the permanent contracts with stand-in modules, `test/deploy/CoreDeployFixture.sol`) with a 2-of-3 Safe as the network: the module, minter, rescue, rebind and unclaimed-period waits read from the contracts. The same flows run without a fork in `test/governance/CoreNetwork.t.sol`. |
+| [`DelegationFork.t.sol`](DelegationFork.t.sol) | The 6529 delegation contract (mainnet `0x2202CB9c00487e7e8EF21e6d8E914B32e709f43d`, Sepolia `0x8f86c644f845A077999939C69Bc787662377d915`), read through the deployed `ConsolidationAdapter` and `Accounts` | Its code hash is the pinned one; a two-way, all-collections consolidation counts at once; one-way, specific-collection and expired registrations do not; revocation ends it; the read stops after `MAX_REGISTRATIONS_READ` registrations per direction; the integration mock answers as the real contract for the same history; a consolidated wallet signs the artist's move and moves the account's root to itself. |
+| [`VrfFork.t.sol`](VrfFork.t.sol) | Chainlink VRF v2.5 coordinator on Sepolia (`0x9DdfaCa8183c41ad55329BdeeD9F6A8d53168B1B`) | The code hash sepolia-r3 pinned; a new native-funded subscription with the deployed entropy module as its only consumer; `requestSeed` reaches the coordinator, which logs it with the Sepolia gas lane, confirmations and callback gas; a simulated fulfilment (the real one needs the oracle's VRF proof) within the callback gas lets the VRF work start, and the work carries and renders its seed; nobody but the coordinator fulfils. |
+| [`DeploySimulationFork.t.sol`](DeploySimulationFork.t.sol) | Everything `script/DeployCore.s.sol` touches on Sepolia | The deploy script run with sepolia-r5's public inputs (its live network Safe and holder keys on the committed policy, fee recipient, marketplace owner, museum, the VRF gas lane, the epoch-0 manifest; a new VRF subscription) under a fresh namespace: every off-anvil guard passes against the live accounts (the RPC's chain ID, the network a bare canonical Safe, the holders, the committed policy, no holder a deployment contract) and the readback passes; the committed example is refused off anvil; once the entropy module is its subscription's only consumer the subscription guard passes, and once r5's Safe accepts the whole governance configuration reads back. |
 
-The Sepolia inputs are those of r3 (r4, deployed on 1 November 2026, now supersedes it; r4 shares
-r3's holders)
-([deployment record](../../deployments/11155111/README.md#sepolia-r3-15-october-2026-superseded-by-r4)).
-The simulation uses the committed example with r3's accounts, as a new rehearsal would (r3's
-hot admin Safe as the network, its guardian Safes as the pausers, its keys), so it follows the
-committed policy as it changes; the proposed network accepts before Verify runs. r3's own
-`config/sepolia-r3/genesis.json` predates the single network address and is no longer a valid
-genesis; `test_TheR3SafesPassTheHolderGuards` checks r3's live Safes through the example.
+The genesis acceptance in the Safe suites is the integration base's (`acceptNetwork` from the
+Safe's address); the handover test shows an acceptance by a Safe transaction. The deploy
+simulation's acceptance is a prank of r5's Safe, whose keys the test does not hold.

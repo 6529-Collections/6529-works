@@ -1,0 +1,1785 @@
+[
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "authority_",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "stream_",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "owner_",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "terms_",
+        "type": "address"
+      },
+      {
+        "internalType": "address[]",
+        "name": "minters_",
+        "type": "address[]"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "constructor"
+  },
+  {
+    "id": "0xc2f31e5e",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "authority",
+        "type": "address"
+      }
+    ],
+    "name": "AccessManagedInvalidAuthority",
+    "signature": "AccessManagedInvalidAuthority(address)",
+    "type": "error"
+  },
+  {
+    "id": "0xaf77169d",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "caller",
+        "type": "address"
+      },
+      {
+        "internalType": "uint32",
+        "name": "delay",
+        "type": "uint32"
+      }
+    ],
+    "name": "AccessManagedRequiredDelay",
+    "signature": "AccessManagedRequiredDelay(address,uint32)",
+    "type": "error"
+  },
+  {
+    "id": "0x068ca9d8",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "caller",
+        "type": "address"
+      }
+    ],
+    "name": "AccessManagedUnauthorized",
+    "signature": "AccessManagedUnauthorized(address)",
+    "type": "error"
+  },
+  {
+    "id": "0x03dee4c5",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "sender",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "balance",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "needed",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      }
+    ],
+    "name": "ERC1155InsufficientBalance",
+    "signature": "ERC1155InsufficientBalance(address,uint256,uint256,uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0x3e31884e",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "approver",
+        "type": "address"
+      }
+    ],
+    "name": "ERC1155InvalidApprover",
+    "signature": "ERC1155InvalidApprover(address)",
+    "type": "error"
+  },
+  {
+    "id": "0x5b059991",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "idsLength",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "valuesLength",
+        "type": "uint256"
+      }
+    ],
+    "name": "ERC1155InvalidArrayLength",
+    "signature": "ERC1155InvalidArrayLength(uint256,uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0xced3e100",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "operator",
+        "type": "address"
+      }
+    ],
+    "name": "ERC1155InvalidOperator",
+    "signature": "ERC1155InvalidOperator(address)",
+    "type": "error"
+  },
+  {
+    "id": "0x57f447ce",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "receiver",
+        "type": "address"
+      }
+    ],
+    "name": "ERC1155InvalidReceiver",
+    "signature": "ERC1155InvalidReceiver(address)",
+    "type": "error"
+  },
+  {
+    "id": "0x01a83514",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "sender",
+        "type": "address"
+      }
+    ],
+    "name": "ERC1155InvalidSender",
+    "signature": "ERC1155InvalidSender(address)",
+    "type": "error"
+  },
+  {
+    "id": "0xe237d922",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "operator",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "owner",
+        "type": "address"
+      }
+    ],
+    "name": "ERC1155MissingApprovalForAll",
+    "signature": "ERC1155MissingApprovalForAll(address,address)",
+    "type": "error"
+  },
+  {
+    "id": "0x65110ca2",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "editionId",
+        "type": "uint256"
+      }
+    ],
+    "name": "EditionExists",
+    "signature": "EditionExists(uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0xb927fe5e",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "module",
+        "type": "address"
+      }
+    ],
+    "name": "InvalidModule",
+    "signature": "InvalidModule(address)",
+    "type": "error"
+  },
+  {
+    "id": "0xe0e54ced",
+    "inputs": [],
+    "name": "InvalidRoyalty",
+    "signature": "InvalidRoyalty()",
+    "type": "error"
+  },
+  {
+    "id": "0x4057cb7b",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "editionId",
+        "type": "uint256"
+      }
+    ],
+    "name": "InvalidSeal",
+    "signature": "InvalidSeal(uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0xb62f9df0",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "minter",
+        "type": "address"
+      }
+    ],
+    "name": "MinterAlreadyAdded",
+    "signature": "MinterAlreadyAdded(address)",
+    "type": "error"
+  },
+  {
+    "id": "0xa99c3931",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "slot",
+        "type": "bytes32"
+      }
+    ],
+    "name": "ModuleNotReady",
+    "signature": "ModuleNotReady(bytes32)",
+    "type": "error"
+  },
+  {
+    "id": "0xfa15af4f",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "editionId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "caller",
+        "type": "address"
+      }
+    ],
+    "name": "NotEditionMinter",
+    "signature": "NotEditionMinter(uint256,address)",
+    "type": "error"
+  },
+  {
+    "id": "0x0d805cec",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "caller",
+        "type": "address"
+      }
+    ],
+    "name": "NotMetadataSource",
+    "signature": "NotMetadataSource(address)",
+    "type": "error"
+  },
+  {
+    "id": "0x361c31f2",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "caller",
+        "type": "address"
+      }
+    ],
+    "name": "NotMinter",
+    "signature": "NotMinter(address)",
+    "type": "error"
+  },
+  {
+    "id": "0x40343cbc",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "slot",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "address",
+        "name": "caller",
+        "type": "address"
+      }
+    ],
+    "name": "NotModule",
+    "signature": "NotModule(bytes32,address)",
+    "type": "error"
+  },
+  {
+    "id": "0xfacbf8d8",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "editionId",
+        "type": "uint256"
+      }
+    ],
+    "name": "NotRebindable",
+    "signature": "NotRebindable(uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0xee322b24",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "editionId",
+        "type": "uint256"
+      }
+    ],
+    "name": "SupplyExceeded",
+    "signature": "SupplyExceeded(uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0xba008b3a",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "editionId",
+        "type": "uint256"
+      }
+    ],
+    "name": "UnknownEdition",
+    "signature": "UnknownEdition(uint256)",
+    "type": "error"
+  },
+  {
+    "anonymous": false,
+    "id": "0x17307eab39ab6107e8899845ad3d59bd9653f200f220920489ca2b5937696c31",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "operator",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "bool",
+        "name": "approved",
+        "type": "bool"
+      }
+    ],
+    "name": "ApprovalForAll",
+    "signature": "ApprovalForAll(address,address,bool)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x2f658b440c35314f52658ea8a740e05b284cdc84dc9ae01e891f21b8933e7cad",
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "authority",
+        "type": "address"
+      }
+    ],
+    "name": "AuthorityUpdated",
+    "signature": "AuthorityUpdated(address)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x6bd5c950a8d8df17f772f5af37cb3655737899cbf903264b9795592da439661c",
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "_fromTokenId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "_toTokenId",
+        "type": "uint256"
+      }
+    ],
+    "name": "BatchMetadataUpdate",
+    "signature": "BatchMetadataUpdate(uint256,uint256)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0xaf497693a87db12ca89131a31edbb3db4bb5702dfb284e8ae7427d185f09112d",
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "string",
+        "name": "uri",
+        "type": "string"
+      }
+    ],
+    "name": "ContractURISet",
+    "signature": "ContractURISet(string)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0xa5d4097edda6d87cb9329af83fb3712ef77eeb13738ffe43cc35a4ce305ad962",
+    "inputs": [],
+    "name": "ContractURIUpdated",
+    "signature": "ContractURIUpdated()",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0xaf291dbb8a8a6559eeef23b8207c336a6a43ed327b858d04a4bd0968a811a571",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "editionId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "minter",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint40",
+        "name": "maxSupply",
+        "type": "uint40"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "royaltyReceiver",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint24",
+        "name": "royaltyRate",
+        "type": "uint24"
+      }
+    ],
+    "name": "EditionCreated",
+    "signature": "EditionCreated(uint256,address,uint40,address,uint24)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x2525f1c59f45d123089be811400f55744de110480bc112beb610091b3e19b98b",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "editionId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "to",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "unitPrice",
+        "type": "uint256"
+      }
+    ],
+    "name": "EditionMinted",
+    "signature": "EditionMinted(uint256,address,uint256,uint256)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0xfae5f534a1d8ad1378852156c102769f74d5ce61652202e83af9c953e71d93cd",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "editionId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "previous",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "minter",
+        "type": "address"
+      }
+    ],
+    "name": "EditionRebound",
+    "signature": "EditionRebound(uint256,address,address)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0xbf26eb1fb29573bf3ae0bba9e4607e51bbe158ec8720aaee88bc9f1d83abf356",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "editionId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "supply",
+        "type": "uint256"
+      }
+    ],
+    "name": "EditionSupplySealed",
+    "signature": "EditionSupplySealed(uint256,uint256)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0xf8e1a15aba9398e019f0b49df1a4fde98ee17ae345cb5f6b5e2c27f5033e8ce7",
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "_tokenId",
+        "type": "uint256"
+      }
+    ],
+    "name": "MetadataUpdate",
+    "signature": "MetadataUpdate(uint256)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x496a0c955fc4acb0b3d3d396b62936b1d5b09ee24a0c387ac3117741a399a128",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "minter",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint48",
+        "name": "activeFrom",
+        "type": "uint48"
+      }
+    ],
+    "name": "MinterAdded",
+    "signature": "MinterAdded(address,uint48)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0xe94479a9f7e1952cc78f2d6baab678adc1b772d936c6583def489e524cb66692",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "minter",
+        "type": "address"
+      }
+    ],
+    "name": "MinterRemoved",
+    "signature": "MinterRemoved(address)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x6b8f46d9597b968fcb30ee50c0b8aa793ded8aa3313c850d0458ae17c3c98b16",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "slot",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "module",
+        "type": "address"
+      }
+    ],
+    "name": "ModuleCancelled",
+    "signature": "ModuleCancelled(bytes32,address)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x4269f60ea01fb342018e13abcba2ff1e41cf055d5d3fca5a8c044196a0b48662",
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "uint48",
+        "name": "previous",
+        "type": "uint48"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint48",
+        "name": "next",
+        "type": "uint48"
+      }
+    ],
+    "name": "ModuleDelaySet",
+    "signature": "ModuleDelaySet(uint48,uint48)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x230c42ee34613ec831fa45f3254d06dd923ae04ee5ddbeb6dc9c371f516aaf8c",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "slot",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "module",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint48",
+        "name": "readyAt",
+        "type": "uint48"
+      }
+    ],
+    "name": "ModuleProposed",
+    "signature": "ModuleProposed(bytes32,address,uint48)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x805f6cfd1882ecfb5ba14cc1b701b7242cf95893badde12b29ffd0236bef0422",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "slot",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "previous",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "module",
+        "type": "address"
+      }
+    ],
+    "name": "ModuleSet",
+    "signature": "ModuleSet(bytes32,address,address)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e0",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "previousOwner",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "newOwner",
+        "type": "address"
+      }
+    ],
+    "name": "OwnershipTransferred",
+    "signature": "OwnershipTransferred(address,address)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0xf0258e3cf75e4109d4976fba77ef26ac166571b541f608b43cf1d5ce4a3fc655",
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "uint48",
+        "name": "previous",
+        "type": "uint48"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint48",
+        "name": "next",
+        "type": "uint48"
+      }
+    ],
+    "name": "RebindDelaySet",
+    "signature": "RebindDelaySet(uint48,uint48)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x95019fbde998daec25616fe98bcbb03ae176b511150b8c5930d4c0b1c287f5df",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "editionId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "receiver",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint24",
+        "name": "rate",
+        "type": "uint24"
+      }
+    ],
+    "name": "RoyaltySet",
+    "signature": "RoyaltySet(uint256,address,uint24)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x4a39dc06d4c0dbc64b70af90fd698a233a518aa5d07e595d983b8c0526c8f7fb",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "operator",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "from",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "to",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256[]",
+        "name": "ids",
+        "type": "uint256[]"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256[]",
+        "name": "values",
+        "type": "uint256[]"
+      }
+    ],
+    "name": "TransferBatch",
+    "signature": "TransferBatch(address,address,address,uint256[],uint256[])",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0xc3d58168c5ae7397731d063d5bbf3d657854427343f4c083240f7aacaa2d0f62",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "operator",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "from",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "to",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "id",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "value",
+        "type": "uint256"
+      }
+    ],
+    "name": "TransferSingle",
+    "signature": "TransferSingle(address,address,address,uint256,uint256)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0x6bb7ff708619ba0610cba295a58592e0451dee2622938c8755667688daf3529b",
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "string",
+        "name": "value",
+        "type": "string"
+      },
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "id",
+        "type": "uint256"
+      }
+    ],
+    "name": "URI",
+    "signature": "URI(string,uint256)",
+    "type": "event"
+  },
+  {
+    "id": "0x84f7a864",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "slot",
+        "type": "bytes32"
+      }
+    ],
+    "name": "activateModule",
+    "outputs": [],
+    "signature": "activateModule(bytes32)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x983b2d56",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "minter",
+        "type": "address"
+      }
+    ],
+    "name": "addMinter",
+    "outputs": [],
+    "signature": "addMinter(address)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0xbf7e214f",
+    "inputs": [],
+    "name": "authority",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "authority()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x00fdd58e",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "id",
+        "type": "uint256"
+      }
+    ],
+    "name": "balanceOf",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "signature": "balanceOf(address,uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x4e1273f4",
+    "inputs": [
+      {
+        "internalType": "address[]",
+        "name": "accounts",
+        "type": "address[]"
+      },
+      {
+        "internalType": "uint256[]",
+        "name": "ids",
+        "type": "uint256[]"
+      }
+    ],
+    "name": "balanceOfBatch",
+    "outputs": [
+      {
+        "internalType": "uint256[]",
+        "name": "",
+        "type": "uint256[]"
+      }
+    ],
+    "signature": "balanceOfBatch(address[],uint256[])",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xb390c0ab",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "editionId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      }
+    ],
+    "name": "burn",
+    "outputs": [],
+    "signature": "burn(uint256,uint256)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0xfbcfb93b",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "slot",
+        "type": "bytes32"
+      }
+    ],
+    "name": "cancelModule",
+    "outputs": [],
+    "signature": "cancelModule(bytes32)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0xe8a3d485",
+    "inputs": [],
+    "name": "contractURI",
+    "outputs": [
+      {
+        "internalType": "string",
+        "name": "",
+        "type": "string"
+      }
+    ],
+    "signature": "contractURI()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x4b812bfa",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "editionId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint40",
+        "name": "maxSupply",
+        "type": "uint40"
+      },
+      {
+        "internalType": "address",
+        "name": "royaltyReceiver",
+        "type": "address"
+      },
+      {
+        "internalType": "uint24",
+        "name": "royaltyRate",
+        "type": "uint24"
+      }
+    ],
+    "name": "create",
+    "outputs": [],
+    "signature": "create(uint256,uint40,address,uint24)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x4be185f0",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "editionId",
+        "type": "uint256"
+      }
+    ],
+    "name": "editionOf",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "minter",
+            "type": "address"
+          },
+          {
+            "internalType": "uint40",
+            "name": "maxSupply",
+            "type": "uint40"
+          },
+          {
+            "internalType": "uint40",
+            "name": "minted",
+            "type": "uint40"
+          },
+          {
+            "internalType": "bool",
+            "name": "supplySealed",
+            "type": "bool"
+          },
+          {
+            "internalType": "address",
+            "name": "royaltyReceiver",
+            "type": "address"
+          },
+          {
+            "internalType": "uint24",
+            "name": "royaltyRate",
+            "type": "uint24"
+          }
+        ],
+        "internalType": "struct Edition",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "signature": "editionOf(uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x98c9a243",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "fromEditionId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "toEditionId",
+        "type": "uint256"
+      }
+    ],
+    "name": "emitMetadataUpdate",
+    "outputs": [],
+    "signature": "emitMetadataUpdate(uint256,uint256)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0xe985e9c5",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "operator",
+        "type": "address"
+      }
+    ],
+    "name": "isApprovedForAll",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "signature": "isApprovedForAll(address,address)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x8fb36037",
+    "inputs": [],
+    "name": "isConsumingScheduledOp",
+    "outputs": [
+      {
+        "internalType": "bytes4",
+        "name": "",
+        "type": "bytes4"
+      }
+    ],
+    "signature": "isConsumingScheduledOp()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xaa271e1a",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "isMinter",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "signature": "isMinter(address)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xa647e8ec",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "to",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "editionId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "unitPrice",
+        "type": "uint256"
+      }
+    ],
+    "name": "mint",
+    "outputs": [],
+    "signature": "mint(address,uint256,uint256,uint256)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x71baa92f",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "minter",
+        "type": "address"
+      }
+    ],
+    "name": "minterOf",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint48",
+            "name": "activeFrom",
+            "type": "uint48"
+          },
+          {
+            "internalType": "uint48",
+            "name": "removedAt",
+            "type": "uint48"
+          },
+          {
+            "internalType": "uint48",
+            "name": "firstActiveFrom",
+            "type": "uint48"
+          }
+        ],
+        "internalType": "struct Minter",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "signature": "minterOf(address)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x131b7800",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "minterRemovedAt",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "signature": "minterRemovedAt(address)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xa2e68a27",
+    "inputs": [],
+    "name": "moduleDelay",
+    "outputs": [
+      {
+        "internalType": "uint48",
+        "name": "",
+        "type": "uint48"
+      }
+    ],
+    "signature": "moduleDelay()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x31b4a958",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "slot",
+        "type": "bytes32"
+      }
+    ],
+    "name": "moduleOf",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "moduleOf(bytes32)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x06fdde03",
+    "inputs": [],
+    "name": "name",
+    "outputs": [
+      {
+        "internalType": "string",
+        "name": "",
+        "type": "string"
+      }
+    ],
+    "signature": "name()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x8da5cb5b",
+    "inputs": [],
+    "name": "owner",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "owner()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0xaf085433",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "slot",
+        "type": "bytes32"
+      }
+    ],
+    "name": "pendingModule",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "module",
+            "type": "address"
+          },
+          {
+            "internalType": "uint48",
+            "name": "readyAt",
+            "type": "uint48"
+          }
+        ],
+        "internalType": "struct PendingModule",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "signature": "pendingModule(bytes32)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x09ea14aa",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "slot",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "address",
+        "name": "module",
+        "type": "address"
+      }
+    ],
+    "name": "proposeModule",
+    "outputs": [],
+    "signature": "proposeModule(bytes32,address)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x89e09f12",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "editionId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "minter",
+        "type": "address"
+      }
+    ],
+    "name": "rebind",
+    "outputs": [],
+    "signature": "rebind(uint256,address)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x7a16da2e",
+    "inputs": [],
+    "name": "rebindDelay",
+    "outputs": [
+      {
+        "internalType": "uint48",
+        "name": "",
+        "type": "uint48"
+      }
+    ],
+    "signature": "rebindDelay()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x3092afd5",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "minter",
+        "type": "address"
+      }
+    ],
+    "name": "removeMinter",
+    "outputs": [],
+    "signature": "removeMinter(address)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x4114509b",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "slot",
+        "type": "bytes32"
+      }
+    ],
+    "name": "removeModule",
+    "outputs": [],
+    "signature": "removeModule(bytes32)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x2a55205a",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "salePrice",
+        "type": "uint256"
+      }
+    ],
+    "name": "royaltyInfo",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "receiver",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "royaltyAmount",
+        "type": "uint256"
+      }
+    ],
+    "signature": "royaltyInfo(uint256,uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x2eb2c2d6",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "from",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "to",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256[]",
+        "name": "ids",
+        "type": "uint256[]"
+      },
+      {
+        "internalType": "uint256[]",
+        "name": "values",
+        "type": "uint256[]"
+      },
+      {
+        "internalType": "bytes",
+        "name": "data",
+        "type": "bytes"
+      }
+    ],
+    "name": "safeBatchTransferFrom",
+    "outputs": [],
+    "signature": "safeBatchTransferFrom(address,address,uint256[],uint256[],bytes)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0xf242432a",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "from",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "to",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "id",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "value",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes",
+        "name": "data",
+        "type": "bytes"
+      }
+    ],
+    "name": "safeTransferFrom",
+    "outputs": [],
+    "signature": "safeTransferFrom(address,address,uint256,uint256,bytes)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x44cbb7a3",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "editionId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint40",
+        "name": "supply",
+        "type": "uint40"
+      }
+    ],
+    "name": "seal",
+    "outputs": [],
+    "signature": "seal(uint256,uint40)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0xa22cb465",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "operator",
+        "type": "address"
+      },
+      {
+        "internalType": "bool",
+        "name": "approved",
+        "type": "bool"
+      }
+    ],
+    "name": "setApprovalForAll",
+    "outputs": [],
+    "signature": "setApprovalForAll(address,bool)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x7a9e5e4b",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "newAuthority",
+        "type": "address"
+      }
+    ],
+    "name": "setAuthority",
+    "outputs": [],
+    "signature": "setAuthority(address)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x938e3d7b",
+    "inputs": [
+      {
+        "internalType": "string",
+        "name": "uri_",
+        "type": "string"
+      }
+    ],
+    "name": "setContractURI",
+    "outputs": [],
+    "signature": "setContractURI(string)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x6cb67613",
+    "inputs": [
+      {
+        "internalType": "uint48",
+        "name": "next",
+        "type": "uint48"
+      }
+    ],
+    "name": "setModuleDelay",
+    "outputs": [],
+    "signature": "setModuleDelay(uint48)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x13af4035",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "next",
+        "type": "address"
+      }
+    ],
+    "name": "setOwner",
+    "outputs": [],
+    "signature": "setOwner(address)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0xf39ce910",
+    "inputs": [
+      {
+        "internalType": "uint48",
+        "name": "next",
+        "type": "uint48"
+      }
+    ],
+    "name": "setRebindDelay",
+    "outputs": [],
+    "signature": "setRebindDelay(uint48)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0xe4139bb8",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "editionId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "receiver",
+        "type": "address"
+      },
+      {
+        "internalType": "uint24",
+        "name": "rate",
+        "type": "uint24"
+      }
+    ],
+    "name": "setRoyalty",
+    "outputs": [],
+    "signature": "setRoyalty(uint256,address,uint24)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "id": "0x6f2a6791",
+    "inputs": [],
+    "name": "stream",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "stream()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x01ffc9a7",
+    "inputs": [
+      {
+        "internalType": "bytes4",
+        "name": "interfaceId",
+        "type": "bytes4"
+      }
+    ],
+    "name": "supportsInterface",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "signature": "supportsInterface(bytes4)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x95d89b41",
+    "inputs": [],
+    "name": "symbol",
+    "outputs": [
+      {
+        "internalType": "string",
+        "name": "",
+        "type": "string"
+      }
+    ],
+    "signature": "symbol()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x0e89341c",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "editionId",
+        "type": "uint256"
+      }
+    ],
+    "name": "uri",
+    "outputs": [
+      {
+        "internalType": "string",
+        "name": "",
+        "type": "string"
+      }
+    ],
+    "signature": "uri(uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  }
+]

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 import { ISplitWallet } from "./interfaces/ISplitWallet.sol";
 
@@ -62,6 +62,28 @@ library Splits {
         // Exact: the remainder term restores what the first division drops.
         // forge-lint: disable-next-line(divide-before-multiply)
         return (observed / DENOMINATOR) * share + (observed % DENOMINATOR) * share / DENOMINATOR;
+    }
+
+    /// @notice Where the fixed payee `account` stands in a canonical payee list: the first index
+    ///         whose `(artistId, account)` is not below `(0, account)`, so the payee is there if
+    ///         it is in the list at all; `payees.length` when every payee is below it.
+    /// @dev A plain binary search over the list, which `validate` keeps strictly ascending by
+    ///      `(artistId, account)` with fixed payees (artist ID zero) first: at most seven reads
+    ///      for {MAX_PAYEES} payees.
+    /// @param payees A canonical payee list.
+    /// @param account The fixed payee looked for.
+    /// @return low The index.
+    function lowerBound(ISplitWallet.Payee[] calldata payees, address account)
+        internal
+        pure
+        returns (uint256 low)
+    {
+        uint256 high = payees.length;
+        while (low < high) {
+            uint256 mid = (low + high) / 2;
+            if (payees[mid].artistId == 0 && payees[mid].account < account) low = mid + 1;
+            else high = mid;
+        }
     }
 
     /// @notice The canonical payee list of a work's royalty wallet (ADR 0001 section 7): the

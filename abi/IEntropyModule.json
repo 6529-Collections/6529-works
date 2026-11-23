@@ -25,7 +25,7 @@
         "type": "bytes32"
       }
     ],
-    "name": "federatedSeedOf",
+    "name": "independentSeedOf",
     "outputs": [
       {
         "internalType": "bool",
@@ -234,7 +234,7 @@
         "type": "tuple"
       }
     ],
-    "name": "requestFederatedSeed",
+    "name": "requestIndependentSeed",
     "outputs": [
       {
         "internalType": "uint256",
@@ -586,7 +586,7 @@
         "type": "uint256"
       }
     ],
-    "name": "FederatedSeedRequested",
+    "name": "IndependentSeedRequested",
     "type": "event"
   },
   {
@@ -756,6 +756,17 @@
       }
     ],
     "name": "OnlyCoordinatorCanFulfill",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "to",
+        "type": "address"
+      }
+    ],
+    "name": "RefundFailed",
     "type": "error"
   },
   {

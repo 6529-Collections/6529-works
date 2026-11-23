@@ -3,25 +3,29 @@ pragma solidity ^0.8.24;
 
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import { Vm } from "forge-std/Vm.sol";
+import { DeployCore } from "script/DeployCore.sol";
 import { VrfEntropyModule } from "src/entropy/VrfEntropyModule.sol";
+import { IEntropyModule } from "src/interfaces/IEntropyModule.sol";
 import { SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
-import { DeployV1 } from "script/DeployV1.sol";
-import { IVrfSubscriptions, WorksForkBase } from "./WorksForkBase.sol";
-import { IEntropyModule } from "src/interfaces/IEntropyModule.sol";
+import { CoreForkBase, IVrfSubscriptions } from "./WorksForkBase.sol";
 
-/// @notice The entropy module against the real Chainlink VRF v2.5 coordinator on a Sepolia
-///         fork: a funded subscription with the module as its consumer, a seed request that the
-///         coordinator accepts and logs with sepolia-r3's gas lane and limits, then a simulated
-///         fulfilment (the coordinator's own fulfilment needs the oracle's VRF proof) delivered
-///         within the configured callback gas, after which the VRF work starts and renders its
-///         seed.
-contract VrfSepoliaForkTest is WorksForkBase {
-    /// @dev The VRF v2.5 coordinator on Sepolia, and the code hash sepolia-r3 pinned.
+/// @notice The entropy module `DeployCore` deploys, against the real Chainlink VRF v2.5
+///         coordinator on a Sepolia fork: a new native-funded subscription with the module as
+///         its only consumer; a seed request that the coordinator accepts and logs with the
+///         Sepolia gas lane, confirmations and callback gas; a simulated fulfilment (the
+///         coordinator's own needs the oracle's VRF proof) delivered within the callback gas,
+///         after which the VRF work starts and carries and renders its seed; nobody but the
+///         coordinator fulfils.
+/// @dev Gated by `FORK_SEPOLIA_RPC` (see `CoreForkBase`).
+contract VrfSepoliaForkTest is CoreForkBase {
+    /// @dev The VRF v2.5 coordinator on Sepolia (the rehearsals' `VRF_COORDINATOR`), and the
+    ///      runtime code hash sepolia-r3 pinned.
     address internal constant VRF_COORDINATOR = 0x9DdfaCa8183c41ad55329BdeeD9F6A8d53168B1B;
     bytes32 internal constant R3_COORDINATOR_CODEHASH =
         0x5e22d4163e7c1b059a946f0600759a4d38eb3e04592d0e359def022cec36bdbc;
-    /// @dev sepolia-r3's gas lane, callback gas limit and confirmations (its deployment record).
+    /// @dev The Sepolia gas lane the rehearsals use (`config/sepolia-r5/deploy.env`), and the
+    ///      deploy script's default callback gas and confirmations.
     bytes32 internal constant KEY_HASH =
         0x787d74caea10b2b357790d5b5247c2f63d1d91572a9846f780606e4d953677ae;
     uint32 internal constant CALLBACK_GAS = 200_000;
@@ -40,8 +44,13 @@ contract VrfSepoliaForkTest is WorksForkBase {
         return SEPOLIA;
     }
 
+    function _withVrf() internal pure override returns (bool) {
+        return true;
+    }
+
     /// @dev A new subscription, funded in native ETH, before the deployment pins its ID.
-    function _realCoordinator() internal override returns (address) {
+    function _beforeDeploy() internal override {
+        assertEq(VRF_COORDINATOR.codehash, R3_COORDINATOR_CODEHASH, "the coordinator's code");
         vm.deal(subscriptionOwner, 10 ether);
         vm.startPrank(subscriptionOwner);
         subscriptionId = IVrfSubscriptions(VRF_COORDINATOR).createSubscription();
@@ -49,18 +58,18 @@ contract VrfSepoliaForkTest is WorksForkBase {
             subscriptionId
         );
         vm.stopPrank();
-        return VRF_COORDINATOR;
     }
 
-    function _params() internal view override returns (DeployV1.Params memory p) {
+    function _params() internal view override returns (DeployCore.Params memory p) {
         p = super._params();
+        p.vrfCoordinator = VRF_COORDINATOR;
+        p.vrfCoordinatorCodeHash = VRF_COORDINATOR.codehash;
         p.vrf =
             VrfEntropyModule.VrfConfig(subscriptionId, KEY_HASH, CALLBACK_GAS, CONFIRMATIONS, true);
     }
 
     function setUp() public override {
         super.setUp();
-        if (!forked) return;
         vm.prank(subscriptionOwner);
         IVrfSubscriptions(VRF_COORDINATOR).addConsumer(subscriptionId, address(entropy));
         artist = _actor("forkVrfArtist");
@@ -70,27 +79,32 @@ contract VrfSepoliaForkTest is WorksForkBase {
         _keep(root, _one(w));
     }
 
-    function test_TheCoordinatorIsTheOneR3Pinned() public onFork {
+    function test_Vrf_TheModuleUsesTheSepoliaCoordinator() public view {
         assertEq(entropy.coordinator(), VRF_COORDINATOR);
-        assertEq(VRF_COORDINATOR.codehash, R3_COORDINATOR_CODEHASH, "the coordinator's code");
-    }
-
-    /// @dev The request reaches the coordinator, which records it against the subscription and
-    ///      logs it for the oracle with the module's gas lane and limits; a fulfilment delivered
-    ///      within the callback gas then lets the auction start, and the seed renders.
-    function test_RequestReachesTheCoordinatorAndAFulfilmentStartsTheWork() public onFork {
-        Work[] memory works = _package(root);
-        bytes32 itemHash = WorksHashing.itemHash(works[0].item);
-        vm.recordLogs();
-        uint256 requestId = entropy.requestSeed(works[0].item, root, _proofOf(works, 0));
-        _assertRequestLogged(vm.getRecordedLogs(), requestId);
+        VrfEntropyModule.VrfConfig memory c = entropy.config();
+        assertEq(c.subscriptionId, subscriptionId);
+        assertEq(c.keyHash, KEY_HASH);
+        assertTrue(c.nativePayment);
         (,,, address owner, address[] memory consumers) =
             IVrfSubscriptions(VRF_COORDINATOR).getSubscription(subscriptionId);
         assertEq(owner, subscriptionOwner);
         assertEq(consumers.length, 1);
         assertEq(consumers[0], address(entropy), "the module is the subscription's consumer");
+    }
+
+    /// @notice The request reaches the coordinator, which logs it for the oracle with the
+    ///         module's gas lane and limits; a fulfilment delivered within the callback gas
+    ///         lets the auction start, and the work carries and renders the seed.
+    function test_Vrf_RequestReachesTheCoordinatorAndAFulfilmentStartsTheWork() public {
+        Work[] memory works = _package(root);
+        bytes32 itemHash = WorksHashing.itemHash(works[0].item);
+        vm.recordLogs();
+        uint256 requestId = entropy.requestSeed(works[0].item, root, _proofOf(works, 0));
+        _assertRequestLogged(vm.getRecordedLogs(), requestId);
         (uint256 pending,) = entropy.requestOf(itemHash);
         assertEq(pending, requestId);
+        (,, uint64 requests,,) = IVrfSubscriptions(VRF_COORDINATOR).getSubscription(subscriptionId);
+        assertEq(requests, 0, "counted at fulfilment by the coordinator");
 
         uint256[] memory words = new uint256[](1);
         words[0] = uint256(keccak256("simulated VRF output"));
@@ -99,13 +113,15 @@ contract VrfSepoliaForkTest is WorksForkBase {
         assertEq(entropy.seedOf(itemHash), bytes32(words[0]));
 
         (, uint256 tokenId) = _start(root, works, 0);
+        assertEq(stream.workOf(tokenId).seed, bytes32(words[0]), "the work carries the seed");
         string memory trait = string.concat(
             '{"trait_type":"Seed","value":"', Strings.toHexString(words[0], 32), '"}'
         );
         assertTrue(_contains(stream.tokenURI(tokenId), trait), "the seed renders");
     }
 
-    function test_OnlyTheCoordinatorFulfils() public onFork {
+    /// @notice Nobody but the coordinator fulfils a request.
+    function test_Vrf_OnlyTheCoordinatorFulfils() public {
         Work[] memory works = _package(root);
         uint256 requestId = entropy.requestSeed(works[0].item, root, _proofOf(works, 0));
         uint256[] memory words = new uint256[](1);

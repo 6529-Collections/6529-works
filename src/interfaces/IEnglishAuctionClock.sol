@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 import { IEnglishAuction } from "./IEnglishAuction.sol";
 
@@ -12,7 +12,7 @@ import { IEnglishAuction } from "./IEnglishAuction.sol";
 ///         change.
 interface IEnglishAuctionClock {
     /// @notice An auction's derived state, end and pause start, exactly as
-    ///         `IEnglishAuction.auction` reports them. Reverts with `ISaleAdapter.UnknownSale`
+    ///         `IEnglishAuction.auction` reports them. Reverts with `IEnglishAuction.UnknownSale`
     ///         for a sale ID with no sale.
     /// @param saleId The auction's sale ID.
     /// @return state The derived state (`auction(saleId).state`).

@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-/// @notice 6529Stream PR #744 code copied verbatim from `smart-contracts/domains/metadata/StreamStaticText.sol` at
-///         `origin/codex/v1-integration` (19432ea43). Test-only: proves byte parity with, and measures
-///         gas against, the implementation the v1 library ports. Not formatted.
+/// @notice 6529Stream PR #744 code copied verbatim from
+///         `smart-contracts/domains/metadata/StreamStaticText.sol` at `origin/codex/v1-integration`
+///         (19432ea43). Test-only: proves byte parity with, and measures gas against, the
+///         implementation the v1 library ports. Not formatted.
 // forgefmt: disable-start
 library Pr744Utf8 {
     function isValidUtf8(string memory raw) internal pure returns (bool valid) {

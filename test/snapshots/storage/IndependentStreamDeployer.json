@@ -1,0 +1,33 @@
+{
+  "structs": {},
+  "variables": [
+    {
+      "contract": "IndependentStreamDeployer",
+      "label": "creationHash",
+      "offset": 0,
+      "slot": 0,
+      "type": "bytes32"
+    },
+    {
+      "contract": "IndependentStreamDeployer",
+      "label": "deployed",
+      "offset": 0,
+      "slot": 1,
+      "type": "mapping(address => bool)"
+    },
+    {
+      "contract": "IndependentStreamDeployer",
+      "label": "_size",
+      "offset": 0,
+      "slot": 2,
+      "type": "uint256"
+    },
+    {
+      "contract": "IndependentStreamDeployer",
+      "label": "_pointers",
+      "offset": 0,
+      "slot": 3,
+      "type": "address[]"
+    }
+  ]
+}

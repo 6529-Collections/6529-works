@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { IItemApprovals } from "src/interfaces/IItemApprovals.sol";
-import { IMintPolicy } from "src/interfaces/IMintPolicy.sol";
+import { MintFacts, MintTerms } from "src/interfaces/core/CoreTypes.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import {
     MoveAuthorization,
@@ -37,9 +37,9 @@ contract ConsolidatedAccountsTest is CurationBase {
         vm.expectRevert(SignatureReverts.invalid(wallet));
         _authorize(root, item, new bytes32[](0), move);
         artists.addWallet(_id(lead), wallet, true);
-        IMintPolicy.MintRecord memory r = _authorize(root, item, new bytes32[](0), move);
-        assertEq(r.creator, wallet);
-        assertEq(r.artistId, _id(lead));
+        (MintFacts memory f, MintTerms memory t) = _authorize(root, item, new bytes32[](0), move);
+        assertEq(t.creator, wallet);
+        assertEq(f.artistId, _id(lead));
     }
 
     function test_Move_RefusedWhileTheAccountIsFrozen() public {

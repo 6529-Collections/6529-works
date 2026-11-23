@@ -289,7 +289,7 @@ contract UniformEditionAuctionVectorsTest is EditionAuctionBase {
         assertEq(seller.balance, live.revenue - live.networkFee, "seller proceeds");
         uint256 minted = _claimExpected(json, saleId, e);
         assertEq(minted, live.count, "exactly k copies");
-        assertEq(editions.minted(ID), live.count, "exactly k minted");
+        assertEq(editions.editionOf(ID).minted, live.count, "exactly k minted");
         _assertConserved();
         assertEq(address(auction).balance, 0, "nothing left");
     }

@@ -77,6 +77,12 @@ abstract contract SymHelpers is Test {
 /// @dev An artist payout resolver that answers whatever the proof set.
 contract SymResolver is IArtistPayoutResolver {
     mapping(uint256 => address) public payout;
+    /// @dev `IDirectory.unclaimedPeriod`, read by the ledger at a forfeit.
+    uint48 public unclaimedPeriod = 180 days;
+
+    function setUnclaimedPeriod(uint48 next) external {
+        unclaimedPeriod = next;
+    }
 
     function set(uint256 artistId, address account) external {
         payout[artistId] = account;
@@ -446,7 +452,8 @@ contract LedgerSymbolicTest is SymHelpers {
     // ---------------------------------------------------------------------------------------
 
     /// @notice ECO-44, INV-ECO-14: a mark records the payee's entitlement at the time; a running
-    ///         mark cannot be replaced; a forfeit succeeds only 180 days or more after the mark,
+    ///         mark cannot be replaced; a forfeit succeeds only once the unclaimed period the
+    ///         resolver answers (its launch value here) has passed since the mark,
     ///         pays the network only what of the marked level the payee has not released (so
     ///         never money that arrived after the mark), counts as released for the payee, and
     ///         clears the mark.
@@ -479,6 +486,24 @@ contract LedgerSymbolicTest is SymHelpers {
         if (payeeReleases) ledger.release(p, 0, ETH, 0);
         vm.warp(markedAt + forfeitDelay);
         _checkForfeit(p, wallet, target, forfeitDelay >= 180 days, payeeReleases);
+    }
+
+    /// @notice ECO-44: the unclaimed period is the resolver's answer when the forfeit is
+    ///         attempted (the `StreamDirectory6529`'s setting), whatever it is and whenever it
+    ///         changed: a forfeit succeeds exactly when the period in force has passed since the
+    ///         mark.
+    /// @dev Bounds: any period and delay below 2**32 seconds, set after the mark.
+    function check_forfeitWaitsThePeriodInForce(uint32 period, uint32 forfeitDelay) public {
+        (ISplitWallet.Payee[] memory p, address wallet) = _pair();
+        vm.deal(wallet, 1 ether);
+        uint256 markedAt = block.timestamp;
+        ledger.mark(p, 0, ETH, 0);
+        resolver.setUnclaimedPeriod(period);
+        vm.warp(markedAt + forfeitDelay);
+        (bool ok, bytes4 err) =
+            _call(C, address(ledger), abi.encodeCall(ledger.forfeit, (p, 0, ETH, 0)));
+        assert(ok == (forfeitDelay >= period));
+        if (!ok) assert(err == ISplitLedger.MarkNotDue.selector);
     }
 
     /// @dev Forfeits payee 0 and checks the outcome against the mark's `target`.

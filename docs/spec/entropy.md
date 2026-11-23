@@ -1,447 +1,152 @@
 # Entropy (optional VRF seeds)
 
-A seeded 1/1 on 6529 Stream gets its seed from the artist, in the package, or from a Chainlink
-VRF v2.5 draw delivered before the work's auction can start. This page covers the draw:
-`VrfEntropyModule` requests one random word per content hash, keeps the first delivery for good,
-and answers `isDelivered` and `seedOf` by item hash. The module is optional per deployment: 6529
-Stream is deployed with one, or with zero and refuses VRF items; governance can install or
-replace it later (`setDependency`, owner decision 16), and every work keeps the module it
-minted under (`entropyModuleOf`). For auditors, integrators and the operators of the VRF
-subscription.
+A seeded 1/1 gets its seed from the artist, in the package, or from a Chainlink VRF v2.5 draw
+delivered before the work's auction can start. This page covers the draw: `VrfEntropyModule`
+requests one random word per content hash, keeps the first delivery for good, and answers
+`isDelivered` and `seedOf`. The module is **replaceable**: the mint policy names it
+(`PackageRegistry.setEntropyModule`) and reads the delivered seed at mint, and the token then
+stores the seed (`Work.seed`) for good. Replacing the module changes no existing work's seed.
 
 > Pre-audit. See the [project status](../../README.md#status).
 
 ## Contracts
 
-| Contract | Source | Interface | Responsibility |
-| --- | --- | --- | --- |
-| `VrfEntropyModule` | [`src/entropy/VrfEntropyModule.sol`](../../src/entropy/VrfEntropyModule.sol) | [`IEntropyModule`](../../src/interfaces/IEntropyModule.sol) | Gated seed requests, item links, deliveries, `isDelivered`, `seedOf`, `requestOf`; governed configuration and coordinator. |
-| `IVRFCoordinatorV2Plus` | [`src/entropy/IVRFCoordinatorV2Plus.sol`](../../src/entropy/IVRFCoordinatorV2Plus.sol) | none | The one coordinator function the module calls (`requestRandomWords`), declared locally: the repository has no Chainlink dependency. |
-| `Stream` | [`src/stream/Stream.sol`](../../src/stream/Stream.sol) | [`IStream`](../../src/interfaces/IStream.sol) | Holds the module's address (`entropyModule`), replaceable by governance in the 7-day class (`setDependency`, owner decision 16), and answers the module each work minted under (`entropyModuleOf`); `mint` refuses a VRF item without a delivered seed. |
-| `WorkRecords` | [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol) | [`IWorkRecords`](../../src/interfaces/IWorkRecords.sol) | `seedOf(tokenId)` returns the work's seed, stored when its record opens: the item's ARTIST seed, or by item hash the seed of the module the work minted under (`IStream.entropyModuleOf`), so a replacement of the module never changes a work's seed. |
-| `PackageRegistry` | [`src/curation/PackageRegistry.sol`](../../src/curation/PackageRegistry.sol) | [`IPackageRegistry`](../../src/interfaces/IPackageRegistry.sol) | Answers the request gate: is the root approved, is the content consumed. See [curation.md](curation.md). |
+| Contract | Kind | What it does |
+| --- | --- | --- |
+| [`VrfEntropyModule`](../../src/entropy/VrfEntropyModule.sol) ([`IEntropyModule`](../../src/interfaces/IEntropyModule.sol)) | module | Gated seed requests, item links, deliveries, `isDelivered`, `seedOf`, `requestOf`; Independent Stream requests through the VRF wrapper; governed configuration, coordinator and wrapper. |
+| [`IVRFCoordinatorV2Plus`](../../src/entropy/IVRFCoordinatorV2Plus.sol), [`IVRFV2PlusWrapper`](../../src/entropy/IVRFV2PlusWrapper.sol) | interfaces | The Chainlink functions the module calls, declared locally (no Chainlink dependency). |
+| [`PackageRegistry`](../../src/curation/PackageRegistry.sol) | module | Answers the request gate (root approved, content consumed); at mint refuses a VRF item whose seed is not delivered and states the seed in the mint facts. |
+| [`Stream6529`](../../src/core/Stream6529.sol) | permanent | Stores each work's seed at mint (`workOf(id).seed`); never asks the module. |
 
 ## Concepts
 
-[Seed](../glossary.md#seed), [seed policy](../glossary.md#seed-policy),
-[VRF](../glossary.md#vrf) and [entropy module](../glossary.md#entropy-module) are defined in the
-glossary.
+The glossary defines [seed](../glossary.md#seed), [seed policy](../glossary.md#seed-policy) and
+[VRF](../glossary.md#vrf).
 
-### Seed policies
+| Policy | `seed` in the package | Source of the seed |
+| --- | --- | --- |
+| `NONE` | zero | No seed. |
+| `ARTIST` | nonzero, chosen by the artist | The package (CUR-9). |
+| `VRF` | zero | `VrfEntropyModule`, drawn before the start. |
 
-`PackageItem.seedPolicy` ([`PackageTypes.sol`](../../src/interfaces/types/PackageTypes.sol))
-is part of the approved item, so it cannot change without a new approval.
-
-| Policy | `seed` in the package | Source of the seed | Readable |
-| --- | --- | --- | --- |
-| `NONE` | zero | No seed. | `WorkRecords.seedOf` returns zero. |
-| `ARTIST` (the default for seeded works) | nonzero, chosen by the artist | The package; `WorkRecords` stores it when the record opens. | After `openRecord` (`test_ArtistSeedAppearsOnceTheRecordOpens`). |
-| `VRF` | zero | `VrfEntropyModule`, drawn before the start. | From delivery, by item hash, before and after the record opens. |
-
-A nonzero seed is required exactly under `ARTIST` (CUR-9); Stream refuses a `VRF` item when its
-current `entropyModule` is zero (`InvalidSeedPolicy`). Copies never get their own seeds.
-
-### One draw per content hash
-
-A draw is keyed by the item's `contentHash`, the package registry's uniqueness key, not by the
-item hash (review finding DEPS-1). Every approved item that carries the same work (a revised
-package, or the rightful artist's item after an upheld dispute released the content) reads the
-same seed.
-
-### The item link
-
-Reads are keyed by item hash, through a link (`itemHash => contentHash`) that `requestSeed`
-records on an item's first call, emitting `SeedLinked`. If the content already has a pending or
-delivered draw, the item only joins it: the call returns zero and the coordinator is not asked.
-An item that never called `requestSeed` reads as undelivered by item hash. Stream's start reads
-the content (`isDeliveredContent`), so such an item can still start on its content's seed;
-after that start consumed the content, `requestSeed` still links that one item (the
-consumption exception below), so its work reads the seed by item hash.
+- **One draw per content hash.** Every approved item that carries the same work (a revised
+  package, or the rightful artist's item after a content release) reads the same seed. Reads are
+  keyed by item hash through a link that `requestSeed` records (`SeedLinked`); an item that joins
+  a pending or delivered draw only links and returns zero.
 
 ### The request gate
 
-Each request spends subscription funds, so `requestSeed` accepts only a curated item that needs
-a seed. Anyone may call it; there is no role and no fee. Every failure is
+Each request spends subscription funds, so `requestSeed(item, packageRoot, proof)` accepts only a
+curated item that needs a seed. Anyone may call it; there is no fee. Every failure is
 `NotRequestable(itemHash)`:
 
-1. `item.seedPolicy` is `VRF` and `item.contentHash` is nonzero. The module hashes the whole item
-   itself, so a policy flipped to `VRF` is a different, unapproved item.
-2. `packageRegistry.packageOf(packageRoot)` is `APPROVED`, so the network's `revokePackage` stops
-   requests at once.
-3. The proof has at most 32 hashes and places the item's leaf under the root.
-4. `packageRegistry.consumedItemOf(item.contentHash)` is zero: no item has consumed the content.
-
-**The consumption exception.** Once the content is consumed, the gate refuses every item but
-one: the item `consumedItemOf(item.contentHash)` names, a `VRF` item not yet linked, whose
-content's seed is already delivered. That call only links it (`SeedLinked`, returns zero): no
-proof or package status is checked (the registry's consumption record stands for them, so a
-package revoked after the mint does not block it), no request is made and the coordinator is not
-asked. Any other item of the content, an item whose own content has no delivered seed, and any
-call that would need a draw revert with `NotRequestable` (ENT-19).
-
-The gate runs on every call, repeats included. It bounds the total spend to one draw per VRF
-content the network approved, plus the repeats the [backoff](#retry-delay) allows for each draw
-that never arrived, without a privileged step: a fee would have to track the oracle's cost and need a payable
-funding path, a fixed requester (a keeper or the platform) would put a trusted operator into an
-otherwise permissionless start, and a rate limit alone would let a spammer drain the
-subscription at the cap.
+1. `item.seedPolicy` is `VRF` and `item.contentHash` is nonzero (the module hashes the item
+   itself);
+2. the root is `APPROVED` in the package registry, so `revokePackage` stops requests at once;
+3. the proof has at most 32 hashes and places the item under the root;
+4. no item has consumed the content. One exception requests nothing: the item that consumed the
+   content (`consumedItemOf`) may still link to the content's delivered seed (ENT-19).
 
 ### First delivery wins
 
-Chainlink VRF v2.5 never expires a pending request, so any request made through the current
-coordinator may deliver until the seed is fixed; later deliveries return without reverting, so
-the oracle's fulfilment succeeds. A repeat never invalidates an earlier request, or an observer
-who saw a disliked word pending could front-run a repeat to discard it. The seed is the random
-word unchanged, checkable against the oracle's proof; a zero word is valid.
-
-The cost of keeping earlier requests valid is a choice among them: while several are
-outstanding, whoever can withhold or order their deliveries (the oracle, a searcher or a block
-builder) picks which independent word becomes the seed. The [backoff](#retry-delay) bounds how
-many there can be, per coordinator tenure (from one `setCoordinator` to the next). With base
-`d = retryDelay`, cap `C = MAX_RETRY_DELAY` (30 days) and `m` the number of repeats whose wait
-`d * 2^(k-1)` is below `C` (`m = ceil(log2(C / d))`), a content left undelivered for a period
-`T >= (2^m - 1) * d` of one tenure has had at most
-
-`N(T) = 1 + m + floor((T - (2^m - 1) * d) / C)`
-
-requests to that tenure's coordinator, and fewer before that (one per doubling step). At the
-3-day base, `m = 4`: the repeats fall on days 3, 9, 21 and 45, then every 30 days, so a year
-undelivered allows at most 15 requests (1 + 4 + floor(320 / 30)), against 122 with a fixed 3-day
-delay ([LIM-ENT-1](../audit/known-limitations.md#entropy)). Only governance starts a tenure, in
-the 7-day class. A coordinator restored after another (A to B to A) starts a new tenure while
-its requests from the earlier one are still recorded and may deliver (ENT-8), so its outstanding
-requests for a content are then those of both tenures, each within its own bound.
+Chainlink VRF v2.5 never expires a pending request, so any outstanding request of the current
+coordinator may deliver until the seed is fixed; later deliveries return without reverting. A
+repeat never invalidates an earlier request. While several requests are outstanding, whoever can
+withhold or order their deliveries chooses which word becomes the seed
+([LIM-ENT-1](../audit/known-limitations.md#entropy)); the backoff bounds how many there are.
 
 ### Retry delay
 
-`retryDelay` is immutable, between 3 and 30 days, and is the base of an exponential backoff
-(review finding RFX-ENT-2). It is not an expiry: while a content is undelivered, anyone may
-repeat its request, the k-th repeat once `retryDelay * 2^(k-1)` has passed since the previous
-request, the wait capped at `MAX_RETRY_DELAY` (30 days) so a repeat always stays possible. At
-the 3-day base the waits are 3, 6, 12 and 24 days, then 30 days for every later repeat. Earlier,
-`requestSeed` reverts with `RequestPending(itemHash, retryAt)`, or, for an item joining for the
-first time, links it and returns zero. The repeat count belongs to the content (every item of it
-shares the clock) and to the coordinator tenure of its latest request: the draw's word, which
-each request already writes, holds the count (saturating at 255, where the wait is long since
-the cap) and the coordinator epoch of that request, a module counter `setCoordinator`
-increments (no extra storage slot). When the epochs differ the count is taken as zero and the
-content is not pending, so the first request to a replacement coordinator is made at once and
-its schedule starts again at the base; the old coordinator's requests can no longer deliver.
-No caller can change the epoch, so within a tenure the schedule cannot be reopened.
+`retryDelay` (immutable, 3 to 30 days) is the base of an exponential backoff: the k-th repeat of
+an undelivered content may be made `retryDelay * 2^(k-1)` after the previous request, capped at
+`MAX_RETRY_DELAY` (30 days). At a 3-day base the repeats fall on days 3, 9, 21 and 45, then every
+30 days: at most 15 requests in a year. The count belongs to the content and to the coordinator's
+tenure; after `setCoordinator` the first request to the new coordinator is made at once.
 
-### Request memory per coordinator
+### Independent Stream seeds (requester pays)
 
-Every request is remembered under the coordinator that issued it
-(`coordinator => requestId => contentHash`), never removed (ENT-8). After a swap (even A to B and
-back to A) neither coordinator can deliver the other's requests; a pending draw may be requested
-from the new one at once, its repeat count restarting. When A is restored, its requests from
-its earlier tenure can deliver again.
+`requestIndependentSeed(token, item)` serves a VRF work of an Independent Stream contract: only a
+wallet of the contract's artist (`IAccounts.isWallet`, read through `StreamDirectory6529.ACCOUNTS`),
+while the Independent Stream module (`StreamDirectory6529.INDEPENDENT_STREAM`) lists the contract
+active, and the caller pays the wrapper's quoted price, all forwarded to the Chainlink VRF v2.5
+wrapper. The network's subscription is never used. The draw is keyed by
+`keccak256(abi.encode(token, contentHash))` and kept apart from curated draws.
 
-### Federated seeds (requester pays)
-
-A VRF work of a federated contract (FED-72) takes its seed from the same module, through
-`requestFederatedSeed(token, item)`. Only a wallet of the contract's artist may ask, while the
-artist registry lists the contract ACTIVE, and the caller pays: the module reads the price the
-Chainlink VRF v2.5 wrapper quotes (`calculateRequestPriceNative`, at the transaction's gas price)
-and forwards the whole payment with the request (`requestRandomWordsInNative`); the network's
-subscription is never used. The draw is keyed by `keccak256(abi.encode(token, contentHash))`, so
-two contracts never share a seed, and is kept, repeated and delivered exactly as a curated draw
-(one outstanding request, the same backoff rule, the first delivery final). The wrapper delivers
-through the same callback. The network sets the wrapper (`setWrapper`, compare-and-set, code
-hash pinned); with none set, federated requests are refused. `federatedSeedOf(token,
-contentHash)` answers whether the seed is delivered and the seed.
-
-Curated draws and federated draws are kept in separate maps with separate tenures:
-`setCoordinator` restarts only curated backoff, `setWrapper` only federated. A curated item can
-never fill a federated seed, and each setter refuses the other provider's address
-(`test_Vrf_ACuratedDrawNeverFillsAFederatedSeed`, `test_Vrf_SetWrapperLeavesTheCuratedBackoff`).
-
-### How the seed is read
-
-- **Start gate.** `Stream.mint` asks the module `isDeliveredContent(item.contentHash)`, one
-  storage word, and reverts with `SeedNotDelivered(itemHash)` after `consume`, which the revert
-  undoes. A seed belongs to its content, whichever package lists the item, and `consume` lets a
-  content hash be consumed by one item only (CUR-12), so an item of another package with the
-  same content starts on that content's seed without a link of its own. The auction does not
-  check the seed itself.
-- **Reads.** Stream never stores a VRF seed; it records which module each work minted under
-  (`IStream.entropyModuleOf(tokenId)`: the module current at the mint, whose delivery `mint`
-  checked). `openRecord` stores that module's `seedOfContent(item.contentHash)`, which
-  `WorkRecords.seedOf(tokenId)` then returns; before the record opens the renderer reads the
-  same module's `seedOf(itemHash)`, with a bounded gas allowance
-  ([`Renderer.sol`](../../src/content/Renderer.sol), `_seed`). A replaced module therefore
-  changes no existing work's seed, and stays readable for the works minted under it. A work
-  whose item never had a request of its own (it shares a seeded content with another package's
-  item) has no item link, so `seedOf(itemHash)` reverts and its `tokenURI` reverts until anyone
-  links its item (`requestSeed` on the module `entropyModuleOf` names, the consumption
-  exception, ENT-19) or opens its record, which stores the content's seed; it never shows
-  another seed.
-- **`requestOf(itemHash)`** returns the content's latest request ID (zero once delivered) and
-  when it was made.
-
-## State machine
-
-### A content's draw
-
-```mermaid
-stateDiagram-v2
-    state "No draw" as NoDraw
-    state "Requested" as Pending
-    state "Delivered" as Delivered
-    [*] --> NoDraw
-    NoDraw --> Pending : requestSeed by anyone, gate passes
-    Pending --> Pending : requestSeed after the backoff wait adds a request
-    Pending --> Delivered : first delivery of any outstanding request
-    Delivered --> Delivered : a later delivery is a no-op
-    note right of Delivered
-        Final. The seed never changes.
-    end note
-```
-
-### An item's link
-
-```mermaid
-stateDiagram-v2
-    state "Not linked" as Unlinked
-    state "Linked, draw pending" as LinkedPending
-    state "Linked, seed delivered" as LinkedDelivered
-    state "Consumed at the start" as Started
-    [*] --> Unlinked
-    Unlinked --> LinkedPending : requestSeed requests or joins a pending draw
-    Unlinked --> LinkedDelivered : requestSeed joins a delivered draw
-    LinkedPending --> LinkedDelivered : delivery for the content
-    LinkedDelivered --> Started : start, Stream checks isDeliveredContent
-    Started --> [*]
-```
-
-Once the content is consumed, the gate refuses further requests for any item that carries it,
-except the link-only call of the consuming item to its content's delivered seed (ENT-19); reads
-continue to work (`test_Gate_ConsumptionAfterDeliveryBlocksNothingRead`).
-
-| Transition | Caller (role) | Delay | Function |
-| --- | --- | --- | --- |
-| Item linked; first request for a content | Anyone | none | `VrfEntropyModule.requestSeed` |
-| Item joins a pending or delivered draw | Anyone | none | `VrfEntropyModule.requestSeed` (returns zero) |
-| The consuming item of a consumed content links to its delivered seed | Anyone | none | `VrfEntropyModule.requestSeed` (returns zero; ENT-19) |
-| Repeat request | Anyone, once the content's backoff wait has passed since the latest request | the k-th repeat `retryDelay * 2^(k-1)`, at most 30 days; none for the first request after a coordinator change | `VrfEntropyModule.requestSeed` |
-| Seed delivered | The current coordinator only | none | `VrfEntropyModule.rawFulfillRandomWords` |
-| Work started | Anyone, through the auction | none | `EnglishAuction.start`, `Stream.mint` |
-| Request parameters changed; gas limit raised | `PARAMETER_SETTER` | 24 hours | `VrfEntropyModule.setConfig` |
-| Gas limit lowered | `SUCCESSOR_SETTER` | 7 days | `VrfEntropyModule.lowerCallbackGasLimit` |
-| Coordinator replaced | `SUCCESSOR_SETTER` | 7 days |
-| Wrapper for federated requests set or turned off | `SUCCESSOR_SETTER` | 7 days | `VrfEntropyModule.setWrapper` | `VrfEntropyModule.setCoordinator` |
-
-Role mappings are from [`config/genesis.example.json`](../../config/genesis.example.json); the
-selector matrix is [roles.md](../audit/roles.md). The network or the scheduler may cancel a
-scheduled operation during its delay, and the brake may delay it once.
+<a id="coordinator-change"></a>
 
 ## Flows
 
-### Request, fulfil, start
-
-```mermaid
-sequenceDiagram
-    participant Anyone as Anyone
-    participant Module as VrfEntropyModule
-    participant Registry as PackageRegistry
-    participant Coord as VRF coordinator
-    participant Auction as EnglishAuction
-    participant Stream as Stream
-    Anyone->>Module: requestSeed(item, root, proof)
-    Module->>Registry: packageOf(root), consumedItemOf(contentHash)
-    Module->>Module: hash item, verify proof, link item
-    Module->>Coord: requestRandomWords(one word)
-    Coord-->>Module: requestId
-    Module-->>Anyone: emit SeedLinked, SeedRequested
-    Note over Coord: waits the configured confirmations
-    Coord->>Module: rawFulfillRandomWords(requestId, words)
-    Module-->>Coord: emit SeedDelivered
-    Anyone->>Auction: start(stream, mint data)
-    Auction->>Stream: mint(auction, 0, 1, data)
-    Stream->>Stream: consume the item through the registry
-    Stream->>Module: isDeliveredContent(item.contentHash)
-    Stream-->>Auction: token minted, the clock starts
-```
-
-- **Request.** The request time is written, then the coordinator is called with the current
-  configuration, one word and `VRF ExtraArgsV1` carrying the native-payment flag. The returned
-  ID must be nonzero and unused for that coordinator (`InvalidRequestId`).
-- **Delivery.** Only the coordinator, whose code must still have the pinned hash, for a request
-  ID it issued (`UnknownRequest`), with exactly one word (`InvalidRandomWords`). The word
-  overwrites the request ID, so the callback creates no storage slot (DEPS-2).
-- **Reentrancy** (ENT-14). The request ID is stored only after the coordinator returns. A
-  reentrant delivery of an earlier request is valid; the new request is then recorded but not
-  announced (no `SeedRequested`).
-- **Gas.** A first request for a content creates 4 slots in the module, a joining item 1
-  (`test_Request_NewStorageSlots`). The request is off the start path, which only adds the
-  `isDeliveredContent` read, one word ([ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#the-table); Sepolia:
-  [flows.md, section 6](../../deployments/11155111/flows.md#6-vrf)).
-
-### Retry
-
-```mermaid
-sequenceDiagram
-    participant Anyone as Anyone
-    participant Module as VrfEntropyModule
-    participant Coord as VRF coordinator
-    Anyone->>Module: requestSeed(item, root, proof)
-    Module->>Coord: requestRandomWords, request 1
-    Note over Coord: no delivery within retryDelay
-    Anyone->>Module: requestSeed(item, root, proof) after retryDelay (the first repeat)
-    Module->>Coord: requestRandomWords, request 2
-    Coord->>Module: rawFulfillRandomWords(request 2, words)
-    Module->>Module: seed fixed, emit SeedDelivered
-    Coord->>Module: rawFulfillRandomWords(request 1, words)
-    Module->>Module: no-op, returns without reverting
-```
-
-- **Preconditions.** The gate passes; the seed is not delivered (`SeedAlreadyDelivered`);
-  `block.timestamp >= requestedAt + min(retryDelay * 2^repeats, MAX_RETRY_DELAY)`, where
-  `repeats` is the number of repeats the content already had (`RequestPending`), unless the
-  coordinator changed since the content's latest request, when no wait applies.
-- **Effects.** A new request under the current configuration and coordinator, timed now and
-  stamped with the current coordinator epoch; the content's repeat count goes up by one,
-  doubling the next wait up to the cap, or starts at zero after a coordinator change.
-
-### Coordinator change
-
-Stream pins the module, so when Chainlink retires a coordinator the module must follow. A new
-coordinator needs a new subscription, so the change is two scheduled operations executed
-together.
-
-```mermaid
-sequenceDiagram
-    participant Ops as Operator
-    participant NewCoord as New coordinator
-    participant Setter as Network Safe
-    participant Manager as WorksAccessManager
-    participant Module as VrfEntropyModule
-    Ops->>NewCoord: create and fund a subscription, add the module
-    Setter->>Manager: schedule setCoordinator(old, new, codeHash) (SUCCESSOR_SETTER, 7 days)
-    Note over Setter,Manager: 6 days later
-    Setter->>Manager: schedule setConfig(current, next) (PARAMETER_SETTER, 24 hours)
-    Note over Manager: the network may cancel either operation; the brake may delay it once
-    Setter->>Manager: execute setCoordinator, then setConfig, in one batch
-    Manager->>Module: setCoordinator(old, new, codeHash)
-    Manager->>Module: setConfig(current, next with new subscription and key hash)
-    Module-->>Setter: emit CoordinatorSet, ConfigSet
-```
-
-- **Why one batch.** Between the two, a request would go to a coordinator that does not know the
-  configured subscription, and revert. The network holds both setter roles, so one Safe
-  transaction executes both.
-- **`setCoordinator`.** `expected` is the current coordinator (`ExpectedValueMismatch`); `next`
-  differs from it, has code, is not EIP-7702 delegated, and has
-  `nextCodeHash` (`InvalidDependency`). The coordinator has no ERC-165. Unlike the curation
-  verifier, a replaced coordinator is not retired: a swap back is allowed. Each swap increments
-  the module's coordinator epoch, which restarts every undelivered content's repeat count.
-- **`setConfig`.** `expected` equals the whole current configuration (`ExpectedValueMismatch`), so
-  schedule it against the configuration that will be current when it executes.
-- **Chainlink's `migrate` cannot be used.** It calls `setCoordinator(address)` on each consumer;
-  this module has no such function.
-- **A swap redraws pending content.** Every request still pending, including one whose delivery
-  is already visible on the old coordinator, is orphaned, and the content is drawn again
-  through the new one. Execute the change only when every request has its delivery, or publish
-  the redraw ([LIM-ENT-7](../audit/known-limitations.md#entropy)); the same holds for a
-  replacement of the module itself, since today's module reads no predecessor's seeds
-  ([runbook](../../script/README.md#replacing-one-of-streams-dependencies)).
-
-### Lowering the callback gas limit
-
-A limit above the coordinator's maximum makes every request revert at the coordinator, ending
-VRF works for the deployment, since 6529 Stream pins the module (DEPS-5). `setConfig` only raises
-the limit, so a 24-hour change cannot starve the callback; `lowerCallbackGasLimit` lowers it in
-the 7-day class (ENT-11; `InvalidConfig`).
+1. **Request.** Anyone calls `requestSeed` for an approved VRF item.
+2. **Deliver.** The coordinator calls `rawFulfillRandomWords`; the first delivery stores the seed
+   and emits `SeedDelivered` (keyed by content hash).
+3. **Start.** The sale contract's `authorize` call reaches the mint policy, which refuses an
+   undelivered VRF item and states `seedOfContent(contentHash)` in the mint facts.
+4. **Retry.** If nothing arrives, anyone repeats the request once the backoff wait has passed.
+5. **Coordinator change.** The network calls `setCoordinator` (SUCCESSOR_SETTER, 7 days),
+   compare-and-set with a pinned code hash. Request IDs are scoped to their coordinator, so the old
+   one's requests can no longer deliver; each pending content is requested again at once. If
+   Chainlink lowers its maximum callback gas, `lowerCallbackGasLimit` (7 days) follows it.
 
 ## Rules and invariants
 
 | ID | Rule | Enforced in | Tested by |
 | --- | --- | --- | --- |
-| ENT-1 | A request is accepted only for a `VRF` item with a nonzero content hash, placed by a proof of at most 32 hashes under an `APPROVED` root, whose content is unconsumed; checked on every call, with the one link-only exception of ENT-19. | `VrfEntropyModule._requestable` | [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Gate_RejectsAnUnknownOrRevokedPackage`, `test_Gate_RejectsAnItemThatIsNotInThePackage`, `test_Gate_ThePolicyCannotBeFlippedToVrf`, `test_Gate_RejectsAConsumedItem`, `test_Gate_RejectsAnItemWithoutAContentHash`, `test_Gate_RevocationStopsARepeatButNotTheReads`; [`VrfEntropyFuzz.t.sol`](../../test/entropy/VrfEntropyFuzz.t.sol): `testFuzz_OnlyItemsOfAnApprovedPackageCanBeRequested`, `testFuzz_NonVrfItemsAreAlwaysRefused` |
-| ENT-2 | One draw per content hash: every linked item carrying the content reads the same seed, and joining never asks the coordinator. | `VrfEntropyModule.requestSeed` | [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Content_ASecondItemJoinsTheDeliveredDrawWithoutARequest`, `test_Content_ASecondItemJoinsAPendingDrawAndSharesItsClock`; [`VrfEntropyInvariant.t.sol`](../../test/entropy/VrfEntropyInvariant.t.sol): `invariant_ItemsThatShareContentReadOneSeed`; [`VrfWork.t.sol`](../../test/integration/VrfWork.t.sol): `test_ARevisionOfTheWorkReadsTheSameSeed`; [`Dispute.t.sol`](../../test/integration/Dispute.t.sol): `test_TheRightfulVrfItemReadsTheContentsSeed` |
-| ENT-3 | An item never linked reads as undelivered; `seedOf` reverts until delivery. | `VrfEntropyModule.isDelivered`, `seedOf` | [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Content_AnUnlinkedItemReadsAsUndelivered`, `test_SeedOf_RevertsBeforeDelivery` |
-| ENT-4 | The first delivery fixes the seed for good, whichever outstanding request it answers and however many repeats were made; a later delivery for the content is a no-op that does not revert; no request is accepted after delivery. | `VrfEntropyModule.rawFulfillRandomWords`, `requestSeed` | [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Fulfill_TheFirstDeliveryWinsInEitherOrder`, `test_Fulfill_ADoubleFulfilIsANoOp`, `test_NoRequestAfterDelivery`, `test_Repeat_TheFirstDeliveryStillWinsUnderTheBackoff`; [`VrfEntropyFuzz.t.sol`](../../test/entropy/VrfEntropyFuzz.t.sol): `testFuzz_TheFirstDeliveryOfManyRequestsWins`, `testFuzz_SeedIsTheDeliveredWord`; [`VrfEntropyInvariant.t.sol`](../../test/entropy/VrfEntropyInvariant.t.sol): `invariant_AtMostOneSeedPerItemAndItNeverChanges` |
-| ENT-5 | The k-th repeat of a content's request is possible only once `retryDelay * 2^(k-1)`, capped at `MAX_RETRY_DELAY` (30 days), has passed since the previous request, for any caller and any item of the content; the count and the wait belong to the coordinator tenure of the content's latest request, so the first request after a coordinator replacement is made at once and the schedule restarts, and no other call resets it; once the capped wait has passed a repeat is always accepted. A repeat adds a request and never invalidates an earlier one. | `VrfEntropyModule.requestSeed`, `_repeatWait` | [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Repeat_BeforeTheTimeoutReverts`, `test_Repeat_AfterTheTimeoutIsOpenToAnyone`, `test_Repeat_TheWaitDoublesForTheFirstFourRepeats`, `test_Repeat_TheWaitIsCappedAtTheMaximumRetryDelay`, `test_Repeat_ARepeatIsAlwaysEventuallyAccepted`, `testFuzz_Repeat_IsAcceptedOnceTheCappedWaitHasPassed`, `test_Repeat_NoCallerRepeatsBeforeTheCurrentWait`, `test_Repeat_ACoordinatorSwapRestartsTheBackoff`, `test_Repeat_WithoutASwapTheScheduleIsUnchanged`, `test_Repeat_ARestoredCoordinatorsEarlierRequestsMayDeliverAgain`, `test_Repeat_TheBoundHoldsPerCoordinatorTenure`, `test_Repeat_AtMostFifteenRequestsInAYearAtAThreeDayBase`, `test_Repeat_CreatesOnlyTheRequestRecord`, `test_Fulfill_AnEarlierRequestStillDeliversAfterARepeat`, `test_Fulfill_ARepeatCannotDiscardAPendingDelivery`, `test_Repeat_UsesTheCurrentConfiguration`; [`VrfEntropyFuzz.t.sol`](../../test/entropy/VrfEntropyFuzz.t.sol): `testFuzz_RetryWindow`; [`VrfEntropyInvariant.t.sol`](../../test/entropy/VrfEntropyInvariant.t.sol): `invariant_TheCurrentRequestIsTheLastIssued`, `invariant_TheBackoffBoundsTheRequestsOfAContent` |
-| ENT-6 | Only the current coordinator, or the current wrapper for a federated request, delivers, only a request it issued to this module, with exactly one word. | `VrfEntropyModule.rawFulfillRandomWords` | [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Fulfill_OnlyTheCoordinatorMay`, `test_Fulfill_AnUnissuedRequestIdReverts`, `test_Fulfill_ExactlyOneWordIsRequired`, `test_Fulfill_AMalformedDeliveryRevertsAndTheItemStaysUndelivered`; [`VrfEntropyFuzz.t.sol`](../../test/entropy/VrfEntropyFuzz.t.sol): `testFuzz_OnlyTheCoordinatorMayFulfill`, `testFuzz_RequestIdsRouteToTheirOwnItems` |
-| ENT-7 | The coordinator's pinned code hash is checked at install, at every request and at every delivery. | `Dependency.checkPinned`, `checkUnchanged` | [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Constructor_PinsTheCoordinatorCodeHash`, `test_Pin_ACoordinatorWhoseCodeChangedIsRefused`; [`VrfEntropyGovernance.t.sol`](../../test/entropy/VrfEntropyGovernance.t.sol): `test_SetCoordinator_PinsTheCodeHash` |
-| ENT-8 | Request IDs are scoped to their coordinator: a swap orphans the old coordinator's requests, the new one cannot deliver them, and delivered seeds survive. | `VrfEntropyModule._requests`, `rawFulfillRandomWords` | [`VrfEntropyGovernance.t.sol`](../../test/entropy/VrfEntropyGovernance.t.sol): `test_SetCoordinator_OldCoordinatorCanNoLongerDeliver`, `test_SetCoordinator_OrphanedRequestIsRerequestedThroughTheNewOne`, `test_SetCoordinator_RequestIdsAreScopedToTheirCoordinator`, `test_SetCoordinator_DeliveredSeedsSurviveTheSwap`; [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Repeat_RequestIdsDoNotMixAcrossCoordinators` |
-| ENT-9 | `setCoordinator` is `SUCCESSOR_SETTER` (7 days), compare-and-set, never a no-op, and refuses a codeless or delegated coordinator. | `VrfEntropyModule.setCoordinator`; genesis role map | [`VrfEntropyGovernance.t.sol`](../../test/entropy/VrfEntropyGovernance.t.sol): `test_SetCoordinator_NeedsTheSuccessorClassRole`, `test_SetCoordinator_RejectsStaleAndCodelessValues`, `test_SetCoordinator_ASwapToTheCurrentCoordinatorIsRefused`; [`VrfEntropyManaged.t.sol`](../../test/entropy/VrfEntropyManaged.t.sol): `test_SetCoordinatorIsInTheSuccessorClass`, `test_TheNetworkCancelsAPendingCoordinatorSwap` |
-| ENT-10 | `setConfig` is `PARAMETER_SETTER` (24 hours), compare-and-set on the whole configuration, within bounds; the callback gas limit only rises, at most doubling per step, never above 2,500,000. | `VrfEntropyModule.setConfig`, `_validate`; `BoundedParameter.raise` | [`VrfEntropyGovernance.t.sol`](../../test/entropy/VrfEntropyGovernance.t.sol): `test_SetConfig_NeedsTheStandardClassRole`, `test_SetConfig_StaleExpectedValueReverts`, `test_SetConfig_GasLimitCanOnlyBeRaised`, `test_SetConfig_GasLimitAtMostDoublesPerStep`, `testFuzz_SetConfig_GasLimitRule`, `test_SetConfig_ScheduledThroughTheManagerAndStaleOperationsRevert`; [`VrfEntropyManaged.t.sol`](../../test/entropy/VrfEntropyManaged.t.sol): `test_SetConfigIsInTheStandardClass` |
-| ENT-11 | `lowerCallbackGasLimit` is `SUCCESSOR_SETTER` (7 days), compare-and-set, strictly lower, never below 100,000. | `VrfEntropyModule.lowerCallbackGasLimit` | [`VrfEntropyManaged.t.sol`](../../test/entropy/VrfEntropyManaged.t.sol): `test_ALoweredCoordinatorMaximumIsFollowedInTheSuccessorClass`, `test_ALoweringStaysAboveTheFloorAndBelowTheCurrentLimit`, `test_OnlyTheSettersCanCallTheGovernedFunctions` |
-| ENT-12 | A `VRF` work starts only once the seed of its item's content is delivered (`isDeliveredContent(item.contentHash)`, one word: a seed belongs to its content and a content hash is consumed by one item only, CUR-12), and only while Stream has an entropy module (deployed with one, or installed later by `setDependency`). | `Stream.mint`, `Stream._checkItem` | [`Stream.t.sol`](../../test/stream/Stream.t.sol): `test_mint_vrfNeedsDeliveredSeed`, `test_mint_vrfRejectedWithoutEntropyModule`; [`VrfWork.t.sol`](../../test/integration/VrfWork.t.sol): `test_SeedRequestedDeliveredThenStartedAndRendered`; [`StreamDependencies.t.sol`](../../test/integration/StreamDependencies.t.sol): `test_AVrfStartChecksTheItemsContentAndContentIsMintedOnce`; [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_ContentReads_AnswerOnlyTheSeededContent` |
-| ENT-13 | The callback creates no storage slot and its cost stays at most half the 100,000 floor under Glamsterdam pricing. | `VrfEntropyModule.rawFulfillRandomWords` | [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Callback_CreatesNoStorageSlot`, `test_Callback_UsesUnderHalfTheFloorUnderGlamsterdam`, `test_Callback_GasStaysUnderTheConfiguredLimit` |
-| ENT-14 | A reentrant call during a request cannot deliver the new request or overwrite a seed delivered meanwhile. | `VrfEntropyModule.requestSeed` | [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Request_ReentrancyFromTheCoordinatorFindsNothingToUse`, `test_Repeat_AnEarlierRequestDeliveredDuringTheRepeatIsNotOverwritten` |
-| ENT-15 | A coordinator's request ID must be nonzero and unused; a failing coordinator leaves no state. | `VrfEntropyModule.requestSeed` | [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Request_RejectsAZeroRequestId`, `test_Request_RejectsADuplicateRequestId`, `test_Request_CoordinatorFailureLeavesNoState` |
-| ENT-16 | Installation checks: `retryDelay` within 3 to 30 days; a valid configuration; the registry has code, is not delegated, answers ERC-165 for `IPackageRegistry` and has its pinned code hash. | `VrfEntropyModule` constructor | [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Constructor_RejectsBadRetryDelay`, `test_Constructor_TheMinimumRetryDelayIsThreeDays`, `test_Constructor_RejectsARegistryWithoutErc165Support`, `test_Constructor_PinsTheRegistryCodeHash`, `test_Constructor_RejectsADelegatedRegistry` |
-| ENT-17 | Anyone may request a curated seed, under the real AccessManager; `requestSeed` is not payable (only `requestFederatedSeed` takes a payment, all forwarded to the wrapper). | `VrfEntropyModule` | [`VrfEntropyManaged.t.sol`](../../test/entropy/VrfEntropyManaged.t.sol): `test_AnyoneMayRequestASeedUnderTheRealManager`, `test_NothingIsPayable`; [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Request_NoRoleIsNeeded`, `test_Request_IsNonPayable` |
-| ENT-18 | A work's VRF seed always comes from the entropy module that was current at its mint (`IStream.entropyModuleOf`), before and after its record opens: replacing the module (owner decision 16) changes no existing work's seed or metadata, and only later works use the new module. | `Stream.setDependency`, `Stream.entropyModuleOf`, `WorkRecords.openRecord`, `Renderer._seed` | [`Stream.t.sol`](../../test/stream/Stream.t.sol): `test_entropyModuleOf_answersTheModuleCurrentAtMint`; [`StreamDependencies.t.sol`](../../test/integration/StreamDependencies.t.sol): `test_ReplacingTheEntropyModuleNeverChangesAnExistingWorksSeed`, `test_TwoEntropyReplacementsLeaveEachErasWorksUnchanged`, `test_AVrfRequestInFlightAcrossAReplacement`, `test_ReplacingEachDependencyLeavesExistingTokensUnchanged` |
-| ENT-19 | After its content is consumed, the item `consumedItemOf(contentHash)` names, a `VRF` item not yet linked, links to the content's already delivered seed with no proof or package check, no request and no coordinator call; every other call for a consumed content reverts with `NotRequestable`, so consumption never starts a draw and never links an item to another content. | `VrfEntropyModule.requestSeed`, `_isConsumedBy` | [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Content_TheConsumingItemLinksToTheDeliveredSeedAfterConsumption`, `test_Gate_AfterConsumptionNoDrawIsRequested`, `test_Gate_AfterConsumptionOnlyTheConsumingItemLinksToItsOwnContent`, `test_Gate_RejectsAConsumedItem` |
-| ENT-20 | `requestFederatedSeed` accepts only a `VRF` item with a nonzero content hash, for a contract the artist registry lists ACTIVE, from a wallet of its artist (`IAccounts.isWallet`), with a wrapper set (`NotRequestable`), and a payment of at least the wrapper's quote (`InsufficientPayment`); all of `msg.value` goes to the wrapper with the request. The draw key is `keccak256(abi.encode(token, contentHash))`; the backoff and the first-delivery rule are a curated draw's | `VrfEntropyModule.requestFederatedSeed` | [`FederationSecondPass.t.sol`](../../test/federated/FederationSecondPass.t.sol): `test_Vrf_OnlyAnArtistWalletOfAListedContractRequestsAndPays`, `test_Vrf_AWorkMintsOnlyAfterDeliveryAndKeepsItsSeed` |
-| ENT-21 | A federated request never touches the network's subscription; only the wrapper that issued it delivers it (the coordinator cannot) | `requestFederatedSeed`, `rawFulfillRandomWords` | `test_Vrf_AWorkMintsOnlyAfterDeliveryAndKeepsItsSeed`, `test_Vrf_TheWrapperAloneDeliversItsRequests` |
-| ENT-22 | `setWrapper` is governed (the dependency class), compare-and-set, never a no-op; a nonzero wrapper must have code, no delegation and the pinned code hash, checked again at every request and delivery; zero turns federated requests off; a change starts a new tenure, as `setCoordinator` does | `VrfEntropyModule.setWrapper` | `test_Vrf_TheWrapperAloneDeliversItsRequests` |
+| ENT-1 | A request is accepted only for a `VRF` item with a nonzero content hash, placed by a proof of at most 32 hashes under an `APPROVED` root, whose content is unconsumed; checked on every call, with the one link-only exception of ENT-19. | `VrfEntropyModule.requestSeed` | `test_Gate_RejectsAnUnknownOrRevokedPackage`, `test_Gate_RejectsAnItemThatIsNotInThePackage`, `test_Gate_ThePolicyCannotBeFlippedToVrf`, `test_Gate_RejectsAConsumedItem`, `test_Gate_RejectsAnItemWithoutAContentHash`, `test_Gate_RevocationStopsARepeatButNotTheReads`, `testFuzz_OnlyItemsOfAnApprovedPackageCanBeRequested`, `testFuzz_NonVrfItemsAreAlwaysRefused` |
+| ENT-2 | One draw per content hash: every linked item carrying the content reads the same seed, and joining never asks the coordinator. | `VrfEntropyModule.requestSeed` | `test_Content_ASecondItemJoinsTheDeliveredDrawWithoutARequest`, `test_Content_ASecondItemJoinsAPendingDrawAndSharesItsClock`, `invariant_ItemsThatShareContentReadOneSeed` |
+| ENT-3 | An item never linked reads as undelivered; `seedOf` reverts until delivery. | `VrfEntropyModule.isDelivered`, `seedOf` | `test_Content_AnUnlinkedItemReadsAsUndelivered`, `test_SeedOf_RevertsBeforeDelivery` |
+| ENT-4 | The first delivery fixes the seed for good, whichever outstanding request it answers; a later delivery for the content is a no-op that does not revert; no request is accepted after delivery. | `VrfEntropyModule.rawFulfillRandomWords`, `requestSeed` | `test_Fulfill_TheFirstDeliveryWinsInEitherOrder`, `test_Fulfill_ADoubleFulfilIsANoOp`, `test_NoRequestAfterDelivery`, `test_Repeat_TheFirstDeliveryStillWinsUnderTheBackoff`, `testFuzz_TheFirstDeliveryOfManyRequestsWins`, `testFuzz_SeedIsTheDeliveredWord`, `invariant_AtMostOneSeedPerItemAndItNeverChanges` |
+| ENT-5 | The k-th repeat is possible only once `retryDelay * 2^(k-1)`, capped at 30 days, has passed since the previous request, for any caller; the count belongs to the coordinator tenure of the latest request, so the first request after a coordinator replacement is made at once; once the capped wait has passed a repeat is always accepted. A repeat never invalidates an earlier request. | `VrfEntropyModule.requestSeed` | `test_Repeat_BeforeTheTimeoutReverts`, `test_Repeat_AfterTheTimeoutIsOpenToAnyone`, `test_Repeat_TheWaitDoublesForTheFirstFourRepeats`, `test_Repeat_TheWaitIsCappedAtTheMaximumRetryDelay`, `test_Repeat_ARepeatIsAlwaysEventuallyAccepted`, `testFuzz_Repeat_IsAcceptedOnceTheCappedWaitHasPassed`, `test_Repeat_NoCallerRepeatsBeforeTheCurrentWait`, `test_Repeat_ACoordinatorSwapRestartsTheBackoff`, `test_Repeat_WithoutASwapTheScheduleIsUnchanged`, `test_Repeat_ARestoredCoordinatorsEarlierRequestsMayDeliverAgain`, `test_Repeat_TheBoundHoldsPerCoordinatorTenure`, `test_Repeat_AtMostFifteenRequestsInAYearAtAThreeDayBase`, `test_Repeat_CreatesOnlyTheRequestRecord`, `test_Fulfill_AnEarlierRequestStillDeliversAfterARepeat`, `test_Fulfill_ARepeatCannotDiscardAPendingDelivery`, `test_Repeat_UsesTheCurrentConfiguration`, `testFuzz_RetryWindow`, `invariant_TheCurrentRequestIsTheLastIssued`, `invariant_TheBackoffBoundsTheRequestsOfAContent` |
+| ENT-6 | Only the current coordinator, or the current wrapper for an Independent Stream request, delivers, only a request it issued to this module, with exactly one word. | `VrfEntropyModule.rawFulfillRandomWords` | `test_Fulfill_OnlyTheCoordinatorMay`, `test_Fulfill_AnUnissuedRequestIdReverts`, `test_Fulfill_ExactlyOneWordIsRequired`, `test_Fulfill_AMalformedDeliveryRevertsAndTheItemStaysUndelivered`, `testFuzz_OnlyTheCoordinatorMayFulfill`, `testFuzz_RequestIdsRouteToTheirOwnItems` |
+| ENT-7 | The coordinator's pinned code hash is checked at install, at every request and at every delivery. | `Dependency.checkPinned`, `checkUnchanged` | `test_Constructor_PinsTheCoordinatorCodeHash`, `test_Pin_ACoordinatorWhoseCodeChangedIsRefused`, `test_SetCoordinator_PinsTheCodeHash` |
+| ENT-8 | Request IDs are scoped to their coordinator: a swap orphans the old coordinator's requests, the new one cannot deliver them, and delivered seeds survive. | `VrfEntropyModule.rawFulfillRandomWords` | `test_SetCoordinator_OldCoordinatorCanNoLongerDeliver`, `test_SetCoordinator_OrphanedRequestIsRerequestedThroughTheNewOne`, `test_SetCoordinator_RequestIdsAreScopedToTheirCoordinator`, `test_SetCoordinator_DeliveredSeedsSurviveTheSwap`, `test_Repeat_RequestIdsDoNotMixAcrossCoordinators` |
+| ENT-9 | `setCoordinator` is compare-and-set, never a no-op, and refuses a codeless or delegated coordinator. | `VrfEntropyModule.setCoordinator`; genesis role map | `test_SetCoordinator_NeedsTheSuccessorClassRole`, `test_SetCoordinator_RejectsStaleAndCodelessValues`, `test_SetCoordinator_ASwapToTheCurrentCoordinatorIsRefused`, `test_SetCoordinatorIsInTheSuccessorClass`, `test_TheNetworkCancelsAPendingCoordinatorSwap` |
+| ENT-10 | `setConfig` is compare-and-set on the whole configuration, within bounds; the callback gas limit only rises, at most doubling per step, never above 2,500,000. | `VrfEntropyModule.setConfig`; `BoundedParameter.raise` | `test_SetConfig_NeedsTheStandardClassRole`, `test_SetConfig_StaleExpectedValueReverts`, `test_SetConfig_GasLimitCanOnlyBeRaised`, `test_SetConfig_GasLimitAtMostDoublesPerStep`, `testFuzz_SetConfig_GasLimitRule`, `test_SetConfig_ScheduledThroughTheManagerAndStaleOperationsRevert`, `test_SetConfigIsInTheStandardClass` |
+| ENT-11 | `lowerCallbackGasLimit` is compare-and-set, strictly lower, never below 100,000. | `VrfEntropyModule.lowerCallbackGasLimit` | `test_ALoweredCoordinatorMaximumIsFollowedInTheSuccessorClass`, `test_ALoweringStaysAboveTheFloorAndBelowTheCurrentLimit`, `test_OnlyTheSettersCanCallTheGovernedFunctions` |
+| ENT-12 | A `VRF` work starts only once the seed of its item's content is delivered; the mint policy checks it and states the seed in the mint facts. | `PackageRegistry._seed` | |
+| ENT-13 | The callback creates no storage slot and its cost stays at most half the 100,000 floor under Glamsterdam pricing. | `VrfEntropyModule.rawFulfillRandomWords` | `test_Callback_CreatesNoStorageSlot`, `test_Callback_UsesUnderHalfTheFloorUnderGlamsterdam`, `test_Callback_GasStaysUnderTheConfiguredLimit` |
+| ENT-14 | A reentrant call during a request cannot deliver the new request or overwrite a seed delivered meanwhile. | `VrfEntropyModule.requestSeed` | `test_Request_ReentrancyFromTheCoordinatorFindsNothingToUse`, `test_Repeat_AnEarlierRequestDeliveredDuringTheRepeatIsNotOverwritten` |
+| ENT-15 | A coordinator's request ID must be nonzero and unused; a failing coordinator leaves no state. | `VrfEntropyModule.requestSeed` | `test_Request_RejectsAZeroRequestId`, `test_Request_RejectsADuplicateRequestId`, `test_Request_CoordinatorFailureLeavesNoState` |
+| ENT-16 | Installation checks: `retryDelay` within 3 to 30 days; a valid configuration; the registry has code, is not delegated, answers ERC-165 for `IPackageRegistry` and has its pinned code hash. | `VrfEntropyModule` constructor | `test_Constructor_RejectsBadRetryDelay`, `test_Constructor_TheMinimumRetryDelayIsThreeDays`, `test_Constructor_RejectsARegistryWithoutErc165Support`, `test_Constructor_PinsTheRegistryCodeHash`, `test_Constructor_RejectsADelegatedRegistry` |
+| ENT-17 | Anyone may request a curated seed; `requestSeed` is not payable (only `requestIndependentSeed` takes a payment, all forwarded to the wrapper). | `VrfEntropyModule` | `test_AnyoneMayRequestASeedUnderTheRealManager`, `test_NothingIsPayable`, `test_Request_NoRoleIsNeeded`, `test_Request_IsNonPayable` |
+| ENT-18 | A work's seed is stored in the token at mint and never changes; replacing the entropy module changes no existing work's seed. | `Stream6529.mint` | `test_Mint_StoresFactsAndCountsSerial` |
+| ENT-19 | After its content is consumed, only the consuming item, a `VRF` item not yet linked, links to the content's delivered seed, with no proof or package check and no request; every other call for a consumed content reverts with `NotRequestable`. | `VrfEntropyModule.requestSeed` | `test_Content_TheConsumingItemLinksToTheDeliveredSeedAfterConsumption`, `test_Gate_AfterConsumptionNoDrawIsRequested`, `test_Gate_AfterConsumptionOnlyTheConsumingItemLinksToItsOwnContent`, `test_Gate_RejectsAConsumedItem` |
+| ENT-20 | `requestIndependentSeed` accepts only a `VRF` item with a nonzero content hash, for a contract the Independent Stream module lists active, from a wallet of its artist, with a wrapper set, and a payment of at least the wrapper's quote; all of `msg.value` goes to the wrapper. | `VrfEntropyModule.requestIndependentSeed` | |
+| ENT-21 | An Independent Stream request never touches the network's subscription; only the wrapper that issued it delivers it. | `VrfEntropyModule.requestIndependentSeed`, `rawFulfillRandomWords` | |
+| ENT-22 | `setWrapper` is compare-and-set, never a no-op; a nonzero wrapper must have code, no delegation and the pinned code hash, checked again at every request and delivery; zero turns Independent Stream requests off. | `VrfEntropyModule.setWrapper` | |
 
 ## Events
 
-Signatures and topic0 are under
-[VrfEntropyModule](../integrators/events-and-indexing.md#vrfentropymodule). `SeedDelivered` is
-keyed by content hash, not item hash: map items to it through `SeedLinked`.
+Signatures and topic0 are under [VrfEntropyModule](../integrators/events-and-indexing.md#vrfentropymodule).
+`SeedDelivered` is keyed by content hash: map items to it through `SeedLinked`.
 
 ## Failure modes and recovery
 
 | Failure | Effect | Recovery |
 | --- | --- | --- |
-| The oracle does not deliver (outage, unfunded subscription). | The work cannot start. Nothing is in custody. | Fund the subscription; anyone repeats the request once the backoff wait has passed (at most 30 days). |
-| A delivery is malformed (not exactly one word). | It reverts and the coordinator absorbs the failure. | A repeat once the backoff wait has passed. |
-| Code at the coordinator's address no longer has the pinned hash. | Requests and deliveries revert with `DependencyCodeChanged`. | `setCoordinator` to a reviewed coordinator (7 days). |
-| Chainlink lowers the coordinator's maximum callback gas below the module's limit. | Every request reverts at the coordinator. | `lowerCallbackGasLimit` (7 days), never below 100,000. |
-| Chainlink retires the coordinator. | No new requests; pending ones may never deliver. | The coordinator change above; orphaned contents are requested from the new coordinator at once. |
-| A request was made before its root was revoked. | It still delivers. | None needed: the item can no longer mint. |
-| A media revision of a VRF work is approved. | It has a new content hash and draws a new seed. | The curation runbook revokes the old root before approving such a revision ([curation.md](curation.md)). |
-| Several deliveries for one content are outstanding. | Whoever withholds or orders them chooses which of their random words becomes the seed. | Accepted risk [LIM-ENT-1](../audit/known-limitations.md#entropy); the backoff bounds the count ([first delivery wins](#first-delivery-wins): at most 15 in a year at the 3-day base, per coordinator tenure). |
-| A hostile approved package requests many VRF draws. | It spends one draw per content, plus repeats, until the network revokes it. | Accepted risk [LIM-ENT-2](../audit/known-limitations.md#entropy); a dedicated subscription with a modest, topped-up balance bounds the loss. |
+| The oracle does not deliver (outage, unfunded subscription). | The work cannot start; nothing is in custody. | Fund the subscription; anyone repeats the request after the backoff wait. |
+| Code at the coordinator's address changed. | Requests and deliveries revert (`DependencyCodeChanged`). | `setCoordinator` to a reviewed coordinator. |
+| Chainlink lowers the coordinator's maximum callback gas. | Every request reverts at the coordinator. | `lowerCallbackGasLimit`, never below 100,000. |
+| A hostile approved package requests many draws. | One draw per content plus repeats, until the root is revoked. | [LIM-ENT-2](../audit/known-limitations.md#entropy); a dedicated subscription with a modest balance. |
 
-**Subscription operations** ([LIM-ENT-3](../audit/known-limitations.md#entropy)): use a
-dedicated subscription with this module as its only consumer, added before the first request
-(the subscription pays, never the caller; a shared subscription can be drained by its other
-consumers, which the module cannot see); keep the balance modest and topped up; and keep an old
-subscription funded until its requests deliver, since the coordinator refuses to cancel a
-subscription with a pending request and VRF v2.5 never expires one (confirm against Chainlink's
-current documentation). On Sepolia each instance has its own native-paid subscription
-([`deployments/11155111/README.md`](../../deployments/11155111/README.md)).
+Use a dedicated subscription with this module as its only consumer, keep its balance modest, and
+keep an old subscription funded until its requests deliver
+([LIM-ENT-3](../audit/known-limitations.md#entropy)).
 
 ## Parameters and limits
 
 | Parameter | Value | Source |
 | --- | --- | --- |
-| Callback gas limit floor | 100,000 | `VrfEntropyModule.MIN_CALLBACK_GAS` |
-| Callback gas limit ceiling | 2,500,000 | `VrfEntropyModule.MAX_CALLBACK_GAS` |
-| Callback gas limit raise step | at most 2x per `setConfig` | `BoundedParameter.raise`, [`BoundedParameter.sol`](../../src/governance/BoundedParameter.sol) |
+| Callback gas limit | 100,000 to 2,500,000; raised at most 2x per `setConfig` | `MIN_CALLBACK_GAS`, `MAX_CALLBACK_GAS`, `BoundedParameter.raise` |
 | Confirmations | 3 to 200 | `MIN_CONFIRMATIONS`, `MAX_CONFIRMATIONS` |
-| `retryDelay` (immutable) | 3 days to 30 days: the wait before a content's first repeat | `MIN_RETRY_DELAY`, `MAX_RETRY_DELAY` |
-| Wait before the k-th repeat | `retryDelay * 2^(k-1)`, at most 30 days | `VrfEntropyModule._repeatWait`, `MAX_RETRY_DELAY` |
+| `retryDelay` (immutable) | 3 to 30 days | `MIN_RETRY_DELAY`, `MAX_RETRY_DELAY` |
 | Proof length | at most 32 hashes | `MAX_PROOF_LENGTH` |
-| Subscription ID, key hash | nonzero | `VrfEntropyModule._validate` |
-| Words per request | 1 | `VrfEntropyModule.requestSeed` |
-| `extraArgs` tag | `0x92fd1338`, `bytes4(keccak256("VRF ExtraArgsV1"))` | `EXTRA_ARGS_V1_TAG`; `test_ExtraArgsTagIsTheV25Tag` |
-| Deploy defaults | callback gas 200,000; 3 confirmations; `retryDelay` 3 days; LINK payment unless `VRF_NATIVE_PAYMENT=1` | [`script/Deploy.s.sol`](../../script/Deploy.s.sol) |
-| Deploying without VRF | an explicit `NO_VRF=1` off a local chain | [`script/Deploy.s.sol`](../../script/Deploy.s.sol); `test_TheEntropyModuleIsAnExplicitChoice` |
-| Callback cost | about 34,000 gas under Glamsterdam, no new slot | [ADR 0004, "Security impact"](../adr/0004-gas-budgets-under-glamsterdam.md#security-impact) |
-
-## Differences from the ADRs
-
-See the [register](README.md#differences-from-the-adrs).
+| Deploy defaults | callback gas 200,000; 3 confirmations; `retryDelay` 3 days; no module when `VRF_COORDINATOR` is unset | [`script/ScriptIO.sol`](../../script/ScriptIO.sol), [runbook](../../script/README.md) |
 
 ## References
 
-- Code: the sources under [Contracts](#contracts),
-  [`BoundedParameter.sol`](../../src/governance/BoundedParameter.sol),
-  [`src/entropy/README.md`](../../src/entropy/README.md).
+- Code: the sources under [Contracts](#contracts), [`src/entropy/README.md`](../../src/entropy/README.md).
 - ADRs: [ADR 0001 §9](../adr/0001-v1-scope.md#9-seeded-and-generative-11s),
-  [ADR 0003, "Sales and auctions"](../adr/0003-build-time-decisions.md#sales-and-auctions-amends-adr-0001-5-6-and-9),
-  [ADR 0003, "Security impact"](../adr/0003-build-time-decisions.md#security-impact),
-  [ADR 0004, "Security impact"](../adr/0004-gas-budgets-under-glamsterdam.md#security-impact).
-- Tests: [`test/entropy/`](../../test/entropy/) and the files in the rules table. How to run them:
-  [testing docs](../testing/README.md).
-- Related pages: [curation.md](curation.md), [stream-and-auctions.md](stream-and-auctions.md),
-  [rendering-and-tokenuri.md](rendering-and-tokenuri.md), [governance.md](governance.md),
-  [Sepolia flows, section 6](../../deployments/11155111/flows.md#6-vrf).
+  [ADR 0003](../adr/0003-build-time-decisions.md#sales-and-auctions-amends-adr-0001-5-6-and-9).
+- Tests: [`test/entropy/`](../../test/entropy/); how to run them: [testing](../testing/README.md).
+- Related: [curation.md](curation.md), [stream-and-auctions.md](stream-and-auctions.md),
+  [Independent Stream.md](independent-stream.md).

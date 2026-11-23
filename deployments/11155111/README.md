@@ -1,8 +1,29 @@
 # Sepolia (chain 11155111)
 
+> **Kept as deployed.** The rounds recorded here (r1 to r5) were deployed before the contracts
+> were renamed on 22 November 2026. Their records, this page and `config/sepolia-r1` to
+> `config/sepolia-r5` are kept exactly as deployed, with the names, role signatures and product
+> ID of that time; Etherscan and Sourcify show the same names. The scripts, the keeper and the
+> walkthrough in this repository read the current names and so work with r6 and later rounds,
+> not with these records.
+>
+> | Name when deployed | Name now |
+> | --- | --- |
+> | `Stream` | `Stream6529` |
+> | `Editions` | `StreamEditions6529` |
+> | `WorkFacts` | `StreamWorkFacts6529` |
+> | `Directory` | `StreamDirectory6529` |
+> | `FederatedStream` | `IndependentStream6529` |
+> | `FederatedEditions` | `IndependentStreamEditions6529` |
+> | `FederationRegistry` | `IndependentStreamRegistry` |
+> | `FederatedDeployer` (`FederatedStreamDeployer`, `FederatedEditionsDeployer`) | `IndependentStreamDeployer` (`IndependentStream721Deployer`, `IndependentStreamEditionsDeployer`) |
+> | `FederatedEditionAuction`, `FederatedEditionAuctionLens` | `IndependentEditionAuction`, `IndependentEditionAuctionLens` |
+> | `PRODUCT_FEDERATED`, slot `FEDERATION` | `PRODUCT_INDEPENDENT`, slot `INDEPENDENT_STREAM` |
+> | other identifiers containing `Federation` / `Federated` | the same with `IndependentStream` / `Independent` |
+
 Deployment records for 6529 Works on Sepolia. Each record is written by
-[`script/Deploy.s.sol`](../../script/Deploy.s.sol) and confirmed by
-[`script/Verify.s.sol`](../../script/Verify.s.sol); the runbook is
+[`script/Deploy.s.sol`](https://github.com/6529-Collections/6529-works/blob/581cfb6f/script/Deploy.s.sol) and confirmed by
+[`script/Verify.s.sol`](https://github.com/6529-Collections/6529-works/blob/581cfb6f/script/Verify.s.sol); the runbook is
 [`script/README.md`](../../script/README.md).
 
 These are testnet rehearsals with throwaway signers. The code is pre-audit and nothing

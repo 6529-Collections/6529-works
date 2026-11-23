@@ -3,8 +3,7 @@
 6529 Works is pre-audit and not production-ready. Do not use these contracts to
 custody value.
 
-The [internal review of October 2026](docs/security/internal-review-2026-10.md),
-by AI agents and not an external audit, records its findings and their resolution.
+The code has been reviewed only by AI agents; no external audit has taken place.
 
 ## Reporting a vulnerability
 
@@ -29,7 +28,3 @@ In scope:
 - Solidity under `src/`;
 - deployment scripts under `script/`;
 - CI workflows.
-
-The RC1 reference implementation is kept in the private 6529Stream repository.
-Report anything that affects it through this repository's private vulnerability
-reporting as well.

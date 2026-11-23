@@ -73,68 +73,10 @@
     "type": "error"
   },
   {
-    "id": "0x9700df8a",
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "asset",
-        "type": "address"
-      }
-    ],
-    "name": "AssetNotAdmissible",
-    "signature": "AssetNotAdmissible(address)",
-    "type": "error"
-  },
-  {
-    "id": "0x0d0efc86",
-    "inputs": [
-      {
-        "internalType": "bytes32",
-        "name": "product",
-        "type": "bytes32"
-      }
-    ],
-    "name": "CurrencyNotConfigured",
-    "signature": "CurrencyNotConfigured(bytes32)",
-    "type": "error"
-  },
-  {
-    "id": "0x2cd0b00f",
-    "inputs": [],
-    "name": "EthNotDeprecable",
-    "signature": "EthNotDeprecable()",
-    "type": "error"
-  },
-  {
     "id": "0xd5fbbcce",
     "inputs": [],
     "name": "InvalidIncrementFloor",
     "signature": "InvalidIncrementFloor()",
-    "type": "error"
-  },
-  {
-    "id": "0xa661c0e7",
-    "inputs": [],
-    "name": "InvalidProduct",
-    "signature": "InvalidProduct()",
-    "type": "error"
-  },
-  {
-    "id": "0x599880e3",
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "asset",
-        "type": "address"
-      },
-      {
-        "internalType": "enum IAssetAllowlist.Status",
-        "name": "current",
-        "type": "uint8"
-      }
-    ],
-    "name": "InvalidStatusTransition",
-    "signature": "InvalidStatusTransition(address,uint8)",
     "type": "error"
   },
   {
@@ -156,24 +98,6 @@
     "type": "error"
   },
   {
-    "id": "0x3e2aec66",
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "asset",
-        "type": "address"
-      },
-      {
-        "internalType": "uint256",
-        "name": "allowedAt",
-        "type": "uint256"
-      }
-    ],
-    "name": "ReadmissionTooEarly",
-    "signature": "ReadmissionTooEarly(address,uint256)",
-    "type": "error"
-  },
-  {
     "id": "0x03227756",
     "inputs": [
       {
@@ -189,19 +113,6 @@
     ],
     "name": "RevisionMismatch",
     "signature": "RevisionMismatch(uint64,uint64)",
-    "type": "error"
-  },
-  {
-    "id": "0x1373f626",
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "asset",
-        "type": "address"
-      }
-    ],
-    "name": "TokenReadFailed",
-    "signature": "TokenReadFailed(address)",
     "type": "error"
   },
   {
@@ -250,39 +161,6 @@
     ],
     "name": "AuthorityUpdated",
     "signature": "AuthorityUpdated(address)",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "id": "0x067a63345dbae6001939bc0d94813caee97a817779e5a2f7b1f80f88a1d12b98",
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "bytes32",
-        "name": "product",
-        "type": "bytes32"
-      },
-      {
-        "indexed": false,
-        "internalType": "address",
-        "name": "previous",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "address",
-        "name": "current",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint64",
-        "name": "revision",
-        "type": "uint64"
-      }
-    ],
-    "name": "DefaultCurrencyChanged",
-    "signature": "DefaultCurrencyChanged(bytes32,address,address,uint64)",
     "type": "event"
   },
   {
@@ -388,31 +266,6 @@
     "type": "function"
   },
   {
-    "id": "0x3979fc8e",
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "asset",
-        "type": "address"
-      },
-      {
-        "internalType": "uint64",
-        "name": "expectedRevision",
-        "type": "uint64"
-      },
-      {
-        "internalType": "uint256",
-        "name": "floor",
-        "type": "uint256"
-      }
-    ],
-    "name": "admitAsset",
-    "outputs": [],
-    "signature": "admitAsset(address,uint64,uint256)",
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
     "id": "0xd6dbaf58",
     "inputs": [
       {
@@ -456,99 +309,6 @@
     ],
     "signature": "authority()",
     "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "id": "0xd460bcbe",
-    "inputs": [
-      {
-        "internalType": "bytes32",
-        "name": "product",
-        "type": "bytes32"
-      }
-    ],
-    "name": "defaultCurrency",
-    "outputs": [
-      {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
-      }
-    ],
-    "signature": "defaultCurrency(bytes32)",
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "id": "0x0407b317",
-    "inputs": [
-      {
-        "internalType": "bytes32",
-        "name": "product",
-        "type": "bytes32"
-      }
-    ],
-    "name": "defaultCurrencyConfig",
-    "outputs": [
-      {
-        "internalType": "bool",
-        "name": "",
-        "type": "bool"
-      },
-      {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
-      },
-      {
-        "internalType": "uint64",
-        "name": "",
-        "type": "uint64"
-      }
-    ],
-    "signature": "defaultCurrencyConfig(bytes32)",
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "id": "0x21d9d165",
-    "inputs": [
-      {
-        "internalType": "bytes32",
-        "name": "product",
-        "type": "bytes32"
-      }
-    ],
-    "name": "defaultCurrencyOpeningBid",
-    "outputs": [
-      {
-        "internalType": "address",
-        "name": "asset",
-        "type": "address"
-      },
-      {
-        "internalType": "uint256",
-        "name": "bid",
-        "type": "uint256"
-      }
-    ],
-    "signature": "defaultCurrencyOpeningBid(bytes32)",
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "id": "0x41003c89",
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "asset",
-        "type": "address"
-      }
-    ],
-    "name": "deprecateAsset",
-    "outputs": [],
-    "signature": "deprecateAsset(address)",
-    "stateMutability": "nonpayable",
     "type": "function"
   },
   {
@@ -645,31 +405,6 @@
     "type": "function"
   },
   {
-    "id": "0xbc27c0e9",
-    "inputs": [
-      {
-        "internalType": "bytes32",
-        "name": "product",
-        "type": "bytes32"
-      },
-      {
-        "internalType": "uint64",
-        "name": "expectedRevision",
-        "type": "uint64"
-      },
-      {
-        "internalType": "address",
-        "name": "asset",
-        "type": "address"
-      }
-    ],
-    "name": "setDefaultCurrency",
-    "outputs": [],
-    "signature": "setDefaultCurrency(bytes32,uint64,address)",
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
     "id": "0xad176f96",
     "inputs": [
       {
@@ -737,37 +472,6 @@
       }
     ],
     "signature": "status(address)",
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "id": "0x60c6c664",
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "asset",
-        "type": "address"
-      }
-    ],
-    "name": "statusClock",
-    "outputs": [
-      {
-        "internalType": "enum IAssetAllowlist.Status",
-        "name": "",
-        "type": "uint8"
-      },
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
-    "signature": "statusClock(address)",
     "stateMutability": "view",
     "type": "function"
   }

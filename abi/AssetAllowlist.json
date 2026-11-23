@@ -53,29 +53,6 @@
         "internalType": "address",
         "name": "asset",
         "type": "address"
-      },
-      {
-        "internalType": "uint64",
-        "name": "expectedRevision",
-        "type": "uint64"
-      },
-      {
-        "internalType": "uint256",
-        "name": "floor",
-        "type": "uint256"
-      }
-    ],
-    "name": "admitAsset",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "asset",
-        "type": "address"
       }
     ],
     "name": "assetConfig",
@@ -110,91 +87,6 @@
       }
     ],
     "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "bytes32",
-        "name": "product",
-        "type": "bytes32"
-      }
-    ],
-    "name": "defaultCurrency",
-    "outputs": [
-      {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "bytes32",
-        "name": "product",
-        "type": "bytes32"
-      }
-    ],
-    "name": "defaultCurrencyConfig",
-    "outputs": [
-      {
-        "internalType": "bool",
-        "name": "",
-        "type": "bool"
-      },
-      {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
-      },
-      {
-        "internalType": "uint64",
-        "name": "",
-        "type": "uint64"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "bytes32",
-        "name": "product",
-        "type": "bytes32"
-      }
-    ],
-    "name": "defaultCurrencyOpeningBid",
-    "outputs": [
-      {
-        "internalType": "address",
-        "name": "asset",
-        "type": "address"
-      },
-      {
-        "internalType": "uint256",
-        "name": "bid",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "asset",
-        "type": "address"
-      }
-    ],
-    "name": "deprecateAsset",
-    "outputs": [],
-    "stateMutability": "nonpayable",
     "type": "function"
   },
   {
@@ -283,29 +175,6 @@
   {
     "inputs": [
       {
-        "internalType": "bytes32",
-        "name": "product",
-        "type": "bytes32"
-      },
-      {
-        "internalType": "uint64",
-        "name": "expectedRevision",
-        "type": "uint64"
-      },
-      {
-        "internalType": "address",
-        "name": "asset",
-        "type": "address"
-      }
-    ],
-    "name": "setDefaultCurrency",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
         "internalType": "address",
         "name": "asset",
         "type": "address"
@@ -369,35 +238,6 @@
     "type": "function"
   },
   {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "asset",
-        "type": "address"
-      }
-    ],
-    "name": "statusClock",
-    "outputs": [
-      {
-        "internalType": "enum IAssetAllowlist.Status",
-        "name": "",
-        "type": "uint8"
-      },
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
     "anonymous": false,
     "inputs": [
       {
@@ -439,37 +279,6 @@
       }
     ],
     "name": "AuthorityUpdated",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "bytes32",
-        "name": "product",
-        "type": "bytes32"
-      },
-      {
-        "indexed": false,
-        "internalType": "address",
-        "name": "previous",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "address",
-        "name": "current",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint64",
-        "name": "revision",
-        "type": "uint64"
-      }
-    ],
-    "name": "DefaultCurrencyChanged",
     "type": "event"
   },
   {
@@ -584,56 +393,8 @@
     "type": "error"
   },
   {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "asset",
-        "type": "address"
-      }
-    ],
-    "name": "AssetNotAdmissible",
-    "type": "error"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "bytes32",
-        "name": "product",
-        "type": "bytes32"
-      }
-    ],
-    "name": "CurrencyNotConfigured",
-    "type": "error"
-  },
-  {
-    "inputs": [],
-    "name": "EthNotDeprecable",
-    "type": "error"
-  },
-  {
     "inputs": [],
     "name": "InvalidIncrementFloor",
-    "type": "error"
-  },
-  {
-    "inputs": [],
-    "name": "InvalidProduct",
-    "type": "error"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "asset",
-        "type": "address"
-      },
-      {
-        "internalType": "enum IAssetAllowlist.Status",
-        "name": "current",
-        "type": "uint8"
-      }
-    ],
-    "name": "InvalidStatusTransition",
     "type": "error"
   },
   {
@@ -655,22 +416,6 @@
   {
     "inputs": [
       {
-        "internalType": "address",
-        "name": "asset",
-        "type": "address"
-      },
-      {
-        "internalType": "uint256",
-        "name": "allowedAt",
-        "type": "uint256"
-      }
-    ],
-    "name": "ReadmissionTooEarly",
-    "type": "error"
-  },
-  {
-    "inputs": [
-      {
         "internalType": "uint64",
         "name": "expected",
         "type": "uint64"
@@ -682,17 +427,6 @@
       }
     ],
     "name": "RevisionMismatch",
-    "type": "error"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "asset",
-        "type": "address"
-      }
-    ],
-    "name": "TokenReadFailed",
     "type": "error"
   }
 ]

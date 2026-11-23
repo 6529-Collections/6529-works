@@ -14,6 +14,19 @@
   },
   {
     "inputs": [],
+    "name": "ADOPTED_RUN",
+    "outputs": [
+      {
+        "internalType": "uint32",
+        "name": "",
+        "type": "uint32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
     "name": "CLOSE_OFFSET",
     "outputs": [
       {
@@ -288,13 +301,7 @@
       }
     ],
     "name": "checkAbandon",
-    "outputs": [
-      {
-        "internalType": "bool",
-        "name": "createEdition",
-        "type": "bool"
-      }
-    ],
+    "outputs": [],
     "stateMutability": "view",
     "type": "function"
   },
@@ -460,6 +467,35 @@
   {
     "inputs": [
       {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "creditOf",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "total",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "aged",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "since",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
         "internalType": "uint256",
         "name": "saleId",
         "type": "uint256"
@@ -488,6 +524,32 @@
         "internalType": "struct IUniformEditionAuction.Departure[]",
         "name": "",
         "type": "tuple[]"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "directory",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "economics",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
       }
     ],
     "stateMutability": "view",
@@ -589,19 +651,6 @@
     "type": "function"
   },
   {
-    "inputs": [],
-    "name": "federationRegistry",
-    "outputs": [
-      {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
     "inputs": [
       {
         "internalType": "address",
@@ -615,6 +664,19 @@
       }
     ],
     "name": "feeRecipient",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "independentStreamRegistry",
     "outputs": [
       {
         "internalType": "address",
@@ -728,6 +790,11 @@
         "internalType": "bytes",
         "name": "data",
         "type": "bytes"
+      },
+      {
+        "internalType": "bool",
+        "name": "adopting",
+        "type": "bool"
       }
     ],
     "name": "masterTerms",
@@ -748,6 +815,36 @@
             "internalType": "enum IEnglishAuction.AuctionState",
             "name": "oneOfOneState",
             "type": "uint8"
+          },
+          {
+            "internalType": "address",
+            "name": "seller",
+            "type": "address"
+          },
+          {
+            "internalType": "uint32",
+            "name": "feeShare",
+            "type": "uint32"
+          },
+          {
+            "internalType": "address",
+            "name": "feeRecipient",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "royaltyReceiver",
+            "type": "address"
+          },
+          {
+            "internalType": "uint24",
+            "name": "royaltyRate",
+            "type": "uint24"
+          },
+          {
+            "internalType": "bool",
+            "name": "runsOnItsOwn",
+            "type": "bool"
           }
         ],
         "internalType": "struct IUniformEditionAuctionLens.MasterTerms",
@@ -929,7 +1026,7 @@
         "type": "address"
       }
     ],
-    "name": "setFederationRegistry",
+    "name": "setIndependentStreamRegistry",
     "outputs": [],
     "stateMutability": "pure",
     "type": "function"

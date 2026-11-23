@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 /// @title IReleaseVerifier
 /// @notice Signed split-wallet releases (ADR 0001 section 7, "signed release authorization"). The

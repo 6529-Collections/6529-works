@@ -2,12 +2,8 @@
 pragma solidity ^0.8.24;
 
 import { RendererBase } from "./RendererBase.sol";
-import {
-    BurningRecords,
-    HostileStore,
-    ShortAnswerToken
-} from "../../mocks/content/RendererHostile.sol";
-import { StreamMock } from "../../mocks/stream/StreamMock.sol";
+import { HostileStore, ShortAnswerToken } from "../../mocks/content/RendererHostile.sol";
+import { CollectionInfo, HostileDelivery, RecordInfo, WorkCore } from "./RendererCoreMocks.sol";
 import {
     GasBurnerMock,
     ReturnBombMock,
@@ -16,9 +12,8 @@ import {
 import { Renderer } from "src/content/Renderer.sol";
 import { BoundedCall } from "src/libraries/BoundedCall.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
-import { IStream } from "src/interfaces/IStream.sol";
-import { IStreamViews } from "src/interfaces/IStreamViews.sol";
-import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
+import { IStream } from "src/interfaces/core/IStream.sol";
+import { IWorkFacts } from "src/interfaces/core/IWorkFacts.sol";
 import { IStatementLog } from "src/interfaces/IStatementLog.sol";
 import { FileRole, Locator, LocatorKind, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { License } from "src/interfaces/types/PackageTypes.sol";
@@ -37,7 +32,7 @@ contract RendererHostileTest is RendererBase {
         hostile = new HostileStore(LENGTH, mode, bytes('{"name":"N"}'));
         onHostile =
             new Renderer(IContentStore(address(hostile)), IStatementLog(address(0)), THRESHOLD);
-        IWorkRecords.RecordInfo memory info;
+        RecordInfo memory info;
         info.recordFileId = hostile.RECORD();
         info.onChainComplete = true;
         stream.setWork(ID, _core());
@@ -162,7 +157,7 @@ contract RendererHostileTest is RendererBase {
         address bomb = address(new ReturnBombMock(1_000_000, bytes32(uint256(1))));
         vm.expectRevert(
             abi.encodeWithSelector(
-                IRenderer.RendererReadFailed.selector, bomb, IStream.coreOf.selector
+                IRenderer.RendererReadFailed.selector, bomb, IStream.workOf.selector
             )
         );
         renderer.tokenURI(bomb, ID);
@@ -189,54 +184,41 @@ contract RendererHostileTest is RendererBase {
         renderer.tokenURI(address(garbage), ID);
     }
 
-    /// @dev A token whose `coreOf` answer is shorter than the six words of a `WorkCore`, and one
-    ///      whose `extsload` answer is shorter than the words it was asked for, fail closed on
-    ///      that read.
-    function test_Token_ShortCoreOrStorageAnswersFailClosed() public {
-        ShortAnswerToken token = new ShortAnswerToken(32, 64);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IRenderer.RendererReadFailed.selector, address(token), IStream.coreOf.selector
-            )
-        );
-        renderer.tokenURI(address(token), ID);
-
-        token = new ShortAnswerToken(192, 64);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IRenderer.RendererReadFailed.selector, address(token), IStream.extsload.selector
-            )
-        );
+    /// @dev A token whose `workOf` answer is shorter than the eleven words of a `Work` fails
+    ///      closed: the answer cannot be decoded.
+    function test_Token_AShortWorkAnswerFailsClosed() public {
+        ShortAnswerToken token = new ShortAnswerToken(0, 0);
+        vm.expectRevert();
         renderer.tokenURI(address(token), ID);
     }
 
     function test_Token_OversizedAnswersFailClosed() public {
         bytes32 file = _file(hex"89504e47", IDENTITY, "image/png");
 
-        // A license identifier above 64 bytes (plus the encoding) cannot be a real license.
+        // A license identifier above 64 bytes makes the record larger than a real one can be.
         _install(file);
         records.setLicense(ID, License(_text(5_000), bytes32(0)));
         vm.expectRevert(
             abi.encodeWithSelector(
-                IRenderer.RendererReadFailed.selector,
-                address(records),
-                IWorkRecords.licenseOf.selector
+                IRenderer.RendererReadFailed.selector, address(records), IWorkFacts.factsOf.selector
             )
         );
         renderer.tokenURI(address(stream), ID);
 
-        // A collection name above 4 KiB, or not UTF-8, is no name: the work still renders,
-        // with an empty collection name (Stream's own storage is read, never its extension).
+        // A collection name above 128 bytes (`Renderer.MAX_NAME_BYTES`), or not UTF-8, is no
+        // name: the work still renders, with an empty collection name.
         records.setLicense(ID, _license());
-        IStreamViews.WorkCore memory core = _core();
+        WorkCore memory core = _core();
         core.collectionId = 1;
         stream.setWork(ID, core);
-        stream.setCollection(1, IStreamViews.Collection(_text(5_000), bytes32(0), 1));
+        stream.setCollection(1, CollectionInfo(_text(5_000), bytes32(0), 1));
         assertEq(_attr(_out(), "Collection"), "");
         stream.setCollectionName(1, hex"ff");
         assertEq(_attr(_out(), "Collection"), "");
-        stream.setCollectionName(1, bytes(_text(200)));
-        assertEq(_attr(_out(), "Collection"), _text(200));
+        stream.setCollectionName(1, bytes(_text(129)));
+        assertEq(_attr(_out(), "Collection"), "");
+        stream.setCollectionName(1, bytes(_text(128)));
+        assertEq(_attr(_out(), "Collection"), _text(128));
 
         // More media files than a work may have.
         stream.setWork(ID, _core());
@@ -251,29 +233,22 @@ contract RendererHostileTest is RendererBase {
         records.setMedia(ID, media);
         vm.expectRevert(
             abi.encodeWithSelector(
-                IRenderer.RendererReadFailed.selector,
-                address(records),
-                IWorkRecords.mediaOf.selector
+                IRenderer.RendererReadFailed.selector, address(records), IWorkFacts.factsOf.selector
             )
         );
         renderer.tokenURI(address(stream), ID);
     }
 
-    /// @dev Decision M1: a locator read that fails, here by returning more than a URL may have,
-    ///      fails the call. Media silently dropped would be a plausible but wrong token.
-    function test_Token_AnOversizedLocatorFailsClosed() public {
+    /// @dev The renderer owns the locator check: a locator longer than a URL may be, whether it
+    ///      fits the return cap or not, is no locator, and the work renders without it.
+    function test_Token_AnOversizedLocatorIsNoLocator() public {
         bytes32 file = _file(_data(THRESHOLD + 1, 1), IDENTITY, "image/png");
         _install(file);
         records.addLocator(ID, file, Locator(LocatorKind.IPFS, _text(2_500)));
-
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IRenderer.RendererReadFailed.selector,
-                address(records),
-                IWorkRecords.preferredLocator.selector
-            )
-        );
-        renderer.tokenURI(address(stream), ID);
+        string memory j = _out();
+        assertFalse(_has(j, ".image"));
+        assertFalse(_has(j, ".media_url"));
+        assertEq(_str(j, ".name"), "Title");
     }
 
     /// @dev No read has a gas cap (the gas rule, ADR 0007): a repricing that makes the media
@@ -286,32 +261,77 @@ contract RendererHostileTest is RendererBase {
         string memory full = _out();
         uint256[3] memory burns = [uint256(400_000), 800_000, 2_000_000];
         for (uint256 i; i < burns.length; ++i) {
-            records.burn(IWorkRecords.mediaOf.selector, burns[i]);
+            records.burn(IWorkFacts.factsOf.selector, burns[i]);
             assertEq(_out(), full, "the same metadata at any cost");
         }
     }
 
     /// Regression: M1 in the review of #20
-    /// @dev A satellite whose `preferredLocator` costs more than the old 300,000-gas cap still
-    ///      answers (no cap); one that burns everything it is given is a shortfall and fails the
-    ///      call: it is not "no media".
-    function test_Records_APreferredLocatorThatRunsOutOfGasFailsClosed() public {
+    /// @dev A delivery contract whose `preferredLocator` costs more than the old 300,000-gas cap
+    ///      still answers (no cap); one that burns everything it is given is a shortfall and
+    ///      fails the call (the gas rule): it is not "no media".
+    function test_Delivery_APreferredLocatorThatRunsOutOfGasIsAShortfall() public {
+        bytes32 file = _file(_data(THRESHOLD + 1, 5), IDENTITY, "text/html");
+        _install(file);
+        HostileDelivery d = new HostileDelivery();
+        records.setDelivery(address(d));
+        string memory full = _out();
+        assertEq(_str(full, ".animation_url"), "ar://honest");
+
+        d.setMode(HostileDelivery.Mode.BURN_SOME, 310_000);
+        assertEq(_out(), full, "a dearer locator read gives the same metadata");
+
+        d.setMode(HostileDelivery.Mode.BURN_ALL, 0);
+        vm.expectRevert(
+            abi.encodeWithSelector(BoundedCall.BoundedCallShortfall.selector, address(d))
+        );
+        renderer.tokenURI(address(stream), ID);
+    }
+
+    /// @dev A delivery contract that lies (a URI with a quote, a backslash, a space, a control
+    ///      or non-ASCII byte, an ONCHAIN answer with a URI, a kind over 255), answers more than
+    ///      a URI may hold or a non-canonical encoding, or reverts, is no locator: the work
+    ///      renders, with no media URL and nothing else changed.
+    function test_Delivery_EveryBadAnswerIsNoLocator() public {
+        bytes32 file = _file(_data(THRESHOLD + 1, 5), IDENTITY, "text/html");
+        _install(file);
+        HostileDelivery d = new HostileDelivery();
+        records.setDelivery(address(d));
+        string memory honest = _out();
+        assertEq(_str(honest, ".media_url"), "ar://honest");
+        records.setDelivery(address(0));
+        string memory none = _out();
+        assertFalse(_has(none, ".media_url"));
+        records.setDelivery(address(d));
+        for (
+            uint256 m = uint256(HostileDelivery.Mode.QUOTE);
+            m <= uint256(HostileDelivery.Mode.REVERT);
+            ++m
+        ) {
+            d.setMode(HostileDelivery.Mode(m), 0);
+            assertEq(_out(), none, vm.toString(m));
+        }
+    }
+
+    /// @dev A RECORDS module that is missing, has no `delivery`, or answers something that is not
+    ///      an address, is no locator; so is a delivery contract without code.
+    function test_Delivery_AMissingOrBrokenRecordsModuleIsNoLocator() public {
         bytes32 file = _file(_data(THRESHOLD + 1, 5), IDENTITY, "text/html");
         _install(file);
         records.addLocator(ID, file, Locator(LocatorKind.ARWEAVE, "ar://tx"));
-        string memory full = _out();
-        assertTrue(_has(full, ".animation_url"));
-
-        BurningRecords burning = new BurningRecords(address(records), 310_000);
-        stream.setWorkRecords(address(burning));
-        assertEq(_out(), full, "a dearer locator read gives the same metadata");
-
-        BurningRecords burnsAll = new BurningRecords(address(records), type(uint64).max);
-        stream.setWorkRecords(address(burnsAll));
-        vm.expectRevert(
-            abi.encodeWithSelector(BoundedCall.BoundedCallShortfall.selector, address(burnsAll))
-        );
-        renderer.tokenURI(address(stream), ID);
+        assertEq(_str(_out(), ".media_url"), "ar://tx");
+        records.fail(bytes4(keccak256("delivery()")), true);
+        assertFalse(_has(_out(), ".media_url"), "delivery() refuses");
+        records.fail(bytes4(keccak256("delivery()")), false);
+        records.setDelivery(makeAddr("no code"));
+        assertFalse(_has(_out(), ".media_url"), "no code");
+        records.setDelivery(address(records));
+        stream.setModule("RECORDS", address(0));
+        assertFalse(_has(_out(), ".media_url"), "no RECORDS module");
+        ReturnDataMock wide = new ReturnDataMock();
+        wide.configure(abi.encode(type(uint256).max), false);
+        stream.setModule("RECORDS", address(wide));
+        assertFalse(_has(_out(), ".media_url"), "not an address");
     }
 
     /// @dev Too little gas for the whole call reverts; it never returns metadata that a

@@ -2,11 +2,9 @@
 pragma solidity ^0.8.24;
 
 import { Vm } from "forge-std/Vm.sol";
+import { DeployCore } from "script/DeployCore.sol";
 import { DeployGuards } from "script/DeployGuards.sol";
-import { DeployV1 } from "script/DeployV1.sol";
-import { MockVrfCoordinator } from "../mocks/entropy/EntropyMocks.sol";
 import { DelegationManagementMock } from "../mocks/identity/DelegationManagementMock.sol";
-import { MockPermit2, PermitToken } from "../mocks/sales/SaleMocks.sol";
 import { IntegrationBase } from "../integration/IntegrationBase.sol";
 
 /// @dev The subscription calls of the Chainlink VRF v2.5 coordinator (`SubscriptionAPI`).
@@ -42,22 +40,21 @@ library Forks {
     }
 }
 
-/// @notice The whole v1 system deployed on a fork of a live chain, against the chain's real
-///         dependencies instead of the integration mocks: the 6529 delegation contract (read
-///         through the real `ConsolidationAdapter`), the canonical Permit2 and, where a test
-///         provides one, the Chainlink VRF v2.5 coordinator. Nothing is broadcast: the fork is a
-///         local copy, so a test may write to it (register delegations, create a subscription).
-/// @dev Opt-in. A concrete test names the environment variable holding its RPC URL
-///      (`FORK_MAINNET_RPC` or `FORK_SEPOLIA_RPC`); without it every test is skipped and
-///      `setUp` deploys nothing. `<VAR>_BLOCK` pins the fork block (default: eight blocks behind
-///      the head), which lets Foundry cache the RPC reads between runs. See `test/fork/README.md`.
-abstract contract WorksForkBase is IntegrationBase {
+/// @notice The whole plain-core stack, deployed by the integration base (`DeployCore.deploy`,
+///         the committed genesis policy, `VerifyCore`), on a fork of a live chain and against
+///         the chain's real 6529 delegation contract instead of the identity lane's mock.
+///         Nothing is broadcast: the fork is a local copy, so a test may write to it.
+/// @dev Opt-in. A concrete suite names the environment variable holding its RPC URL
+///      (`FORK_MAINNET_RPC` or `FORK_SEPOLIA_RPC`); without it `setUp` deploys nothing and every
+///      test is skipped. `<VAR>_BLOCK` pins the fork block (default: eight blocks behind the
+///      head; public endpoints without archive state serve only recent blocks). A suite puts
+///      the external accounts it needs in place before the deployment in `_beforeDeploy` (the
+///      network Safe, a VRF subscription). See `test/fork/README.md`.
+abstract contract CoreForkBase is IntegrationBase {
     uint256 internal constant MAINNET = 1;
     uint256 internal constant SEPOLIA = 11_155_111;
 
-    bool internal forked;
-
-    /// @dev The environment variable naming this test's RPC URL.
+    /// @dev The environment variable naming this suite's RPC URL.
     function _rpcVar() internal pure virtual returns (string memory);
 
     /// @dev The chain the fork must be of.
@@ -65,18 +62,21 @@ abstract contract WorksForkBase is IntegrationBase {
 
     function setUp() public virtual override {
         string memory rpc = vm.envOr(_rpcVar(), string(""));
-        if (bytes(rpc).length == 0) return;
+        if (bytes(rpc).length == 0) {
+            vm.skip(true, string.concat(_rpcVar(), " is not set"));
+            return;
+        }
         Forks.select(vm, rpc, vm.envOr(string.concat(_rpcVar(), "_BLOCK"), uint256(0)));
         require(block.chainid == _chainId(), "the RPC serves another chain");
-        forked = true;
+        require(_delegationAddress().code.length != 0, "no delegation contract on this chain");
+        _beforeDeploy();
         super.setUp();
+        // The base deployed the mock before reading `_params`; the system reads the real one.
+        delegation = DelegationManagementMock(_delegationAddress());
     }
 
-    /// @dev Skips the test unless its fork is configured.
-    modifier onFork() {
-        if (!forked) vm.skip(true, string.concat(_rpcVar(), " is not set"));
-        _;
-    }
+    /// @dev Runs on the fork before anything is deployed.
+    function _beforeDeploy() internal virtual { }
 
     /// @dev The 6529 delegation contract on this chain.
     function _delegationAddress() internal view returns (address) {
@@ -85,27 +85,9 @@ abstract contract WorksForkBase is IntegrationBase {
             : DeployGuards.CANONICAL_DELEGATION;
     }
 
-    /// @dev The real delegation contract and Permit2 (never etched over); the VRF coordinator is
-    ///      the entropy lane's mock unless a test provides the real one (`_realCoordinator`).
-    function _deployExternals() internal virtual override {
-        address d = _delegationAddress();
-        require(d.code.length != 0, "no delegation contract on this chain");
-        require(PERMIT2.code.length != 0, "no Permit2 on this chain");
-        delegation = DelegationManagementMock(d);
-        permit2 = MockPermit2(PERMIT2);
-        address real = _realCoordinator();
-        coordinator = real == address(0) ? new MockVrfCoordinator() : MockVrfCoordinator(real);
-        usd = new PermitToken();
-    }
-
-    /// @dev The chain's VRF coordinator, or zero to use the mock.
-    function _realCoordinator() internal virtual returns (address) {
-        return address(0);
-    }
-
-    /// @dev The deploy parameters, pinned to the canonical Permit2.
-    function _params() internal view virtual override returns (DeployV1.Params memory p) {
+    /// @dev The integration parameters with the chain's real delegation contract.
+    function _params() internal view virtual override returns (DeployCore.Params memory p) {
         p = super._params();
-        p.permit2 = DeployV1.CANONICAL_PERMIT2;
+        p.delegation = _delegationAddress();
     }
 }

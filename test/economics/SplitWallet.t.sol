@@ -320,14 +320,9 @@ contract SplitWalletTest is EconomicsBase {
         _releasable(wallet, ETH, 9);
     }
 
-    function test_DeprecatedAndNeverAdmittedAssetsStayWithdrawable() public {
-        allowlist.admitAsset(address(token), 0, 1);
+    function test_NeverAdmittedAssetsStayWithdrawable() public {
         token.mint(address(wallet), 100);
-        allowlist.deprecateAsset(address(token));
         assertEq(_release(wallet, address(token), iAlice), 50);
-        // ETH is never deprecated (`EthNotDeprecable`); it is always withdrawable.
-        vm.expectRevert(IAssetAllowlist.EthNotDeprecable.selector);
-        allowlist.deprecateAsset(ETH);
         vm.deal(address(wallet), 1 ether);
         assertEq(_release(wallet, ETH, iAlice), 0.5 ether);
         CallbackToken unlisted = new CallbackToken();
@@ -519,7 +514,7 @@ contract SplitWalletTest is EconomicsBase {
         uint256 iB = _indexOf(w, bob);
         cb.mint(w, 1000);
         ledger.mark(_payeesOf(w), bytes32(0), address(cb), iA);
-        vm.warp(block.timestamp + ledger.UNCLAIMED_PERIOD());
+        vm.warp(block.timestamp + resolver.unclaimedPeriod());
         cb.setHook(
             address(ledger),
             abi.encodeCall(ISplitWallet.release, (_payeesOf(w), bytes32(0), address(cb), iB))

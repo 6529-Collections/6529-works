@@ -105,71 +105,6 @@
   {
     "inputs": [
       {
-        "internalType": "address",
-        "name": "target",
-        "type": "address"
-      }
-    ],
-    "name": "bindFederationRegistry",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "target",
-        "type": "address"
-      }
-    ],
-    "name": "bindPackageRegistry",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "target",
-        "type": "address"
-      }
-    ],
-    "name": "bindSplitFactory",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "target",
-        "type": "address"
-      }
-    ],
-    "name": "bindStatementLog",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "target",
-        "type": "address"
-      }
-    ],
-    "name": "bindStream",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
         "internalType": "uint256",
         "name": "artistId",
         "type": "uint256"
@@ -276,6 +211,32 @@
     "type": "function"
   },
   {
+    "inputs": [],
+    "name": "directory",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "editions",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "inputs": [
       {
         "internalType": "uint256",
@@ -299,62 +260,6 @@
     "name": "expireContest",
     "outputs": [],
     "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "token",
-        "type": "address"
-      }
-    ],
-    "name": "federatedFeeShare",
-    "outputs": [
-      {
-        "internalType": "uint32",
-        "name": "",
-        "type": "uint32"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "token",
-        "type": "address"
-      }
-    ],
-    "name": "federatedListing",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "artistId",
-        "type": "uint256"
-      },
-      {
-        "internalType": "enum IArtistRegistry.FederationStatus",
-        "name": "status",
-        "type": "uint8"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "federationRegistry",
-    "outputs": [
-      {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
-      }
-    ],
-    "stateMutability": "view",
     "type": "function"
   },
   {
@@ -384,6 +289,19 @@
         "internalType": "uint48",
         "name": "",
         "type": "uint48"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "independentStreamRegistry",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
       }
     ],
     "stateMutability": "view",
@@ -424,25 +342,6 @@
         "internalType": "uint256",
         "name": "accountId",
         "type": "uint256"
-      }
-    ],
-    "name": "isFederationDelisted",
-    "outputs": [
-      {
-        "internalType": "bool",
-        "name": "",
-        "type": "bool"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "accountId",
-        "type": "uint256"
       },
       {
         "internalType": "address",
@@ -459,79 +358,6 @@
       }
     ],
     "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "components": [
-          {
-            "internalType": "uint256",
-            "name": "artistId",
-            "type": "uint256"
-          },
-          {
-            "internalType": "address",
-            "name": "token",
-            "type": "address"
-          },
-          {
-            "internalType": "uint8",
-            "name": "form",
-            "type": "uint8"
-          },
-          {
-            "internalType": "address",
-            "name": "partner",
-            "type": "address"
-          },
-          {
-            "internalType": "uint32",
-            "name": "feeShare",
-            "type": "uint32"
-          },
-          {
-            "internalType": "address",
-            "name": "feeRecipient",
-            "type": "address"
-          },
-          {
-            "internalType": "uint64",
-            "name": "deadline",
-            "type": "uint64"
-          }
-        ],
-        "internalType": "struct IArtistRegistry.FederatedListing",
-        "name": "listing",
-        "type": "tuple"
-      },
-      {
-        "internalType": "bytes",
-        "name": "consent",
-        "type": "bytes"
-      }
-    ],
-    "name": "listFederatedContract",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "token",
-        "type": "address"
-      },
-      {
-        "internalType": "uint32",
-        "name": "share",
-        "type": "uint32"
-      }
-    ],
-    "name": "lowerFederatedFeeShare",
-    "outputs": [],
-    "stateMutability": "nonpayable",
     "type": "function"
   },
   {
@@ -696,7 +522,7 @@
         "type": "bytes"
       }
     ],
-    "name": "registerFederated",
+    "name": "registerIndependent",
     "outputs": [
       {
         "internalType": "uint256",
@@ -839,70 +665,6 @@
       }
     ],
     "name": "setConsolidationSource",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "token",
-        "type": "address"
-      },
-      {
-        "internalType": "enum IArtistRegistry.FederationStatus",
-        "name": "status",
-        "type": "uint8"
-      },
-      {
-        "internalType": "bytes32",
-        "name": "ref",
-        "type": "bytes32"
-      }
-    ],
-    "name": "setFederatedStatus",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "artistId",
-        "type": "uint256"
-      },
-      {
-        "internalType": "bool",
-        "name": "delisted",
-        "type": "bool"
-      },
-      {
-        "internalType": "bytes32",
-        "name": "ref",
-        "type": "bytes32"
-      }
-    ],
-    "name": "setFederationDelisted",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "expected",
-        "type": "address"
-      },
-      {
-        "internalType": "address",
-        "name": "next",
-        "type": "address"
-      }
-    ],
-    "name": "setFederationRegistry",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
@@ -1179,25 +941,6 @@
     "inputs": [
       {
         "indexed": true,
-        "internalType": "bytes32",
-        "name": "name",
-        "type": "bytes32"
-      },
-      {
-        "indexed": false,
-        "internalType": "address",
-        "name": "target",
-        "type": "address"
-      }
-    ],
-    "name": "Bound",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
         "internalType": "uint256",
         "name": "artistId",
         "type": "uint256"
@@ -1464,167 +1207,6 @@
         "type": "uint256"
       },
       {
-        "indexed": true,
-        "internalType": "address",
-        "name": "token",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "bytes32",
-        "name": "codeHash",
-        "type": "bytes32"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint8",
-        "name": "form",
-        "type": "uint8"
-      },
-      {
-        "indexed": false,
-        "internalType": "address",
-        "name": "partner",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint32",
-        "name": "feeShare",
-        "type": "uint32"
-      },
-      {
-        "indexed": false,
-        "internalType": "address",
-        "name": "feeRecipient",
-        "type": "address"
-      }
-    ],
-    "name": "FederatedContractListed",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "token",
-        "type": "address"
-      },
-      {
-        "indexed": true,
-        "internalType": "uint256",
-        "name": "artistId",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "enum IArtistRegistry.FederationStatus",
-        "name": "previous",
-        "type": "uint8"
-      },
-      {
-        "indexed": false,
-        "internalType": "enum IArtistRegistry.FederationStatus",
-        "name": "status",
-        "type": "uint8"
-      },
-      {
-        "indexed": false,
-        "internalType": "bytes32",
-        "name": "ref",
-        "type": "bytes32"
-      }
-    ],
-    "name": "FederatedContractStatus",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "token",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint32",
-        "name": "previous",
-        "type": "uint32"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint32",
-        "name": "share",
-        "type": "uint32"
-      }
-    ],
-    "name": "FederatedFeeShareLowered",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "uint256",
-        "name": "artistId",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "bool",
-        "name": "previous",
-        "type": "bool"
-      },
-      {
-        "indexed": false,
-        "internalType": "bool",
-        "name": "delisted",
-        "type": "bool"
-      },
-      {
-        "indexed": false,
-        "internalType": "bytes32",
-        "name": "ref",
-        "type": "bytes32"
-      }
-    ],
-    "name": "FederationDelistedSet",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": false,
-        "internalType": "address",
-        "name": "previous",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "address",
-        "name": "next",
-        "type": "address"
-      }
-    ],
-    "name": "FederationRegistrySet",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "uint256",
-        "name": "artistId",
-        "type": "uint256"
-      },
-      {
         "indexed": false,
         "internalType": "uint256",
         "name": "nonce",
@@ -1713,17 +1295,6 @@
   {
     "inputs": [
       {
-        "internalType": "bytes32",
-        "name": "name",
-        "type": "bytes32"
-      }
-    ],
-    "name": "AlreadyBound",
-    "type": "error"
-  },
-  {
-    "inputs": [
-      {
         "internalType": "uint256",
         "name": "artistId",
         "type": "uint256"
@@ -1783,60 +1354,6 @@
   {
     "inputs": [],
     "name": "ExpectedValueMismatch",
-    "type": "error"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "token",
-        "type": "address"
-      }
-    ],
-    "name": "FederatedContractRefused",
-    "type": "error"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "token",
-        "type": "address"
-      },
-      {
-        "internalType": "enum IArtistRegistry.FederationStatus",
-        "name": "current",
-        "type": "uint8"
-      }
-    ],
-    "name": "FederatedStatusRefused",
-    "type": "error"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "token",
-        "type": "address"
-      },
-      {
-        "internalType": "uint32",
-        "name": "current",
-        "type": "uint32"
-      }
-    ],
-    "name": "FeeShareNotLowered",
-    "type": "error"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "target",
-        "type": "address"
-      }
-    ],
-    "name": "InvalidBinding",
     "type": "error"
   },
   {

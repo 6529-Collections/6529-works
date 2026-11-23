@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import { Vm } from "forge-std/Vm.sol";
 import { StateGrowth } from "../helpers/StateGrowth.sol";
-import { IntegrationBase } from "./IntegrationBase.sol";
+import { GasBase } from "./GasBase.sol";
 
 /// @dev Storage that `_coolAll` does not cool.
 contract UncooledStore {
@@ -20,9 +20,9 @@ contract UncooledStore {
 ///      gas. After the test warms every account the call reaches, `_measureGrowth` must still
 ///      report exactly that figure: the warmth probe finds the warm accounts, and the
 ///      cold-account surcharge adds back what Foundry priced warm.
-contract GasHarnessTest is IntegrationBase {
+contract GasHarnessTest is GasBase {
     address internal artist;
-    address internal starter = makeAddr("harnessStarter");
+    address internal caller = makeAddr("harnessCaller");
     bytes internal startData;
 
     function setUp() public override {
@@ -40,19 +40,20 @@ contract GasHarnessTest is IntegrationBase {
         startData = abi.encodeCall(auction.start, (address(stream), _mintData(root, works, 2)));
     }
 
-    /// @dev The contracts, the fee recipient and the artist, whose signature check reaches it.
-    function _probeSet() internal override returns (address[] memory accounts) {
+    /// @dev The contracts, the vault destinations and the artist, whose signature check
+    ///      reaches it.
+    function _probeSet() internal override returns (address[] memory list) {
         address[] memory base = super._probeSet();
-        accounts = new address[](base.length + 1);
+        list = new address[](base.length + 1);
         for (uint256 i; i < base.length; ++i) {
-            accounts[i] = base[i];
+            list[i] = base[i];
         }
-        accounts[base.length] = artist;
+        list[base.length] = artist;
     }
 
-    function test_TheColdAccountCorrectionIsExact() public {
+    function test_GasHarness_TheColdAccountCorrectionIsExact() public {
         uint256 cold = vm.snapshotState();
-        (uint256 truth,) = _measure(starter, address(auction), startData, 0);
+        (uint256 truth,) = _measure(caller, address(auction), startData, 0);
 
         // Back to the cold state, then touch every account the call may reach.
         vm.revertToState(cold);
@@ -63,11 +64,11 @@ contract GasHarnessTest is IntegrationBase {
         }
         assertGt(sizes, 0);
         uint256 warmed = vm.snapshotState();
-        (uint256 warmRaw,) = _measure(starter, address(auction), startData, 0);
+        (uint256 warmRaw,) = _measure(caller, address(auction), startData, 0);
         vm.revertToState(warmed);
 
         (uint256 corrected,, StateGrowth.Growth memory growth) =
-            _measureGrowth(starter, address(auction), startData, 0);
+            _measureGrowth(caller, address(auction), startData, 0);
         assertGt(truth, warmRaw, "warm accounts read low");
         assertEq(
             truth - warmRaw,
@@ -78,15 +79,15 @@ contract GasHarnessTest is IntegrationBase {
     }
 
     /// @dev Without the warm-up, nothing the call reaches is warm, and nothing is added.
-    function test_NothingIsAddedForAccountsAlreadyCold() public {
+    function test_GasHarness_NothingIsAddedForAccountsAlreadyCold() public {
         uint256 cold = vm.snapshotState();
-        (uint256 truth,) = _measure(starter, address(auction), startData, 0);
+        (uint256 truth,) = _measure(caller, address(auction), startData, 0);
         vm.revertToState(cold);
-        (uint256 corrected,,) = _measureGrowth(starter, address(auction), startData, 0);
+        (uint256 corrected,,) = _measureGrowth(caller, address(auction), startData, 0);
         assertEq(corrected, truth);
     }
 
-    function test_RequireCooledRefusesStorageItDoesNotCool() public {
+    function test_GasHarness_RequireCooledRefusesStorageItDoesNotCool() public {
         UncooledStore uncooled = new UncooledStore();
         vm.startStateDiffRecording();
         uncooled.set(1);
@@ -101,7 +102,21 @@ contract GasHarnessTest is IntegrationBase {
         this.requireCooled(accesses);
     }
 
+    /// @dev After a state-diff recording, `vm.cool` no longer cools, and a measurement refuses
+    ///      to run rather than report a low figure.
+    function test_GasHarness_MeasuringAfterARecordingIsRefused() public {
+        _growth(caller, address(auction), startData, 0);
+        vm.expectRevert(
+            bytes("vm.cool did not cool: measure gas before any state-diff recording in the test")
+        );
+        this.coolAll();
+    }
+
     function requireCooled(Vm.AccountAccess[] calldata accesses) external view {
         _requireCooled(accesses);
+    }
+
+    function coolAll() external {
+        _coolAll();
     }
 }

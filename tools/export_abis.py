@@ -15,10 +15,13 @@ src/economics/interfaces/), plus abi/manifest.json, which lists for each file:
   - the solc version that compiled it;
   - the SHA-256 of the exported ABI file's bytes, which does not depend on git.
 
-Four contracts answer part of their surface through a lens or an extension they forward calls
+Some contracts answer part of their surface through a lens or an extension they forward calls
 to with a read-only `staticcall` (docs/integrators/abis-and-interface-ids.md). For those,
 abi/full/<Name>.json is the contract's ABI merged with what that call can serve (the forwarded
 surface's view and pure functions, events and errors): the ABI to call the deployed address with.
+
+If a name is ever declared twice in src/, the one under src/core/ or src/interfaces/core/ is
+exported as abi/core/<Name>.json. Today every name is declared once, so abi/core/ is empty.
 
 The output is deterministic: entries are sorted by kind, name and signature, keys are sorted,
 and nothing from the compiler metadata or bytecode is written. `--check` compares the committed
@@ -47,17 +50,19 @@ FULL_DIR = "full"
 INTERFACE_DIRS = ("src/interfaces/", "src/economics/interfaces/")
 EXCLUDED_DIRS = ("src/interfaces/external/",)
 # The deployed contract, and the ABI of what it forwards with a read-only call (its lens or
-# extension). The fallback of Stream forwards only IStreamViews; the auctions forward every call
-# they do not declare to their lens (the federated edition auction shares the edition auction's
-# fallback).
+# extension). Only the edition auctions have one: they forward every call they do not declare to
+# their lens (the Independent Stream edition auction shares the edition auction's fallback). Keyed by
+# source path.
 FORWARDED = {
-    "Stream": "IStreamViews",
-    "EnglishAuction": "EnglishAuctionLens",
-    "UniformEditionAuction": "UniformEditionAuctionLens",
-    "FederatedEditionAuction": "FederatedEditionAuctionLens",
+    "src/sales/UniformEditionAuction.sol": "UniformEditionAuctionLens",
+    "src/independent/IndependentEditionAuction.sol": "IndependentEditionAuctionLens",
 }
+# Sources of the plain permanent core; a name declared both here and elsewhere is exported
+# under core/.
+CORE_DIRS = ("src/core/", "src/interfaces/core/")
+CORE_PREFIX = "core/"
 # The paths the exporter owns in abi/: it writes, checks and removes only these.
-MANAGED = re.compile(r"(?:full/)?[A-Za-z_$][\w$]*\.json")
+MANAGED = re.compile(r"(?:full/)?(?:core/)?[A-Za-z_$][\w$]*\.json")
 KIND_ORDER = {"constructor": 0, "fallback": 1, "receive": 2, "function": 3, "event": 4, "error": 5}
 
 DECLARATION = re.compile(r"\b(abstract\s+contract|contract|interface|library)\s+([A-Za-z_$][\w$]*)")
@@ -234,7 +239,7 @@ def encode(data: object) -> bytes:
 def collect(root: Path, out: Path) -> dict[str, dict]:
     """Every exported contract by name: kind, source, ABI, selectors and solc version."""
     source_cache: dict[str, list[tuple[str, str, str, list[str]]]] = {}
-    found: dict[str, dict] = {}
+    by_name: dict[str, list[dict]] = {}
     abis_by_name: dict[str, list[list]] = {}  # every artifact's ABI, for interface parents
     for path in sorted(out.rglob("*.json")):
         if path.parent.name == "build-info":
@@ -274,9 +279,10 @@ def collect(root: Path, out: Path) -> dict[str, dict]:
             continue
         kind, _, body, parents = decl
         if exported(kind, source):
-            if name in found:
-                raise ExportError(f"two exported contracts are named {name}")
-            found[name] = {
+            if any(c["source"] == source for c in by_name.get(name, [])):
+                continue  # one source compiled twice (two artifact folders)
+            by_name.setdefault(name, []).append({
+                "name": name,
                 "kind": kind,
                 "source": source,
                 "abi": abi,
@@ -284,14 +290,33 @@ def collect(root: Path, out: Path) -> dict[str, dict]:
                 "own": own_functions(body),
                 "parents": parents,
                 "solc": metadata.get("compiler", {}).get("version", ""),
-            }
+            })
+    found = keyed(by_name)
     if not found:
         raise ExportError(f"no src/ artifacts under {out}: run `forge build` first")
-    missing = sorted(set(expected(root)) - set(found))
+    missing = sorted(set(expected(root)) - {c["name"] for c in found.values()})
     if missing:
         raise ExportError(f"declared in src/ but missing from the build: {', '.join(missing)}")
     for c in found.values():
         c["inherited"] = inherited(c["parents"], abis_by_name)
+    return found
+
+
+def keyed(by_name: dict[str, list[dict]]) -> dict[str, dict]:
+    """Every exported contract by its file key: its name, or `core/<name>` for the plain-core
+    one of two contracts sharing a name. Any other repeated name fails."""
+    found: dict[str, dict] = {}
+    for name, items in sorted(by_name.items()):
+        if len(items) == 1:
+            found[name] = items[0]
+            continue
+        core = [c for c in items if c["source"].startswith(CORE_DIRS)]
+        if len(items) != 2 or len(core) != 1:
+            sources = ", ".join(sorted(c["source"] for c in items))
+            raise ExportError(f"two exported contracts are named {name} ({sources})")
+        old = next(c for c in items if c is not core[0])
+        found[name] = old
+        found[CORE_PREFIX + name] = core[0]
     return found
 
 
@@ -326,16 +351,16 @@ def render(found: dict[str, dict]) -> dict[str, bytes]:
     """Every file of abi/ by relative path, as bytes."""
     files: dict[str, bytes] = {}
     entries = []
-    for name in sorted(found):
-        c = found[name]
+    for key in sorted(found):
+        c = found[key]
         abi = normalize(c["abi"])
         data = encode(abi)
-        files[f"{name}.json"] = data
+        files[f"{key}.json"] = data
         entry = {
-            "name": name,
+            "name": c["name"],
             "kind": c["kind"],
             "source": c["source"],
-            "abi": f"{name}.json",
+            "abi": f"{key}.json",
             "functions": sum(e["type"] == "function" for e in abi),
             "events": sum(e["type"] == "event" for e in abi),
             "errors": sum(e["type"] == "error" for e in abi),
@@ -344,11 +369,16 @@ def render(found: dict[str, dict]) -> dict[str, bytes]:
         }
         if c["kind"] == "interface":
             entry["interfaceId"] = interface_id(abi, c["selectors"], c["own"], c["inherited"])
-        if name in FORWARDED:
-            full = encode(merged(c["abi"], found[FORWARDED[name]]["abi"]))
-            files[f"{FULL_DIR}/{name}.json"] = full
-            entry["forwardsTo"] = FORWARDED[name]
-            entry["fullAbi"] = f"{FULL_DIR}/{name}.json"
+        lens = FORWARDED.get(c["source"])
+        if lens is not None:
+            if lens not in found:
+                raise ExportError(
+                    f"{c['source']} forwards to {lens}, which the build lacks: update FORWARDED"
+                )
+            full = encode(merged(c["abi"], found[lens]["abi"]))
+            files[f"{FULL_DIR}/{key}.json"] = full
+            entry["forwardsTo"] = lens
+            entry["fullAbi"] = f"{FULL_DIR}/{key}.json"
             entry["fullSha256"] = hashlib.sha256(full).hexdigest()
         entries.append(entry)
     solc = sorted({e["solc"] for e in entries})

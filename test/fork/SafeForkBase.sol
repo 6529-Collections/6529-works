@@ -2,10 +2,9 @@
 pragma solidity ^0.8.24;
 
 import { DeployGuards } from "script/DeployGuards.sol";
-import { DeployV1 } from "script/DeployV1.sol";
-import { Forks, WorksForkBase } from "./WorksForkBase.sol";
+import { CoreForkBase } from "./WorksForkBase.sol";
 
-/// @dev The parts of Safe v1.4.1 these tests call, declared here so the repository takes no
+/// @dev The parts of Safe v1.4.1 these suites call, declared here so the repository takes no
 ///      dependency on the Safe contracts.
 interface ISafe {
     function setup(
@@ -63,26 +62,25 @@ interface IMultiSendCallOnly {
     function multiSend(bytes memory transactions) external payable;
 }
 
-/// @notice The v1 system deployed by the deploy library on an Ethereum mainnet fork with real
-///         Safe v1.4.1 wallets in the roles the network and institutions hold: the network
-///         itself is a 2-of-3 Safe that accepts the network role by a Safe transaction, and the
-///         network fee recipient's vault forwards to a second Safe. Concrete suites add Safes
-///         as an artist's wallet, a bidder and a museum.
-/// @dev Opt-in, like every fork suite: without `FORK_MAINNET_RPC` nothing is deployed and each
-///      test skips (`onFork`). `FORK_MAINNET_RPC_BLOCK` pins the block. Safe v1.4.1's singleton,
-///      proxy factory, `MultiSendCallOnly` and `CompatibilityFallbackHandler` are used at their
-///      canonical addresses (github.com/safe-global/safe-deployments, v1.4.1). Every Safe
-///      transaction is signed by owner keys this test holds and executed by an ordinary caller
-///      (a relayer), so the Safe is `msg.sender` of every call it makes.
-abstract contract SafeForkBase is WorksForkBase {
-    /// @dev The deploy guards' pinned v1.4.1 singleton (`DeployGuards.SAFE_141_L1`).
+/// @notice The plain-core stack on an Ethereum mainnet fork with real Safe v1.4.1 wallets in
+///         the accounts the network and the institutions hold: the network is a 2-of-3 Safe,
+///         and the fee recipient's and the museum's vaults forward to two more Safes. Suites
+///         add Safes as an artist's wallet and a bidder.
+/// @dev Safe v1.4.1's singleton, proxy factory, `MultiSendCallOnly` and
+///      `CompatibilityFallbackHandler` are used at their canonical addresses
+///      (github.com/safe-global/safe-deployments, v1.4.1), each code-hash pinned. Every Safe
+///      transaction is signed by owner keys this test holds and executed by a relayer, so the
+///      Safe is `msg.sender` of every call it makes. The genesis acceptance is the base's
+///      (`acceptNetwork` from the Safe's address); `SafeNetwork.t.sol` checks an acceptance by
+///      a Safe transaction in the handover to a second Safe.
+abstract contract SafeForkBase is CoreForkBase {
     address internal constant SAFE_SINGLETON = DeployGuards.SAFE_141_L1;
     address internal constant SAFE_PROXY_FACTORY = 0x4e1DCf7AD4e460CfD30791CCC4F9c8a4f820ec67;
     address internal constant MULTI_SEND_CALL_ONLY = 0x9641d764fc13c8B624c04430C7356C1C7C8102e2;
     address internal constant FALLBACK_HANDLER = 0xfd0732Dc9E303f09fCEf3a7388Ad10A83459Ec99;
     /// @dev Runtime code hashes of the three v1.4.1 helpers, read from mainnet and Sepolia
     ///      (identical on both) on 17 November 2026, so another version's contract at a mistyped
-    ///      address (v1.3.0's `MultiSendCallOnly` behaves alike) cannot stand in.
+    ///      address cannot stand in.
     bytes32 internal constant SAFE_PROXY_FACTORY_CODEHASH =
         0x50c3cdc4074750a7a974204a716c999edd37482f907608d960b2b025ee0b3317;
     bytes32 internal constant MULTI_SEND_CALL_ONLY_CODEHASH =
@@ -105,10 +103,10 @@ abstract contract SafeForkBase is WorksForkBase {
         bytes data;
     }
 
-    /// @dev The network: holds every network role once it accepts at genesis.
     ISafe internal networkSafe;
-    /// @dev The network fee Safe: the fee recipient vault's first destination.
-    ISafe internal feeSafe;
+    ISafe internal feeDestination;
+    ISafe internal museumDestination;
+    address internal relayer = makeAddr("relayer");
     /// @dev Each Safe's owner keys, in the order its owners were set up.
     mapping(address safe => uint256[]) internal safeKeys;
 
@@ -120,40 +118,20 @@ abstract contract SafeForkBase is WorksForkBase {
         return MAINNET;
     }
 
-    /// @dev Replaces `IntegrationBase.setUp`: the network and the fee recipient's destination
-    ///      are Safes before anything is deployed, genesis is installed by the deployer, and
-    ///      the network Safe accepts by a Safe transaction instead of a prank.
-    function setUp() public virtual override {
-        string memory rpc = vm.envOr(_rpcVar(), string(""));
-        if (bytes(rpc).length == 0) return;
-        Forks.select(vm, rpc, vm.envOr(string.concat(_rpcVar(), "_BLOCK"), uint256(0)));
-        require(block.chainid == _chainId(), "the RPC serves another chain");
-        forked = true;
+    /// @dev The Safe helpers are the canonical v1.4.1 code; the network and the two vault
+    ///      destinations are Safes before anything is deployed.
+    function _beforeDeploy() internal virtual override {
         assertEq(SAFE_SINGLETON.codehash, DeployGuards.SAFE_141_L1_CODEHASH, "Safe singleton");
         assertEq(SAFE_PROXY_FACTORY.codehash, SAFE_PROXY_FACTORY_CODEHASH, "Safe proxy factory");
         assertEq(MULTI_SEND_CALL_ONLY.codehash, MULTI_SEND_CALL_ONLY_CODEHASH, "MultiSendCallOnly");
         assertEq(FALLBACK_HANDLER.codehash, FALLBACK_HANDLER_CODEHASH, "fallback handler");
         assertEq(ISafe(SAFE_SINGLETON).VERSION(), "1.4.1");
-
         networkSafe = _newSafe("network");
-        feeSafe = _newSafe("network fee");
-        hotAdmin = address(networkSafe);
-        networkFeeSafe = address(feeSafe);
-
-        deferGenesis = true;
-        _deployWorks();
-        DeployV1.install(deployment, _genesisConfig(), manifest, _genesisWiring());
-        assertEq(manager.pendingNetwork(), address(networkSafe), "genesis proposes the Safe");
-        assertEq(manager.network(), address(0));
-        assertTrue(
-            _safeCall(networkSafe, address(manager), abi.encodeCall(manager.acceptNetwork, ())),
-            "the Safe accepts the network"
-        );
-
-        keyOf[signer1] = signer1Pk;
-        keyOf[signer2] = signer2Pk;
-        vm.prank(platform);
-        collectionId = stream.createCollection("Genesis", keccak256("genesis collection"));
+        feeDestination = _newSafe("network fee");
+        museumDestination = _newSafe("museum");
+        network = address(networkSafe);
+        feeSafe = address(feeDestination);
+        museumSafe = address(museumDestination);
     }
 
     // ------------------------------------------------------------------ Safes
@@ -187,9 +165,9 @@ abstract contract SafeForkBase is WorksForkBase {
         safeKeys[address(safe)] = keys;
     }
 
-    /// @dev Signs and executes one Safe transaction with the first `signers` owner keys.
-    ///      Returns false when the Safe reverts (a failed inner call reverts the transaction,
-    ///      since `safeTxGas` and `gasPrice` are zero).
+    /// @dev One Safe transaction signed by the first `signers` owner keys and executed by the
+    ///      relayer. Reverts as the Safe does: "GS013" when the inner call fails (no
+    ///      `safeTxGas`, no gas price), "GS020" when fewer signatures than the threshold.
     function _execSafe(
         ISafe safe,
         address to,
@@ -197,11 +175,14 @@ abstract contract SafeForkBase is WorksForkBase {
         bytes memory data,
         uint8 operation,
         uint256 signers
-    ) internal returns (bool) {
+    ) internal {
         bytes memory signatures = _ownerSignatures(
-            safe, _txHash(safe, to, value, data, operation), _firstKeys(safe, signers)
+            _txHash(safe, to, value, data, operation), _firstKeys(safe, signers)
         );
-        return _submit(safe, to, value, data, operation, signatures);
+        vm.prank(relayer);
+        safe.execTransaction(
+            to, value, data, operation, 0, 0, 0, address(0), payable(address(0)), signatures
+        );
     }
 
     /// @dev The hash of a Safe transaction with no gas refund, at the Safe's current nonce.
@@ -215,58 +196,59 @@ abstract contract SafeForkBase is WorksForkBase {
             safe.getTransactionHash(to, value, data, operation, 0, 0, 0, address(0), address(0), n);
     }
 
-    function _submit(
+    /// @dev One call from `safe`, signed by the threshold.
+    function _safeCall(ISafe safe, address to, bytes memory data) internal {
+        _execSafe(safe, to, 0, data, CALL, THRESHOLD);
+    }
+
+    /// @dev One call carrying `value` of the Safe's own ETH, signed by the threshold.
+    function _safeCallValue(ISafe safe, address to, uint256 value, bytes memory data) internal {
+        _execSafe(safe, to, value, data, CALL, THRESHOLD);
+    }
+
+    /// @dev One Safe transaction whose inner call must fail: the Safe reverts with "GS013" and
+    ///      its nonce is not spent. `reason` is the target's own revert, checked by repeating
+    ///      the call as a prank of the Safe (the Safe does not pass it on).
+    function _safeCallFails(ISafe safe, address to, bytes memory data, bytes memory reason)
+        internal
+    {
+        uint256 nonceBefore = safe.nonce();
+        vm.expectRevert(bytes("GS013"));
+        this.execSafeExternal(safe, to, 0, data, CALL, THRESHOLD);
+        assertEq(safe.nonce(), nonceBefore, "a refused transaction spends no Safe nonce");
+        vm.prank(address(safe));
+        vm.expectRevert(reason);
+        (bool ok,) = to.call(data);
+        ok;
+    }
+
+    /// @dev `_execSafe`, external so a test can expect its revert.
+    function execSafeExternal(
         ISafe safe,
         address to,
         uint256 value,
         bytes memory data,
         uint8 operation,
-        bytes memory signatures
-    ) internal returns (bool) {
-        try safe.execTransaction(
-            to, value, data, operation, 0, 0, 0, address(0), payable(address(0)), signatures
-        ) returns (
-            bool ok
-        ) {
-            return ok;
-        } catch {
-            return false;
-        }
+        uint256 signers
+    ) external {
+        _execSafe(safe, to, value, data, operation, signers);
     }
 
-    /// @dev One call from `safe`, signed by the threshold.
-    function _safeCall(ISafe safe, address to, bytes memory data) internal returns (bool) {
-        return _execSafe(safe, to, 0, data, CALL, THRESHOLD);
-    }
-
-    /// @dev One call carrying `value` of the Safe's own ETH, signed by the threshold.
-    function _safeCallValue(ISafe safe, address to, uint256 value, bytes memory data)
-        internal
-        returns (bool)
-    {
-        return _execSafe(safe, to, value, data, CALL, THRESHOLD);
-    }
-
-    /// @dev One Safe transaction that delegatecalls `MultiSendCallOnly` with a CALL for each
-    ///      entry of `calls`, signed by the first `signers` owners.
-    function _safeBatch(ISafe safe, SafeCall[] memory calls, uint256 signers)
-        internal
-        returns (bool)
-    {
+    /// @dev The MultiSend payload of `calls`, each a CALL.
+    function _multiSend(SafeCall[] memory calls) internal pure returns (bytes memory) {
         bytes memory packed;
         for (uint256 i; i < calls.length; ++i) {
             packed = abi.encodePacked(
                 packed, CALL, calls[i].to, calls[i].value, calls[i].data.length, calls[i].data
             );
         }
-        return _execSafe(
-            safe,
-            MULTI_SEND_CALL_ONLY,
-            0,
-            abi.encodeCall(IMultiSendCallOnly.multiSend, (packed)),
-            DELEGATECALL,
-            signers
-        );
+        return abi.encodeCall(IMultiSendCallOnly.multiSend, (packed));
+    }
+
+    /// @dev One Safe transaction that delegatecalls `MultiSendCallOnly` with a CALL for each
+    ///      entry of `calls`, signed by the threshold. Any failing call reverts it whole.
+    function _safeBatch(ISafe safe, SafeCall[] memory calls) internal {
+        _execSafe(safe, MULTI_SEND_CALL_ONLY, 0, _multiSend(calls), DELEGATECALL, THRESHOLD);
     }
 
     /// @dev The first `count` owner keys of `safe`.
@@ -277,8 +259,13 @@ abstract contract SafeForkBase is WorksForkBase {
         }
     }
 
+    /// @dev The owner addresses of `safe` this test holds keys for.
+    function _ownerOf(ISafe safe, uint256 index) internal view returns (address) {
+        return vm.addr(safeKeys[address(safe)][index]);
+    }
+
     /// @dev ECDSA signatures of `hash` by `keys`, sorted by signer address as Safe requires.
-    function _ownerSignatures(ISafe, bytes32 hash, uint256[] memory keys)
+    function _ownerSignatures(bytes32 hash, uint256[] memory keys)
         internal
         pure
         returns (bytes memory signatures)
@@ -314,7 +301,7 @@ abstract contract SafeForkBase is WorksForkBase {
         view
         returns (bytes memory)
     {
-        return _ownerSignatures(safe, _safeMessageHash(safe, digest), keys);
+        return _ownerSignatures(_safeMessageHash(safe, digest), keys);
     }
 
     /// @dev `safe`'s ERC-1271 signature of `digest` by its first `THRESHOLD` owners.
@@ -346,19 +333,13 @@ abstract contract SafeForkBase is WorksForkBase {
     }
 
     /// @dev Runs a delayed governed call as `safe` through the manager: a scheduling Safe
-    ///      transaction, the class delay, then an executing Safe transaction.
+    ///      transaction, the class delay read from the manager, then an executing one.
     function _safeGovern(ISafe safe, address target, bytes memory data) internal {
         (bool immediate, uint32 delay) = manager.canCall(address(safe), target, bytes4(data));
         require(!immediate && delay != 0, "not a delayed action of this Safe");
-        require(
-            _safeCall(safe, address(manager), abi.encodeCall(manager.schedule, (target, data, 0))),
-            "schedule"
-        );
+        _safeCall(safe, address(manager), abi.encodeCall(manager.schedule, (target, data, 0)));
         vm.warp(block.timestamp + delay);
-        require(
-            _safeCall(safe, address(manager), abi.encodeCall(manager.execute, (target, data))),
-            "execute"
-        );
+        _safeCall(safe, address(manager), abi.encodeCall(manager.execute, (target, data)));
     }
 
     function _opId(ISafe safe, address target, bytes memory data) internal view returns (bytes32) {

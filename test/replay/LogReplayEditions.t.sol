@@ -1,142 +1,182 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { IMintTarget } from "src/interfaces/IMintTarget.sol";
+import { IERC1155 } from "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
+import { Slots } from "src/interfaces/core/CoreTypes.sol";
+import { IEditions } from "src/interfaces/core/IEditions.sol";
 import { LocatorKind } from "src/interfaces/types/ContentTypes.sol";
-import { EditionTerms, ItemKind } from "src/interfaces/types/PackageTypes.sol";
-import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
-import { Typehashes } from "src/interfaces/types/Typehashes.sol";
-import { EditionsAdapterMock } from "../mocks/editions/EditionsMocks.sol";
+import { UniformEditionAuctionLens } from "src/sales/UniformEditionAuctionLens.sol";
+import { MockSale } from "../mocks/core/CoreMocks.sol";
 import { ReplayBase } from "./ReplayBase.sol";
+import { ReplayEvents } from "./ReplayEvents.sol";
 
-/// @notice Log replay of 6529 Stream Editions (ED-5, ED-7, ED-25 to ED-27, INV-ED-2, INV-ED-5,
-///         INV-ED-6): a history that emits every event it can rebuilds, from its logs alone,
-///         each edition's terms, bound adapter, locked economics, rate, minted count, sealed
-///         supply and holders.
-/// @dev The editions are sold by an adapter admitted by governance (a reduced stand-in for a
-///      sale adapter, `EditionsAdapterMock`), so the history reaches burns and a bind before
-///      creation that the genesis edition auction does not; the edition auction's own flows
-///      are in `test/integration/EditionAuction*.t.sol`.
+/// @notice Log replay of 6529 Stream Editions on the deployed stack, from its deployment on: a
+///         history that emits every event it can emit (editions opened by the uniform edition
+///         auction during their masters' sales, bids settled, sealed and claimed, single and
+///         batch transfers, an operator approval, a burn, a royalty change through the rules
+///         module, single and batch metadata refreshes, the network's settings and modules, a
+///         minter removed and an unminted edition rebound to a new one) rebuilds every getter
+///         from Editions' logs alone, and the rebuilt values match after each step.
+/// @dev `URI` is declared by ERC-1155 and never emitted (the renderer answers `uri`).
 contract LogReplayEditionsTest is ReplayBase {
     address internal artist;
-    address internal buyer = makeAddr("editionBuyer");
-    address internal friend = makeAddr("editionFriend");
-    address internal collector = makeAddr("masterCollector");
+    address internal collector = makeAddr("editionCollector");
+    address internal second = makeAddr("editionSecond");
+    address internal operator = makeAddr("editionOperator");
     bytes32 internal root;
-    EditionsAdapterMock internal adapter;
 
     function setUp() public override {
         super.setUp();
         artist = _actor("editionArtist");
         Work[] memory works = new Work[](3);
         for (uint256 i; i < 3; ++i) {
-            works[i] = _work(artist, collectionId);
-            works[i].item.kind = uint8(ItemKind.EDITION_MASTER);
-            works[i].item.edition =
-                EditionTerms(i == 1 ? 0 : 50, address(0), SaleKind.UNIFORM_AUCTION, "");
+            works[i] = _asMaster(_work(artist, collectionId), 10);
         }
         root = _publish(works);
         _keep(root, works);
-        adapter = new EditionsAdapterMock(SaleKind.UNIFORM_AUCTION);
         _sync();
     }
 
-    function test_EveryEditionsEventReplaysToTheSameState() public {
+    /// @dev Starts master `index`'s 1/1 sale and opens its edition sale; returns both sale IDs
+    ///      and the master's token ID (the edition ID).
+    function _openEdition(uint256 index)
+        internal
+        returns (uint256 oneOfOne, uint256 editionSale, uint256 id)
+    {
         Work[] memory works = _package(root);
-        uint256 m0 = _sell(root, works, 0, collector, 1 ether);
-        uint256 m1 = _sell(root, works, 1, collector, 1 ether);
-        uint256 m2 = _sell(root, works, 2, collector, 1 ether);
-        _govern(
-            hotAdmin,
-            address(editions),
-            abi.encodeCall(editions.setAdmittedMinter, (address(adapter), true))
+        (oneOfOne, id) = _start(root, works, index);
+        editionSale = editionAuction.open(
+            address(editions), id, abi.encode(works[index].item, root, _proofOf(works, index))
         );
-        editions.createEdition(m0, works[0].item);
-        editions.createEdition(m1, works[1].item);
-        _sync();
+    }
 
-        // Mints bind the edition to the adapter (ED-5); copies it holds can be burned.
-        adapter.buy(editions, m0, buyer, 3);
-        adapter.buy(editions, m1, buyer, 2);
-        adapter.buy(editions, m0, address(adapter), 2);
-        adapter.burnHeld(editions, m0, 1);
+    function _bid(uint256 saleId, address bidder, uint256 quantity) internal {
+        // The lens reads the auction's storage: its views are served through the auction.
+        uint256 amount =
+            quantity * UniformEditionAuctionLens(address(editionAuction)).stepPrice(saleId, 0);
+        vm.deal(bidder, bidder.balance + amount);
+        vm.prank(bidder);
+        editionAuction.bid{ value: amount }(saleId, 0, quantity);
+    }
+
+    function _settleEdition(uint256 saleId) internal {
+        for (uint256 i; i < 20; ++i) {
+            if (editionAuction.settle(saleId, new uint256[](0))) return;
+        }
+        revert("edition sale did not settle");
+    }
+
+    function test_Editions_EveryEventReplaysToTheSameState() public {
+        Work[] memory works = _package(root);
+        // Two editions opened beside their masters' sales, bid on, settled and claimed; the
+        // third opened and never bid on.
+        (uint256 oneA, uint256 saleA, uint256 a) = _openEdition(0);
+        (uint256 oneB, uint256 saleB, uint256 b) = _openEdition(1);
+        (uint256 oneC,, uint256 c) = _openEdition(2);
         _sync();
-        vm.startPrank(buyer);
-        editions.safeTransferFrom(buyer, friend, m0, 1, "");
-        editions.setApprovalForAll(friend, true);
+        _bid(saleA, collector, 3);
+        _bid(saleB, collector, 2);
+        _settleAtEnd(oneA);
+        auction.settle(oneB);
+        auction.settle(oneC);
+        skip(1 hours);
+        _settleEdition(saleA);
+        _settleEdition(saleB);
+        _sync();
+        vm.startPrank(collector);
+        editionAuction.claimBid(saleA, 1, collector);
+        editionAuction.claimBid(saleB, 1, collector);
         vm.stopPrank();
+        _sync();
+        assertTrue(editions.editionOf(a).supplySealed, "sealed at settlement");
+        assertEq(editions.balanceOf(collector, a), 3);
+
+        // Transfers, an operator approval and a burn.
+        vm.startPrank(collector);
+        editions.safeTransferFrom(collector, second, a, 1, "");
         uint256[] memory ids = new uint256[](2);
         uint256[] memory amounts = new uint256[](2);
-        (ids[0], ids[1], amounts[0], amounts[1]) = (m0, m1, 1, 2);
-        vm.prank(friend);
-        editions.safeBatchTransferFrom(buyer, friend, ids, amounts, "");
-        adapter.seal(editions, m0, 10);
+        (ids[0], ids[1], amounts[0], amounts[1]) = (a, b, 1, 1);
+        editions.safeBatchTransferFrom(collector, second, ids, amounts, "");
+        editions.setApprovalForAll(operator, true);
+        vm.stopPrank();
+        vm.prank(second);
+        editions.burn(b, 1);
         _sync();
 
-        // A bind and a seal at zero before the edition exists (the sale sold nothing).
-        adapter.bind(editions, m2, works[2].item);
-        adapter.seal(editions, m2, 0);
+        // The master's royalty change reaches its edition; finalize refreshes both tokens.
+        _open(a, works[0]);
+        _setRoyaltyRate(a, works[0], 8_000);
         _sync();
-        editions.createEdition(m2, works[2].item);
+        assertEq(editions.editionOf(a).royaltyRate, 8_000);
+        bytes32 state = rules.workStateHash(address(stream), a);
+        vm.prank(artist);
+        rules.finalize(address(stream), a, state);
+        _govern(
+            storageOperator,
+            address(delivery),
+            abi.encodeCall(delivery.setPreferredKind, (address(stream), LocatorKind.ARWEAVE))
+        );
         _sync();
-        assertEq(editions.edition(m2).maxSupply, 0);
 
-        // The master re-rated with every party's consent: the edition follows (ED-7).
-        records.openRecord(m0, works[0].item, works[0].media);
-        _govern(hotAdmin, address(records), _rerateCall(m0, 3_000));
-        _deployLoweredVault(editions.edition(m0).seller, editions.edition(m0).feeRecipient, 1_000);
-        _govern(hotAdmin, address(editions), abi.encodeCall(editions.lowerFeeShare, (m0, 1_000)));
-        _govern(
-            hotAdmin, address(editions), abi.encodeCall(editions.setContractURI, ("ar://editions"))
-        );
-        _govern(
-            hotAdmin,
-            address(editions),
-            abi.encodeCall(editions.setOwner, (marketOwner, makeAddr("nextEditionsOwner")))
+        // The network's settings, the owner and the TERMS slot announced and installed again.
+        _asNetwork(address(editions), abi.encodeCall(editions.setContractURI, ("ar://editions")));
+        _asNetwork(address(editions), abi.encodeCall(editions.setOwner, (makeAddr("edOwner"))));
+        _asNetwork(address(editions), abi.encodeCall(editions.setRebindDelay, (2 days)));
+        _asNetwork(address(editions), abi.encodeCall(editions.setModuleDelay, (1 days)));
+        _asNetwork(
+            address(editions), abi.encodeCall(editions.proposeModule, (Slots.TERMS, address(terms)))
         );
         _sync();
-        // A preferred-kind change refreshes every edition (`BatchMetadataUpdate`).
-        vm.prank(storageOperator);
-        delivery.setPreferredKind(LocatorKind.IPFS);
-        _govern(
-            hotAdmin,
-            address(editions),
-            abi.encodeCall(editions.setAdmittedMinter, (address(adapter), false))
-        );
+        skip(1 days);
+        editions.activateModule(Slots.TERMS);
         _sync();
-        // A removed adapter still mints an edition it sealed, never one it did not.
-        adapter.buy(editions, m0, buyer, 1);
-        vm.expectRevert(
-            abi.encodeWithSelector(IMintTarget.NotAdmittedMinter.selector, address(adapter))
-        );
-        adapter.buy(editions, m1, buyer, 1);
-        _sync();
-        _assertEveryEventReplayed("Editions", editionsIdx, _list("URI(string,uint256)"));
-        // The artist ID each edition stores comes from its master; `EditionCreated` carries it.
-        assertEq(editionsIdx.artistIdOf(m0), stream.artistOf(m0), "edition artist from logs");
-        assertEq(editionsIdx.artistIdOf(m1), stream.artistOf(m1), "edition artist from logs");
-        assertTrue(editionsIdx.artistIdOf(m0) != 0, "edition artist logged");
-    }
 
-    function _rerateCall(uint256 tokenId, uint32 rate) internal view returns (bytes memory) {
-        bytes32 state = records.workStateHash(tokenId);
-        uint64 deadline = uint64(block.timestamp + 7 days);
-        bytes32 structHash =
-            keccak256(abi.encode(Typehashes.ROYALTY_RATE_CHANGE, tokenId, rate, state, deadline));
-        bytes[] memory sigs = new bytes[](1);
-        sigs[0] =
-            abi.encodePacked(artist, _sign(artist, _typedDigest(address(records), structHash)));
-        return abi.encodeCall(
-            records.setRoyaltyRate, (tokenId, rate, _package(root)[0].item, state, deadline, sigs)
+        // The edition auction removed as a minter; after the rebind delay the unminted edition
+        // moves to a newly added minter, and the auction is added again.
+        MockSale next = new MockSale();
+        _asNetwork(
+            address(editions), abi.encodeCall(editions.removeMinter, (address(editionAuction)))
+        );
+        _asNetwork(address(editions), abi.encodeCall(editions.addMinter, (address(next))));
+        _sync();
+        skip(2 days);
+        _asNetwork(address(editions), abi.encodeCall(editions.rebind, (c, address(next))));
+        _asNetwork(address(editions), abi.encodeCall(editions.addMinter, (address(editionAuction))));
+        _sync();
+        next.mintEdition(address(editions), collector, c, 2, 0);
+        _sync();
+        assertEq(editions.editionOf(c).minter, address(next));
+
+        _assertEveryEventReplayed(
+            "StreamEditions6529", editionsIdx, ReplayEvents.editions(), _list("URI(string,uint256)")
         );
     }
 
-    /// @dev Negative control: slot 6 holds the marketplace owner (and the minter count above
-    ///      it); a value no log explains makes the comparison fail.
-    function test_IndexerDetectsStateThatLogsDoNotExplain() public {
+    // ------------------------------------------------------------------ negative controls
+
+    /// @dev Slot 4 holds the contract URI: a value no `ContractURISet` logged.
+    function test_Editions_ReplayFailsOnStateNoLogExplains() public {
         editionsIdx.assertMatches();
-        vm.store(address(editions), bytes32(uint256(6)), bytes32(uint256(uint160(buyer))));
+        vm.store(address(editions), bytes32(uint256(4)), bytes32(uint256(0x41 << 248 | 2)));
         vm.expectRevert();
         editionsIdx.assertMatches();
+    }
+
+    /// @dev A claim whose `TransferSingle` log is dropped: the rebuilt balance is stale.
+    function test_Editions_ReplayFailsOnADroppedLog() public {
+        (uint256 one, uint256 sale, uint256 a) = _openEdition(0);
+        _bid(sale, collector, 2);
+        _settleAtEnd(one);
+        skip(1 hours);
+        _settleEdition(sale);
+        _sync();
+        vm.prank(collector);
+        editionAuction.claimBid(sale, 1, collector);
+        _apply(_dropOne(address(editions), IERC1155.TransferSingle.selector));
+        vm.expectRevert(bytes("balanceOf: 2 != 0"));
+        editionsIdx.assertMatches();
+        assertEq(editions.balanceOf(collector, a), 2);
+        assertGt(editionsIdx.seen(IEditions.EditionMinted.selector), 0);
     }
 }

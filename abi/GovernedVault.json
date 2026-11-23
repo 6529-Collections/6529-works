@@ -603,17 +603,6 @@
   {
     "inputs": [
       {
-        "internalType": "uint256",
-        "name": "gasLimit",
-        "type": "uint256"
-      }
-    ],
-    "name": "TokenInsufficientGas",
-    "type": "error"
-  },
-  {
-    "inputs": [
-      {
         "internalType": "address",
         "name": "asset",
         "type": "address"

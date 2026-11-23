@@ -2,34 +2,33 @@
 
 6529 Works is pre-audit and under active construction. Before you start:
 
-1. Read [ADR 0001](docs/adr/0001-v1-scope.md) for the scope, and the
-   [delivery plan](ops/DELIVERY_PLAN.md) for current priorities.
+1. Read the [three-page overview](docs/overview.md), then [ADR 0001](docs/adr/0001-v1-scope.md)
+   for the scope and [ADR 0010](docs/adr/0010-plain-permanent-core.md) for what is permanent.
 2. Read the [specification](docs/spec/README.md) page for the area you are changing. It states
    the rules, with their IDs and the tests that prove them; a change that alters a rule updates
    the page in the same PR. Terms are in the [glossary](docs/glossary.md). The README in each
    `src/` folder is a code map of that module: its files, entry points, storage and bytecode
    notes, and the tests to run.
-3. Read [Build, test and budgets](docs/audit/build-and-test.md) for the CI gates and the gas
-   and state-growth rules, and [Testing](docs/testing/README.md) for the layers of the suite,
-   coverage floors, mutation testing and the Halmos proofs.
+3. Read the engineering rules in [AGENTS.md](AGENTS.md) (they apply to people too) and
+   [Testing](docs/testing/README.md) for the layers of the suite, coverage floors, mutation
+   testing and the Halmos proofs.
 4. Open an issue before large changes. Changes outside the ADR scope need a new
    ADR.
 5. Keep PRs small and focused. Each PR states:
    - what changed and why;
    - the validation you ran;
    - the security impact.
-6. External calls follow ADR 0007's gas rule
-   ([permanence](docs/adr/0007-permanence.md)): no gas number in a permanent contract or the
-   renderer, all gas forwarded, a shortfall reverts; the return data copied is always bounded.
-   The rule supersedes the earlier "gas-capped calls" wording in older ADRs and reviews.
+6. Permanent code is plain ([ADR 0010](docs/adr/0010-plain-permanent-core.md)): no gas
+   number, no assembly, no `try`/`catch`, no fixed waiting period (every wait is a network
+   setting). Comments cite only what a reader can look up here (see [AGENTS.md](AGENTS.md#comments)).
 7. Tests come with the code:
    - unit tests with specific revert selectors;
    - invariants for anything that moves money;
    - gas checks where the budgets apply.
 8. `forge build` and `forge test` must pass, and the CI budgets must hold. The
-   [quickstart](docs/quickstart.md) has the commands, their timings and a local end-to-end run.
+   [quickstart](docs/quickstart.md) has the commands and a local end-to-end run.
 9. A new or changed `restricted` function is mapped in
-   [`config/genesis.example.json`](config/genesis.example.json) in the same PR
+   [`config/genesis.core.example.json`](config/genesis.core.example.json) in the same PR
    (`tools/check_genesis.py` fails otherwise). Then regenerate the
    [role and permission matrix](docs/audit/roles.md) with `python tools/gen_role_matrix.py`;
    CI checks it with `--check`.
