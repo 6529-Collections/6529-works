@@ -222,6 +222,15 @@ class RenderTest(unittest.TestCase):
         ))
         self.assertEqual(gs.render_tests([]), "")
 
+    def test_a_margin_that_is_not_a_finite_number_of_points_is_refused(self) -> None:
+        for margin in (float("nan"), float("inf"), float("-inf"), -1, True, "2", None):
+            data = sample()
+            data["margin"] = margin
+            self.assertEqual(gs.validate(data), ["margin is not a number of points"], margin)
+        data = sample()
+        data["margin"] = 2
+        self.assertEqual(gs.validate(data), [])
+
     def test_a_malformed_shape_is_reported_not_raised(self) -> None:
         self.assertIn("not a map", gs.validate(None)[0])
         self.assertIn("not a map", gs.validate([])[0])
@@ -500,6 +509,16 @@ class CommandTest(unittest.TestCase):
             self.assertIn(f"{relative}: not JSON", out)
             self.put(relative, kept)
         self.assertEqual(run(["--root", str(self.tmp), "--check"])[0], 0)
+
+    def test_a_margin_that_is_not_finite_fails_cleanly_in_both_modes(self) -> None:
+        page = self.get(gs.PAGE)
+        for text in ("NaN", "Infinity"):
+            self.put(gs.DATA, gs.dump_data(sample()).replace('"margin": 2.0', f'"margin": {text}'))
+            for mode in (["--check"], [], ["--write-floors"]):
+                code, out = run(["--root", str(self.tmp), *mode])
+                self.assertEqual(code, 1, (text, mode))
+                self.assertIn("margin is not a number of points", out)
+            self.assertEqual(self.get(gs.PAGE), page)
 
     def test_the_writing_modes_fail_cleanly_on_bad_input(self) -> None:
         page, floors = self.get(gs.PAGE), self.get(gs.FLOORS)

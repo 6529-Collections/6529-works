@@ -68,6 +68,7 @@ import copy
 import difflib
 import json
 import math
+import math
 import re
 import sys
 from fractions import Fraction
@@ -145,7 +146,9 @@ def validate(data: dict) -> list[str]:
     if unknown:
         errors.append(f"unknown keys {unknown}")
     margin = data.get("margin")
-    if isinstance(margin, bool) or not isinstance(margin, (int, float)) or margin < 0:
+    # NaN and the infinities are floats too (Python's JSON reader accepts them): not points.
+    if (isinstance(margin, bool) or not isinstance(margin, (int, float))
+            or not math.isfinite(margin) or margin < 0):
         return errors + ["margin is not a number of points"]
     files = data.get("files")
     if not isinstance(files, dict):
