@@ -21,7 +21,7 @@ correct or ready for production.
 
 ## Results
 
-Every finished item passed. "Tests" counts test functions; a fuzz or invariant test counts once.
+Every item passed. "Tests" counts test functions; a fuzz or invariant test counts once.
 
 | Item | Command | Count | Time | Result |
 | --- | --- | --- | ---: | --- |
@@ -29,7 +29,7 @@ Every finished item passed. "Tests" counts test functions; a fuzz or invariant t
 | Format | `forge fmt --check`, and of `examples` and `keeper/test` | | 1 s | pass |
 | Unit, fuzz, replay, integration, examples | `forge test --no-match-test ^invariant` | 268 suites: 3,200 passed, 8 skipped | 27 s | pass |
 | Invariants, default profile (256 runs of 128 calls) | the six parts of `ci.yml` | 68 tests | 90 to 481 s a part | pass |
-| Invariants, deep profile (2,000 runs of 256 calls) | the five parts of `nightly.yml` | 68 tests | | still running when this page was first committed |
+| Invariants, deep profile (2,000 runs of 256 calls) | the five parts of `nightly.yml` | 68 tests | 1,157 to 6,010 s a part | pass |
 | Fuzz, deep profile (10,000 runs) | `forge test --no-match-test ^invariant --no-match-path "test/fork/*"` | 261 suites: 3,200 passed, 1 skipped | 129 s | pass |
 | Settlement scan, deep profile | `testFuzz_Settlement_EqualsTheLibraryClearing` | 1 test, 10,000 runs | 4 s | pass |
 | Symbolic proofs | `FOUNDRY_PROFILE=symbolic halmos` | 77 of 77 proofs in 15 contracts | 908 s | pass |
@@ -91,8 +91,8 @@ the one test ran.
 ## Not run
 
 - **No audit and no other prover.** As in [What is not tested](README.md#what-is-not-tested).
-- **Mutation testing of every file.** Only the files named in
-  [Mutation scores](mutation-scores.md) as measured again on this commit were run; the weekly
+- **Mutation testing of every file.** Ten files were measured again on this commit (5,292
+  mutants, [Mutation scores](mutation-scores.md#measured-again-on-961bc956)); the weekly
   workflow runs the rest.
 - **The hosted workflows.** This pass ran the workflows' commands on a rented machine, not the
   workflows themselves; their own runs on `961bc956` are on the repository's Actions page.

@@ -37,7 +37,14 @@
   a Forge test checks that division for every rate; it runs in under a second. The nightly
   settlement-scan job's filter selected no test and passed; it selects its test again and
   fails if none ran. The tables of the mutation scores page and the floors file are generated
-  from `tools/mutation-scores.json` by `tools/gen_mutation_scores.py`, which CI checks.
+  from `tools/mutation-scores.json` by `tools/gen_mutation_scores.py`, which CI checks. Ten
+  files were measured again at `961bc956` with statements cut by source line (the seven
+  contracts the module fixes changed, and `PackageRegistry`, `BoundedCall` and
+  `IndependentStream6529`): 5,292 mutants, 4,925 killed; two tests added for the two gaps
+  among the new survivors; five floors rise and one falls a point
+  (`IndependentEditionAuction`, 95 to 94: three survivors of 56 mutants, two of them
+  equivalent)
+  ([scores](docs/testing/mutation-scores.md#measured-again-on-961bc956)).
 - **Sepolia round r7.** A second instance of the plain core on Sepolia (testnet only), from
   `main` at `5de6abaa`, kept with its governance as genesis installed it so that `VerifyCore`
   passes at the chain's head; verified on Sourcify
