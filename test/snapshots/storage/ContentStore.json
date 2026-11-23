@@ -69,6 +69,20 @@
         "slot": 4,
         "type": "bytes32"
       }
+    ],
+    "struct ContentStore.Link": [
+      {
+        "label": "length",
+        "offset": 0,
+        "slot": 0,
+        "type": "uint64"
+      },
+      {
+        "label": "parts",
+        "offset": 8,
+        "slot": 0,
+        "type": "uint32"
+      }
     ]
   },
   "variables": [
@@ -98,7 +112,7 @@
       "label": "_linked",
       "offset": 0,
       "slot": 3,
-      "type": "mapping(bytes32 => uint256)"
+      "type": "mapping(bytes32 => struct ContentStore.Link)"
     },
     {
       "contract": "ContentStore",

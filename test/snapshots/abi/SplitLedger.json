@@ -47,6 +47,13 @@
     "type": "error"
   },
   {
+    "id": "0x4ca249dc",
+    "inputs": [],
+    "name": "Create2EmptyBytecode",
+    "signature": "Create2EmptyBytecode()",
+    "type": "error"
+  },
+  {
     "id": "0x5e0a829b",
     "inputs": [
       {
@@ -62,6 +69,31 @@
     ],
     "name": "ETHTransferFailed",
     "signature": "ETHTransferFailed(address,uint256)",
+    "type": "error"
+  },
+  {
+    "id": "0xb06ebf3d",
+    "inputs": [],
+    "name": "FailedDeployment",
+    "signature": "FailedDeployment()",
+    "type": "error"
+  },
+  {
+    "id": "0xcf479181",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "balance",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "needed",
+        "type": "uint256"
+      }
+    ],
+    "name": "InsufficientBalance",
+    "signature": "InsufficientBalance(uint256,uint256)",
     "type": "error"
   },
   {

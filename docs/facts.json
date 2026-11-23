@@ -37,13 +37,13 @@
         "EnglishAuction": "0x73527a07c7F19B153EE32F14bE16e96c4219c67f",
         "EnglishAuctionLens": "0x32b032Bb6381625b0842D03BfD011F8a8b05Ccb1",
         "EntropyModule": "0x2b5067dd458c9C01Ab70B5A290E10D185C3ae892",
+        "FederatedEditionAuction": "0x896180534Fc8508894c40634776e914798F7CeDD",
+        "FederatedEditionAuctionLens": "0x7401C865A9cA473C3EFfCcd709311C8aF207De31",
+        "FederatedEditionsDeployer": "0x58082Ff7cbC34EC300ee8FE9F9dF835977a2F71B",
+        "FederatedStreamDeployer": "0xb7dA4f98894356c710030A02809BCA98a301ACeD",
+        "FederationRegistry": "0xD674C284C89d1B63d7d82ac051a6daB5be4e1Fc4",
         "FeeRecipientVault": "0xB638C93e47aC281142dcBD69f4aDeDf368a5D517",
         "GovernanceConfigurator": "0x37610e1b120d68E9E402372D3D86E94751Ec15Dc",
-        "IndependentEditionAuction": "0x896180534Fc8508894c40634776e914798F7CeDD",
-        "IndependentEditionAuctionLens": "0x7401C865A9cA473C3EFfCcd709311C8aF207De31",
-        "IndependentStream721Deployer": "0xb7dA4f98894356c710030A02809BCA98a301ACeD",
-        "IndependentStreamEditionsDeployer": "0x58082Ff7cbC34EC300ee8FE9F9dF835977a2F71B",
-        "IndependentStreamRegistry": "0xD674C284C89d1B63d7d82ac051a6daB5be4e1Fc4",
         "MuseumVault": "0x8c8FA635cFD6d39d7ec1D520C3B3cb4C36E1Aabe",
         "PackageRegistry": "0x4d7a7aad13AC4Df31E843C68bDF278d074C0B17D",
         "Renderer": "0xE53a7762972783Ac190b5b3a2c9C4049417D452F",
@@ -71,7 +71,7 @@
       "contract": "StreamEditions6529",
       "standard": "ERC-1155",
       "name": "6529 Stream Editions",
-      "symbol": "STREAMEDITIONS"
+      "symbol": "6529STREAMEDITIONS"
     }
   ],
   "parameters": {

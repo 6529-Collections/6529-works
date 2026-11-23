@@ -15,7 +15,7 @@ with `--artifacts out --update` to refresh them. No audit has taken place.
 | --- | --- |
 | Language and compiler | Solidity 0.8.37, EVM `prague`, optimizer on (200 runs), `via_ir` off ([`foundry.toml`](../../foundry.toml)) |
 | Dependencies | OpenZeppelin Contracts 5.7.0 and forge-std 1.17.0, as git submodules in `lib/` |
-| Source lines | 13,923 non-blank, non-comment lines in 121 files under `src/` (budget: 17,000) |
+| Source lines | 13,900 non-blank, non-comment lines in 120 files under `src/` (budget: 17,000) |
 | Deployed contracts | Every contract `script/DeployCore.sol` deploys: the permanent core, the money contracts, the modules, the governance pair and the two Independent Stream deployers (the deploy order is in the [runbook](../../script/README.md#how-a-deployment-is-built)) |
 | Linked libraries | None: every library function is `internal` |
 | Proxies and `delegatecall` | None in `src/`. The one exception is OpenZeppelin `Multicall` inside `AccessManager` ([ADR 0002](../adr/0002-access-manager-hardening.md)) |
@@ -34,28 +34,28 @@ Deployed once and never replaced ([ADR 0010](../adr/0010-plain-permanent-core.md
 | Contract | Source | nSLOC | Runtime (bytes) | Initcode (bytes) | EIP-170 margin |
 | --- | --- | ---: | ---: | ---: | ---: |
 | `Stream6529` (on `StreamBase`) | [`src/core/Stream6529.sol`](../../src/core/Stream6529.sol) | 46 | 14,773 | 16,570 | 9,803 |
-| `StreamEditions6529` (on `EditionsBase`) | [`src/core/StreamEditions6529.sol`](../../src/core/StreamEditions6529.sol) | 41 | 13,236 | 14,914 | 11,340 |
+| `StreamEditions6529` (on `EditionsBase`) | [`src/core/StreamEditions6529.sol`](../../src/core/StreamEditions6529.sol) | 44 | 13,358 | 15,036 | 11,218 |
 | `StreamWorkFacts6529` | [`src/core/StreamWorkFacts6529.sol`](../../src/core/StreamWorkFacts6529.sol) | 166 | 9,533 | 9,738 | 15,043 |
 | `StreamDirectory6529` | [`src/core/StreamDirectory6529.sol`](../../src/core/StreamDirectory6529.sol) | 43 | 3,165 | 3,897 | 21,411 |
 | `StreamBase` (abstract) | [`src/core/StreamBase.sol`](../../src/core/StreamBase.sol) | 219 |  |  |  |
-| `EditionsBase` (abstract) | [`src/core/EditionsBase.sol`](../../src/core/EditionsBase.sol) | 155 |  |  |  |
+| `EditionsBase` (abstract) | [`src/core/EditionsBase.sol`](../../src/core/EditionsBase.sol) | 156 |  |  |  |
 | `Modules`, `ModuleSlots` (abstract) | [`src/core/Modules.sol`](../../src/core/Modules.sol) | 92 |  |  |  |
 | `IndependentStream6529` (each artist deploys a full copy) | [`src/independent/IndependentStream6529.sol`](../../src/independent/IndependentStream6529.sol) | 120 | 14,112 | 15,810 | 10,464 |
-| `IndependentStreamEditions6529` (the pair's ERC-1155) | [`src/independent/IndependentStreamEditions6529.sol`](../../src/independent/IndependentStreamEditions6529.sol) | 47 | 11,160 | 12,354 | 13,416 |
+| `IndependentStreamEditions6529` (the pair's ERC-1155) | [`src/independent/IndependentStreamEditions6529.sol`](../../src/independent/IndependentStreamEditions6529.sol) | 50 | 11,134 | 12,328 | 13,442 |
 | `IndependentStreamMembership` (abstract, both templates) | [`src/independent/IndependentStreamMembership.sol`](../../src/independent/IndependentStreamMembership.sol) | 46 |  |  |  |
-| `SplitLedger` (deployed under the name `SplitFactory`) | [`src/economics/SplitLedger.sol`](../../src/economics/SplitLedger.sol) | 362 | 11,299 | 12,304 | 13,277 |
+| `SplitLedger` (deployed under the name `SplitFactory`) | [`src/economics/SplitLedger.sol`](../../src/economics/SplitLedger.sol) | 363 | 11,686 | 12,691 | 12,890 |
 | `SplitVault` (the 66-byte wallet; raw bytecode constants) | [`src/economics/SplitVault.sol`](../../src/economics/SplitVault.sol) | 8 |  |  |  |
 | `RevenueEscrow` | [`src/economics/RevenueEscrow.sol`](../../src/economics/RevenueEscrow.sol) | 199 | 7,819 | 8,285 | 16,757 |
-| `ContentStore` | [`src/content/ContentStore.sol`](../../src/content/ContentStore.sol) | 451 | 11,855 | 11,883 | 12,721 |
+| `ContentStore` | [`src/content/ContentStore.sol`](../../src/content/ContentStore.sol) | 455 | 12,017 | 12,045 | 12,559 |
 
 ### Sale contracts (minters)
 
 | Contract | Source | nSLOC | Runtime (bytes) | Initcode (bytes) | EIP-170 margin |
 | --- | --- | ---: | ---: | ---: | ---: |
 | `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) | 601 | 21,227 | 23,493 | 3,349 |
-| `UniformEditionAuction` | [`src/sales/UniformEditionAuction.sol`](../../src/sales/UniformEditionAuction.sol) | 919 | 23,331 | 27,806 | 1,245 |
-| `UniformEditionAuctionLens` | [`src/sales/UniformEditionAuctionLens.sol`](../../src/sales/UniformEditionAuctionLens.sol) | 951 | 22,631 | 23,103 | 1,945 |
-| `IndependentEditionAuction` | [`src/independent/IndependentEditionAuction.sol`](../../src/independent/IndependentEditionAuction.sol) | 75 | 23,702 | 27,661 | 874 |
+| `UniformEditionAuction` | [`src/sales/UniformEditionAuction.sol`](../../src/sales/UniformEditionAuction.sol) | 919 | 23,447 | 27,922 | 1,129 |
+| `UniformEditionAuctionLens` | [`src/sales/UniformEditionAuctionLens.sol`](../../src/sales/UniformEditionAuctionLens.sol) | 953 | 22,631 | 23,103 | 1,945 |
+| `IndependentEditionAuction` | [`src/independent/IndependentEditionAuction.sol`](../../src/independent/IndependentEditionAuction.sol) | 75 | 23,818 | 27,777 | 758 |
 | `IndependentEditionAuctionLens` | [`src/independent/IndependentEditionAuctionLens.sol`](../../src/independent/IndependentEditionAuctionLens.sol) | 107 | 23,519 | 23,850 | 1,057 |
 | `SaleStarter` (stateless helper for the keeper) | [`src/sales/SaleStarter.sol`](../../src/sales/SaleStarter.sol) | 35 | 5,954 | 5,982 | 18,622 |
 
@@ -65,7 +65,7 @@ Deployed once and never replaced ([ADR 0010](../adr/0010-plain-permanent-core.md
 | --- | --- | ---: | ---: | ---: | ---: |
 | `PackageRegistry` (the mint policy) | [`src/curation/PackageRegistry.sol`](../../src/curation/PackageRegistry.sol) | 514 | 19,791 | 21,437 | 4,785 |
 | `Eip712CurationVerifier` | [`src/curation/Eip712CurationVerifier.sol`](../../src/curation/Eip712CurationVerifier.sol) | 117 | 5,835 | 6,526 | 18,741 |
-| `StreamTerms` (TERMS) | [`src/terms/StreamTerms.sol`](../../src/terms/StreamTerms.sol) | 145 | 6,588 | 7,366 | 17,988 |
+| `StreamTerms` (TERMS) | [`src/terms/StreamTerms.sol`](../../src/terms/StreamTerms.sol) | 151 | 6,860 | 7,638 | 17,716 |
 | `WorkRules` (RECORDS) | [`src/records/WorkRules.sol`](../../src/records/WorkRules.sol) | 388 | 15,757 | 16,700 | 8,819 |
 | `WorkDelivery` | [`src/stream/WorkDelivery.sol`](../../src/stream/WorkDelivery.sol) | 253 | 10,172 | 10,541 | 14,404 |
 | `Renderer` (RENDERER) | [`src/content/Renderer.sol`](../../src/content/Renderer.sol) | 724 | 24,057 | 24,372 | 519 |
@@ -73,8 +73,8 @@ Deployed once and never replaced ([ADR 0010](../adr/0010-plain-permanent-core.md
 | `ConsolidationAdapter` | [`src/identity/ConsolidationAdapter.sol`](../../src/identity/ConsolidationAdapter.sol) | 52 | 1,335 | 1,646 | 23,241 |
 | `IndependentStreamRegistry` (INDEPENDENT_STREAM) | [`src/independent/IndependentStreamRegistry.sol`](../../src/independent/IndependentStreamRegistry.sol) | 506 | 24,046 | 24,870 | 530 |
 | `IndependentStreamDeployer` (one per template, ownerless) | [`src/independent/IndependentStreamDeployer.sol`](../../src/independent/IndependentStreamDeployer.sol) | 49 | 1,425 | 2,398 | 23,151 |
-| `StatementLog` | [`src/records/StatementLog.sol`](../../src/records/StatementLog.sol) | 313 | 11,125 | 12,386 | 13,451 |
-| `VrfEntropyModule` (optional) | [`src/entropy/VrfEntropyModule.sol`](../../src/entropy/VrfEntropyModule.sol) | 363 | 12,519 | 14,465 | 12,057 |
+| `StatementLog` | [`src/records/StatementLog.sol`](../../src/records/StatementLog.sol) | 310 | 11,167 | 12,428 | 13,409 |
+| `VrfEntropyModule` (optional) | [`src/entropy/VrfEntropyModule.sol`](../../src/entropy/VrfEntropyModule.sol) | 367 | 12,639 | 14,585 | 11,937 |
 | `EconomicsResolver` | [`src/economics/EconomicsResolver.sol`](../../src/economics/EconomicsResolver.sol) | 197 | 8,372 | 11,492 | 16,204 |
 | `AssetAllowlist` | [`src/economics/AssetAllowlist.sol`](../../src/economics/AssetAllowlist.sol) | 70 | 2,493 | 3,049 | 22,083 |
 | `ClaimRouter` | [`src/economics/ClaimRouter.sol`](../../src/economics/ClaimRouter.sol) | 148 | 4,102 | 4,421 | 20,474 |
@@ -111,7 +111,7 @@ Compiled into the contracts that use them; none is deployed or linked.
 | `SSTORE2` | [`src/libraries/SSTORE2.sol`](../../src/libraries/SSTORE2.sol) | 88 | `ContentStore`, `Renderer`, `IndependentStreamDeployer` |
 | `Roles` | [`src/governance/Roles.sol`](../../src/governance/Roles.sol) | 53 | Governance |
 | `SignatureVerifier` | [`src/libraries/SignatureVerifier.sol`](../../src/libraries/SignatureVerifier.sol) | 49 | `PackageRegistry`, `Eip712CurationVerifier`, `Accounts`, `StatementLog`, `SplitLedger` |
-| `Splits` | [`src/economics/Splits.sol`](../../src/economics/Splits.sol) | 56 | The money contracts and the terms |
+| `Splits` | [`src/economics/Splits.sol`](../../src/economics/Splits.sol) | 54 | The money contracts and the terms |
 | `RevenuePayment` | [`src/economics/RevenuePayment.sol`](../../src/economics/RevenuePayment.sol) | 23 | The sale contracts |
 | `Dependency` | [`src/libraries/Dependency.sol`](../../src/libraries/Dependency.sol) | 32 | Every install and code-hash pin of a module |
 | `SpdxId` | [`src/stream/SpdxId.sol`](../../src/stream/SpdxId.sol) | 26 | `PackageRegistry`, `IndependentStreamRegistry`, `StreamWorkFacts6529` |
@@ -124,7 +124,7 @@ The "Used by" column is a reading aid; the import graph is authoritative.
 
 ### Interfaces and shared types
 
-2,452 nSLOC in [`src/interfaces/`](../../src/interfaces/) (with `core/`, `types/` and `external/`) and
+2,410 nSLOC in [`src/interfaces/`](../../src/interfaces/) (with `core/` and `types/`) and
 [`src/economics/interfaces/`](../../src/economics/interfaces/), plus the Chainlink interfaces in
 [`src/entropy/`](../../src/entropy/). The frozen interfaces of the permanent core are in
 `src/interfaces/core/`. They count toward the line budget and are in scope: an error in a

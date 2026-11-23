@@ -340,6 +340,19 @@
     "type": "error"
   },
   {
+    "id": "0x2645bdc2",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "to",
+        "type": "address"
+      }
+    ],
+    "name": "RefundFailed",
+    "signature": "RefundFailed(address)",
+    "type": "error"
+  },
+  {
     "id": "0x66f8634f",
     "inputs": [
       {

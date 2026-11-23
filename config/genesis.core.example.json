@@ -409,7 +409,7 @@
           "role": "NETWORK",
           "class": "immediate",
           "delay": 0,
-          "note": "only an edition with no copies and no seal, once rebindDelay has passed since its minter's removal"
+          "note": "only an edition with no seal, once rebindDelay has passed since its minter's removal"
         }
       ],
       "genesisOnly": [],

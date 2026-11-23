@@ -126,7 +126,7 @@ Source: [`src/core/StreamEditions6529.sol`](../../src/core/StreamEditions6529.so
 | `addMinter(address)` | `0x983b2d56` | `NETWORK` | No delay | immediate | No: executes at once | Active once `moduleDelay()` has passed. |
 | `removeMinter(address)` | `0x3092afd5` | `NETWORK` | No delay | immediate | No: executes at once | At once: it mints nothing new and still finishes what it started. |
 | `setRebindDelay(uint48)` | `0xf39ce910` | `NETWORK` | No delay | immediate | No: executes at once | A setting of the network, at once, zero allowed; read when a rebind is attempted. |
-| `rebind(uint256,address)` | `0x89e09f12` | `NETWORK` | No delay | immediate | No: executes at once | Only an edition with no copies and no seal, once `rebindDelay()` has passed since its minter was removed; the new minter adopts it. |
+| `rebind(uint256,address)` | `0x89e09f12` | `NETWORK` | No delay | immediate | No: executes at once | Only an edition with no seal, once `rebindDelay()` has passed since its minter was removed; the new minter adopts it. |
 
 ### StreamDirectory6529
 
