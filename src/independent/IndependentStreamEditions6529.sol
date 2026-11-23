@@ -87,7 +87,11 @@ contract IndependentStreamEditions6529 is EditionsBase, IndependentStreamMembers
         return true;
     }
 
+    /// @dev While the INDEPENDENT_STREAM slot is empty every sale contract reads as removed, as
+    ///      of now: nothing new is sealed (and no contract may mint then, so nothing is rebound
+    ///      either). Minting an edition sealed before does not read this.
     function _minterRemovedAt(address account) internal view override returns (uint256) {
+        if (_directoryModule(Slots.INDEPENDENT_STREAM) == address(0)) return block.timestamp;
         return _gateRemovedAt(account);
     }
 

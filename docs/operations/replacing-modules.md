@@ -69,13 +69,15 @@ burned item there too. A release made in the old policy and not yet used must be
 
 ## Independent Stream module (`IndependentStreamRegistry`)
 
-Replace it with `proposeModule` and `activateModule`; do not empty the slot with `removeModule`
-while any Independent Stream sale contract has been removed. The module holds the record of
-removed sale contracts, and the permanent tokens ask it. A successor reads through to the
-module it replaces, so removals carry over. While the slot is empty, no Independent Stream
-token mints or creates an edition, `rescue` and `rebind` are refused, and a sale contract the
-module had removed is read as never removed: it may seal an edition it still holds without a
-seal, and its edition sales settle instead of being voided.
+Replace it with `proposeModule` and `activateModule`; do not empty the slot with `removeModule`.
+The module holds the record of removed sale contracts, and the permanent tokens ask it. A
+successor reads through to the module it replaces, so removals carry over. While the slot is
+empty, nothing new happens on an Independent Stream token: no token is minted, no edition is
+created and none is sealed (the editions contract reads every sale contract as removed), and
+`rescue` and `rebind` are refused. An edition sale that is open then is voided with full
+refunds, and its edition stays without a seal; once a module is in the slot again, the network
+can rebind such an edition after removing its sale contract. Transfers, and the minting of an
+edition that was sealed before, do not depend on the slot.
 
 ## Two settings that follow a replaced module
 

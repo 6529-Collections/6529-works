@@ -6,7 +6,8 @@ import { Splits } from "src/economics/Splits.sol";
 import { IndependentEditionAuction } from "src/independent/IndependentEditionAuction.sol";
 import { IndependentStream6529 } from "src/independent/IndependentStream6529.sol";
 import { IndependentStreamEditions6529 } from "src/independent/IndependentStreamEditions6529.sol";
-import { Edition, Outcome } from "src/interfaces/core/CoreTypes.sol";
+import { Edition, Outcome, Slots } from "src/interfaces/core/CoreTypes.sol";
+import { IEditions } from "src/interfaces/core/IEditions.sol";
 import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
 import { IUniformEditionAuctionLens } from "src/interfaces/IUniformEditionAuctionLens.sol";
 import { PRODUCT_INDEPENDENT } from "src/interfaces/types/EconomicsTypes.sol";
@@ -121,6 +122,50 @@ contract IndependentEditionSaleTest is IndependentIntegrationBase {
         // The seller's wallet pays its payees through the ledger; the fee vault forwards.
         _releaseAndForward(w.item.payees);
         _checkConservation();
+    }
+
+    /// @dev The network empties the INDEPENDENT_STREAM slot while an edition sale is open. The
+    ///      sale voids: the bid is refunded in full, once; nothing is paid out, nothing is minted
+    ///      and nothing is sealed, because with no module the editions contract lets no sale
+    ///      contract seal.
+    function test_IndependentEditionSale_AnEmptiedSlotVoidsWithRefundsAndSealsNothing() public {
+        Work memory w = _withIndCollaborator(_asMaster(_fedWork(artist), 0), collab, COLLAB_SHARE);
+        _startMasterSale(w);
+        seller = ledger.walletFor(w.item.payees, bytes32(0));
+        fee = economics.networkFeeRecipient(PRODUCT_INDEPENDENT);
+        saleId = indAuction.open(address(fEditions), tokenId, abi.encode(w.item));
+        uint256 amount = _bid(bidders[0], 100, 3);
+        (uint256 sellerBefore, uint256 feeAtOpen) = (seller.balance, fee.balance);
+        _asNetwork(
+            address(directory), abi.encodeCall(directory.removeModule, (Slots.INDEPENDENT_STREAM))
+        );
+
+        assertEq(fEditions.minterRemovedAt(address(indAuction)), block.timestamp);
+        vm.prank(address(indAuction));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IEditions.NotEditionMinter.selector, tokenId, address(indAuction)
+            )
+        );
+        fEditions.seal(tokenId, 0);
+
+        assertTrue(indAuction.settle(saleId, new uint256[](0)));
+        assertEq(uint8(ea.auction(saleId).status), uint8(IUniformEditionAuction.AuctionStatus.VOID));
+        assertEq(address(indAuction).balance, amount, "the escrow waits for its claim");
+        vm.prank(bidders[0]);
+        (uint256 won, uint256 refund) = indAuction.claimBid(saleId, 1, bidders[0]);
+        assertEq(won, 0);
+        assertEq(refund, amount);
+        assertEq(bidders[0].balance, amount, "refunded in full");
+        assertEq(address(indAuction).balance, 0, "nothing left behind");
+        vm.prank(bidders[0]);
+        vm.expectRevert();
+        indAuction.claimBid(saleId, 1, bidders[0]);
+        assertEq(seller.balance, sellerBefore, "nothing paid to the seller");
+        assertEq(fee.balance, feeAtOpen, "nothing paid to the network");
+        Edition memory e = fEditions.editionOf(tokenId);
+        assertEq(e.minted, 0);
+        assertFalse(e.supplySealed, "nothing new is sealed with no module");
     }
 
     // ------------------------------------------------------------------ steps

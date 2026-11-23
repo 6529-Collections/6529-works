@@ -16,12 +16,13 @@ import { IModuleSlots } from "../interfaces/core/IModules.sol";
 /// @dev Inherited source, never deployed alone. Every answer is a plain call to the directory or
 ///      to a module it names; a failing call reverts the whole call, so no default is ever read
 ///      from a failure. The one exception is a missing module: an empty INDEPENDENT_STREAM slot
-///      answers "may not mint" and "never removed", so a missing gate stops minting only. The
-///      module is also what knows which sale contracts it removed: while the slot is empty a
-///      sale contract it had removed reads as never removed, so `rescue` and `rebind` wait and
-///      such a contract may again seal an edition it holds. A module that replaces another
-///      carries the removals over; the network replaces the module rather than leave the slot
-///      empty (`docs/operations/replacing-modules.md`).
+///      answers "may not mint", so nothing new is minted or created, and the editions contract
+///      then reads every sale contract as removed, so nothing new is sealed either. Transfers,
+///      and the minting of an edition sealed before, ask no module. The module is also what
+///      knows which sale contracts it removed: while the slot is empty the ERC-721 reads a sale
+///      contract as never removed, so `rescue` waits, and no edition is rebound. A module that
+///      replaces another carries the removals over; the network replaces the module rather than
+///      leave the slot empty (`docs/operations/replacing-modules.md`).
 abstract contract IndependentStreamMembership is IIndependentStreamMembership {
     /// @inheritdoc IIndependentStreamMembership
     address public immutable directory;

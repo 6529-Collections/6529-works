@@ -97,6 +97,49 @@ contract IndependentStreamEditionsTest is IndependentTokenFixture {
             abi.encodeWithSelector(IEditions.NotEditionMinter.selector, master, address(sale))
         );
         sale.mintEdition(address(fe), collector, master, 1, 1);
+    }
+
+    /// @dev With no Independent Stream module nothing new is sealed, whether or not the module
+    ///      had removed the sale contract: every sale contract reads as removed. An edition
+    ///      sealed before still mints up to its seal, and copies still move.
+    function test_Seal_AnEmptyIndependentStreamSlotSealsNothingNew() public {
+        uint256 sealedBefore = _fmint(2);
+        sale.createEdition(address(fe), master, 10, address(0xFEE), 700);
+        sale.createEdition(address(fe), sealedBefore, 10, address(0xFEE), 700);
+        sale.mintEdition(address(fe), collector, sealedBefore, 1, 1);
+        sale.seal(address(fe), sealedBefore, 3);
+        directory.removeModule(Slots.INDEPENDENT_STREAM);
+        assertEq(fe.minterRemovedAt(address(sale)), block.timestamp);
+        vm.expectRevert(
+            abi.encodeWithSelector(IEditions.NotEditionMinter.selector, master, address(sale))
+        );
+        sale.seal(address(fe), master, 0);
+        assertFalse(fe.editionOf(master).supplySealed);
+        // No rebind either, even with no wait: no contract may mint.
+        fe.setRebindDelay(0);
+        vm.expectRevert(abi.encodeWithSelector(IEditions.NotRebindable.selector, master));
+        fe.rebind(master, address(next));
+        // What was sealed before is unchanged, and transfers ask nobody.
+        sale.mintEdition(address(fe), collector, sealedBefore, 2, 1);
+        assertEq(fe.balanceOf(collector, sealedBefore), 3);
+        vm.prank(collector);
+        fe.safeTransferFrom(collector, address(0xB0B), sealedBefore, 1, "");
+        assertEq(fe.balanceOf(address(0xB0B), sealedBefore), 1);
+    }
+
+    /// @dev With a module in the slot again, the sale contract it does not report removed seals
+    ///      as before.
+    function test_Seal_AModuleInTheSlotAgainRestoresTheSeal() public {
+        sale.createEdition(address(fe), master, 10, address(0xFEE), 700);
+        directory.removeModule(Slots.INDEPENDENT_STREAM);
+        vm.expectRevert(
+            abi.encodeWithSelector(IEditions.NotEditionMinter.selector, master, address(sale))
+        );
+        sale.seal(address(fe), master, 0);
+        directory.setModuleDelay(0);
+        directory.proposeModule(Slots.INDEPENDENT_STREAM, address(gate));
+        directory.activateModule(Slots.INDEPENDENT_STREAM);
+        assertEq(fe.minterRemovedAt(address(sale)), 0);
         sale.seal(address(fe), master, 0);
         assertTrue(fe.editionOf(master).supplySealed);
     }
