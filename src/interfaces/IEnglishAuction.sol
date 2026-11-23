@@ -261,6 +261,11 @@ interface IEnglishAuction {
     error CreditNotExpired(address account, uint256 expiresAt);
     /// @notice New starts are paused, or `pause` was called while paused.
     error SalePaused();
+    /// @notice A work may not be offered again before `allowedAt`: its last sale's end plus
+    ///         `RESTART_DELAY` (15 minutes).
+    /// @param saleId The sale.
+    /// @param allowedAt When `restart` is first accepted.
+    error RestartTooEarly(uint256 saleId, uint256 allowedAt);
     /// @notice `unpause` was called while not paused.
     error NotPaused();
     /// @notice A compare-and-set setter's expected value is stale.
@@ -287,9 +292,12 @@ interface IEnglishAuction {
 
     /// @notice Offers an unsold Independent Stream work in this auction's custody again, with the
     ///         seller its first start locked and the network's share in force now for the token
-    ///         (`IIndependentStreamGate.feeShareOf`). Permissionless, while starts are not paused
-    ///         and the Independent Stream module still serves the token, whether or not this
-    ///         auction may still mint new works.
+    ///         (`IIndependentStreamGate.feeShareOf`). Permissionless, from 15 minutes after the
+    ///         last sale's end (`RestartTooEarly` before; there is no later limit), while starts
+    ///         are not paused and the Independent Stream module still serves the token, whether
+    ///         or not this auction may still mint new works. The 15 minutes are the time an
+    ///         edition sale stays open after its 1/1's end, so a sale that followed the ended
+    ///         sale has closed before the work has a new end.
     /// @param saleId A settled sale of an Independent Stream work still in custody with no outcome.
     function restart(uint256 saleId) external;
 

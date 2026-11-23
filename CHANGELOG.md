@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+- **Three fixes in replaceable modules.** No permanent contract changed.
+    - **An edition sale no longer follows a restarted 1/1.** `EnglishAuction` records when an
+      unsold Independent Stream work was last offered again and answers it as a fourth value
+      of `auctionClock` (`restartedAt`; the selector is unchanged). A work is offered again
+      only from 15 minutes after its last sale's end (`RESTART_DELAY`, the time an edition
+      sale stays open after its 1/1; `RestartTooEarly` before; AUC-55), so an edition sale
+      that followed the ended 1/1 has reached its close by then. An edition sale follows only
+      the 1/1 sale it was opened in: from a restart it reads its 1/1 as settled and keeps the
+      close it recorded, so it settles and pays by its own rule and its bidders claim,
+      whatever the work's later sales do. A sale opened or adopted after a restart follows
+      the restarted 1/1; a cancelled 1/1 or a delisting still voids a sale not yet settled. 6529 Stream works are never offered again, so the
+      curated edition sale behaves as before. Both edition auctions and both lenses read the
+      new value, so they are deployed together with the English auction (EA-17, IND-56,
+      LIM-EA-22). The lens now reads the clock one way at every place (the open, the views
+      and the abandonment check): an answer that is not four words fitting their types is no
+      usable answer.
+    - **A fee recipient is never zero.** `EconomicsResolver.setFeeTerms` refuses a zero
+      recipient at any share (`InvalidEconomics`), also at a zero share: a sale already running
+      pays the share it stored to the recipient named when it settles, so a recipient must
+      stay named (ECO-2).
+    - **`IndependentStreamRegistry.setEntropyModule` refuses an address without code**
+      (`SaleContractInvalid`), as the module's other setters do; zero, for no module, is still
+      accepted (GV-20).
+    - IND-56 is reworded to the rule the code keeps and names its tests; no rule is left in
+      `tools/rules-uncovered.txt` as uncovered. Two regression ceilings of the gas report move
+      with the extra word the clock reads (`auctionClock` view, edition settlement), and ADR
+      0004's table follows: four rows re-measured and two new rows for `restart`, measured
+      by `IndependentRestartGas.t.sol` with their own ceilings. The code
+      maps of `src/economics` and `src/entropy` are corrected.
 - **Sepolia round r7.** A second instance of the plain core on Sepolia (testnet only), from
   `main` at `5de6abaa`, kept with its governance as genesis installed it so that `VerifyCore`
   passes at the chain's head; verified on Sourcify

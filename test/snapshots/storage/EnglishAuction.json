@@ -104,6 +104,12 @@
         "offset": 25,
         "slot": 3,
         "type": "uint40"
+      },
+      {
+        "label": "restartedAt",
+        "offset": 0,
+        "slot": 4,
+        "type": "uint40"
       }
     ],
     "struct EnglishAuction.Settings": [

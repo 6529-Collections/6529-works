@@ -98,7 +98,7 @@ changes is only when; the amounts are never more than the money that has itself 
 | ID | Rule | Tests |
 | --- | --- | --- |
 | ECO-1 | Rates and shares are out of 100,000; the launch royalty 6,529 is exactly 6.529%. | `test_RoyaltyRateIsExact`, `test_LaunchDefaults` |
-| ECO-2 | A product's fee share is below 100,000, its royalty rate at most 100,000, and a nonzero share names a nonzero recipient. | `test_ConstructorEmitsAndValidates`, `test_SetFeeTermsIsCompareAndSet` |
+| ECO-2 | A product's fee share is below 100,000, its royalty rate at most 100,000, and its fee recipient is never zero, also at a zero share: a sale already running pays the share it stored to the recipient named when it settles. | `test_ConstructorEmitsAndValidates`, `test_SetFeeTermsIsCompareAndSet`, `testFuzz_SetFeeTerms_RefusesAZeroRecipientAtAnyShare`, `test_Settle_ARunningSaleSettlesAfterTheShareIsLoweredToZero` |
 | ECO-3 | The fee recipient is never the resolver, its dependencies or a recognised protocol contract. | `test_FeeRecipientMustBePayable`, `test_FeeRecipient_RefusesSystemContracts`, `test_SetFeeTermsIsCompareAndSet` |
 | ECO-4 | Every governed economics setter is compare-and-set on its own revision. | `test_SetRoyaltyRateIsCompareAndSetOnItsOwnRevision` |
 | ECO-5 | Setters are restricted to their roles and non-payable. | `test_RolesAndDelaysThroughAccessManager`, `check_everyGovernedWrite_needsItsRole` |

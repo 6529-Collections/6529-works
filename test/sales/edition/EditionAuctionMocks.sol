@@ -22,12 +22,16 @@ contract MockOneOfOneAuction {
         IEnglishAuction.AuctionState state;
         uint64 endTime;
         uint64 pausedAt;
+        uint64 restartedAt;
     }
 
     mapping(uint256 saleId => Clock) internal _clocks;
-    /// @dev Whether `auctionClock` answers short (two words, without `pausedAt`), refuses to
-    ///      answer (a broken auction), or burns all its gas.
+    /// @dev Whether `auctionClock` answers short (three words, without `restartedAt`), refuses
+    ///      to answer (a broken auction), or burns all its gas.
     bool public shortAnswer;
+    /// @dev When nonzero, `auctionClock` answers this as its fourth word, unchecked: a value past
+    ///      64 bits makes the answer malformed.
+    uint256 public rawRestartedAt;
     bool public refuseClock;
     bool public burnClock;
 
@@ -50,6 +54,16 @@ contract MockOneOfOneAuction {
 
     function setPausedAt(address token, uint256 id, uint64 pausedAt) external {
         _clocks[saleIdOf(token, id)].pausedAt = pausedAt;
+    }
+
+    /// @dev Records that the 1/1 was offered again at `restartedAt`, as the real auction's
+    ///      `restart` does.
+    function setRestartedAt(address token, uint256 id, uint64 restartedAt) external {
+        _clocks[saleIdOf(token, id)].restartedAt = restartedAt;
+    }
+
+    function setRawRestartedAt(uint256 value) external {
+        rawRestartedAt = value;
     }
 
     function setShortAnswer(bool value) external {
@@ -77,7 +91,12 @@ contract MockOneOfOneAuction {
     function auctionClock(uint256 saleId)
         external
         view
-        returns (IEnglishAuction.AuctionState state, uint64 endTime, uint64 pausedAt)
+        returns (
+            IEnglishAuction.AuctionState state,
+            uint64 endTime,
+            uint64 pausedAt,
+            uint64 restartedAt
+        )
     {
         require(!refuseClock, "broken");
         if (burnClock) {
@@ -86,12 +105,18 @@ contract MockOneOfOneAuction {
             }
         }
         Clock storage c = _clocks[saleId];
-        (state, endTime, pausedAt) = (c.state, c.endTime, c.pausedAt);
+        (state, endTime, pausedAt, restartedAt) = (c.state, c.endTime, c.pausedAt, c.restartedAt);
         if (state == IEnglishAuction.AuctionState.NONE) revert ISaleAdapter.UnknownSale(saleId);
-        if (shortAnswer) {
-            bytes memory two = abi.encode(state, endTime);
+        if (rawRestartedAt != 0) {
+            bytes memory four = abi.encode(state, endTime, pausedAt, rawRestartedAt);
             assembly ("memory-safe") {
-                return(add(two, 0x20), 0x40)
+                return(add(four, 0x20), 0x80)
+            }
+        }
+        if (shortAnswer) {
+            bytes memory three = abi.encode(state, endTime, pausedAt);
+            assembly ("memory-safe") {
+                return(add(three, 0x20), 0x60)
             }
         }
     }

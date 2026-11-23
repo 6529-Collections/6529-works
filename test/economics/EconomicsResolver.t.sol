@@ -148,9 +148,28 @@ contract EconomicsResolverTest is EconomicsBase {
         econ.setFeeTerms(PRODUCT_STREAM, 2, treasury, D);
         vm.expectRevert(IEconomicsResolver.InvalidEconomics.selector);
         econ.setFeeTerms(PRODUCT_STREAM, 2, address(0), 1);
-        // No fee needs no recipient.
+        // A zero share still names a recipient: a sale already running pays the share it
+        // stored to the recipient named when it settles.
+        vm.expectRevert(IEconomicsResolver.InvalidEconomics.selector);
         econ.setFeeTerms(PRODUCT_STREAM, 2, address(0), 0);
-        assertEq(econ.networkFeeRecipient(PRODUCT_STREAM), address(0));
+        econ.setFeeTerms(PRODUCT_STREAM, 2, treasury, 0);
+        _assertEconomics(_econ(PRODUCT_STREAM), treasury, 0, 6_529);
+    }
+
+    /// @dev The recipient is never zero, at any share, for any product: neither through the fee
+    ///      setter nor at construction. The refusal changes nothing.
+    function testFuzz_SetFeeTerms_RefusesAZeroRecipientAtAnyShare(uint32 share) public {
+        bytes32[3] memory products = [PRODUCT_STREAM, PRODUCT_EDITIONS, PRODUCT_INDEPENDENT];
+        for (uint256 i; i < products.length; ++i) {
+            ProductEconomics memory before = _econ(products[i]);
+            vm.expectRevert(IEconomicsResolver.InvalidEconomics.selector);
+            econ.setFeeTerms(products[i], 1, address(0), share);
+            ProductEconomics memory current = _econ(products[i]);
+            _assertEconomics(current, before.feeRecipient, before.feeShare, before.royaltyRate);
+            assertTrue(econ.networkFeeRecipient(products[i]) != address(0), "still named");
+            (uint64 feeRevision,,) = econ.revisions(products[i]);
+            assertEq(feeRevision, 1, "no revision used");
+        }
     }
 
     /// Regression: CALLS-1 (docs/security/internal-review-2026-10.md)

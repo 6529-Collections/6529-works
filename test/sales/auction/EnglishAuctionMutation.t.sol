@@ -104,12 +104,15 @@ contract EnglishAuctionMutationTest is AuctionFixture {
     }
 
     /// @notice A fee with no recipient to take it stops the settlement by the auction's own
-    ///         error.
+    ///         error. The resolver never names zero (ECO-2), so its answer is replaced here.
     function test_Settle_AFeeWithNoRecipientIsRefused() public {
         uint256 saleId = _start(1);
         _bid(alice, saleId, 1 ether);
-        (uint64 feeRevision,,) = economics.revisions(PRODUCT_STREAM);
-        economics.setFeeTerms(PRODUCT_STREAM, feeRevision, address(0), 0);
+        vm.mockCall(
+            address(economics),
+            abi.encodeCall(IEconomicsResolver.networkFeeRecipient, (PRODUCT_STREAM)),
+            abi.encode(address(0))
+        );
         _end(saleId);
         vm.expectRevert(
             abi.encodeWithSelector(IEnglishAuction.InvalidRecipient.selector, address(0))
@@ -127,6 +130,7 @@ contract EnglishAuctionMutationTest is AuctionFixture {
         independentStream.setMinter(address(ind), address(auction), false);
         _end(saleId);
         auction.settle(saleId);
+        vm.warp(block.timestamp + auction.RESTART_DELAY());
         assertEq(auction.auction(saleId).bid, 1 ether, "the refunded amount stays until restart");
         independentStream.setMinter(address(ind), address(auction), true);
         auction.restart(saleId);
@@ -141,6 +145,7 @@ contract EnglishAuctionMutationTest is AuctionFixture {
         uint256 saleId = _startInd(1);
         _end(saleId);
         auction.settle(saleId);
+        vm.warp(block.timestamp + auction.RESTART_DELAY());
         independentStream.setTerms(SaleKind.ENGLISH_AUCTION, "", indSeller, 100_001);
         vm.expectRevert(
             abi.encodeWithSelector(IEnglishAuction.InvalidSaleTerms.selector, address(ind), 1)
@@ -357,7 +362,7 @@ contract EnglishAuctionMutationTest is AuctionFixture {
         auction.pause(saleId, REF);
         uint256 pausedAt = block.timestamp;
         vm.warp(pausedAt + 3 days);
-        (IEnglishAuction.AuctionState state, uint64 endTime, uint64 at) =
+        (IEnglishAuction.AuctionState state, uint64 endTime, uint64 at,) =
             auction.auctionClock(saleId);
         assertEq(uint256(state), uint256(IEnglishAuction.AuctionState.PAUSED));
         assertEq(endTime, end);

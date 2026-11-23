@@ -162,7 +162,8 @@ contract IndependentPairTest is IndependentIntegrationBase {
         assertEq(uint8(fStream.workOf(tokenId).outcome), uint8(Outcome.NONE), "no outcome");
         assertEq(uint8(auction.auction(saleId).state), uint8(IEnglishAuction.AuctionState.SETTLED));
 
-        // Anyone offers it again.
+        // Anyone offers it again, once the wait after the sale's end has passed.
+        vm.warp(block.timestamp + auction.RESTART_DELAY());
         vm.prank(makeAddr("anyone"));
         auction.restart(saleId);
         assertEq(uint8(auction.auction(saleId).state), uint8(IEnglishAuction.AuctionState.ACTIVE));

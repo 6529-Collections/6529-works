@@ -99,7 +99,3 @@ PROP-STR-2 removed retired by ADR 0010
 # Plain-core restructuring (ADR 0010): new rules whose tests land with the core lanes; each
 # entry is removed when the rule names its test at integration.
 GV-22 removed The one-shot bind steps are gone; genesis modules and minters are constructor arguments (ADR 0010)
-
-# Live rules whose row and code differ. Each needs a decision, a new wording or a code change,
-# before it can name a test.
-IND-56 uncovered the row allows abandon once the 1/1 is closed; a sale whose 1/1 settled is never abandoned (EA-19). Kept open pending a decision on its wording

@@ -1253,6 +1253,22 @@
     "type": "error"
   },
   {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "saleId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "allowedAt",
+        "type": "uint256"
+      }
+    ],
+    "name": "RestartTooEarly",
+    "type": "error"
+  },
+  {
     "inputs": [],
     "name": "SalePaused",
     "type": "error"

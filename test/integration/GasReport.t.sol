@@ -59,7 +59,11 @@ contract IntegrationGasReport is GasBase {
     /// @dev ADR 0004's budget for `royaltyInfo`, in execution gas.
     uint256 internal constant ROYALTY_INFO_EXECUTION = 50_000;
     /// @dev Regression ceilings, in Prague gas: each row's figure when it was set (22 November
-    ///      2026, the plain-core stack), plus about 2%, rounded up to the thousand.
+    ///      2026, the plain-core stack), plus about 2%, rounded up to the thousand. Two were moved
+    ///      on 23 November 2026, when `auctionClock` began to answer when a work was last offered
+    ///      again (one more storage word read by the view, and by the edition settlement's first
+    ///      call, which reads it): `AUCTION_CLOCK_VIEW_CEILING` (28,787 measured) and
+    ///      `EDITION_SETTLE_CEILING` (180,815 measured).
     uint256 internal constant FIRST_START_CEILING = 357_000;
     uint256 internal constant FIRST_BID_CEILING = 353_000;
     uint256 internal constant STARTER_CEILING = 579_000;
@@ -67,12 +71,12 @@ contract IntegrationGasReport is GasBase {
     uint256 internal constant AUTHORIZE_CEILING = 119_000;
     uint256 internal constant AUCTION_VIEW_CEILING = 34_000;
     uint256 internal constant MINIMUM_BID_VIEW_CEILING = 40_000;
-    uint256 internal constant AUCTION_CLOCK_VIEW_CEILING = 28_000;
+    uint256 internal constant AUCTION_CLOCK_VIEW_CEILING = 30_000;
     uint256 internal constant EDITION_OPEN_CEILING = 260_000;
     uint256 internal constant EDITION_OPEN_WALLETS_CEILING = 402_000;
     uint256 internal constant EDITION_BID_NEW_WORD_CEILING = 89_000;
     uint256 internal constant EDITION_BID_CEILING = 71_000;
-    uint256 internal constant EDITION_SETTLE_CEILING = 179_000;
+    uint256 internal constant EDITION_SETTLE_CEILING = 185_000;
     uint256 internal constant EDITION_CLAIM_WINNER_CEILING = 114_000;
     uint256 internal constant EDITION_CLAIM_REFUND_CEILING = 74_000;
     uint256 internal constant RERATE_CEILING = 231_000;

@@ -61,6 +61,20 @@ import { UniformClearing } from "./UniformClearing.sol";
 ///      near the close; a bid placed far from the close after the cancel is refunded in full with
 ///      every other.
 ///
+///      A sale follows only the 1/1 sale it was opened in. The English auction offers an unsold
+///      Independent Stream work again under the same sale ID (`IEnglishAuction.restart`), and
+///      answers when (`auctionClock`'s `restartedAt`). A work is offered again only once its
+///      sale is over (settled without a sale, or closed after a refused settlement) and
+///      `CLOSE_OFFSET` has passed since that sale's end (`EnglishAuction.RESTART_DELAY`, the same
+///      15 minutes). An edition sale opens before its 1/1's end plus `CLOSE_OFFSET`, so a restart
+///      later than this sale's opening is a restart of the 1/1 sale it followed, and by then
+///      fifteen minutes have passed since that 1/1's end as the English auction wrote it. So a
+///      restart never ends this sale's bidding before that. From the restart this sale reads its
+///      1/1 as settled and keeps the end it recorded: it is closed unless a soft close is still
+///      running or it recorded a later end than the one written (the end of a dispute pause
+///      that ran out, read before the auction's duration was lowered), and it settles by its
+///      own rule whatever the work's later sales do (`_end`). A cancelled 1/1 still voids it.
+///
 ///      `open` hands its token-specific data to the lens (`masterTerms`), which checks the
 ///      package item against the master token and the 1/1, computes the economics and returns
 ///      what to lock, so no package-item codec is compiled here (EIP-170). The lens also deploys
@@ -704,6 +718,9 @@ abstract contract UniformEditionAuctionBase is
     ///      or when the cached close is within `softWindow` of now or past (the 1/1's end only
     ///      moves later, so nothing earlier can change), recording a later end in `a`. Returns
     ///      the 1/1's state when read, ACTIVE when not; while it is PAUSED the end is meaningless.
+    ///      A 1/1 offered again after this sale opened is read as SETTLED with the end `a` already
+    ///      holds: the 1/1 sale this one followed is over, and a later sale of the work moves
+    ///      nothing here. A cancelled 1/1 stays CANCELLED.
     function _end(
         uint256 saleId,
         SaleWord memory a,
@@ -715,8 +732,11 @@ abstract contract UniformEditionAuctionBase is
         // forge-lint: disable-next-line(block-timestamp)
         if (fresh || block.timestamp + t.softWindow >= closeAt) {
             uint64 oneEnd;
-            (one, oneEnd,) = _oneOfOneClock(saleId);
-            if (oneEnd > a.oneOfOneEnd) {
+            uint64 restartedAt;
+            (one, oneEnd, restartedAt) = _oneOfOneClock(saleId);
+            if (restartedAt > a.openedAt && one != IEnglishAuction.AuctionState.CANCELLED) {
+                one = IEnglishAuction.AuctionState.SETTLED;
+            } else if (oneEnd > a.oneOfOneEnd) {
                 // The 1/1 stores its end in 32 bits; checked all the same.
                 a.oneOfOneEnd = _u32(oneEnd);
                 closeAt = uint256(oneEnd) + CLOSE_OFFSET;
@@ -1295,7 +1315,7 @@ abstract contract UniformEditionAuctionBase is
 
     /// @dev Sale `saleId`'s 1/1: SETTLED with no end of its own for an adopted sale that runs
     ///      on its own (its stored end is the one its close counts from), else read live
-    ///      ({_liveClock}).
+    ///      ({_liveClock}): its state, its end and when it was last offered again.
     function _oneOfOneClock(uint256 saleId)
         private
         view
@@ -1306,14 +1326,15 @@ abstract contract UniformEditionAuctionBase is
     }
 
     /// @dev Sale `saleId`'s 1/1, read live from the English auction itself
-    ///      (`IEnglishAuctionClock.auctionClock`): its state, end and dispute-pause start.
+    ///      (`IEnglishAuctionClock.auctionClock`): its state, its end and when it was last offered
+    ///      again (zero if never).
     function _liveClock(uint256 saleId)
         internal
         view
         virtual
-        returns (IEnglishAuction.AuctionState state, uint64 endTime, uint64 pausedAt)
+        returns (IEnglishAuction.AuctionState state, uint64 endTime, uint64 restartedAt)
     {
-        (state, endTime, pausedAt) = IEnglishAuctionClock(_englishAuction)
+        (state, endTime,, restartedAt) = IEnglishAuctionClock(_englishAuction)
             .auctionClock(_saleIdOf(_masterOf(saleId), _payouts[saleId].id));
     }
 

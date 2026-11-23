@@ -185,14 +185,14 @@ What each ceiling applies to (all are test gates in Prague gas, not chain code):
 | `settle`, no bid (to the museum, D140) | 81,436 | 400,000 | 0 | 0 | 112,448 |
 | `auction` (view, cold) | 32,425 | 34,000 (regression) | 0 | 0 | — |
 | `minimumBid` (view, cold) | 39,086 | 40,000 (regression) | 0 | 0 | — |
-| `auctionClock` (view, cold) | 26,613 | 28,000 (regression) | 0 | 0 | — |
+| `auctionClock` (view, cold) | 28,787 | 30,000 (regression) | 0 | 0 | — |
 | `royaltyInfo` (view, cold; its ceiling is 21,000 plus the 50,000 execution budget of `RoyaltyInfoGas.t.sol`) | 23,937 | 71,000 | 0 | 0 | — |
 | `authorize`, the mint policy's share of a start, as a call | 115,937 | 119,000 (regression) | 0 | 0 | — |
-| Edition auction `open`, steady state (creates the edition) | 254,764 | 260,000 (regression) | 5 | 0 | 693,657 |
-| Edition auction `open`, an artist's first sale (deploys both vaults) | 394,336 | 402,000 (regression) | 7 | 2 | — |
+| Edition auction `open`, steady state (creates the edition) | 257,207 | 260,000 (regression) | 5 | 0 | 693,657 |
+| Edition auction `open`, an artist's first sale (deploys both vaults) | 396,779 | 402,000 (regression) | 7 | 2 | — |
 | Edition `bid`, opens an 8-step word | 86,353 | 89,000 (regression) | 2 | 0 | 269,355 |
 | Edition `bid`, its 8-step word exists | 69,283 | 71,000 (regression) | 1 | 0 | — |
-| Edition `settle`, 5 used steps | 178,445 | 179,000 (regression) | 1 | 0 | — |
+| Edition `settle`, 5 used steps | 180,815 | 185,000 (regression) | 1 | 0 | — |
 | Edition `claimBid`, a winner, the edition's first mint | 111,227 | 114,000 (regression) | 1 | 0 | — |
 | Edition `claimBid`, refund only | 72,540 | 74,000 (regression) | 0 | 0 | — |
 | re-rate a work (governed `execute`) | 225,603 | 231,000 (regression) | 1 | 0 | — |
@@ -200,8 +200,20 @@ What each ceiling applies to (all are test gates in Prague gas, not chain code):
 | `release`, the artist's first ETH release | 101,456 | 104,000 (regression) | 2 | 0 | 274,996 |
 | `claimSigned`, the artist's first signed release (relayed) | 146,964 | 150,000 (regression) | 3 | 0 | — |
 | `claimSigned`, a later signed release (next nonce) | 95,696 | 98,000 (regression) | 0 | 0 | — |
+| Independent Stream `restart`, a work's first (records when it was offered again) | 111,151 | 114,000 (regression) | 1 | 0 | — |
+| Independent Stream `restart`, a later one | 94,051 | 96,000 (regression) | 0 | 0 | — |
 
-The Independent Stream rows, the edition auction's worst-case rows and `tokenURI` are measured by
+**Amendment note, 23 November 2026 (the clock answers when a work was offered again).**
+`auctionClock` now also answers when a work was last offered again, one more storage word that
+the view reads, and with it the edition auction's `open` and the first call of its `settle`. Four
+rows above were re-measured for it (`auctionClock`, the two edition `open` rows and edition
+`settle`), and two of their regression ceilings moved (28,000 to 30,000; 179,000 to 185,000). The
+Sepolia figure of the edition `open` row is still r7's receipt, taken before this change. The two
+`restart` rows are new and measured by `test/integration/IndependentRestartGas.t.sol` in the same
+way as the rows of `test_Gas_Table`; the `restart` row of the earlier table below was measured
+before the plain core and is not comparable.
+
+The other Independent Stream rows, the edition auction's worst-case rows and `tokenURI` are measured by
 their own tests (`IndependentStreamGas.t.sol`, `EditionAuctionGasReport.t.sol`,
 `TokenUriBudget.t.sol`) and were not re-measured for this amendment; their last figures are in
 the earlier table below.

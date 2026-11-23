@@ -352,12 +352,33 @@ contract IndependentStreamRegistryGovernanceTest is IndependentStreamFixture {
     // ------------------------------------------------------------------ entropy, interfaces
 
     function test_SetEntropyModule_SetsAndLogs() public {
+        address module = address(new IndSale());
         vm.expectEmit(address(registry));
-        emit IIndependentStreamRegistry.EntropyModuleSet(address(0), address(0xE));
-        registry.setEntropyModule(address(0xE));
-        assertEq(registry.entropyModule(), address(0xE));
+        emit IIndependentStreamRegistry.EntropyModuleSet(address(0), module);
+        registry.setEntropyModule(module);
+        assertEq(registry.entropyModule(), module);
+        vm.expectEmit(address(registry));
+        emit IIndependentStreamRegistry.EntropyModuleSet(module, address(0));
         registry.setEntropyModule(address(0));
         assertEq(registry.entropyModule(), address(0));
+    }
+
+    /// @dev An address with no code is refused, as the module's other setters refuse one; the
+    ///      module set before stays. Zero (no module) is still accepted.
+    function test_SetEntropyModule_RefusesAnAddressWithoutCode() public {
+        address module = address(new IndSale());
+        registry.setEntropyModule(module);
+        address codeless = makeAddr("codelessEntropyModule");
+        assertEq(codeless.code.length, 0);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IIndependentStreamRegistry.SaleContractInvalid.selector, codeless
+            )
+        );
+        registry.setEntropyModule(codeless);
+        assertEq(registry.entropyModule(), module, "the module set before stays");
+        registry.setEntropyModule(address(0));
+        assertEq(registry.entropyModule(), address(0), "zero clears it");
     }
 
     function test_SupportsInterface() public view {
@@ -460,7 +481,8 @@ contract IndependentStreamRegistryGovernanceTest is IndependentStreamFixture {
     }
 
     function test_Constructor_ReadsSplitFactoryAndPrevious() public {
-        registry.setEntropyModule(address(0xE));
+        address module = address(new IndSale());
+        registry.setEntropyModule(module);
         IndependentStreamRegistry next = new IndependentStreamRegistry(
             address(manager),
             address(indDirectory),
@@ -471,7 +493,7 @@ contract IndependentStreamRegistryGovernanceTest is IndependentStreamFixture {
         );
         assertEq(next.splitFactory(), address(ledger));
         assertEq(next.previous(), address(registry));
-        assertEq(next.entropyModule(), address(0xE), "entropy module carried over");
+        assertEq(next.entropyModule(), module, "entropy module carried over");
         assertEq(next.directory(), address(indDirectory));
         assertEq(next.facts(), address(facts));
         assertEq(next.contentStore(), address(store));

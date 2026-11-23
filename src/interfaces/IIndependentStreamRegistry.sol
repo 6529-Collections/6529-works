@@ -236,7 +236,8 @@ interface IIndependentStreamRegistry is IERC165 {
     error NotListed(address token);
     /// @notice The share is not lower than the current one.
     error FeeShareNotLowered(address token, uint32 current);
-    /// @notice The sale contract is not one, or already one.
+    /// @notice The sale contract is not one, or already one; or an entropy module address with
+    ///         no code (`setEntropyModule`).
     error SaleContractInvalid(address minter);
     /// @notice A batch longer than `MAX_BATCH`.
     error BatchTooLarge(uint256 length);

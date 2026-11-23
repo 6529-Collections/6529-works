@@ -90,12 +90,12 @@
     },
     {
       "abi": "EnglishAuction.json",
-      "errors": 31,
+      "errors": 32,
       "events": 19,
-      "functions": 46,
+      "functions": 47,
       "kind": "contract",
       "name": "EnglishAuction",
-      "sha256": "1d95c55ef5c96164d1e517d80c5b5e25fc854aa4a8e09dc046224a7d1cf43a0c",
+      "sha256": "22bc65521a01bf05c245439d4aed528089619f0e459d602a6cbb1f727a06fd23",
       "solc": "0.8.37+commit.f401782d",
       "source": "src/sales/EnglishAuction.sol"
     },
@@ -315,13 +315,13 @@
     },
     {
       "abi": "IEnglishAuction.json",
-      "errors": 20,
+      "errors": 21,
       "events": 17,
       "functions": 26,
       "interfaceId": "0x54df3713",
       "kind": "interface",
       "name": "IEnglishAuction",
-      "sha256": "42e9e79a3e6b86010e47ae1fbe599fc4f398914303a06108f4c1379019a8e88a",
+      "sha256": "5bbe252901ba8bf3fe9002212280b996e096062da741a9a680176f81561503f4",
       "solc": "0.8.37+commit.f401782d",
       "source": "src/interfaces/IEnglishAuction.sol"
     },
@@ -333,7 +333,7 @@
       "interfaceId": "0x968c7b07",
       "kind": "interface",
       "name": "IEnglishAuctionClock",
-      "sha256": "a690bebabd57a8e80d28035c4e648b7f36cfa626670811296373eb924c507f8b",
+      "sha256": "f27ca182e3fdd67cb24286cd0b269ecb33d2afca6167d8d9ce72fbc157fb5194",
       "solc": "0.8.37+commit.f401782d",
       "source": "src/interfaces/IEnglishAuctionClock.sol"
     },
@@ -715,7 +715,7 @@
       "events": 21,
       "forwardsTo": "IndependentEditionAuctionLens",
       "fullAbi": "full/IndependentEditionAuction.json",
-      "fullSha256": "e78e5d2baeeb2c4bedfd3a949e49fae55032d521c90916891ff918c9e145ddce",
+      "fullSha256": "26e727ea3eb750a8b83248b9ddbf40557aabcb5adc2a9b3e36e330517c3258b1",
       "functions": 21,
       "kind": "contract",
       "name": "IndependentEditionAuction",
@@ -730,7 +730,7 @@
       "functions": 43,
       "kind": "contract",
       "name": "IndependentEditionAuctionLens",
-      "sha256": "1ba0e412a2b73a236ca7e4267838e22dba333032b2a3724714b0d6b8894936b4",
+      "sha256": "b50e078d8a26bfb6b1b5de7372634ecba6f3834f7ef64e4aa61b5c043cf3eb4b",
       "solc": "0.8.37+commit.f401782d",
       "source": "src/independent/IndependentEditionAuctionLens.sol"
     },

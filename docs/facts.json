@@ -560,9 +560,9 @@
       },
       {
         "operation": "auctionClock (view, cold)",
-        "pragueGas": 26613,
+        "pragueGas": 28787,
         "pragueCeiling": {
-          "gas": 28000,
+          "gas": 30000,
           "kind": "regression"
         },
         "newSlots": 0,
@@ -593,7 +593,7 @@
       },
       {
         "operation": "Edition auction open, steady state (creates the edition)",
-        "pragueGas": 254764,
+        "pragueGas": 257207,
         "pragueCeiling": {
           "gas": 260000,
           "kind": "regression"
@@ -607,7 +607,7 @@
       },
       {
         "operation": "Edition auction open, an artist's first sale (deploys both vaults)",
-        "pragueGas": 394336,
+        "pragueGas": 396779,
         "pragueCeiling": {
           "gas": 402000,
           "kind": "regression"
@@ -643,9 +643,9 @@
       },
       {
         "operation": "Edition settle, 5 used steps",
-        "pragueGas": 178445,
+        "pragueGas": 180815,
         "pragueCeiling": {
-          "gas": 179000,
+          "gas": 185000,
           "kind": "regression"
         },
         "newSlots": 1,
@@ -726,6 +726,28 @@
         "pragueGas": 95696,
         "pragueCeiling": {
           "gas": 98000,
+          "kind": "regression"
+        },
+        "newSlots": 0,
+        "newAccounts": 0,
+        "sepoliaGas": null
+      },
+      {
+        "operation": "Independent Stream restart, a work's first (records when it was offered again)",
+        "pragueGas": 111151,
+        "pragueCeiling": {
+          "gas": 114000,
+          "kind": "regression"
+        },
+        "newSlots": 1,
+        "newAccounts": 0,
+        "sepoliaGas": null
+      },
+      {
+        "operation": "Independent Stream restart, a later one",
+        "pragueGas": 94051,
+        "pragueCeiling": {
+          "gas": 96000,
           "kind": "regression"
         },
         "newSlots": 0,

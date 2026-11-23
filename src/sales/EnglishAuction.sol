@@ -87,6 +87,11 @@ contract EnglishAuction is
     uint256 public constant REDIRECT_DELAY = 14 days;
     /// @notice How long after an Independent Stream sale's end a refused settlement may close it.
     uint256 public constant REFUSAL_DELAY = 2 days;
+    /// @notice How long after a sale's end its work may be offered again (`restart`). It is the
+    ///         time the edition auctions add to a 1/1's end for their own close (their
+    ///         `CLOSE_OFFSET`, 15 minutes): a sale that followed the ended one has reached its
+    ///         close, whatever end it last read, before the work has a new sale and a new end.
+    uint256 public constant RESTART_DELAY = 15 minutes;
 
     uint32 private constant MIN_DURATION = 1 hours;
     uint32 private constant MAX_DURATION = 7 days;
@@ -100,7 +105,8 @@ contract EnglishAuction is
     /// @dev One sale. Slot one: the token. Slot two, written at start: the seller and fee share
     ///      the policy answered, the end, the status and three flags. Slot three, from the
     ///      first bid: the high bidder and bid (with no bidder, a withdrawn bid's reserve). Slot
-    ///      four, only for a recipient other than the bidder or a dispute pause.
+    ///      four, only for a recipient other than the bidder or a dispute pause. Slot five, only
+    ///      for a work offered again: when its latest `restart` was.
     struct Sale {
         address token;
         uint96 tokenId;
@@ -116,6 +122,7 @@ contract EnglishAuction is
         address recipient;
         uint40 pausedAt;
         uint40 outcomeFrom;
+        uint40 restartedAt;
     }
 
     /// @dev The governed parameters and the start pause, one slot.
@@ -215,6 +222,8 @@ contract EnglishAuction is
                 || IStream(token).workOf(s.tokenId).outcome != Outcome.NONE
         ) revert InvalidAuctionState(saleId, _state(s));
         if (!_served(token)) revert TargetNotAllowed(token);
+        uint256 allowedAt = uint256(s.endTime) + RESTART_DELAY;
+        if (block.timestamp < allowedAt) revert RestartTooEarly(saleId, allowedAt);
         // The network's share only goes down: a restart takes the share in force now.
         uint256 share = IIndependentStreamGate(policyOf(token)).feeShareOf(token);
         if (share > DENOMINATOR) revert InvalidSaleTerms(token, s.tokenId);
@@ -226,6 +235,9 @@ contract EnglishAuction is
         (end, AuctionState.ACTIVE, false, false);
         (s.bidder, s.bid) = (address(0), 0);
         (s.recipient, s.pausedAt, s.outcomeFrom) = (address(0), 0, 0);
+        // A sale that follows this one (an edition sale) reads this to learn that the sale it
+        // followed is over (settled without a sale, or closed after a refused settlement).
+        s.restartedAt = uint40(block.timestamp);
         emit SaleStarted(
             saleId,
             token,
@@ -519,12 +531,13 @@ contract EnglishAuction is
     function auctionClock(uint256 saleId)
         external
         view
-        returns (AuctionState state, uint64 endTime, uint64 pausedAt)
+        returns (AuctionState state, uint64 endTime, uint64 pausedAt, uint64 restartedAt)
     {
         Sale storage s = _sales[saleId];
         state = _state(s);
         if (state == AuctionState.NONE) revert UnknownSale(saleId);
         (endTime, pausedAt) = _clock(s);
+        restartedAt = s.restartedAt;
     }
 
     /// @inheritdoc IEnglishAuctionRefusal

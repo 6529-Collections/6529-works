@@ -143,8 +143,8 @@ contract EnglishAuctionDisputeRulesTest is AuctionFixture {
 
         uint256 lapsedAt = pausedAt + auction.MAX_PAUSE();
         vm.warp(lapsedAt + 1);
-        (, uint64 endLong,) = auction.auctionClock(longSale);
-        (, uint64 endShort,) = auction.auctionClock(shortSale);
+        (, uint64 endLong,,) = auction.auctionClock(longSale);
+        (, uint64 endShort,,) = auction.auctionClock(shortSale);
         assertEq(endLong, lapsedAt + remainingLong, "the remaining time");
         assertEq(endShort, lapsedAt + shorter.duration, "at least the duration");
         _assertState(longSale, IEnglishAuction.AuctionState.ACTIVE);

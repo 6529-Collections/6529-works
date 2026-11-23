@@ -190,6 +190,7 @@ the seller when the share is zero.
 | AUC-52 | Retired: ETH only; no permit payments. | |
 | AUC-53 | Removing a minter is immediate: it mints nothing new but still records outcomes and burns for tokens it holds. | `test_RemoveMinter_AtOnceKeepsItsRecord` |
 | AUC-54 | `moduleDelay` is the network's setting (7 days at launch), changed at once, zero allowed; a pending addition keeps its time. | `test_SetDelay_OnlyTheNetworkAtOnceWithOldAndNew`, `test_SetDelay_PendingAdditionsKeepTheirTime`, `test_SetDelay_ZeroIsAllowed` |
+| AUC-55 | An unsold Independent Stream work is offered again (`restart`) only from 15 minutes after its last sale's end (`RESTART_DELAY`, compiled in the auction; `RestartTooEarly` before), with no later limit. The 15 minutes are the time an edition sale stays open after its 1/1's end (EA-17), so a sale that followed the ended sale has closed before the work has a new sale and a new end. | `test_Restart_RefusedBeforeTheRestartDelay`, `test_Restart_RefusedUntilTheEditionCloseOffsetAfterTheEnd`, `test_Restart_OffersAnUnsoldWorkAgainAndSellsIt` |
 
 ## Events
 

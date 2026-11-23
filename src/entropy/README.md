@@ -21,7 +21,7 @@ the coordinator change.
 | Caller | Calls | Rules |
 | --- | --- | --- |
 | Anyone (the artist, a relayer, a bot) | `requestSeed(item, packageRoot, proof)` for a `VRF` item of an approved, unconsumed package; links the item to its content's draw, and asks the coordinator only if the content has no pending or delivered draw; after consumption, only the link-only call of the consuming item to its content's delivered seed | ENT-1, ENT-2, ENT-5, ENT-14, ENT-15, ENT-17, ENT-19 |
-| A wallet of a listed Independent Stream contract's artist | `requestIndependentSeed{value}(token, item)`, paying at least the wrapper's quote, all forwarded to it | ENT-20, ENT-21 |
+| A wallet of a listed Independent Stream contract's artist | `requestIndependentSeed{value}(token, item)`, paying at least the wrapper's quote: exactly the quote is forwarded to the wrapper and the rest is returned to the caller | ENT-20, ENT-21 |
 | The current coordinator, or the wrapper for its requests | `rawFulfillRandomWords(requestId, words)`; the first delivery fixes the seed, later ones are silent no-ops | ENT-4, ENT-6 to ENT-8, ENT-13 |
 | An Independent Stream template's first mint of a VRF item | `independentSeedOf(token, contentHash)` | IND-72 |
 | The mint policy (`PackageRegistry.authorize`), inside the auction's `start` | `isDeliveredContent(item.contentHash)` and `seedOfContent`, one word each; a `VRF` item whose content has no delivered seed reverts the start with `SeedNotDelivered` | ENT-12 |

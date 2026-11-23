@@ -117,6 +117,7 @@ contract EnglishAuctionIndependentFixesTest is IndependentStreamFixture {
         uint256 saleId = _start();
         _end(saleId);
         auction.settle(saleId);
+        vm.warp(block.timestamp + auction.RESTART_DELAY());
         uint256 id = _tokenId(saleId);
         assertEq(fStream.ownerOf(id), address(auction), "unsold: it waits in the auction");
         // The network replaces the auction: the old one is removed and a successor added.
@@ -159,6 +160,7 @@ contract EnglishAuctionIndependentFixesTest is IndependentStreamFixture {
         auction.bid{ value: 2 ether }(saleId, address(0));
         _end(saleId);
         auction.settle(saleId);
+        vm.warp(block.timestamp + auction.RESTART_DELAY());
         assertEq(auction.claimable(alice), 1 ether, "refunded");
         assertEq(fStream.ownerOf(_tokenId(saleId)), address(auction));
         vm.expectRevert(
@@ -177,6 +179,7 @@ contract EnglishAuctionIndependentFixesTest is IndependentStreamFixture {
         assertEq(auction.auction(saleId).feeShare, SHARE);
         _end(saleId);
         auction.settle(saleId);
+        vm.warp(block.timestamp + auction.RESTART_DELAY());
         registry.lowerFeeShare(address(fStream), SHARE / 2);
         auction.restart(saleId);
         assertEq(auction.auction(saleId).feeShare, SHARE / 2);
@@ -298,6 +301,7 @@ contract EnglishAuctionIndependentFixesTest is IndependentStreamFixture {
         uint256 saleId = _start();
         _end(saleId);
         auction.settle(saleId);
+        vm.warp(block.timestamp + auction.RESTART_DELAY());
         uint256 id = _tokenId(saleId);
         bytes32 itemHash = fStream.itemHashOf(id);
         assertEq(fStream.ownerOf(id), address(auction));
@@ -365,6 +369,7 @@ contract EnglishAuctionIndependentFixesTest is IndependentStreamFixture {
         auction.bid{ value: 2 ether }(saleId, address(0));
         _end(saleId);
         auction.settle(saleId);
+        vm.warp(block.timestamp + auction.RESTART_DELAY());
         assertEq(auction.claimable(alice), 1 ether, "the bid is credited back");
         assertEq(fStream.ownerOf(id), address(auction));
         assertEq(uint8(fStream.workOf(id).outcome), uint8(Outcome.NONE), "unsold");
@@ -419,6 +424,7 @@ contract EnglishAuctionIndependentFixesTest is IndependentStreamFixture {
         uint256 saleId = _start();
         _end(saleId);
         auction.settle(saleId);
+        vm.warp(block.timestamp + auction.RESTART_DELAY());
         registry.suspendTemplate(address(streamDeployer));
         assertTrue(registry.isActive(address(fStream)));
         assertFalse(registry.canMint(address(fStream), address(auction)));
