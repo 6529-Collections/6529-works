@@ -25,7 +25,9 @@
       accepted (GV-20).
     - IND-56 is reworded to the rule the code keeps and names its tests; no rule is left in
       `tools/rules-uncovered.txt` as uncovered. Two regression ceilings of the gas report move
-      with the extra word the clock reads (`auctionClock` view, edition settlement). The code
+      with the extra word the clock reads (`auctionClock` view, edition settlement), and ADR
+      0004's table follows: four rows re-measured and two new rows for `restart`, measured
+      by `IndependentRestartGas.t.sol` with their own ceilings. The code
       maps of `src/economics` and `src/entropy` are corrected.
 - **Sepolia round r7.** A second instance of the plain core on Sepolia (testnet only), from
   `main` at `5de6abaa`, kept with its governance as genesis installed it so that `VerifyCore`
