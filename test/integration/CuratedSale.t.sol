@@ -8,7 +8,9 @@ import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { IMintPolicy } from "src/interfaces/core/IMintPolicy.sol";
 import { IStream } from "src/interfaces/core/IStream.sol";
 import { Facts, Outcome, Work as StoredWork } from "src/interfaces/core/CoreTypes.sol";
+import { ISplitFactory } from "src/economics/interfaces/ISplitFactory.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
+import { SaleStarter } from "src/sales/SaleStarter.sol";
 import { WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { ContractWallet, SaleFlowBase } from "./SaleFlowBase.sol";
@@ -210,6 +212,50 @@ contract CuratedSaleTest is SaleFlowBase {
             works[0].item.payees, bytes32(0), address(0), _indexOf(works[0].item.payees, artist)
         );
         assertEq(artist.balance, (1 ether - fee) * 80_000 / DENOMINATOR);
+    }
+
+    /// @dev `SaleStarter` is all or nothing: when the factory returns a seller vault other than
+    ///      the one the work's terms name, the whole start reverts and no work is minted.
+    function test_CuratedSale_SaleStarterRefusesASellerVaultTheTermsDoNotName() public {
+        Work[] memory works = _package(root);
+        address factory = economics.splitFactory();
+        address wrong = makeAddr("another vault");
+        vm.mockCall(
+            factory,
+            abi.encodeCall(ISplitFactory.createWallet, (works[0].item.payees, bytes32(0))),
+            abi.encode(wrong)
+        );
+        uint256 minted = stream.totalMinted();
+        bytes memory request = _mintData(root, works, 0);
+        vm.expectRevert(abi.encodeWithSelector(SaleStarter.VaultMismatch.selector, wrong));
+        starter.start(auction, address(stream), request, works[0].media);
+        assertEq(stream.totalMinted(), minted, "nothing minted");
+
+        // With the factory answering for itself the same request starts.
+        vm.clearMockedCalls();
+        starter.start(auction, address(stream), request, works[0].media);
+        assertEq(stream.totalMinted(), minted + 1);
+    }
+
+    /// @dev The same for the royalty vault: the factory's vault for the seller vault and the fee
+    ///      recipient must be the receiver the minted work records.
+    function test_CuratedSale_SaleStarterRefusesARoyaltyVaultTheWorkDoesNotRecord() public {
+        Work[] memory works = _package(root);
+        WorkTerms memory t = _terms(works[0]);
+        assertTrue(t.royaltyReceiver != t.seller, "a royalty vault of its own");
+        address factory = economics.splitFactory();
+        address wrong = makeAddr("another vault");
+        vm.mockCall(
+            factory,
+            abi.encodeCall(ISplitFactory.createWallet, (_royaltyPayees(t), bytes32(0))),
+            abi.encode(wrong)
+        );
+        uint256 minted = stream.totalMinted();
+        bytes memory request = _mintData(root, works, 0);
+        vm.expectRevert(abi.encodeWithSelector(SaleStarter.VaultMismatch.selector, wrong));
+        starter.start(auction, address(stream), request, works[0].media);
+        assertEq(stream.totalMinted(), minted, "nothing minted");
+        assertFalse(ledger.isWallet(t.seller), "no vault deployed");
     }
 
     function test_CuratedSale_StartWithBidRecordsTheFirstBid() public {

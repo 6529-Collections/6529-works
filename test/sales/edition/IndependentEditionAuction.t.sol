@@ -3,6 +3,9 @@ pragma solidity ^0.8.24;
 
 import { Test } from "forge-std/Test.sol";
 import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
+import {
+    ReentrancyGuardTransient
+} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import { StreamDirectory6529 } from "src/core/StreamDirectory6529.sol";
 import { EditionsBase } from "src/core/EditionsBase.sol";
 import { IndependentEditionAuction } from "src/independent/IndependentEditionAuction.sol";
@@ -30,7 +33,8 @@ import {
     MockMasterStream,
     MockOneOfOneAuction,
     MockRevenueEscrow,
-    MockWorkTermsResolver
+    MockWorkTermsResolver,
+    ReentrantBidder
 } from "./EditionAuctionMocks.sol";
 
 /// @notice An Independent Stream module for the test: which sale contracts may mint which token,
@@ -274,5 +278,57 @@ contract IndependentEditionAuctionTest is Test {
         assertTrue(auction.settle(saleId, new uint256[](0)));
         assertEq(uint8(ua.auction(saleId).status), uint8(IUniformEditionAuction.AuctionStatus.VOID));
         assertEq(fee.balance + seller.balance, 0, "nothing paid");
+    }
+
+    /// @dev The void of a delisted sale whose scan is in progress is not reachable from inside
+    ///      another call of the auction: a bidder refunded from a second sale re-enters `settle`
+    ///      of the scanning one and is refused by the reentrancy guard, and the sale voids by a
+    ///      call of its own afterwards.
+    function test_Delisted_TheVoidDuringTheScanIsNotReentrant() public {
+        uint256 scanning = _open();
+        _bid(scanning, alice, 0, 1);
+        _bid(scanning, bob, 335, 1);
+
+        // A second sale of the same token, with one bid of a wallet that re-enters when paid.
+        uint256 second = ID + 1;
+        PackageItem memory item = _item();
+        item.contentHash = keccak256("a second Independent Stream content");
+        master.setWork(second, WorksHashing.itemHash(item), ItemKind.EDITION_MASTER);
+        english.set(
+            address(master),
+            second,
+            IEnglishAuction.AuctionState.ACTIVE,
+            uint64(block.timestamp + 1 days)
+        );
+        uint256 other = auction.open(address(token), second, abi.encode(item));
+        ReentrantBidder hostile = new ReentrantBidder(ua);
+        uint256 hostileBid = _bid(other, address(hostile), 10, 1);
+        uint256 paid = ua.stepPrice(other, 10);
+
+        _close(scanning);
+        assertFalse(auction.settle(scanning, new uint256[](0)), "the scan is in progress");
+        gate.setActive(address(token), false);
+        assertTrue(auction.settle(other, new uint256[](0)), "the second sale voids");
+
+        // The refund's receive re-enters `settle` of the scanning sale.
+        hostile.setTarget(scanning, 0, 1);
+        vm.prank(address(hostile));
+        auction.claimBid(other, hostileBid, address(hostile));
+        assertTrue(hostile.attempted());
+        assertEq(
+            bytes4(hostile.lastRevert()),
+            ReentrancyGuardTransient.ReentrancyGuardReentrantCall.selector
+        );
+        assertEq(address(hostile).balance, paid, "refunded in full");
+        assertEq(
+            uint8(ua.auction(scanning).status),
+            uint8(IUniformEditionAuction.AuctionStatus.SETTLING),
+            "not voided from inside the refund"
+        );
+
+        assertTrue(auction.settle(scanning, new uint256[](0)));
+        assertEq(
+            uint8(ua.auction(scanning).status), uint8(IUniformEditionAuction.AuctionStatus.VOID)
+        );
     }
 }

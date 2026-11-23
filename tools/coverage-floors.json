@@ -113,12 +113,12 @@
       "branches": 98.0
     },
     "src/entropy/VrfEntropyModule.sol": {
-      "lines": 77.7,
-      "branches": 67.7
+      "lines": 99.0,
+      "branches": 98.0
     },
     "src/independent/IndependentStreamDeployer.sol": {
-      "lines": 82.3,
-      "branches": 0.0
+      "lines": 99.0,
+      "branches": 98.0
     },
     "src/independent/IndependentEditionAuction.sol": {
       "lines": 99.0,

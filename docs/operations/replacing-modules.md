@@ -25,8 +25,8 @@ replacement never changes them. What a replacement does change is listed below, 
 
 ## Accounts (`ACCOUNTS` on `StreamDirectory6529`)
 
-A new accounts module starts empty. It has no read-through to the one it replaces and no
-import function, so:
+A new instance of the current `Accounts` code starts empty. It has no read-through to the one
+it replaces and no import function, so:
 
 - An artist the new module does not know has no wallets and no payout address there. A release
   of that artist's vault share reverts, and the money stays in the vault until the artist is
@@ -39,9 +39,26 @@ import function, so:
   another address since cannot get the old ID through `register`; a replacement that must
   serve such artists needs its own way to take them over, written into the new module.
 
-Before announcing a new accounts module, make sure every existing artist is in it (same IDs,
-wallets and payout addresses), or publish the date from which artists register again. After
-it takes effect, check `payoutAddress` for a sample of artists with money waiting.
+Before announcing a new accounts module:
+
+1. **It must serve every existing account under its existing ID**, by reading through to the
+   module it replaces or by importing its accounts: the same wallets, payout address, pending
+   changes and freezes, including for an artist whose account has moved to another address.
+   Reading through is safer than a copy, because the old module keeps changing during the
+   wait. A module that cannot do this must not be activated while any artist has money
+   waiting or a work that can still be edited.
+2. **Prove it with a test before the announcement.** Run the new module on the deployed stack
+   against a moved account, as
+   [`AccountsSuccessor.t.sol`](../../test/integration/AccountsSuccessor.t.sol) does with a
+   read-through test module: after the directory activates it, the moved account's payout
+   address, wallet check and freeze are answered under the old ID, money owed before and after
+   the replacement is released to the moved payout address, and the moved account's signatures
+   verify.
+3. **Bind the package registry** as the new module's `register` caller, so new artists can
+   still accept a package.
+
+After it takes effect, check `payoutAddress` for a sample of artists with money waiting,
+including every artist whose account has moved.
 
 ## Mint policy (`PackageRegistry`)
 
