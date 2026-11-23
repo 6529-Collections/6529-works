@@ -78,8 +78,9 @@ def creations(run):
         made = [c["address"] for c in t.get("additionalContracts") or [] if c and c.get("address")]
         if t.get("contractAddress") and str(t.get("transactionType", "")).startswith("CREATE"):
             made.append(t["contractAddress"])
-        if t.get("transactionType") == "CALL" and t.get("function") == "create(bytes32,bytes)":
-            made.append(created_by(t["contractAddress"], t["arguments"][0]))
+        arguments = t.get("arguments") or []
+        if t.get("transactionType") == "CALL" and t.get("function") == "create(bytes32,bytes)" and arguments:
+            made.append(created_by(t["contractAddress"], arguments[0]))
         for a in made:
             out[a.lower()] = (t["hash"], blocks[t["hash"]])
     return out, sorted(blocks.values())

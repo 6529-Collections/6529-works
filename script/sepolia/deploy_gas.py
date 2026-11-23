@@ -43,8 +43,9 @@ def label(t, names):
         name = names.get(c["address"].lower())
         if name:
             return name
-    if t.get("transactionType") == "CALL" and t.get("function") == "create(bytes32,bytes)":
-        name = names.get(created_by(t["contractAddress"], t["arguments"][0]).lower())
+    arguments = t.get("arguments") or []
+    if t.get("transactionType") == "CALL" and t.get("function") == "create(bytes32,bytes)" and arguments:
+        name = names.get(created_by(t["contractAddress"], arguments[0]).lower())
         if name:
             return name
     return t.get("contractName") or names.get((t.get("contractAddress") or "").lower()) or "?"
