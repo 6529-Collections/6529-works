@@ -1,7 +1,7 @@
 # governance
 
 One OpenZeppelin 5.7.0 `AccessManager`, subclassed as `WorksAccessManager`, governs every 6529
-Works contract: one authority address (the network), one optional brake, and fixed delays. A
+Works contract: one authority address (the network), one optional brake, and four delay classes. A
 one-shot configurator installs genesis in one transaction. Rules and flows:
 [Governance](../../docs/spec/governance.md) (`GV-*`); selectors, roles and delays: the generated
 [role and permission matrix](../../docs/audit/roles.md).
@@ -10,7 +10,7 @@ one-shot configurator installs genesis in one transaction. Rules and flows:
 
 | File | What it is |
 | --- | --- |
-| `Roles.sol` | Internal library: role IDs (3 unused), the fixed delays (24 hours, 3 days, 7 days, brake 7 days), `isNetworkRole`, `executionDelay`, `label`. Every contract imports it; nothing hard-codes a role ID. |
+| `Roles.sol` | Internal library: role IDs (3 unused), the class delays (24 hours, 3 days, 7 days, brake 7 days), `isNetworkRole`, `executionDelay`, `label`. Every contract imports it; nothing hard-codes a role ID. |
 | `WorksAccessManager.sol` | Stock `AccessManager` plus the network (`network`, `pendingNetwork`, `transferNetwork`, `acceptNetwork`), the brake (`brake`, `setBrake`, `brakeOnce`, `notBefore`), a 14-day expiry, and the refusal to grant a network role or to remap or close the manager itself. |
 | `GovernanceConfig.sol` | Internal library: `validate`, `validateWiring`, `isGenesisSelector`, `install`, `verify` (readback) and `hasRecord`. |
 | `GovernanceConfigurator.sol` | Deploys its own `WorksAccessManager`, runs `configure(cfg, manifestHash, wiring)` once for its `deployer`, proposes the network, renounces its installer record, and exposes `verify(cfg)` for readback. |
@@ -34,9 +34,16 @@ Flows: [Genesis configure](../../docs/spec/governance.md#genesis-configure),
 
 ## Developer notes
 
+- **Delays.** The class delays are the network's: one 7-day action can remap a selector or change
+  a class, so a class's delay holds until such a remap changes it. The waiting periods of the
+  permanent contracts (`moduleDelay`, `rescueDelay`, `rebindDelay`,
+  `StreamDirectory6529.unclaimedPeriod`) are not role delays: they are settings stored in those
+  contracts, with launch values, which the network changes at once through the NETWORK role (ADR
+  0010).
 - **A new governed function** follows GV-15 to GV-22
   ([rules](../../docs/spec/governance.md#rules-and-invariants)): mark it `restricted`, map its
-  selector in [`config/genesis.example.json`](../../config/genesis.example.json) (unmapped falls
+  selector in [`config/genesis.core.example.json`](../../config/genesis.core.example.json) (for the plain-core
+  stack: `config/make_core_genesis.py`, which writes `config/genesis.core.example.json`) (unmapped falls
   back to `ADMIN`, 7 days), run `python tools/gen_role_matrix.py`, and add a new `bind*` to
   `GovernanceConfig.isGenesisSelector` and the wiring.
 - **Storage.** Three addresses (`network`, `pendingNetwork`, `brake`) and one mapping of brake

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 import { BoundedCall } from "../libraries/BoundedCall.sol";
 import { IRevenueEscrow } from "./interfaces/IRevenueEscrow.sol";
@@ -7,22 +7,19 @@ import { TokenTransfer } from "./TokenTransfer.sol";
 
 /// @title RevenuePayment
 /// @notice How sale adapters pay a wallet (ADR 0001 section 5, "wallet payments fall back to
-///         escrow"): pay the wallet directly, and if the wallet or the token refuses, credit the
+///         escrow"): pay the wallet directly in ETH, and if the wallet refuses, credit the
 ///         revenue escrow for that wallet instead. A refusal therefore cannot block a settlement,
 ///         and the funds still reach only that wallet.
-/// @dev Internal functions only, compiled into each payer. Only a clean refusal routes to escrow:
-///      an ETH call that fails, or a token transfer that reverts or returns `false` without moving
-///      anything. Any other token misbehaviour (fees, rounding, no return value, a `true` with the
-///      wrong balance change) reverts the whole payment, so nothing is left behind. The wallet or
-///      token always gets its full gas allowance, so a caller cannot force the escrow route by
-///      starving the call. A zero amount is a no-op, so a zero-price sale or a share that rounds
-///      to zero never reaches the escrow.
+/// @dev Internal functions only, compiled into each payer. Only an ETH call that fails routes to
+///      escrow. The wallet always gets its full gas allowance, so a caller cannot force the
+///      escrow route by starving the call. A zero amount is a no-op, so a zero-price sale or a
+///      share that rounds to zero never reaches the escrow.
 ///
-///      Glamsterdam (CALLS-3, per the EIP-8037 draft, not yet reproduced on Sepolia): the allowance
-///      caps the wallet's or token's regular gas, not the state gas it spends creating storage or
-///      accounts, which comes from the transaction's EIP-8037 reservoir. A state-writing wallet or
-///      token can therefore be paid or escrowed depending on the caller's gas limit, and the caller
-///      can pay for a hostile callee's state growth; either way the funds reach only that wallet.
+///      Glamsterdam (LIM-GAS-2; the EIP-8037 draft, not yet reproduced on Sepolia): the allowance
+///      caps the wallet's regular gas, not the state gas it spends creating storage or accounts,
+///      which comes from the transaction's EIP-8037 reservoir. A state-writing wallet can
+///      therefore be paid or escrowed depending on the caller's gas limit, and the caller can
+///      pay for a hostile callee's state growth; either way the funds reach only that wallet.
 ///      Keepers should send at most 2^24 gas (`BoundedCall`; docs/audit/known-limitations.md,
 ///      LIM-GAS-2).
 library RevenuePayment {
@@ -30,14 +27,8 @@ library RevenuePayment {
     ///         wallet's gas limit.
     uint256 internal constant ETH_CALL_RESERVE = 40_000;
 
-    /// @notice Gas given to a token's `transfer` on the direct route. A standard token needs far
-    ///         less; a token that needs more is treated as refusing, and the payment is escrowed.
-    uint256 internal constant ERC20_TRANSFER_GAS = 300_000;
-
     /// @notice The caller cannot forward `gasLimit` to the wallet in full.
     error PaymentInsufficientGas(uint256 gasLimit);
-    /// @notice The escrow left an allowance behind after crediting `asset`.
-    error EscrowAllowanceLeft(address asset);
 
     /// @notice Pays `amount` wei to `wallet`, forwarding exactly `gasLimit` gas, or credits the
     ///         escrow if the wallet refuses.
@@ -57,30 +48,6 @@ library RevenuePayment {
         }
         if (TokenTransfer.sendETH(wallet, amount, gasLimit)) return false;
         escrow.depositETH{ value: amount }(wallet);
-        return true;
-    }
-
-    /// @notice Transfers exactly `amount` of `asset` to `wallet`, giving the token
-    ///         {ERC20_TRANSFER_GAS}, or credits the escrow if the token refuses the transfer.
-    /// @return escrowed Whether the payment went to the escrow.
-    function payERC20(IRevenueEscrow escrow, address wallet, address asset, uint256 amount)
-        internal
-        returns (bool escrowed)
-    {
-        if (wallet == address(0) || wallet == address(escrow)) {
-            revert IRevenueEscrow.InvalidWallet(wallet);
-        }
-        if (amount == 0) return false;
-        if (TokenTransfer.tryTransferExact(asset, wallet, amount, ERC20_TRANSFER_GAS)) {
-            return false;
-        }
-        TokenTransfer.approve(asset, address(escrow), amount);
-        escrow.depositERC20(wallet, asset, amount);
-        // The escrow pulled exactly `amount`, so a standard token leaves no allowance. This is the
-        // only check that catches a token whose `transferFrom` does not spend the allowance.
-        if (TokenTransfer.allowance(asset, address(this), address(escrow)) != 0) {
-            revert EscrowAllowanceLeft(asset);
-        }
         return true;
     }
 }

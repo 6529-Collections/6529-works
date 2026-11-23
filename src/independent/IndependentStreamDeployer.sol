@@ -1,24 +1,24 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
-import { IFederatedDeployer } from "../interfaces/IFederatedDeployer.sol";
+import { IIndependentStreamDeployer } from "../interfaces/IIndependentStreamDeployer.sol";
 import { SSTORE2 } from "../libraries/SSTORE2.sol";
 
-/// @title FederatedDeployer
-/// @notice Deploys copies of one federated template version and records them (ADR 0008 §1). The
-///         federation registry lists a copy only if the version's approved deployer recorded
-///         it, so a listed copy's starting storage is its constructor's, whatever any other
-///         initcode could write at any address.
+/// @title IndependentStreamDeployer
+/// @notice Deploys copies of one Independent Stream template version and records them (ADR 0008
+///         §1). The Independent Stream registry lists a copy only if the version's approved
+///         deployer recorded it, so a listed copy's starting storage is its constructor's, whatever
+///         any other initcode could write at any address.
 /// @dev Ownerless and immutable: no owner, role, fee, upgrade, delegatecall or selfdestruct. The
 ///      constructor writes the creation code to data contracts it creates itself (`SSTORE2`)
 ///      and records their keccak256; nothing changes them afterwards. Every value is in
 ///      storage, written once by the constructor, so every deployer has one runtime code hash
 ///      (`VerifyV1` checks it against the build). A copy is created with CREATE2, which fails
 ///      at an occupied address, so the record names only contracts this deployer created.
-contract FederatedDeployer is IFederatedDeployer {
-    /// @inheritdoc IFederatedDeployer
+contract IndependentStreamDeployer is IIndependentStreamDeployer {
+    /// @inheritdoc IIndependentStreamDeployer
     bytes32 public creationHash;
-    /// @inheritdoc IFederatedDeployer
+    /// @inheritdoc IIndependentStreamDeployer
     mapping(address token => bool) public deployed;
     uint256 private _size;
     address[] private _pointers;
@@ -42,7 +42,7 @@ contract FederatedDeployer is IFederatedDeployer {
         emit CreationCodeStored(creationHash, _pointers);
     }
 
-    /// @inheritdoc IFederatedDeployer
+    /// @inheritdoc IIndependentStreamDeployer
     function deploy(bytes32 salt, bytes calldata config) external returns (address token) {
         address[] memory pointers = _pointers;
         uint256 size = _size;
@@ -65,7 +65,7 @@ contract FederatedDeployer is IFederatedDeployer {
         emit Deployed(token, msg.sender, salt, config);
     }
 
-    /// @inheritdoc IFederatedDeployer
+    /// @inheritdoc IIndependentStreamDeployer
     function codeOf() external view returns (address[] memory) {
         return _pointers;
     }

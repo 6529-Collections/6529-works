@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessManaged.sol";
 import { MerkleProof } from "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
@@ -7,8 +7,10 @@ import { ERC165 } from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import { BoundedParameter } from "../governance/BoundedParameter.sol";
-import { IAccounts } from "../interfaces/IAccounts.sol";
-import { IArtistRegistry } from "../interfaces/IArtistRegistry.sol";
+import { Slots } from "../interfaces/core/CoreTypes.sol";
+import { IAccounts } from "../interfaces/core/IAccounts.sol";
+import { IModuleSlots } from "../interfaces/core/IModules.sol";
+import { IIndependentStreamRegistry } from "../interfaces/IIndependentStreamRegistry.sol";
 import { IEntropyModule } from "../interfaces/IEntropyModule.sol";
 import { IPackageRegistry } from "../interfaces/IPackageRegistry.sol";
 import { PackageItem, SeedPolicy } from "../interfaces/types/PackageTypes.sol";
@@ -22,7 +24,7 @@ import { IVRFV2PlusWrapper } from "./IVRFV2PlusWrapper.sol";
 /// @notice The optional VRF module of seeded 1/1s revealed before bidding (ADR 0001 section 9),
 ///         on Chainlink VRF v2.5 with a subscription. One seed per work, keyed by the work's
 ///         content hash, never per copy or per package item.
-/// @dev Flow (review decision D4). The seed is requested BEFORE a token exists: anyone calls
+/// @dev Flow. The seed is requested BEFORE a token exists: anyone calls
 ///      {requestSeed} for a VRF item of an approved package; the coordinator later calls
 ///      {rawFulfillRandomWords}, which stores the seed and emits `SeedDelivered`, with no call into
 ///      the token or the auction. The auction never calls this module: its `start` calls 6529
@@ -72,11 +74,11 @@ import { IVRFV2PlusWrapper } from "./IVRFV2PlusWrapper.sol";
 ///      least (2^m - 1) * retryDelay, at most 1 + m + floor((T - (2^m - 1) * retryDelay) /
 ///      MAX_RETRY_DELAY) requests to that coordinator, where m is the number of repeats whose
 ///      wait is below the cap (for a 3-day `retryDelay`, m = 4: at most 15 requests in a year).
-///      Only governance's {setCoordinator} starts a curated tenure (and {setWrapper} a federated
-///      one, counted apart), so no caller can restart the count.
-///      A coordinator restored after another (A to B to A) starts a new tenure, and the requests
-///      of its earlier tenure are still recorded and may deliver again: its outstanding requests
-///      are then those of both tenures, each within its own bound.
+///      Only governance's {setCoordinator} starts a curated tenure (and {setWrapper} an Independent
+///      Stream one, counted apart), so no caller can restart the count. A coordinator restored
+///      after another (A to B to A) starts a new tenure, and the requests of its earlier tenure are
+///      still recorded and may deliver again: its outstanding requests are then those of both
+///      tenures, each within its own bound.
 ///
 ///      Trust. The coordinator can only deliver the seed of a content it was asked for, and the
 ///      first delivery is final: a delivered seed never changes. Governance chooses the
@@ -88,15 +90,15 @@ import { IVRFV2PlusWrapper } from "./IVRFV2PlusWrapper.sol";
 ///      orphans in-flight requests of the old one; each content may be requested again at once
 ///      from the new one, its repeat count restarting.
 ///
-///      Federated works ({requestFederatedSeed}). A wallet of a listed federated contract's
-///      artist requests a seed for the contract and a content hash, and pays the provider's
-///      quoted price with the call: the request goes to Chainlink's VRF v2.5 wrapper (direct
-///      funding), never to the network's subscription. The draw is keyed by
-///      `keccak256(abi.encode(token, contentHash))` in a map of its own, apart from curated
-///      draws, so no curated request can fill a federated draw or the reverse; it is kept,
+///      Independent Stream works ({requestIndependentSeed}). A wallet of a listed Independent
+///      Stream contract's artist requests a seed for the contract and a content hash, and pays the
+///      provider's quoted price with the call: the request goes to Chainlink's VRF v2.5 wrapper
+///      (direct funding), never to the network's subscription. The draw is keyed by
+///      `keccak256(abi.encode(token, contentHash))` in a map of its own, apart from curated draws,
+///      so no curated request can fill an Independent Stream draw or the reverse; it is kept,
 ///      repeated and delivered as a curated draw is, with its tenure counted per wrapper; the
-///      wrapper's deliveries come through the same callback. With no wrapper set
-///      ({setWrapper}, governed) federated requests are refused.
+///      wrapper's deliveries come through the same callback. With no wrapper set ({setWrapper},
+///      governed) Independent Stream requests are refused.
 contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
     /// @notice The request parameters.
     /// @param subscriptionId The funded VRF v2.5 subscription; this module must be its consumer.
@@ -154,6 +156,9 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
     /// @notice The package registry whose approved packages and consumed items gate requests
     ///         (immutable).
     IPackageRegistry public immutable packageRegistry;
+    /// @notice The permanent directory whose ACCOUNTS and INDEPENDENT_STREAM modules gate
+    ///         Independent Stream requests (immutable).
+    IModuleSlots public immutable directory;
     /// @inheritdoc IEntropyModule
     /// @dev With the wrapper, the only caller of {rawFulfillRandomWords}.
     address public coordinator;
@@ -175,16 +180,16 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
     ///      A to B to A) and a coordinator can only deliver the requests it was given.
     mapping(address coordinator => mapping(uint256 requestId => bytes32 contentHash)) private
         _requests;
-    /// @notice The VRF v2.5 wrapper that takes paid federated requests and may deliver them; zero
-    ///         while federated requests are off.
+    /// @notice The VRF v2.5 wrapper that takes paid Independent Stream requests and may deliver
+    ///         them; zero while Independent Stream requests are off.
     address public wrapper;
-    /// @dev How many times {setWrapper} has changed the wrapper: the tenure a federated draw's
-    ///      repeat count belongs to. Packed with `wrapper`.
+    /// @dev How many times {setWrapper} has changed the wrapper: the tenure an Independent Stream
+    ///      draw's repeat count belongs to. Packed with `wrapper`.
     uint32 private _wrapperEpoch;
     /// @dev The wrapper's pinned code hash, checked again at every use.
     bytes32 private _wrapperCodeHash;
-    /// @dev The federated draw of each `keccak256(abi.encode(token, contentHash))`.
-    mapping(bytes32 key => Seed) private _federatedSeeds;
+    /// @dev The Independent Stream draw of each `keccak256(abi.encode(token, contentHash))`.
+    mapping(bytes32 key => Seed) private _independentSeeds;
 
     /// @notice The request parameters changed.
     /// @param previous The parameters before the change (all zero at deployment).
@@ -199,6 +204,7 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
     ///        repeat waits twice the previous wait, up to `MAX_RETRY_DELAY`.
     /// @param packageRegistry_ The package registry that gates requests.
     /// @param packageRegistryCodeHash The reviewed code hash `packageRegistry_` must have.
+    /// @param directory_ The permanent directory (its ACCOUNTS and INDEPENDENT_STREAM modules).
     constructor(
         address authority_,
         address coordinator_,
@@ -206,7 +212,8 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
         VrfConfig memory config_,
         uint64 retryDelay_,
         IPackageRegistry packageRegistry_,
-        bytes32 packageRegistryCodeHash
+        bytes32 packageRegistryCodeHash,
+        IModuleSlots directory_
     ) AccessManaged(authority_) {
         if (retryDelay_ < MIN_RETRY_DELAY || retryDelay_ > MAX_RETRY_DELAY) {
             revert InvalidRetryDelay(retryDelay_);
@@ -222,6 +229,7 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
         _validate(c);
         retryDelay = retryDelay_;
         packageRegistry = packageRegistry_;
+        directory = directory_;
         coordinator = coordinator_;
         _coordinatorCodeHash = coordinatorCodeHash;
         _config = c;
@@ -303,28 +311,37 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
     }
 
     /// @inheritdoc IEntropyModule
-    /// @dev The gate reads the canonical artist registry through the package registry
-    ///      (`IPackageRegistry.artistRegistry`). The wait and repeat count are a curated draw's
-    ///      ({requestSeed}). The quote is read and the whole payment forwarded in the same call
-    ///      (the price follows the transaction's gas price); the request ID is recorded after
-    ///      the wrapper returns, as {requestSeed} records a coordinator's.
-    function requestFederatedSeed(address token, PackageItem calldata item)
+    /// @dev The gate reads the directory's INDEPENDENT_STREAM module (the token must be served:
+    ///      `IIndependentStreamRegistry.isActive`, and its listed artist comes from `entry`) and
+    ///      its ACCOUNTS module (the caller must be a wallet of that artist). The wait and repeat
+    ///      count are a curated draw's ({requestSeed}). The quote is read and exactly that price
+    ///      forwarded in the same call (the price follows the transaction's gas price); the request
+    ///      ID is recorded after the wrapper returns, as {requestSeed} records a coordinator's.
+    ///      Anything paid above the price goes back to the caller as the last step.
+    function requestIndependentSeed(address token, PackageItem calldata item)
         external
         payable
         returns (uint256 requestId)
     {
         bytes32 itemHash = WorksHashing.itemHashCalldata(item);
-        address ar = packageRegistry.artistRegistry();
-        (uint256 artistId, IArtistRegistry.FederationStatus status) =
-            IArtistRegistry(ar).federatedListing(token);
         address w = wrapper;
+        if (item.seedPolicy != uint8(SeedPolicy.VRF) || item.contentHash == 0 || w == address(0)) {
+            revert NotRequestable(itemHash);
+        }
+        IModuleSlots d = directory;
+        address independentStream = d.moduleOf(Slots.INDEPENDENT_STREAM);
+        address accounts = d.moduleOf(Slots.ACCOUNTS);
         if (
-            item.seedPolicy != uint8(SeedPolicy.VRF) || item.contentHash == 0 || w == address(0)
-                || status != IArtistRegistry.FederationStatus.ACTIVE
-                || !IAccounts(ar).isWallet(artistId, msg.sender)
+            independentStream == address(0) || accounts == address(0)
+                || !IIndependentStreamRegistry(independentStream).isActive(token)
+                || !IAccounts(accounts)
+                    .isWallet(
+                        IIndependentStreamRegistry(independentStream).entry(token).artistId,
+                        msg.sender
+                    )
         ) revert NotRequestable(itemHash);
         bytes32 key = keccak256(abi.encode(token, item.contentHash));
-        Seed storage seed = _federatedSeeds[key];
+        Seed storage seed = _independentSeeds[key];
         if (seed.delivered) revert SeedAlreadyDelivered(itemHash);
         _stamp(seed, itemHash, false, _wrapperEpoch);
         Dependency.checkUnchanged(w, _wrapperCodeHash);
@@ -338,7 +355,7 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
         if (msg.value < price) revert InsufficientPayment(price);
         (ok, answer) = BoundedCall.tryCallAll(
             w,
-            msg.value,
+            price,
             abi.encodeCall(
                 IVRFV2PlusWrapper.requestRandomWordsInNative,
                 (
@@ -355,19 +372,22 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
         _requests[w][requestId] = key;
         if (!seed.delivered) {
             seed.value = requestId;
-            emit FederatedSeedRequested(token, item.contentHash, key, requestId);
+            emit IndependentSeedRequested(token, item.contentHash, key, requestId);
+        }
+        if (msg.value > price) {
+            (bool returned,) = msg.sender.call{ value: msg.value - price }("");
+            if (!returned) revert RefundFailed(msg.sender);
         }
     }
 
     /// @notice The VRF callback: stores the seed of the content `requestId` was made for.
-    /// @dev Only the coordinator, or the wrapper for a federated request, may call it, for a
-    ///      request ID it issued to this module. Any outstanding request of an undelivered
-    ///      content delivers, and the first
-    ///      delivery is final: a later delivery for the same content is a silent no-op that does
-    ///      not revert, so the oracle's fulfilment succeeds and nothing can be re-drawn. The seed
-    ///      is the random word unchanged, so anyone can check it against the oracle's proof. A
-    ///      malformed delivery, or code at the coordinator's address that no longer has the
-    ///      pinned hash, reverts and is absorbed by the coordinator.
+    /// @dev Only the coordinator, or the wrapper for an Independent Stream request, may call it,
+    ///      for a request ID it issued to this module. Any outstanding request of an undelivered
+    ///      content delivers, and the first delivery is final: a later delivery for the same
+    ///      content is a silent no-op that does not revert, so the oracle's fulfilment succeeds and
+    ///      nothing can be re-drawn. The seed is the random word unchanged, so anyone can check it
+    ///      against the oracle's proof. A malformed delivery, or code at the coordinator's address
+    ///      that no longer has the pinned hash, reverts and is absorbed by the coordinator.
     /// @param requestId The coordinator's request ID.
     /// @param randomWords The delivered words: exactly one.
     function rawFulfillRandomWords(uint256 requestId, uint256[] calldata randomWords) external {
@@ -381,7 +401,7 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
         }
         bytes32 contentHash = _requests[msg.sender][requestId];
         if (contentHash == 0) revert UnknownRequest(requestId);
-        Seed storage seed = curated ? _seeds[contentHash] : _federatedSeeds[contentHash];
+        Seed storage seed = curated ? _seeds[contentHash] : _independentSeeds[contentHash];
         if (seed.delivered) return;
         if (randomWords.length != 1) revert InvalidRandomWords(requestId);
         bytes32 word = bytes32(randomWords[0]);
@@ -456,12 +476,12 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
         _coordinatorCodeHash = nextCodeHash;
     }
 
-    /// @notice Sets the VRF v2.5 wrapper that takes paid federated requests, or zero to turn
-    ///         them off. Governed (the dependency class), compare-and-set; a nonzero `next` must
-    ///         have code, not be an EIP-7702 delegated account, not be the coordinator, and have
-    ///         the pinned code hash. It starts a new federated tenure: requests of the old wrapper
-    ///         can no longer deliver, and each undelivered federated draw may be requested again
-    ///         at once. Curated draws keep their tenure and backoff.
+    /// @notice Sets the VRF v2.5 wrapper that takes paid Independent Stream requests, or zero to
+    ///         turn them off. Governed (the dependency class), compare-and-set; a nonzero `next`
+    ///         must have code, not be an EIP-7702 delegated account, not be the coordinator, and
+    ///         have the pinned code hash. It starts a new Independent Stream tenure: requests of
+    ///         the old wrapper can no longer deliver, and each undelivered Independent Stream draw
+    ///         may be requested again at once. Curated draws keep their tenure and backoff.
     /// @param expected The current wrapper.
     /// @param next The new wrapper, or zero.
     /// @param nextCodeHash The reviewed code hash `next` must have now and at every later use.
@@ -476,12 +496,12 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
     }
 
     /// @inheritdoc IEntropyModule
-    function federatedSeedOf(address token, bytes32 contentHash)
+    function independentSeedOf(address token, bytes32 contentHash)
         external
         view
         returns (bool delivered, bytes32 seed)
     {
-        Seed storage s = _federatedSeeds[keccak256(abi.encode(token, contentHash))];
+        Seed storage s = _independentSeeds[keccak256(abi.encode(token, contentHash))];
         delivered = s.delivered;
         if (delivered) seed = bytes32(s.value);
     }
@@ -571,7 +591,7 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
     }
 
     /// @dev Stamps a new request of an undelivered draw: the request time, the repeat count and
-    ///      the tenure, in one word, before the provider is called. RFX-ENT-2: the count and the
+    ///      the tenure, in one word, before the provider is called. The count and the
     ///      wait belong to the tenure (`epoch`, of the provider the draw uses) of the draw's latest
     ///      request; the first request in a new tenure is not a repeat. While the draw's wait
     ///      runs it returns false when `joined` (the caller only linked) and reverts

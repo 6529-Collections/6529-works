@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessManaged.sol";
 import { IContentStore } from "../interfaces/IContentStore.sol";
@@ -12,7 +12,10 @@ import { Dependency } from "../libraries/Dependency.sol";
 ///         AccessManager; reads are open.
 /// @dev Versions are immutable: there is no function that rewrites or removes an entry, and
 ///      deprecation is a one-way flag. Because a registered file must already be complete in the
-///      store, every registered version is readable for as long as the chain exists.
+///      store, every registered version is readable for as long as the chain exists. The check
+///      is `ContentStore.isComplete`, which walks only the chunks past the file's attested
+///      prefix: the registrant attests a large library first (`ContentStore.attestComplete`,
+///      in pieces, by anyone), so the check is one read whatever the file's size.
 ///
 ///      Genesis maps `register` to `Roles.PARAMETER_SETTER` (the network at 24 hours, so a
 ///      version is public before it is permanent) and `deprecate` to `Roles.NETWORK` (no delay).

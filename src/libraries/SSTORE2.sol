@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 /// @title SSTORE2
 /// @notice Content-addressed byte storage in contract code: `write` deploys `0x00 || data` as

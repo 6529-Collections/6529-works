@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { BoundedCall } from "../libraries/BoundedCall.sol";
@@ -9,10 +9,8 @@ import { BoundedCall } from "../libraries/BoundedCall.sol";
 ///         when it returns exactly one word holding `true`, and both balances must then move by
 ///         exactly the amount. Fee-on-transfer, rebasing-rounding, no-return and false-returning
 ///         tokens therefore fail closed instead of corrupting accounting. ETH sends share one
-///         primitive that copies no return data. Two exceptions accept a token that returns
-///         nothing: Permit2 pulls (Permit2 calls the token itself, so the sale adapters check
-///         only the balance deltas around it) and {transferExactAllowingNoReturn}, which split
-///         wallets release with (ECO-23).
+///         primitive that copies no return data. One exception accepts a token that returns
+///         nothing: {transferExactAllowingNoReturn}, which split wallets release with (ECO-23).
 /// @dev Internal functions only, so nothing here is a linked library. Calls copy at most one word
 ///      of return data, so a return-data bomb costs the token, not the caller.
 library TokenTransfer {
@@ -22,12 +20,6 @@ library TokenTransfer {
     error TokenBalanceMismatch(address asset);
     /// @notice A token read failed or did not return exactly one word.
     error TokenReadFailed(address asset);
-    /// @notice The caller cannot forward `gasLimit` to the token in full.
-    error TokenInsufficientGas(uint256 gasLimit);
-
-    /// @dev Requests all available gas (EIP-150 caps the forwarded amount).
-    uint256 private constant _ALL_GAS = type(uint256).max;
-
     enum Outcome {
         Reverted,
         True,
@@ -46,15 +38,6 @@ library TokenTransfer {
         return _read(asset, abi.encodeCall(IERC20.totalSupply, ()));
     }
 
-    /// @notice The allowance `owner` gave `spender` in `asset`, read strictly.
-    function allowance(address asset, address owner, address spender)
-        internal
-        view
-        returns (uint256)
-    {
-        return _read(asset, abi.encodeCall(IERC20.allowance, (owner, spender)));
-    }
-
     /// @notice Sends `amount` wei to `to` with at most `gasLimit` gas, copying no return data.
     /// @return ok Whether the call succeeded.
     function sendETH(address to, uint256 amount, uint256 gasLimit) internal returns (bool ok) {
@@ -65,9 +48,14 @@ library TokenTransfer {
 
     /// @notice Transfers exactly `amount` of `asset` from this contract to `to`, or reverts.
     function transferExact(address asset, address to, uint256 amount) internal {
-        if (!_transfer(asset, to, amount, _ALL_GAS)) {
-            revert TokenCallFailed(asset, IERC20.transfer.selector);
-        }
+        _moveExact(
+            asset,
+            address(this),
+            to,
+            amount,
+            IERC20.transfer.selector,
+            abi.encodeCall(IERC20.transfer, (to, amount))
+        );
     }
 
     /// @notice Transfers exactly `amount` of `asset` from this contract to `to`, or reverts, like
@@ -83,7 +71,7 @@ library TokenTransfer {
         uint256 fromBefore = balanceOf(asset, address(this));
         uint256 toBefore = balanceOf(asset, to);
         if (fromBefore < amount) revert TokenBalanceMismatch(asset);
-        Outcome outcome = _call(asset, abi.encodeCall(IERC20.transfer, (to, amount)), _ALL_GAS);
+        Outcome outcome = _call(asset, abi.encodeCall(IERC20.transfer, (to, amount)));
         if (outcome != Outcome.True && outcome != Outcome.Empty) {
             revert TokenCallFailed(asset, IERC20.transfer.selector);
         }
@@ -91,36 +79,6 @@ library TokenTransfer {
             balanceOf(asset, address(this)) != fromBefore - amount
                 || balanceOf(asset, to) != toBefore + amount
         ) revert TokenBalanceMismatch(asset);
-    }
-
-    /// @notice Transfers exactly `amount` of `asset` from this contract to `to`, giving the token
-    ///         exactly `gasLimit` gas, so a refusal is the token's and never the caller's gas.
-    ///         Under the EIP-8037 draft `gasLimit` caps regular gas only: a token creating storage
-    ///         draws state gas from the transaction's reservoir, so its outcome can depend on the
-    ///         caller's gas limit (CALLS-3; `BoundedCall`, LIM-GAS-2).
-    /// @return moved False when the token reverted, or returned `false` and moved nothing; the
-    ///         caller may then take another route. Reverts on any other misbehaviour, and when the
-    ///         caller cannot forward `gasLimit` in full.
-    function tryTransferExact(address asset, address to, uint256 amount, uint256 gasLimit)
-        internal
-        returns (bool moved)
-    {
-        return _transfer(asset, to, amount, gasLimit);
-    }
-
-    function _transfer(address asset, address to, uint256 amount, uint256 gasLimit)
-        private
-        returns (bool)
-    {
-        return _moveExact(
-            asset,
-            address(this),
-            to,
-            amount,
-            IERC20.transfer.selector,
-            abi.encodeCall(IERC20.transfer, (to, amount)),
-            gasLimit
-        );
     }
 
     /// @notice Pulls exactly `amount` of `asset` from `from` into this contract, or reverts.
@@ -131,68 +89,39 @@ library TokenTransfer {
             address(this),
             amount,
             IERC20.transferFrom.selector,
-            abi.encodeCall(IERC20.transferFrom, (from, address(this), amount)),
-            _ALL_GAS
+            abi.encodeCall(IERC20.transferFrom, (from, address(this), amount))
         );
     }
 
-    /// @notice Approves `amount` of `asset` to `spender`, or reverts unless the token returns
-    ///         exactly `true`.
-    /// @dev The resulting allowance is not read back: a caller that needs it consumed exactly
-    ///      checks the allowance after the pull (see `RevenuePayment.payERC20`). Too little makes
-    ///      the pull fail; anything left over fails that check.
-    function approve(address asset, address spender, uint256 amount) internal {
-        if (
-            _call(asset, abi.encodeCall(IERC20.approve, (spender, amount)), _ALL_GAS)
-                != Outcome.True
-        ) {
-            revert TokenCallFailed(asset, IERC20.approve.selector);
-        }
-    }
-
-    /// @dev Only a transfer with a bounded `gasLimit` tolerates a clean refusal; the strict paths
-    ///      (all gas) revert on any failure.
+    /// @dev Calls the token with all gas and reverts unless it returns exactly `true` and both
+    ///      balances move by exactly `amount`.
     function _moveExact(
         address asset,
         address from,
         address to,
         uint256 amount,
         bytes4 selector,
-        bytes memory data,
-        uint256 gasLimit
-    ) private returns (bool) {
-        bool tolerateFailure = gasLimit != _ALL_GAS;
+        bytes memory data
+    ) private {
         uint256 fromBefore = balanceOf(asset, from);
         uint256 toBefore = balanceOf(asset, to);
         if (fromBefore < amount) revert TokenBalanceMismatch(asset);
-        Outcome outcome = _call(asset, data, gasLimit);
-        if (outcome == Outcome.Reverted && tolerateFailure) return false;
-        // Empty and Malformed: no return value, or not exactly one word of 0 or 1.
-        if (outcome == Outcome.Reverted || outcome >= Outcome.Empty) {
-            revert TokenCallFailed(asset, selector);
-        }
-        uint256 fromAfter = balanceOf(asset, from);
-        uint256 toAfter = balanceOf(asset, to);
-        if (outcome == Outcome.False) {
-            if (!tolerateFailure) revert TokenCallFailed(asset, selector);
-            if (fromAfter != fromBefore || toAfter != toBefore) revert TokenBalanceMismatch(asset);
-            return false;
-        }
-        if (fromAfter != fromBefore - amount || toAfter != toBefore + amount) {
-            revert TokenBalanceMismatch(asset);
-        }
-        return true;
+        // Anything but one word holding `true`: a revert, a `false`, no return value, or a
+        // malformed one.
+        if (_call(asset, data) != Outcome.True) revert TokenCallFailed(asset, selector);
+        if (
+            balanceOf(asset, from) != fromBefore - amount
+                || balanceOf(asset, to) != toBefore + amount
+        ) revert TokenBalanceMismatch(asset);
     }
 
-    function _call(address asset, bytes memory data, uint256 gasLimit) private returns (Outcome) {
-        if (gasLimit != _ALL_GAS && !BoundedCall.hasSufficientGas(gasleft(), gasLimit, 5_000)) {
-            revert TokenInsufficientGas(gasLimit);
-        }
+    /// @dev Forwards all the gas EIP-150 allows and copies at most one word of return data.
+    function _call(address asset, bytes memory data) private returns (Outcome) {
         bool ok;
         uint256 size;
         uint256 word;
         assembly ("memory-safe") {
-            ok := call(gasLimit, asset, 0, add(data, 0x20), mload(data), 0x00, 0x20)
+            ok := call(gas(), asset, 0, add(data, 0x20), mload(data), 0x00, 0x20)
             size := returndatasize()
             word := mload(0x00)
         }

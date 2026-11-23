@@ -1,52 +1,55 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessManaged.sol";
 import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IArtistPayoutResolver } from "../economics/interfaces/IArtistPayoutResolver.sol";
+import { IRevenueEscrow } from "../economics/interfaces/IRevenueEscrow.sol";
 import { ISplitFactory } from "../economics/interfaces/ISplitFactory.sol";
-import { IAccounts } from "../interfaces/IAccounts.sol";
 import { IArtistRegistry, IConsolidationSource } from "../interfaces/IArtistRegistry.sol";
 import { IArtistRoleResolver } from "../interfaces/IArtistRoleResolver.sol";
-import { IEditions } from "../interfaces/IEditions.sol";
-import { IFederationRegistry } from "../interfaces/IFederationRegistry.sol";
+import { IIndependentStreamRegistry } from "../interfaces/IIndependentStreamRegistry.sol";
 import { IStatementLog } from "../interfaces/IStatementLog.sol";
-import { IPackageRegistry } from "../interfaces/IPackageRegistry.sol";
-import { IStream } from "../interfaces/IStream.sol";
+import { Slots } from "../interfaces/core/CoreTypes.sol";
+import { IAccounts } from "../interfaces/core/IAccounts.sol";
+import { IDirectory } from "../interfaces/core/IDirectory.sol";
+import { IEditions } from "../interfaces/core/IEditions.sol";
+import { IIndependentStreamGate } from "../interfaces/core/IIndependentStreamGate.sol";
+import { IMintPolicy } from "../interfaces/core/IMintPolicy.sol";
+import { IModuleSlots } from "../interfaces/core/IModules.sol";
+import { IStream } from "../interfaces/core/IStream.sol";
+import { IWorkFacts } from "../interfaces/core/IWorkFacts.sol";
 import { ArtistIdentity, ChangeKind, PendingChange } from "../interfaces/types/IdentityTypes.sol";
 import { Typehashes } from "../interfaces/types/Typehashes.sol";
 import { BoundedCall } from "../libraries/BoundedCall.sol";
 import { Dependency } from "../libraries/Dependency.sol";
-import { ProtocolContracts } from "../libraries/ProtocolContracts.sol";
 import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 
-/// @title ArtistRegistry
-/// @notice The artist registry: artist accounts, their payout and profile, and the federation
-///         directory (ADR 0001 sections 11 and 16). An account is a 6529 consolidated account:
-///         its root wallet and every wallet consolidated with the root act for it with the same
-///         rights. Every consumer asks this registry who may act for an account (`IAccounts`);
-///         split wallets resolve artist-resolved payees through {payoutAddress}, and the
-///         statement log asks {isArtist}. Its address never changes: split wallets pin it, and
-///         the consolidation source is swapped inside it ({setConsolidationSource}).
+/// @title Accounts
+/// @notice The accounts module (replaceable): artist accounts, their payout and profile. An
+///         account is a 6529 consolidated account: its root wallet and every wallet consolidated
+///         with the root act for it with the same rights. The permanent `StreamDirectory6529` names
+///         the current accounts module (slot `ACCOUNTS`): split vaults ask it for an artist's
+///         payout address through `StreamDirectory6529.payoutAddress`, Independent Stream tokens
+///         ask it who may administer them, and the statement log asks it `isArtist`.
 /// @dev Who may act. The root always may, without any read of the consolidation source, so a
 ///      broken, reverting or repriced source never locks an account out. Any other wallet may
 ///      while the source says it is consolidated with the root, read live with `BoundedCall`'s
 ///      forward-all rule: a shortfall reverts, any other failure is "no". Nobody may while the
 ///      account is frozen or a network replacement is pending (and has not lapsed).
 ///
-///      The consolidation source is replaceable code that answers, live, who may act for a
-///      permanent account. That departs from the permanent rule that nothing permanent takes
-///      instruction from replaceable code; it is what the owner's account model needs. Its
-///      limits: the root never depends on the source; replacing the source is a network action
-///      at the 7-day class (a role delay, which holds until a 7-day remap changes it); a freeze
-///      stops an account at once.
+///      A freeze blocks a contest of a replacement, and a freeze can be placed again. While a
+///      freeze runs nobody can contest (`cancelChange` refuses), so a freeze placed together with
+///      a replacement leaves no moment to contest it: a contest binds only a network that does
+///      not also freeze the account. `freeze` is refused while a freeze runs, but once a freeze
+///      ended, or the network lifted it (`unfreeze`), the network may place another at once.
 ///
-///      Every waiting period this contract enforces in its own code is a compiled constant: the
-///      number is the guarantee, and no remap changes it. A freeze and a replacement together
-///      leave no moment to contest, so the right to contest binds only a network that does not
-///      freeze (see `IArtistRegistry`).
-contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
+///      The waits (an account's own change 2 days, a replacement's notice 14 days, a contest's
+///      lapse 90 days, a freeze 14 days) are compiled into this module. The module is
+///      replaceable by the network, so they are its current rules, not promises of the
+///      permanent contracts.
+contract Accounts is IArtistRegistry, AccessManaged, EIP712 {
     /// @notice How long an account's own change waits before it may execute.
     uint48 public constant OWN_CHANGE_DELAY = 2 days;
     /// @notice The public notice of a network replacement before it may execute.
@@ -54,33 +57,44 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     /// @notice A contested replacement lapses this long after its contest unless the network
     ///         resolves it.
     uint48 public constant CONTEST_LAPSE = 90 days;
-    /// @notice How long a freeze lasts.
+    /// @notice How long one freeze lasts. The network may lift it early and place it again.
     uint48 public constant FREEZE_PERIOD = 14 days;
 
-    /// @dev Slot 0 holds everything {isWallet} needs: the root, the end of a freeze, whether a
-    ///      replacement is pending and the federation delisting flag.
+    /// @notice The contracts this module is deployed against.
+    /// @param directory The permanent directory (its INDEPENDENT_STREAM slot names the Independent
+    ///        Stream module).
+    /// @param stream 6529 Stream.
+    /// @param editions 6529 Stream Editions.
+    /// @param splitFactory The split ledger (whose vaults are refused as payouts).
+    /// @param statementLog The statement log `resolveContested` reads (zero: none).
+    /// @param packageRegistry The first package registry, the only `register` caller.
+    struct Wiring {
+        address directory;
+        address stream;
+        address editions;
+        address splitFactory;
+        address statementLog;
+        address packageRegistry;
+    }
+
+    /// @dev Slot 0 holds everything {isWallet} needs: the root, the end of a freeze and whether a
+    ///      replacement is pending.
     struct Artist {
         address root;
         uint48 frozenUntil;
         bool replacing;
-        bool delisted;
         address payout;
         uint64 nonce;
         bytes32 profileId;
         bytes32 profileDocHash;
     }
 
-    /// @dev A federation directory entry; artist IDs fit 160 bits. One slot.
-    struct Listing {
-        uint160 artistId;
-        FederationStatus status;
-        uint32 feeShare;
-    }
+    /// @dev `Work` as `IStream.workOf` returns it: eleven words.
+    uint256 private constant WORK_WORDS = 11;
 
     mapping(uint256 artistId => Artist) private _artists;
     mapping(uint256 artistId => PendingChange) private _pending;
     mapping(bytes32 digest => bool) private _acceptanceUsed;
-    mapping(address token => Listing) private _listings;
 
     /// @inheritdoc IArtistRegistry
     mapping(address account => uint256) public override artistIdOf;
@@ -93,82 +107,51 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     /// @inheritdoc IArtistRegistry
     address public override packageRegistry;
     /// @inheritdoc IArtistRegistry
-    address public override stream;
+    address public immutable override directory;
     /// @inheritdoc IArtistRegistry
-    address public override federationRegistry;
+    address public immutable override stream;
     /// @inheritdoc IArtistRegistry
-    address public override splitFactory;
+    address public immutable override editions;
     /// @inheritdoc IArtistRegistry
-    address public override statementLog;
+    address public immutable override splitFactory;
+    /// @inheritdoc IArtistRegistry
+    address public immutable override statementLog;
 
     /// @param initialAuthority The AccessManager.
     /// @param source The consolidation source (the v1 `ConsolidationAdapter`).
     /// @param sourceCodeHash The reviewed code hash of `source`.
-    constructor(address initialAuthority, IConsolidationSource source, bytes32 sourceCodeHash)
+    /// @param w The contracts this module is deployed against (`Wiring`). They may be predicted
+    ///        addresses with no code yet; none is called here.
+    constructor(
+        address initialAuthority,
+        IConsolidationSource source,
+        bytes32 sourceCodeHash,
+        Wiring memory w
+    )
         AccessManaged(initialAuthority)
         EIP712(Typehashes.ARTIST_REGISTRY_NAME, Typehashes.DOMAIN_VERSION)
     {
         _checkSource(source, sourceCodeHash);
         consolidationSource = source;
         consolidationSourceCodeHash = sourceCodeHash;
+        directory = w.directory;
+        stream = w.stream;
+        editions = w.editions;
+        splitFactory = w.splitFactory;
+        statementLog = w.statementLog;
+        packageRegistry = w.packageRegistry;
         emit ConsolidationSourceSet(address(0), address(source), sourceCodeHash);
+        emit PackageRegistrySet(address(0), w.packageRegistry);
     }
 
     // ----- wiring -----
 
     /// @inheritdoc IArtistRegistry
-    function bindPackageRegistry(address target) external restricted {
-        Dependency.check(target, type(IPackageRegistry).interfaceId);
-        packageRegistry = _bind("PACKAGE_REGISTRY", packageRegistry, target);
-    }
-
-    /// @inheritdoc IArtistRegistry
     function setPackageRegistry(address expected, address next) external restricted {
         if (expected != packageRegistry) revert ExpectedValueMismatch();
-        Dependency.check(next, type(IPackageRegistry).interfaceId);
+        Dependency.check(next);
         packageRegistry = next;
         emit PackageRegistrySet(expected, next);
-    }
-
-    /// @inheritdoc IArtistRegistry
-    function bindStream(address target) external restricted {
-        Dependency.check(target, type(IStream).interfaceId);
-        stream = _bind("STREAM", stream, target);
-    }
-
-    /// @inheritdoc IArtistRegistry
-    function bindFederationRegistry(address target) external restricted {
-        Dependency.check(target, type(IFederationRegistry).interfaceId);
-        federationRegistry = _bind("FEDERATION_REGISTRY", federationRegistry, target);
-    }
-
-    /// @inheritdoc IArtistRegistry
-    /// @dev A zero successor is refused, so the pointer never returns to the unbound state.
-    function setFederationRegistry(address expected, address next) external restricted {
-        if (expected != federationRegistry) revert ExpectedValueMismatch();
-        Dependency.check(next, type(IFederationRegistry).interfaceId);
-        federationRegistry = next;
-        emit FederationRegistrySet(expected, next);
-    }
-
-    /// @inheritdoc IArtistRegistry
-    /// @dev The factory does not implement ERC-165, so only code and no EIP-7702 are checked.
-    function bindSplitFactory(address target) external restricted {
-        Dependency.check(target);
-        splitFactory = _bind("SPLIT_FACTORY", splitFactory, target);
-    }
-
-    /// @inheritdoc IArtistRegistry
-    /// @dev The statement log does not implement ERC-165: code, no EIP-7702, and its
-    ///      `artistResolver()` naming this registry are checked instead, read forwarding all gas.
-    function bindStatementLog(address target) external restricted {
-        Dependency.check(target);
-        (bool ok, bytes32 resolver) =
-            BoundedCall.tryReadWordAll(target, abi.encodeWithSignature("artistResolver()"));
-        if (!ok || resolver != bytes32(uint256(uint160(address(this))))) {
-            revert InvalidBinding(target);
-        }
-        statementLog = _bind("STATEMENT_LOG", statementLog, target);
     }
 
     /// @inheritdoc IArtistRegistry
@@ -199,16 +182,16 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
 
     /// @inheritdoc IArtistRegistry
     /// @dev The package registry verifies the account's own acceptance before it calls
-    ///      `register`; the federation registry is not trusted to, so the signature is checked
-    ///      here, in this registry's domain.
-    function registerFederated(
+    ///      `register`; the Independent Stream module is not trusted to, so the signature is
+    ///      checked here, in this module's domain.
+    function registerIndependent(
         address account,
         bytes32 profileId,
         bytes32 profileDocHash,
         uint64 deadline,
         bytes calldata signature
     ) external returns (uint256) {
-        if (msg.sender != federationRegistry) {
+        if (msg.sender != independentStreamRegistry() || msg.sender == address(0)) {
             revert UnboundCaller(msg.sender);
         }
         SignatureVerifier.checkDeadline(deadline);
@@ -216,19 +199,6 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
             account, registrationDigest(account, profileId, profileDocHash, deadline), signature
         );
         return _create(account, profileId, profileDocHash);
-    }
-
-    function _create(address root, bytes32 profileId, bytes32 profileDocHash)
-        private
-        returns (uint256 artistId)
-    {
-        if (root == address(0) || !_payoutAllowed(root)) revert InvalidIdentity();
-        if (artistIdOf[root] != 0 || reservedFor[root] != 0) revert AccountTaken(root);
-        artistId = uint256(uint160(root));
-        Artist storage a = _artists[artistId];
-        (a.root, a.payout, a.profileId, a.profileDocHash) = (root, root, profileId, profileDocHash);
-        artistIdOf[root] = artistId;
-        emit ArtistRegistered(artistId, ArtistIdentity(root, root, profileId, profileDocHash));
     }
 
     /// @inheritdoc IArtistRegistry
@@ -274,7 +244,8 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
 
     /// @inheritdoc IArtistRegistry
     /// @dev The caller is checked against the root directly (not through {isWallet}), so a
-    ///      pending replacement, which blocks {isWallet}, does not stop its own contest.
+    ///      pending replacement, which blocks {isWallet}, does not stop its own contest. A freeze
+    ///      does: `_requireUnfrozen` runs first, so nobody contests while the account is frozen.
     function cancelChange(uint256 artistId) external {
         PendingChange storage p = _pendingOf(artistId);
         Artist storage a = _artists[artistId];
@@ -341,7 +312,6 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     function executeChange(uint256 artistId) external {
         PendingChange storage p = _pendingOf(artistId);
         if (p.contestedAt != 0) revert ReplacementContested(artistId);
-        // Delays are wall-clock bounds; validator drift is immaterial.
         // forge-lint: disable-next-line(block-timestamp)
         if (block.timestamp < p.executableAt) revert ChangeNotDue(artistId, p.executableAt);
         _requireUnfrozen(artistId, _artists[artistId]);
@@ -356,6 +326,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     }
 
     /// @inheritdoc IArtistRegistry
+    /// @dev Refused while a freeze runs; once it ended or was lifted it may be placed again.
     function freeze(uint256 artistId) external restricted {
         Artist storage a = _artist(artistId);
         _requireUnfrozen(artistId, a);
@@ -368,75 +339,6 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     function unfreeze(uint256 artistId) external restricted {
         _artist(artistId).frozenUntil = 0;
         emit AccountUnfrozen(artistId);
-    }
-
-    // ----- federation directory -----
-
-    /// @inheritdoc IArtistRegistry
-    /// @dev No list and no cap: each listing is its own slot, paid by its registrant;
-    ///      enumeration is by events. A listing happens once per token, so the consent needs no
-    ///      nonce.
-    function listFederatedContract(FederatedListing calldata listing, bytes calldata consent)
-        external
-    {
-        if (msg.sender != federationRegistry) revert UnboundCaller(msg.sender);
-        uint256 artistId = listing.artistId;
-        address token = listing.token;
-        Artist storage a = _artist(artistId);
-        SignatureVerifier.checkDeadline(listing.deadline);
-        requireSigned(artistId, _listingDigest(listing), consent);
-        address s = stream;
-        address e = IStream(s).editions();
-        if (
-            a.delisted || _listings[token].status != FederationStatus.NONE
-                || !Dependency.isInstallable(token) || _canonical(token, s, e)
-                || _canonical(listing.partner, s, e) || _canonical(listing.feeRecipient, s, e)
-        ) revert FederatedContractRefused(token);
-        // A registered artist's ID is the uint160 of its first root.
-        // forge-lint: disable-next-line(unsafe-typecast)
-        _listings[token] = Listing(uint160(artistId), FederationStatus.ACTIVE, listing.feeShare);
-        emit FederatedContractListed(
-            artistId,
-            token,
-            token.codehash,
-            listing.form,
-            listing.partner,
-            listing.feeShare,
-            listing.feeRecipient
-        );
-    }
-
-    /// @inheritdoc IArtistRegistry
-    function setFederatedStatus(address token, FederationStatus status, bytes32 ref) external {
-        if (msg.sender != federationRegistry) revert UnboundCaller(msg.sender);
-        Listing storage l = _listings[token];
-        FederationStatus current = l.status;
-        if (current == FederationStatus.NONE || status == FederationStatus.NONE) {
-            revert FederatedStatusRefused(token, current);
-        }
-        l.status = status;
-        emit FederatedContractStatus(token, l.artistId, current, status, ref);
-    }
-
-    /// @inheritdoc IArtistRegistry
-    function setFederationDelisted(uint256 artistId, bool delisted, bytes32 ref)
-        external
-        restricted
-    {
-        Artist storage a = _artist(artistId);
-        emit FederationDelistedSet(artistId, a.delisted, delisted, ref);
-        a.delisted = delisted;
-    }
-
-    /// @inheritdoc IArtistRegistry
-    function lowerFederatedFeeShare(address token, uint32 share) external restricted {
-        Listing storage l = _listings[token];
-        uint32 current = l.feeShare;
-        if (l.status == FederationStatus.NONE || share >= current) {
-            revert FeeShareNotLowered(token, current);
-        }
-        l.feeShare = share;
-        emit FederatedFeeShareLowered(token, current, share);
     }
 
     // ----- IAccounts -----
@@ -486,57 +388,15 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         return a.frozenUntil;
     }
 
-    /// @inheritdoc IAccounts
-    function isFederationDelisted(uint256 accountId) external view returns (bool) {
-        (, Artist storage a) = _resolve(accountId);
-        return a.delisted;
-    }
-
-    /// @inheritdoc IAccounts
-    /// @dev The share recorded at listing, as lowered since. An unlisted token reads the largest
-    ///      `uint32`, never zero, so a token taking the smaller of its own share and this one
-    ///      keeps its own share until it is listed.
-    function federatedFeeShare(address token) external view returns (uint32) {
-        Listing storage l = _listings[token];
-        return l.status == FederationStatus.NONE ? type(uint32).max : l.feeShare;
-    }
-
-    // ----- reads -----
-
-    /// @inheritdoc IArtistRoleResolver
-    /// @dev Resolves a 6529 Stream work (`IStream.artistOf`), or a 6529 Stream Editions edition
-    ///      through its master, to the lead artist's account, and answers {isWallet}. Any other
-    ///      subject returns false.
-    function isArtist(address token, uint256 id, address account) external view returns (bool) {
-        address s = stream;
-        if (s == address(0) || token == address(0) || account == address(0)) return false;
-        uint256 gasBefore = gasleft();
-        if (token != s) {
-            if (token != IStream(s).editions()) return false;
-            try IEditions(token).masterOf(id) returns (
-                address master, uint256 workId, bytes32 contentHash
-            ) {
-                // A well-formed answer names this Stream and the master's content.
-                if (master != s || contentHash == bytes32(0)) return false;
-                id = workId;
-            } catch {
-                _revertOnShortfall(token, gasBefore);
-                return false;
-            }
-            gasBefore = gasleft();
-        }
-        try IStream(s).artistOf(id) returns (uint256 artistId) {
-            return artistId != 0 && isWallet(artistId, account);
-        } catch {
-            _revertOnShortfall(s, gasBefore);
-            return false;
-        }
-    }
-
-    /// @inheritdoc IArtistPayoutResolver
+    /// @inheritdoc IArtistRegistry
     /// @dev Zero for an unknown artist, while the account is frozen, and while a pending change
     ///      would move the payout (a lapsed contest no longer counts).
-    function payoutAddress(uint256 artistId) external view returns (address) {
+    function payoutAddress(uint256 artistId)
+        external
+        view
+        override(IArtistRegistry)
+        returns (address)
+    {
         Artist storage a = _artists[artistId];
         // forge-lint: disable-next-line(block-timestamp)
         if (a.frozenUntil > block.timestamp) return address(0);
@@ -546,6 +406,31 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         return moves ? address(0) : current;
     }
 
+    // ----- reads -----
+
+    /// @inheritdoc IArtistRoleResolver
+    /// @dev Resolves the lead artist of any token that answers `IStream.workOf` (6529 Stream and
+    ///      every Independent Stream token), or of an edition through the master of an `IEditions`
+    ///      contract (`stream()`, same ID), and answers {isWallet}. A token that answers neither,
+    ///      or answers malformed data, is "false"; so is a call that fails for lack of gas, which
+    ///      only withholds an answer. Any token is accepted: the statement log keys every
+    ///      statement by its token, so an answer about a contract that is not a network token
+    ///      only lets its own artist speak about it.
+    function isArtist(address token, uint256 id, address account) external view returns (bool) {
+        if (token == address(0) || account == address(0)) return false;
+        uint256 artistId = _artistOf(token, id);
+        if (artistId == 0) {
+            (bool ok, bytes memory ret) = token.staticcall(abi.encodeCall(IEditions.stream, ()));
+            if (!ok || ret.length != 32) return false;
+            uint256 word = abi.decode(ret, (uint256));
+            if (word == 0 || word > type(uint160).max || address(uint160(word)) == token) {
+                return false;
+            }
+            artistId = _artistOf(address(uint160(word)), id);
+        }
+        return artistId != 0 && isWallet(artistId, account);
+    }
+
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
         return interfaceId == type(IERC165).interfaceId
@@ -553,6 +438,11 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
             || interfaceId == type(IArtistPayoutResolver).interfaceId
             || interfaceId == type(IAccounts).interfaceId
             || interfaceId == type(IArtistRegistry).interfaceId;
+    }
+
+    /// @inheritdoc IArtistRegistry
+    function independentStreamRegistry() public view returns (address) {
+        return IModuleSlots(directory).moduleOf(Slots.INDEPENDENT_STREAM);
     }
 
     /// @inheritdoc IArtistRegistry
@@ -586,27 +476,13 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         return _artists[artistId].nonce;
     }
 
-    /// @inheritdoc IArtistRegistry
-    function federatedListing(address token)
-        external
-        view
-        returns (uint256 artistId, FederationStatus status)
-    {
-        Listing storage l = _listings[token];
-        artistId = l.artistId;
-        status = l.status;
-        if (status == FederationStatus.ACTIVE && _artists[artistId].delisted) {
-            status = FederationStatus.DELISTED;
-        }
-    }
-
     /// @notice The EIP-712 digest a wallet signs to consent to an account created through the
-    ///         federation registry (`registerFederated`).
+    ///         Independent Stream module (`registerIndependent`).
     /// @param account The consenting wallet.
     /// @param profileId The claimed 6529 profile ID.
     /// @param profileDocHash The profile document hash.
     /// @param deadline The Unix time in seconds after which the signature is expired.
-    /// @return The `ArtistRegistration` digest in this registry's EIP-712 domain.
+    /// @return The `ArtistRegistration` digest in this module's EIP-712 domain.
     function registrationDigest(
         address account,
         bytes32 profileId,
@@ -627,7 +503,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     /// @param next The identity after the change.
     /// @param nonce The account's change nonce the signature binds (`changeNonce` when staged).
     /// @param deadline The Unix time in seconds after which the signature is expired.
-    /// @return The `Typehashes.IDENTITY_CHANGE` digest in this registry's EIP-712 domain.
+    /// @return The `Typehashes.IDENTITY_CHANGE` digest in this module's EIP-712 domain.
     function changeDigest(
         uint256 artistId,
         ArtistIdentity calldata next,
@@ -655,7 +531,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     /// @param next The identity after the replacement.
     /// @param evidenceHash The replacement's evidence hash.
     /// @param deadline The Unix time in seconds after which the acceptance is expired.
-    /// @return The `Typehashes.REPLACEMENT_ACCEPTANCE` digest in this registry's EIP-712 domain.
+    /// @return The `Typehashes.REPLACEMENT_ACCEPTANCE` digest in this module's EIP-712 domain.
     function replacementDigest(
         uint256 artistId,
         ArtistIdentity calldata next,
@@ -680,10 +556,26 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
 
     // ----- internals -----
 
-    /// @dev The EIP-712 digest of a listing consent: `Typehashes.FEDERATED_LISTING` over the
-    ///      struct's fields (`abi.encode`), in this registry's domain.
-    function _listingDigest(FederatedListing calldata listing) private view returns (bytes32) {
-        return _hashTypedDataV4(keccak256(abi.encode(Typehashes.FEDERATED_LISTING, listing)));
+    function _create(address root, bytes32 profileId, bytes32 profileDocHash)
+        private
+        returns (uint256 artistId)
+    {
+        if (root == address(0) || !_payoutAllowed(root)) revert InvalidIdentity();
+        if (artistIdOf[root] != 0 || reservedFor[root] != 0) revert AccountTaken(root);
+        artistId = uint256(uint160(root));
+        Artist storage a = _artists[artistId];
+        (a.root, a.payout, a.profileId, a.profileDocHash) = (root, root, profileId, profileDocHash);
+        artistIdOf[root] = artistId;
+        emit ArtistRegistered(artistId, ArtistIdentity(root, root, profileId, profileDocHash));
+    }
+
+    /// @dev The lead artist `token` reports for `id` (`IStream.workOf`), or zero when the call
+    ///      fails or answers anything but a whole `Work` with an artist ID of at most 160 bits.
+    function _artistOf(address token, uint256 id) private view returns (uint256 artistId) {
+        (bool ok, bytes memory ret) = token.staticcall(abi.encodeCall(IStream.workOf, (id)));
+        if (!ok || ret.length != WORK_WORDS * 32) return 0;
+        (, artistId) = abi.decode(ret, (bytes32, uint256));
+        if (artistId > type(uint160).max) return 0;
     }
 
     /// @dev The account `accountId` names: an artist ID, or an address that is or was a root.
@@ -734,7 +626,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     }
 
     /// @dev Reverts unless `next` names a nonzero root that is free for this account and a
-    ///      payout this registry allows.
+    ///      payout this module allows.
     function _checkNext(uint256 artistId, ArtistIdentity calldata next) private view {
         if (next.root == address(0) || !_payoutAllowed(next.payout)) revert InvalidIdentity();
         if (_taken(artistId, next.root)) revert AccountTaken(next.root);
@@ -749,39 +641,45 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     }
 
     /// @dev False for payouts that would strand or stall pull-only artist funds: none of these
-    ///      can call `release`, and a release some other caller triggers for them pays them.
+    ///      can call `release`, and a release some other caller triggers for them pays them. The
+    ///      contracts this module knows, the split factory's vaults, and any contract declaring
+    ///      (ERC-165) a network contract's interface are refused.
     function _payoutAllowed(address account) private view returns (bool) {
-        address s = stream;
+        if (
+            account == address(0) || account == address(this) || account == directory
+                || account == stream || account == editions || account == splitFactory
+                || account == statementLog || account == packageRegistry
+        ) return false;
         address factory = splitFactory;
-        return !(account == address(0) || account == address(this) || account == packageRegistry
-                || (s != address(0) && (account == s || account == IStream(s).editions()))
-                || (factory != address(0)
-                    && (account == factory || ISplitFactory(factory).isWallet(account)))
-                || ProtocolContracts.isProtocolContract(account));
+        if (factory.code.length != 0 && ISplitFactory(factory).isWallet(account)) return false;
+        return !_isNetworkContract(account);
     }
 
-    /// @dev Whether `account` is a contract this registry knows as canonical or protocol: this
-    ///      registry, 6529 Stream `s` and its Editions `e`, and every bound contract. Zero is not.
-    function _canonical(address account, address s, address e) private view returns (bool) {
-        return account != address(0)
-            && (account == address(this)
-                || account == s
-                || account == e
-                || account == packageRegistry
-                || account == federationRegistry
-                || account == splitFactory
-                || account == statementLog
-                || account == address(consolidationSource));
+    /// @dev Whether `account` declares (ERC-165) the interface of a network contract that cannot
+    ///      pull or move funds onward: a token or edition contract, a module host, the directory,
+    ///      the record contract, a mint policy, an Independent Stream gate, an accounts module or
+    ///      the escrow.
+    function _isNetworkContract(address account) private view returns (bool) {
+        if (account.code.length == 0 || !BoundedCall.supportsERC165(account)) return false;
+        bytes4[9] memory ids = [
+            type(IStream).interfaceId,
+            type(IEditions).interfaceId,
+            type(IModuleSlots).interfaceId,
+            type(IDirectory).interfaceId,
+            type(IWorkFacts).interfaceId,
+            type(IMintPolicy).interfaceId,
+            type(IIndependentStreamGate).interfaceId,
+            type(IArtistRegistry).interfaceId,
+            type(IRevenueEscrow).interfaceId
+        ];
+        for (uint256 i; i < ids.length; ++i) {
+            if (BoundedCall.supportsInterfaceUnchecked(account, ids[i])) return true;
+        }
+        return false;
     }
 
     function _checkSource(IConsolidationSource source, bytes32 codeHash) private view {
         Dependency.checkPinned(address(source), type(IConsolidationSource).interfaceId, codeHash);
-    }
-
-    function _bind(bytes32 name, address current, address target) private returns (address) {
-        if (current != address(0)) revert AlreadyBound(name);
-        emit Bound(name, target);
-        return target;
     }
 
     /// @dev Consumes the nonce, records the change and reserves a new root until it ends.
@@ -829,7 +727,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         return true;
     }
 
-    /// @dev The account's latest DISPUTE_OUTCOME entry in the bound statement log, or zero.
+    /// @dev The account's latest DISPUTE_OUTCOME entry in the statement log, or zero.
     function _latestOutcome(uint256 artistId) private view returns (bytes32) {
         address log = statementLog;
         if (log == address(0)) return bytes32(0);
@@ -849,13 +747,6 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         delete _pending[artistId];
         _artists[artistId].replacing = false;
         emit ChangeCancelled(artistId, by, byNetwork);
-    }
-
-    /// @dev The shared gas rule for the registry's own try/catch reads, which forward all gas.
-    function _revertOnShortfall(address target, uint256 gasBefore) private view {
-        if (gasleft() <= gasBefore / BoundedCall.SHORTFALL_DIVISOR) {
-            revert BoundedCall.BoundedCallShortfall(target);
-        }
     }
 
     /// @dev The block time as stored (48 bits last for millions of years).

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 /// @title Base64Validator
 /// @notice Strict RFC 4648 section 4 alphabet check, 32 bytes per step. Internal, so nothing

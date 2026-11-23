@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 /// @title SplitVault
 /// @notice The split wallet's code: a minimal vault that holds ETH and ERC-20s and moves them only
@@ -9,7 +9,11 @@ pragma solidity ^0.8.24;
 ///         not of a full contract) and so that its address depends on these documented bytes,
 ///         never on a compiler version or metadata.
 /// @dev Internal constants only, so nothing here is a linked library. No `delegatecall`, no
-///      `selfdestruct`, no storage.
+///      `selfdestruct`, no storage. The same vault in plain Solidity is
+///      `test/economics/SplitVaultReference.sol`, several times the size compiled and so
+///      several times the cost of each wallet's creation;
+///      `test/economics/SplitVaultDifferential.t.sol` runs every call shape against both and
+///      compares the outcome, return data, balances and logs.
 ///
 ///      Runtime (66 bytes; `LEDGER` is the 20-byte address of the deploying ledger):
 ///      ```

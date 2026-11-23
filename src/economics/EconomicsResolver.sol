@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessManaged.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
@@ -7,9 +7,8 @@ import { Dependency } from "../libraries/Dependency.sol";
 import { ProtocolContracts } from "../libraries/ProtocolContracts.sol";
 import { IEconomicsResolver } from "../interfaces/IEconomicsResolver.sol";
 import {
-    CURRENCY_DEFAULT,
     PRODUCT_EDITIONS,
-    PRODUCT_FEDERATED,
+    PRODUCT_INDEPENDENT,
     PRODUCT_STREAM,
     ProductEconomics,
     WorkTerms
@@ -25,16 +24,16 @@ import { Splits } from "./Splits.sol";
 /// @title EconomicsResolver
 /// @notice The network's governed economics for new works (ADR 0001 sections 2, 5, 7 and 8).
 ///         Launch defaults: 6529 Stream and 6529 Stream Editions pay 75% to the artist portion
-///         and 25% to the network; 6529 Stream Federated pays 90/10; the royalty rate is 6.529%
+///         and 25% to the network; 6529 Independent Stream pays 90/10; the royalty rate is 6.529%
 ///         (6,529 out of 100,000); the default license is CC0. Currencies come from the asset
 ///         allowlist.
 /// @dev Changes apply to new works only: a work locks its terms (seller wallet, fee terms,
 ///      royalty receiver and rate) at mint and a sale locks its currency at start. Two
 ///      exceptions: sale adapters pay the network's fee to {networkFeeRecipient} as it reads at
-///      settlement (R18), and 6529 Stream reads the museum
+///      settlement (the fee address current at settlement), and 6529 Stream reads the museum
 ///      (through `IStream.economics()`) when it settles an unbid or frozen-out work and moves
-///      the work there itself (`IMintTarget.settlePrimary`, D140, owner decision 17), and when
-///      governance rescues a stranded work (`IStream.rescueToMuseum`, owner decision 20).
+///      the work there itself (`IMintTarget.settlePrimary`), and when
+///      governance rescues a stranded work (`IStream.rescueToMuseum`).
 ///      Governed through AccessManager with
 ///      `Roles` (src/governance/Roles.sol): {setFeeTerms} and {setMuseum} map to
 ///      `Roles.FUNDS_SETTER` (the network, 3 days); {setRoyaltyRate} and {setDefaultLicense} map
@@ -54,8 +53,8 @@ import { Splits } from "./Splits.sol";
 contract EconomicsResolver is IEconomicsResolver, AccessManaged {
     /// @notice The launch network share of Stream and Editions primary sales and royalties.
     uint32 public constant DEFAULT_FEE_SHARE = 25_000;
-    /// @notice The launch network share for 6529 Stream Federated.
-    uint32 public constant FEDERATED_FEE_SHARE = 10_000;
+    /// @notice The launch network share for 6529 Independent Stream.
+    uint32 public constant INDEPENDENT_FEE_SHARE = 10_000;
     /// @notice The launch royalty rate: 6.529%.
     uint32 public constant DEFAULT_ROYALTY_RATE = 6_529;
     /// @notice The launch default license's SPDX ID; its key is `WorksHashing.CC0_LICENSE_KEY`.
@@ -83,7 +82,7 @@ contract EconomicsResolver is IEconomicsResolver, AccessManaged {
     /// @param allowlist_ The asset allowlist.
     /// @param factory_ The split factory.
     /// @param feeRecipient The network fee recipient for every product at launch.
-    /// @param museum_ The 6529 Network Museum (D140): an existing Safe or EOA.
+    /// @param museum_ The 6529 Network Museum: an existing Safe or EOA.
     /// @param cc0TextFileId_ The content store file ID of the CC0 1.0 legal text.
     constructor(
         address authority,
@@ -103,8 +102,8 @@ contract EconomicsResolver is IEconomicsResolver, AccessManaged {
             ProductEconomics(feeRecipient, DEFAULT_FEE_SHARE, DEFAULT_ROYALTY_RATE);
         _configure(PRODUCT_STREAM, standard, cc0);
         _configure(PRODUCT_EDITIONS, standard, cc0);
-        standard.feeShare = FEDERATED_FEE_SHARE;
-        _configure(PRODUCT_FEDERATED, standard, cc0);
+        standard.feeShare = INDEPENDENT_FEE_SHARE;
+        _configure(PRODUCT_INDEPENDENT, standard, cc0);
         _setMuseum(museum_);
     }
 
@@ -179,22 +178,6 @@ contract EconomicsResolver is IEconomicsResolver, AccessManaged {
                 Splits.royaltyPayees(seller, e.feeRecipient, e.feeShare), bytes32(0)
             );
         return WorkTerms(seller, e.feeRecipient, e.feeShare, royaltyReceiver, e.royaltyRate);
-    }
-
-    /// @inheritdoc IEconomicsResolver
-    function resolveCurrency(bytes32 product, address requested)
-        external
-        view
-        returns (address currency)
-    {
-        _known(product);
-        currency = requested;
-        if (requested == CURRENCY_DEFAULT) {
-            bool configured;
-            (configured, currency,) = _allowlist.defaultCurrencyConfig(product);
-            if (!configured) revert CurrencyNotAllowed(CURRENCY_DEFAULT);
-        }
-        if (!_allowlist.isActive(currency)) revert CurrencyNotAllowed(currency);
     }
 
     /// @inheritdoc IEconomicsResolver
@@ -273,7 +256,7 @@ contract EconomicsResolver is IEconomicsResolver, AccessManaged {
         if (_refused(e.feeRecipient)) revert InvalidFeeRecipient(e.feeRecipient);
     }
 
-    /// @dev D140: the museum holds every unbid canonical work it receives, so it is never zero
+    /// @dev The museum holds every unbid canonical work it receives, so it is never zero
     ///      and never a contract the fee-recipient rule refuses.
     function _setMuseum(address next) private {
         if (next == address(0) || _refused(next)) revert InvalidMuseum(next);
@@ -282,7 +265,7 @@ contract EconomicsResolver is IEconomicsResolver, AccessManaged {
         (_museum, _museumRevision) = (next, revision);
     }
 
-    /// @dev The fee-recipient rule (CALLS-1): this resolver, its allowlist, the split ledger (also
+    /// @dev The fee-recipient rule: this resolver, its allowlist, the split ledger (also
     ///      the release verifier), and every protocol contract that cannot be paid or hold a work.
     function _refused(address r) private view returns (bool) {
         return r == address(this) || r == address(_allowlist) || r == address(_factory)

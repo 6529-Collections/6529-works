@@ -1,24 +1,24 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 import { Base64 } from "@openzeppelin/contracts/utils/Base64.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IERC1155 } from "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import { IContentStore } from "../interfaces/IContentStore.sol";
-import { IEditions } from "../interfaces/IEditions.sol";
-import { IEntropyModule } from "../interfaces/IEntropyModule.sol";
 import { IRenderer } from "../interfaces/IRenderer.sol";
 import { IStatementLog } from "../interfaces/IStatementLog.sol";
-import { IStream } from "../interfaces/IStream.sol";
-import { IStreamViews } from "../interfaces/IStreamViews.sol";
-import { IWorkDelivery } from "../interfaces/IWorkDelivery.sol";
-import { IWorkRecords } from "../interfaces/IWorkRecords.sol";
-import { FileRole, Locator, LocatorKind, MediaFile } from "../interfaces/types/ContentTypes.sol";
+import { Collection, Facts, Slots, Work } from "../interfaces/core/CoreTypes.sol";
+import { IEditions } from "../interfaces/core/IEditions.sol";
+import { ILocators } from "../interfaces/core/ILocators.sol";
+import { IModuleSlots } from "../interfaces/core/IModules.sol";
+import { IStream } from "../interfaces/core/IStream.sol";
+import { IWorkFacts } from "../interfaces/core/IWorkFacts.sol";
+import { IWorkRules } from "../interfaces/core/IWorkRules.sol";
+import { FileRole, LocatorKind } from "../interfaces/types/ContentTypes.sol";
 import { Limits } from "../interfaces/types/Limits.sol";
-import { License, SeedPolicy } from "../interfaces/types/PackageTypes.sol";
+import { License } from "../interfaces/types/PackageTypes.sol";
 import { BoundedCall } from "../libraries/BoundedCall.sol";
-import { StreamLayout } from "../stream/StreamLayout.sol";
 import { JsonEscape } from "../libraries/JsonEscape.sol";
 import { SSTORE2 } from "../libraries/SSTORE2.sol";
 import { Utf8 } from "../libraries/Utf8.sol";
@@ -29,13 +29,17 @@ import { JsonScan } from "./JsonScan.sol";
 /// @title Renderer
 /// @notice Builds the metadata of 6529 Stream works and the editions of 6529 Stream Editions
 ///         (ADR 0001 section 8 "`tokenURI` size"). Immutable and stateless: it only reads.
-/// @dev `tokenURI(token, id)` reads the token it is asked about (6529 Stream, or 6529 Stream
-///      Editions, which it recognises by ERC-165 and follows to the master), that Stream's
-///      `IWorkRecords` satellite, the shared content store and optionally the statement log. A
-///      hostile `token` can only change what its own call returns, so there is no list of tokens;
+/// @dev `tokenURI(token, id)` reads the token it is asked about (a Stream token, or an editions
+///      token, which it recognises by ERC-165 and follows to its master through
+///      `IEditions.stream()`; an edition's ID is its master's token ID) only through plain
+///      views: `IStream.workOf` and `collectionOf`, the work's permanent record in
+///      `IWorkFacts.factsOf` (once), the shared content store, the preferred locators of the
+///      token's RECORDS module's delivery contract, and optionally the statement log. A hostile
+///      `token` can only change what its own call returns, so there is no list of tokens;
 ///      every read forwards all the gas it may (`BoundedCall.tryReadAll`, the gas rule of ADR
-///      0007), with a return-size cap, and reverts if it fails (fail closed); a read that runs
-///      short reverts with `BoundedCallShortfall`, so a caller retries with more gas. A finalized
+///      0007), with a return-size cap, and reverts if it fails (fail closed), except the
+///      locator reads (below); a read that runs short reverts with `BoundedCallShortfall`, so a
+///      caller retries with more gas. A finalized
 ///      work pins its renderer, possibly for good (its artist may renounce the repin), so no gas
 ///      figure is compiled here: a repricing can make `tokenURI` cost more, never fail.
 ///
@@ -44,7 +48,7 @@ import { JsonScan } from "./JsonScan.sol";
 ///      `JsonScan`, and copies the validated JSON text of `name`, `description`, `year`, `medium`,
 ///      `dimensions` and each of `artists` into the metadata (the `attributes` array goes in as it
 ///      is, after the renderer's own traits; other members are validated and ignored). Until the
-///      work's record is open (`IWorkRecords.isOpen`) and its file is registered and complete, or
+///      work's record is open (`Facts.opened`) and its file is registered and complete, or
 ///      when it is not acceptable, the work gets core-only metadata from Stream with a
 ///      `record_status` field (`not_open`, `incomplete` or `invalid`) instead, and never a revert;
 ///      `fullTokenURI` reverts for such a work. A record is not acceptable if it is not `Identity`,
@@ -60,7 +64,7 @@ import { JsonScan } from "./JsonScan.sol";
 ///      spacing. These bounds are chosen together, so that a record at every one of them at once
 ///      still costs under 8M gas, whatever its bytes (`RendererGas.t.sol`: a row for every class of
 ///      byte, and every cap at once; `TokenUriBudget.t.sol`: the budget proof on the real stack,
-///      with the records satellite's caps).
+///      with the record's caps).
 ///
 ///      Output is `data:application/json;utf8,` followed by compact JSON, not base64, so the
 ///      media is not encoded twice. Every string from the Stream, a locator or the store is
@@ -82,7 +86,18 @@ import { JsonScan } from "./JsonScan.sol";
 ///      `MAX_SCRIPT_LT` `<` is not wrapped). Otherwise the preferred locator is
 ///      given, plus a small on-chain preview if the work lists a complete PREVIEW image: a
 ///      preview is inlined by the same rules as a primary, so an unattested `Base64` preview is
-///      given by locator. A satellite that cannot answer for a locator fails the call.
+///      given by locator.
+///
+///      Locators. The renderer decides what it prints. It asks the token's RECORDS module for
+///      its delivery contract (`IWorkRules.delivery`) and that contract for the file's
+///      preferred locator (`ILocators.preferredLocator`), and prints the URI only if the answer
+///      is the canonical encoding of a kind other than NONE and ONCHAIN with a URI of 1 to
+///      `Limits.MAX_URI_BYTES` bytes, every byte printable ASCII other than space, `"` and `\`.
+///      ONCHAIN carries no URI: an on-chain complete work is served from the content store, so
+///      an ONCHAIN answer is never printed, for a work that `IWorkFacts` records as on-chain
+///      complete or not. A missing module or delivery contract, a revert, or any other answer
+///      is "no locator", so a broken delivery contract cannot break `tokenURI`; a read that
+///      runs short of gas still reverts with `BoundedCallShortfall`.
 ///      `fullTokenURI` raises the limit to 1 MiB of cost-weighted size and reverts instead of
 ///      falling back: a `Base64` file is inlined up to 1 MiB, an `Identity` file up to 128 KiB.
 ///      It costs about 30M gas at 1 MiB, an `eth_call`, not a transaction.
@@ -97,7 +112,7 @@ contract Renderer is IRenderer {
     ///         `test/content/renderer/RendererGas.t.sol` shows it fits 8M gas).
     uint256 public constant DEFAULT_INLINE_THRESHOLD = 262_144;
     /// @notice The largest PREVIEW image, cost-weighted stored bytes, inlined next to a primary
-    ///         file that is not (`Limits.MAX_PREVIEW_BYTES`: the 8M promise counts it; WorkRecords
+    ///         file that is not (`Limits.MAX_PREVIEW_BYTES`: the 8M promise counts it; WorkFacts
     ///         holds no preview bound, so a larger preview is served by locator).
     uint256 internal constant PREVIEW_LIMIT = Limits.MAX_PREVIEW_BYTES;
     /// @notice The largest JavaScript primary, in stored bytes, that `tokenURI` wraps in the HTML
@@ -134,9 +149,22 @@ contract Renderer is IRenderer {
     /// @inheritdoc IRenderer
     uint256 public immutable inlineThreshold;
 
-    /// @dev Return-size caps in bytes.
-    uint256 private constant TEXT_RETURN = 4_096;
+    /// @notice The longest collection name shown, in bytes. A longer name is not read: the work
+    ///         renders without a collection name. The token contract sets no limit on a name;
+    ///         this bound keeps `tokenURI` inside its gas budget whatever the name holds.
+    uint256 internal constant MAX_NAME_BYTES = 128;
+
+    /// @dev Return-size caps in bytes: a collection (five head words, the name's length word and
+    ///      the name), a locator, a `Work` (eleven words) and a `Facts` (twelve head words, the
+    ///      license ID and the media list, with room to spare).
+    uint256 private constant NAME_RETURN = MAX_NAME_BYTES + 192;
     uint256 private constant LOCATOR_RETURN = Limits.MAX_URI_BYTES + 256;
+    uint256 private constant WORK_RETURN = 352;
+    uint256 private constant FACTS_RETURN =
+        448 + Limits.MAX_LICENSE_ID_BYTES + 64 * Limits.MAX_MEDIA_FILES;
+    /// @dev The bytes a printed locator may hold, as a bit set over ASCII: printable ASCII but
+    ///      space, `"` and `\`.
+    uint256 private constant URI_BYTES = 0x7fffffffeffffffffffffffa00000000;
 
     string private constant PREFIX = "data:application/json;utf8,";
     /// @dev The bytes an SPDX identifier is made of, as a bit set over ASCII: `A-Z a-z 0-9 . + -`.
@@ -176,23 +204,19 @@ contract Renderer is IRenderer {
         bytes text;
     }
 
-    /// @dev Everything one render reads, so helpers take one argument. `hash` is an edition's
-    ///      content hash, which its master's primary file must have; `collection` is the
-    ///      collection's name, empty without one.
+    /// @dev Everything one render reads, so helpers take one argument. `stream` is the token
+    ///      that holds the work (the token itself, or an edition's master token); `collection`
+    ///      is the collection's name, empty without one.
     struct Ctx {
         address token;
         uint256 id;
         bool edition;
-        bool open;
         bool deps;
-        bytes32 hash;
         address stream;
         uint256 workId;
-        address records;
-        IStreamViews.WorkCore core;
+        Work work;
         string collection;
-        IWorkRecords.RecordInfo rec;
-        MediaFile[] media;
+        Facts facts;
         IContentStore.FileInfo primary;
         uint256 limit;
         bool strict;
@@ -239,10 +263,9 @@ contract Renderer is IRenderer {
         Ctx memory c;
         (c.token, c.id, c.limit, c.strict) = (token, id, limit, strict);
         _load(c);
-        c.open = abi.decode(_word(c.records, IWorkRecords.isOpen.selector, c.workId, 32), (bool));
         RecordState state = RecordState.NotOpen;
         bytes memory record = "";
-        if (c.open) {
+        if (c.facts.opened) {
             _loadRecord(c);
             (state, record) = _record(c);
         }
@@ -263,102 +286,53 @@ contract Renderer is IRenderer {
         return _assemble(head, _media(c), _tail(c, t, n, attributes));
     }
 
-    /// @dev Finds the work behind `c.token`/`c.id` and loads its core. An ERC-1155 token is an
-    ///      edition: its ID is the master's Stream token ID, and the master (found through
-    ///      `masterOf`) supplies the record, license and media.
+    /// @dev Finds the work behind `c.token`/`c.id` and loads it through plain views. An
+    ///      ERC-1155 token is an editions token: the edition's ID is its master's token ID in
+    ///      `IEditions.stream()`, which supplies the work. `workOf` (a work that was never minted
+    ///      fails the read; a burned master keeps its record, so its editions still render),
+    ///      the collection's name from `collectionOf` (a name over `MAX_NAME_BYTES`, which is
+    ///      refused by its length before anything is checked, or one that is not UTF-8, is no
+    ///      name: the work still renders), and the permanent record
+    ///      from `IWorkFacts.factsOf` on the token's `facts()`, in one read.
     function _load(Ctx memory c) private view {
         (bool ok, bytes memory ret) = BoundedCall.tryReadAll(
             c.token, abi.encodeCall(IERC165.supportsInterface, (type(IERC1155).interfaceId)), 32
         );
+        c.stream = c.token;
+        c.workId = c.id;
         if (ok && ret.length == 32 && abi.decode(ret, (uint256)) == 1) {
             c.edition = true;
-            (c.stream, c.workId, c.hash) = abi.decode(
-                _word(c.token, IEditions.masterOf.selector, c.id, 96), (address, uint256, bytes32)
+            c.stream =
+                abi.decode(_read(c.token, abi.encodeCall(IEditions.stream, ()), 32), (address));
+        }
+        c.work = abi.decode(_word(c.stream, IStream.workOf.selector, c.workId, WORK_RETURN), (Work));
+        if (c.work.itemHash == 0) revert RendererReadFailed(c.stream, IStream.workOf.selector);
+        if (c.work.collectionId != 0) {
+            (ok, ret) = BoundedCall.tryReadAll(
+                c.stream,
+                abi.encodeWithSelector(IStream.collectionOf.selector, c.work.collectionId),
+                NAME_RETURN
             );
-        } else {
-            c.stream = c.token;
-            c.workId = c.id;
+            if (ok) {
+                string memory name = abi.decode(ret, (Collection)).name;
+                if (Utf8.isValid(bytes(name))) c.collection = name;
+            }
         }
-        _native(c);
-        c.records =
-            abi.decode(_read(c.stream, abi.encodeCall(IStream.workRecords, ()), 32), (address));
+        address facts =
+            abi.decode(_read(c.stream, abi.encodeCall(IStream.facts, ()), 32), (address));
+        c.facts = abi.decode(
+            _read(facts, abi.encodeCall(IWorkFacts.factsOf, (c.stream, c.workId)), FACTS_RETURN),
+            (Facts)
+        );
     }
 
-    /// @dev The work's facts, read only from 6529 Stream's own code and storage, never through
-    ///      its fallback (the replaceable view extension), so no replacement there changes or
-    ///      breaks the metadata of an existing work: `coreOf` (item hash, lead artist,
-    ///      collection, seed policy), then with `extsload` the serial (the token word: seller in
-    ///      the low 160 bits, serial in the next 32) and the collection's name (the string two
-    ///      slots into its entry), at the slots `StreamLayout` publishes. Every native read of
-    ///      Stream is here.
-    function _native(Ctx memory c) private view {
-        IStreamViews.WorkCore memory w = c.core;
-        // `coreOf`: item hash, lead artist, collection, kind, seed policy, royalty rate.
-        bytes memory core = _word(c.stream, IStream.coreOf.selector, c.workId, 192);
-        if (core.length != 192) revert RendererReadFailed(c.stream, IStream.coreOf.selector);
-        bytes memory word = _slots(c, uint256(StreamLayout.tokenSlot(c.workId)), 1);
-        uint256 head;
-        assembly ("memory-safe") {
-            mstore(w, mload(add(core, 0x20)))
-            mstore(add(w, 0x20), mload(add(core, 0x40)))
-            mstore(add(w, 0x40), mload(add(core, 0x60)))
-            mstore(add(w, 0xa0), and(mload(add(core, 0xa0)), 0xff))
-            head := mload(add(word, 0x20))
-        }
-        // forge-lint: disable-next-line(unsafe-typecast)
-        w.serial = uint32(head >> 160);
-        if (w.collectionId == 0) return;
-        // Solidity's storage string: a short one in place, its length doubled in the low byte;
-        // a long one as `2 * length + 1`, its bytes from `keccak256(slot)`.
-        uint256 slot = uint256(StreamLayout.collectionSlot(w.collectionId)) + 2;
-        bytes memory name = _slots(c, slot, 1);
-        assembly ("memory-safe") {
-            head := mload(add(name, 0x20))
-        }
-        uint256 size = (head & 0xff) >> 1;
-        if (head & 1 != 0) {
-            size = head >> 1;
-            // A name over the text cap is no name.
-            if (size > TEXT_RETURN) size = 0;
-            name = _slots(c, uint256(keccak256(abi.encode(slot))), (size + 31) >> 5);
-        }
-        assembly ("memory-safe") {
-            if iszero(and(head, 1)) { mstore(add(name, 0x20), and(head, not(0xff))) }
-            mstore(name, size)
-        }
-        // A name that is not UTF-8 is no name either: the work still renders.
-        if (Utf8.isValid(name)) c.collection = string(name);
-    }
-
-    /// @dev `n` consecutive storage words of 6529 Stream from `slot` (`IStream.extsload`), as
-    ///      the `32n` bytes they hold: the answer's words, in place after its offset and count.
-    function _slots(Ctx memory c, uint256 slot, uint256 n) private view returns (bytes memory b) {
-        b = _read(c.stream, abi.encodeCall(IStream.extsload, (bytes32(slot), n)), 64 + 32 * n);
-        if (b.length != 64 + 32 * n) {
-            revert RendererReadFailed(c.stream, IStream.extsload.selector);
-        }
-        assembly ("memory-safe") {
-            b := add(b, 0x40)
-            mstore(b, shl(5, n))
-        }
-    }
-
-    /// @dev Loads the record state and media of a work whose record is open.
+    /// @dev Checks the media of a work whose record is open (a primary file first) and loads
+    ///      the primary file's store entry.
     function _loadRecord(Ctx memory c) private view {
-        c.rec = abi.decode(
-            _word(c.records, IWorkRecords.record.selector, c.workId, 256), (IWorkRecords.RecordInfo)
-        );
-        c.media = abi.decode(
-            _word(
-                c.records, IWorkRecords.mediaOf.selector, c.workId, 64 + 96 * Limits.MAX_MEDIA_FILES
-            ),
-            (MediaFile[])
-        );
-        if (
-            c.media.length == 0 || c.media[0].role != uint8(FileRole.PRIMARY)
-                || (c.edition && c.media[0].sha256Hash != c.hash)
-        ) revert RendererRecordInvalid(c.token, c.id);
-        c.primary = _fileInfo(c.media[0].fileId);
+        if (c.facts.media.length == 0 || c.facts.media[0].role != uint8(FileRole.PRIMARY)) {
+            revert RendererRecordInvalid(c.token, c.id);
+        }
+        c.primary = _fileInfo(c.facts.media[0].fileId);
     }
 
     /// @dev The record JSON, percent-escaped, and whether it is ready: not if its file is not
@@ -369,7 +343,7 @@ contract Renderer is IRenderer {
     ///      not complete either: the store answered for the primary file in this same call, so the
     ///      failure is the unknown file, not a broken store.
     function _record(Ctx memory c) private view returns (RecordState, bytes memory j) {
-        bytes32 id = c.rec.recordFileId;
+        bytes32 id = c.facts.recordFileId;
         (bool known, bytes memory info) = BoundedCall.tryReadAll(
             address(contentStore), abi.encodeWithSelector(IContentStore.fileInfo.selector, id), 512
         );
@@ -603,8 +577,8 @@ contract Renderer is IRenderer {
     }
 
     function _primary(Ctx memory c) private view returns (Media memory m) {
-        bytes32 id = c.media[0].fileId;
-        if (c.rec.onChainComplete && _weight(c.primary) <= c.limit && _complete(id)) {
+        bytes32 id = c.facts.media[0].fileId;
+        if (c.facts.onChainComplete && _weight(c.primary) <= c.limit && _complete(id)) {
             m = _inline(c, id, c.primary, true);
             if (m.mode != Mode.None) return m;
         }
@@ -614,9 +588,9 @@ contract Renderer is IRenderer {
 
     /// @dev The first PREVIEW image of the work: inline if small and complete, else by locator.
     function _preview(Ctx memory c) private view returns (Media memory m) {
-        for (uint256 i = 1; i < c.media.length; ++i) {
-            if (c.media[i].role != uint8(FileRole.PREVIEW)) continue;
-            bytes32 id = c.media[i].fileId;
+        for (uint256 i = 1; i < c.facts.media.length; ++i) {
+            if (c.facts.media[i].role != uint8(FileRole.PREVIEW)) continue;
+            bytes32 id = c.facts.media[i].fileId;
             IContentStore.FileInfo memory fi = _fileInfo(id);
             if (!_isImage(fi.mimeType)) return m;
             if (_weight(fi) <= PREVIEW_LIMIT && _complete(id)) {
@@ -667,7 +641,7 @@ contract Renderer is IRenderer {
         if (!Utf8.isValid(raw)) return m;
         (bool ok, string memory safe) = HtmlScript.neutralize(string(raw), MAX_SCRIPT_LT);
         if (!ok) return m;
-        bytes32 seed = _seed(c);
+        bytes32 seed = c.work.seed;
         bytes memory html = bytes.concat(
             bytes(SHELL_HEAD),
             abi.encodePacked(
@@ -684,28 +658,57 @@ contract Renderer is IRenderer {
         m.mode = Mode.Data;
     }
 
-    /// @dev The preferred locator of a file: its URL, or none for a file without one (the
-    ///      satellite answers kind NONE) and for the implicit on-chain locator, which has no URL.
-    ///      The records satellite (permanent) serves a delivery contract's URI only in printable
-    ///      ASCII without `"` or `\` (WS-40), so none can make `_str` revert here, and `_str`
-    ///      escapes for JSON regardless. A failed read reverts: no media is better than media
-    ///      that depends on a gas cap.
+    /// @dev The preferred locator of a file: its URL, or none. The delivery contract is the
+    ///      token's RECORDS module's (`IWorkRules.delivery`), asked by token, work and file
+    ///      (`ILocators.preferredLocator`). A missing module or contract, a refusal or an answer
+    ///      that `_servable` rejects is no locator; running short of gas reverts.
     function _locator(Ctx memory c, bytes32 id) private view returns (Media memory m) {
-        (IWorkDelivery.Location memory l,) = abi.decode(
-            _read(
-                c.records,
-                abi.encodeCall(IWorkRecords.preferredLocator, (c.workId, id)),
-                LOCATOR_RETURN
-            ),
-            (IWorkDelivery.Location, uint256)
+        (bool ok, bytes memory ret) = BoundedCall.tryReadAll(
+            c.stream, abi.encodeCall(IModuleSlots.moduleOf, (Slots.RECORDS)), 32
         );
-        // Any kind but NONE and the implicit ONCHAIN, so a kind a later delivery contract adds
-        // still reaches works that pinned this renderer.
-        if (
-            l.kind != uint8(LocatorKind.NONE) && l.kind != uint8(LocatorKind.ONCHAIN)
-                && bytes(l.uri).length != 0
-        ) {
+        address target = _address(ok, ret);
+        (ok, ret) = BoundedCall.tryReadAll(target, abi.encodeCall(IWorkRules.delivery, ()), 32);
+        target = _address(ok, ret);
+        (ok, ret) = BoundedCall.tryReadAll(
+            target,
+            abi.encodeCall(ILocators.preferredLocator, (c.stream, c.workId, id)),
+            LOCATOR_RETURN
+        );
+        if (ok && _servable(ret)) {
+            (ILocators.Location memory l,) = abi.decode(ret, (ILocators.Location, uint256));
             return Media(Mode.Locator, 0, 0, _str(l.uri));
+        }
+    }
+
+    /// @dev A one-word answer that is an address (zero for anything else, which reads nothing).
+    function _address(bool ok, bytes memory ret) private pure returns (address a) {
+        if (ok && ret.length == 32 && uint256(bytes32(ret)) >> 160 == 0) {
+            a = address(uint160(uint256(bytes32(ret))));
+        }
+    }
+
+    /// @dev Whether `d` is the canonical encoding of `(Location, uint256)` with a URI the
+    ///      renderer prints: any kind up to 255 but NONE and ONCHAIN (so a kind a later delivery
+    ///      contract adds still reaches works that pinned this renderer), a URI of 1 to
+    ///      `Limits.MAX_URI_BYTES` bytes, each in `URI_BYTES`. The padding is not checked: the URI
+    ///      is taken by its length.
+    function _servable(bytes memory d) private pure returns (bool ok) {
+        if (d.length < 0xc0) return false;
+        uint256 head;
+        uint256 kind;
+        uint256 inner;
+        uint256 n;
+        assembly ("memory-safe") {
+            head := mload(add(d, 0x20))
+            kind := mload(add(d, 0x60))
+            inner := mload(add(d, 0x80))
+            n := mload(add(d, 0xa0))
+        }
+        ok = head == 0x40 && inner == 0x40 && kind <= type(uint8).max
+            && kind != uint8(LocatorKind.NONE) && kind != uint8(LocatorKind.ONCHAIN) && n != 0
+            && n <= Limits.MAX_URI_BYTES && d.length == 0xa0 + ((n + 31) & ~uint256(31));
+        for (uint256 i; ok && i < n; ++i) {
+            ok = (URI_BYTES >> uint8(d[0xa0 + i])) & 1 == 1;
         }
     }
 
@@ -806,10 +809,10 @@ contract Renderer is IRenderer {
         returns (string memory)
     {
         bytes memory name = abi.encodePacked("6529 Works %23", Strings.toString(c.id));
-        if (c.core.collectionId != 0) {
-            name = abi.encodePacked(_str(c.collection), " %23", Strings.toString(c.core.serial));
+        if (c.work.collectionId != 0) {
+            name = abi.encodePacked(_str(c.collection), " %23", Strings.toString(c.work.serial));
         }
-        t[0] = _trait("Artist ID", _quote(Strings.toHexString(c.core.artistId)));
+        t[0] = _trait("Artist ID", _quote(Strings.toHexString(uint256(c.work.artistId))));
         return string(
             abi.encodePacked(
                 PREFIX,
@@ -833,12 +836,12 @@ contract Renderer is IRenderer {
         view
         returns (uint256)
     {
-        if (c.core.collectionId != 0) {
+        if (c.work.collectionId != 0) {
             t[n++] = _trait("Collection", _quote(c.collection));
-            t[n++] = _trait("Serial", bytes(Strings.toString(c.core.serial)));
+            t[n++] = _trait("Serial", bytes(Strings.toString(c.work.serial)));
         }
         if (c.edition) t[n++] = _trait("Edition of", bytes(Strings.toString(c.workId)));
-        bytes32 seed = _seed(c);
+        bytes32 seed = c.work.seed;
         if (seed != 0) t[n++] = _trait("Seed", _quote(Strings.toHexString(uint256(seed), 32)));
         if (address(statementLog) != address(0)) {
             bytes32 entry = abi.decode(
@@ -864,20 +867,14 @@ contract Renderer is IRenderer {
         view
         returns (bytes memory)
     {
-        License memory lic = abi.decode(
-            _word(
-                c.records,
-                IWorkRecords.licenseOf.selector,
-                c.workId,
-                Limits.MAX_LICENSE_ID_BYTES + 192
-            ),
-            (License)
-        );
+        License memory lic = License(c.facts.licenseId, c.facts.licenseTextFileId);
+        // The store's declared SHA-256 of the primary file: `IWorkFacts.open` admitted the file
+        // only with the digest the item committed to.
         bytes memory out = abi.encodePacked(
             ',"content_type":',
             _quote(c.primary.mimeType),
             ',"content_hash":"',
-            Strings.toHexString(uint256(c.media[0].sha256Hash), 32),
+            Strings.toHexString(uint256(c.primary.sha256Hash), 32),
             '","license":',
             _quote(lic.spdxId)
         );
@@ -927,32 +924,10 @@ contract Renderer is IRenderer {
             )
         }
         if (spdx && !ref) return abi.encodePacked("https://spdx.org/licenses/", id, ".html");
-        for (uint256 i; lic.textFileId != 0 && i < c.media.length; ++i) {
-            if (c.media[i].fileId == lic.textFileId) return _locator(c, lic.textFileId).text;
+        for (uint256 i; lic.textFileId != 0 && i < c.facts.media.length; ++i) {
+            if (c.facts.media[i].fileId == lic.textFileId) return _locator(c, lic.textFileId).text;
         }
         return "";
-    }
-
-    /// @dev The seed of a seeded work, zero for none. Once the record is open the satellite has
-    ///      it; before, only a VRF seed can be read, by item hash from the entropy module that
-    ///      was current at the work's mint (`IStream.entropyModuleOf`; an ARTIST seed is stored
-    ///      when the record opens). That module refusing (a seed not delivered yet) is no seed,
-    ///      so core-only metadata never reverts for it; running short of gas still reverts.
-    function _seed(Ctx memory c) private view returns (bytes32 seed) {
-        if (c.core.seedPolicy == uint8(SeedPolicy.NONE)) return 0;
-        if (c.open) {
-            (, seed) = abi.decode(
-                _word(c.records, IWorkRecords.seedOf.selector, c.workId, 64), (uint8, bytes32)
-            );
-        } else if (c.core.seedPolicy == uint8(SeedPolicy.VRF)) {
-            address entropy = abi.decode(
-                _word(c.stream, IStream.entropyModuleOf.selector, c.workId, 32), (address)
-            );
-            (bool ok, bytes memory ret) = BoundedCall.tryReadAll(
-                entropy, abi.encodeCall(IEntropyModule.seedOf, (c.core.itemHash)), 32
-            );
-            if (ok && ret.length == 32) seed = bytes32(ret);
-        }
     }
 
     /// @dev `value` is JSON text: a quoted string or a number.

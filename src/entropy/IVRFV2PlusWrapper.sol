@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.37;
 
 /// @title IVRFV2PlusWrapper
 /// @notice The two functions of the Chainlink VRF v2.5 wrapper (direct funding) that the entropy
-///         module calls for a federated work's seed, declared locally so the repository has no
-///         Chainlink dependency.
+///         module calls for an Independent Stream work's seed, declared locally so the repository
+///         has no Chainlink dependency.
 /// @dev The ABI is `VRFV2PlusWrapper` of Chainlink contracts v1.3.0. The requester pays the
 ///      wrapper's own quoted price, in native currency, with the request; no subscription is
 ///      used. The wrapper delivers the result by calling `rawFulfillRandomWords(uint256,
