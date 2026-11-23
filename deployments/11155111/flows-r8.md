@@ -25,6 +25,11 @@ reading quoted below (`notes.snapshots`). Accounts: `any` is the keeper key (no 
 `platform`, `curator`, `artist` and the four bidders are the throwaway keys of r5 to r7, and the
 network's one call went through its Safe with two owner signatures. All times are UTC.
 
+A reading's block and time in the tables below are the chain's head taken just after the
+values were read, so they can name the block after the one read; no transaction of the flows
+was sent between a reading and the head recorded for it. The driver now reads a snapshot at
+the block it records.
+
 **A pause in the run.** The run stopped between 14:56 and 16:41 for a reason outside the chain.
 Nothing was sent in that time. The steps that had to fall inside a window had already been
 sent (the refused early restart and the late edition bid, both within three minutes of the

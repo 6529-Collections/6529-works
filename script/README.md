@@ -196,7 +196,9 @@ existed.
    `independentStartNoBid` starts an Independent Stream work with no bid, `restart` offers an
    unsold one again (`-ExpectRevert` records a refusal: too early, or a 6529 Stream sale),
    `clock` keeps `auctionClock`'s four words under `-Label`, and `-Work 2` to `-Work 4` are
-   further edition masters of the same pair of contracts.
+   further edition masters of the same pair of contracts. `restart` and `clock` are for r8 and
+   later: on r6 and r7 `auctionClock` answers three words, which `clock` cannot decode, and
+   `restart` has no 15-minute wait there.
 
 ## Operating procedures
 

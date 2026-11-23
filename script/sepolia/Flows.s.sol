@@ -1599,8 +1599,10 @@ contract Flows is Script {
     }
 
     /// @notice `restart` of work `tokenId`'s settled, unsold 1/1 sale (anyone, from 15 minutes
-    ///         after the sale's end). `FLOWS_TOKEN` names the artist's 1/1 contract; without it
-    ///         the sale is 6529 Stream's, which the auction never offers again.
+    ///         after the sale's end). The sale is the one of `tokenId` on the token `_addrs`
+    ///         resolves: the artist's 1/1 contract that `FLOWS_TOKEN` names (the driver's
+    ///         `-Token`), or `Stream6529` when it is unset. A 6529 Stream sale is never offered
+    ///         again, so without `FLOWS_TOKEN` the planned call is one the auction refuses.
     function restartTx(uint256 tokenId) external view {
         Addrs memory a = _addrs();
         uint256 saleId = _oneOfOneSale(a, tokenId);
@@ -1615,6 +1617,7 @@ contract Flows is Script {
     }
 
     /// @notice The four words of `auctionClock` for work `tokenId`'s 1/1 sale, as INFO lines.
+    ///         For r8 and later: r6's and r7's auctions answer three words and this call reverts.
     function clock(uint256 tokenId) external view {
         Addrs memory a = _addrs();
         uint256 saleId = _oneOfOneSale(a, tokenId);
