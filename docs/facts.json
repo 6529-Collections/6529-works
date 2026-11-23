@@ -17,49 +17,49 @@
       "chainId": 11155111,
       "deployed": true,
       "testnet": true,
-      "instance": "sepolia-r7",
-      "sourceCommit": "5de6abaa",
+      "instance": "sepolia-r8",
+      "sourceCommit": "961bc956",
       "deployedOn": "2026-11-23",
-      "deployedAtTimestamp": 1795423896,
-      "startBlock": 12194636,
+      "deployedAtTimestamp": 1795440624,
+      "startBlock": 12196001,
       "confirmed": true,
-      "record": "deployments/11155111/core-1795423896.json",
+      "record": "deployments/11155111/core-1795440624.json",
       "contracts": {
-        "Accounts": "0xF7B677DD78Bf6fDb1d363d104E8323c09A32a68A",
-        "AssetAllowlist": "0x38f9E9c006aD46A1F3b13aab25c01162f8D8d673",
-        "ClaimRouter": "0x8169F53B5eB19c644a22858Bf53B99bEB00C54B4",
-        "ConsolidationAdapter": "0x457F4a5f689576d96909Ebdc8f8c5C3ADEb4Ee09",
-        "ContentStore": "0xDd430324Fa69C65072ed3a4CAB86d8c281b43261",
-        "CoreFactory": "0x4054b73e6e91078728120167BD199BA1fE08Ce7F",
-        "CurationVerifier": "0x92FC0B45979d09b1601f1Fcf494E8084F15e1Dea",
-        "DependencyRegistry": "0x09DE73B156aC7DdFd003Efe2632e61B38B7C7541",
-        "EconomicsResolver": "0xc03FfCeB2B4c1faFda15822B4199c5d3F32697Be",
-        "EnglishAuction": "0xBa74a902fF0E1651302011437878C40C1E763E4D",
-        "EntropyModule": "0xdf5bC7F0F4c5D28B788d173b1Fe04D6911D3bBb3",
-        "FeeRecipientVault": "0x489D47ae67873727852980f6D0c7Df7D6fb342b5",
-        "GovernanceConfigurator": "0xE35b3553EC3cfE4e60409b92CE7ffDDB6643F371",
-        "IndependentEditionAuction": "0x20cB7b4ea5D80b929D3bfF7E3732136bfda9ff09",
-        "IndependentEditionAuctionLens": "0xA83a8D4412b3457DD48451412234ADD763110eEb",
-        "IndependentStream721Deployer": "0xF0989ECb08E259709070aD517017972BA727CFEC",
-        "IndependentStreamEditionsDeployer": "0x5d83ce0f72C5ecCEc4a4Ba6a628614e77c50D97f",
-        "IndependentStreamRegistry": "0xDb9d06305D4f3Fcd45Ad1107fbB34a28c0936B0A",
-        "MuseumVault": "0x80287af3D0F6FA73643bBEE855F72d06831E71F8",
-        "PackageRegistry": "0x10d91fC130226f1F77aEE3c59DFc40E02eD14f99",
-        "Renderer": "0x807066292e58BC0396De2371f72c3C2f3631F15d",
-        "RevenueEscrow": "0x037fD7E71ccb63197AcD45Ed48c8a573894dA19C",
-        "SaleStarter": "0xbAe5c2e40170C214cfC373e6f402503368Ae60b1",
-        "SplitFactory": "0x688C865333e9CcAa4aBe346794BF0295e548BCF7",
-        "StatementLog": "0x7b8f78fE41C2cABbaE23B91512dD56E36f7E3476",
-        "Stream6529": "0xEBD41786FC8f413cC7741789161fEe4B6984c745",
-        "StreamDirectory6529": "0x6a135053F81da7417CBCCbD587cB631c25dB32Ba",
-        "StreamEditions6529": "0x725647BcE8FB66d5C3d91ED1080613597C107356",
-        "StreamTerms": "0xE8074a70261c33D24345668c437a31A572F3379C",
-        "StreamWorkFacts6529": "0xffcB66cE83D3CCBe9FC4C314db3Bfb6e8F5fF2Fd",
-        "UniformEditionAuction": "0x7647183b7525B65724F52F08C67e2505ce25A236",
-        "UniformEditionAuctionLens": "0x982FD3Ea3c81243Ac58d2c2a772e4a05b431785A",
-        "WorkDelivery": "0xcb85c2daBD15184a5F926E437D24FFC1aD24ed4b",
-        "WorkRules": "0xf2a9362edB4aA8E079D749144244F5f36d67D976",
-        "WorksAccessManager": "0x6aA48E3BBAa0609a7D10b9eD84Ae22ABb8AF5024"
+        "Accounts": "0xdE5781c21fbCCF11056F2b7af6b299a2970B55Ba",
+        "AssetAllowlist": "0x5ADeD4Ae2b78607b3EA299E4A2b659A9cE1c5c38",
+        "ClaimRouter": "0x81bA2819e63e7bF5A35e84678D7a6BA63Ac9cE71",
+        "ConsolidationAdapter": "0x8cBF200a6209961E73b922821c77Acfd56dD8B03",
+        "ContentStore": "0xa22F278ffB83416Ba72B12d867970fc9f6f34eB1",
+        "CoreFactory": "0x57bc03C38B0F415F427b74b2c11C395Bc252bdc6",
+        "CurationVerifier": "0x65bB761eb7EE29eAcF9E077ce1a67a7f212C0b1E",
+        "DependencyRegistry": "0x8eCF6b31c0091a21b2C794EAd36e77BDE6CB78A1",
+        "EconomicsResolver": "0xDB9d78844dc7a06297644536C06A14EA2Cd14f0D",
+        "EnglishAuction": "0x3075498Ba1A52518f4f19b24A6DB9511f0311Fb8",
+        "EntropyModule": "0xf6296fF8E8d977c18f69E28DedFa5E8EbB40278c",
+        "FeeRecipientVault": "0xAbFf4329A7f078b80361fC5A35a7C5448FE82a7F",
+        "GovernanceConfigurator": "0xFaf3BccE32b73599A99815211BB651CD0FeaFda6",
+        "IndependentEditionAuction": "0x6beD438ecFd9fbF2a808aE07300D2DbC8000232b",
+        "IndependentEditionAuctionLens": "0x6dd523E3a6CD204e47A3AD41d152B1Dd688E33DC",
+        "IndependentStream721Deployer": "0x68286E3d2CeDC92bca1d1270Ead2531D489d0f9f",
+        "IndependentStreamEditionsDeployer": "0xa606b6f0d9FB76578457c45eB0e17B8001cA20a4",
+        "IndependentStreamRegistry": "0xaE49cE82F1448a2B60ee7863624AEBf575Cb75a5",
+        "MuseumVault": "0x52405E7Ba3fA10937C1F030f5b616b89B855E844",
+        "PackageRegistry": "0xcAcB4ea395c3F265a1DceEAED795Bd3eF05d6Ecb",
+        "Renderer": "0x4Ca69fd081cc3bbFb5360c9224057eEA117e37f2",
+        "RevenueEscrow": "0xa63cC5fAdb136305fD7E777e5021A19FCa96581b",
+        "SaleStarter": "0xAEBA344701692a7898cCD8515fE5e00CbbCd2274",
+        "SplitFactory": "0x43A78e628F6cc1C73524D227B32Ea5d5059567Ce",
+        "StatementLog": "0xf9dAB098889c73824B823583A2F64efCd54671A6",
+        "Stream6529": "0xf2F45cC99a24C100a42f084a88E9697E0a798F6C",
+        "StreamDirectory6529": "0x7c2c78f346Bc49fCaB5dEd8Ea1898aC08423EaEd",
+        "StreamEditions6529": "0xaED9aB8079fcDC789e29119193853E02dDbf3060",
+        "StreamTerms": "0x0Edfb4CC5A106cF792296dbBe28fE38fa95Cd6E0",
+        "StreamWorkFacts6529": "0x7fe774a5bD72ca2Eda2ad471d1655BE73673DD29",
+        "UniformEditionAuction": "0x43f3D854D85c9163C8C6b5064ab22ceF855EF4Ce",
+        "UniformEditionAuctionLens": "0xc8E5AF7Ec21be233A0d4B37d833703ba308cf548",
+        "WorkDelivery": "0xb4a4952EBEf06ff1865d395930d5314bc7C6dF84",
+        "WorkRules": "0xe0beCc879456AE10D4F189908BbC07186fEFa5E6",
+        "WorksAccessManager": "0x198D47F4C5DC27301c0cAA7d2CCDC0aCe7434c0a"
       }
     }
   },
@@ -601,8 +601,8 @@
         "newSlots": 5,
         "newAccounts": 0,
         "sepoliaGas": {
-          "gas": 693657,
-          "source": "r7"
+          "gas": 696058,
+          "source": "r8"
         }
       },
       {
@@ -741,7 +741,10 @@
         },
         "newSlots": 1,
         "newAccounts": 0,
-        "sepoliaGas": null
+        "sepoliaGas": {
+          "gas": 201871,
+          "source": "r8"
+        }
       },
       {
         "operation": "Independent Stream restart, a later one",
@@ -752,7 +755,10 @@
         },
         "newSlots": 0,
         "newAccounts": 0,
-        "sepoliaGas": null
+        "sepoliaGas": {
+          "gas": 103951,
+          "source": "r8"
+        }
       }
     ]
   },

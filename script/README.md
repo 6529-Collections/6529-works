@@ -85,9 +85,9 @@ Forge's `broadcast/` output is not committed; the deployment record is.
 | Keeper | No role. Runs the permissionless steps ([`keeper/`](../keeper/README.md)) |
 
 A round's public inputs live in `config/sepolia-<round>/`: `accounts.json` (holders and the
-network Safe), `genesis.json`, `deploy.env` and `manifest-epoch0.json`. Rounds r6 and r7 reuse
-r5's network Safe and holders; the commands below show r6, and r7 was built the same way
-(`make_genesis.py r7 r6`, `make_manifest.py r7 r6 <commit>`).
+network Safe), `genesis.json`, `deploy.env` and `manifest-epoch0.json`. Rounds r6, r7 and r8
+reuse r5's network Safe and holders; the commands below show r6, and r7 and r8 were built the
+same way (`make_genesis.py r7 r6`, `make_manifest.py r7 r6 <commit>`; then `r8 r7`).
 
 ### 2. Genesis and manifest
 
@@ -173,8 +173,8 @@ existed.
    `https://sepolia.gateway.tenderly.co`, or run it soon after the deploy). It reads the state
    genesis left, so it passes at the chain's head only while the instance's governance is as
    installed: a module announced later, a changed setting or a new minter stops it (r6, whose
-   renderer proposal is pending, reads back at a block before the proposal; r7 is kept
-   unchanged and reads back at the head).
+   renderer proposal is pending, reads back at a block before the proposal; r7 and r8 are
+   kept unchanged and read back at the head).
 3. **VRF.** The subscription owner adds the entropy module as a consumer and funds the
    subscription.
 4. **Complete the record.** `python script/sepolia/make_record.py <record> r6 <commit> --confirmed`
@@ -193,6 +193,10 @@ existed.
    its edition sale, and `-Editions <address>` points the edition steps at that sale.
    `-MoveSigner <role>` has a consolidated wallet sign a start's move, and `starterRequest`
    writes a start as a request file for the reference keeper's `--starts` folder.
+   `independentStartNoBid` starts an Independent Stream work with no bid, `restart` offers an
+   unsold one again (`-ExpectRevert` records a refusal: too early, or a 6529 Stream sale),
+   `clock` keeps `auctionClock`'s four words under `-Label`, and `-Work 2` to `-Work 4` are
+   further edition masters of the same pair of contracts.
 
 ## Operating procedures
 

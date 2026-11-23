@@ -31,6 +31,20 @@
       0004's table follows: four rows re-measured and two new rows for `restart`, measured
       by `IndependentRestartGas.t.sol` with their own ceilings. The code
       maps of `src/economics` and `src/entropy` are corrected.
+- **Sepolia round r8.** The current Sepolia instance (testnet only), from `main` at
+  `961bc956`, so that a live instance carries the three module fixes above; its governance is
+  kept as genesis installed it, `VerifyCore` passes at the chain's head and Sourcify holds an
+  exact match for its 35 contracts
+  ([record](deployments/11155111/README.md#sepolia-r8-23-november-2026-current-instance),
+  [flows](deployments/11155111/flows-r8.md)). r6 (the module-swap test) and r7 (the reference
+  at `5de6abaa`, without the fixes) stay as deployed. r8's flows show an unsold Independent
+  Stream work offered again beside its edition sales: a restart at once refused
+  (`RestartTooEarly`), an edition sale that takes a late bid, settles and pays on its own
+  clock before and after a restart, a second restart that leaves a settled edition sale as it
+  was, and an edition sale opened inside a restarted 1/1 that follows it; `auctionClock`'s
+  four values are recorded at each step. ADR 0004's table gains r8's Sepolia receipts for the
+  two `restart` rows and the edition `open` row. Tooling: `flows.ps1` gains
+  `independentStartNoBid`, `restart`, `clock` and `-Work 2` to `-Work 4`.
 - **Sepolia round r7.** A second instance of the plain core on Sepolia (testnet only), from
   `main` at `5de6abaa`, kept with its governance as genesis installed it so that `VerifyCore`
   passes at the chain's head; verified on Sourcify
