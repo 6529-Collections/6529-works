@@ -48,7 +48,7 @@ interface IEconomicsResolver is IERC165 {
     /// @notice Compare-and-set failed: the setting is at revision `actual`, not `expected`.
     error RevisionMismatch(uint64 expected, uint64 actual);
     /// @notice A fee share of 100,000 or more, a royalty rate above 100,000, or a zero fee
-    ///         recipient for a non-zero fee share.
+    ///         recipient (at any fee share).
     error InvalidEconomics();
     /// @notice An empty, over-long or non-`[A-Za-z0-9.+-]` SPDX ID, a zero text file ID, or a
     ///         CC0 license (by key) whose text is not the CC0 text the resolver was deployed with.
@@ -91,10 +91,9 @@ interface IEconomicsResolver is IERC165 {
     function economics(bytes32 product) external view returns (ProductEconomics memory);
     /// @notice A product's network fee recipient (`economics(product).feeRecipient`). Sale
     ///         adapters read it when a sale settles and pay the network's fee there, so a change
-    ///         reaches running sales too; a sale pays the recipient it recorded when this
-    ///         answers zero.
+    ///         reaches running sales too.
     /// @param product The product identifier; reverts with {UnknownProduct} if not configured.
-    /// @return The fee recipient; zero only while the fee share is zero, and never the revenue
+    /// @return The fee recipient: never zero, whatever the fee share, and never the revenue
     ///         escrow or another contract the fee-recipient rule refuses.
     function networkFeeRecipient(bytes32 product) external view returns (address);
     /// @notice A product's default license for new packages (CC0 at launch).
@@ -133,7 +132,9 @@ interface IEconomicsResolver is IERC165 {
     ///         make every sale of every work minted under it unsettleable.
     /// @param product The product identifier; reverts with {UnknownProduct} if not configured.
     /// @param expectedRevision The fee-terms revision the product must be at.
-    /// @param feeRecipient The new network fee recipient; non-zero unless `feeShare` is zero.
+    /// @param feeRecipient The new network fee recipient; never zero, also at a zero `feeShare`:
+    ///        a sale already running pays the share it stored to the recipient current when it
+    ///        settles.
     /// @param feeShare The network share of primary sales and royalties, out of 100,000; below
     ///        100,000, and zero omits the fee payee.
     function setFeeTerms(

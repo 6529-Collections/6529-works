@@ -25,7 +25,7 @@ the governed vault for the network's own accounts. The rules are in
 
 | Caller | Calls | Rules |
 | --- | --- | --- |
-| Stream at mint; Editions at `createEdition` | Stream reads `economics` and derives the seller with `walletFor(payees, 0)`; Editions calls `newWorkTerms(PRODUCT_EDITIONS, payees)`. Either way the terms are locked into the work. | ECO-6, ECO-7 |
+| The mint policies at a start; the edition auction's lens at `open` | The package registry calls `newWorkTerms(PRODUCT_STREAM, payees)` when a 6529 Stream work starts; the Independent Stream module reads `economics(PRODUCT_INDEPENDENT)` (the share at a listing, the recipient at a start); the edition auction's lens calls `newWorkTerms(PRODUCT_EDITIONS, payees)` when an edition sale opens, which creates the edition. Either way the terms are locked into the work or the sale. | ECO-6, ECO-7 |
 | Sale adapters | `openingBid(ETH)` and `incrementFloor(ETH)` on the allowlist (the English auction reads both when a bid is placed); `newWorkTerms(PRODUCT_STREAM, payees)` in the package registry at a start; `newWorkTerms(PRODUCT_EDITIONS, payees)` when an edition sale opens; `museum()` and `networkFeeRecipient(product)` at settlement; `RevenuePayment` to the seller and fee recipient | ECO-26, ECO-34, AUC-15, EA-2, EA-12 |
 | Anyone | `createWallet`, `release` for a fixed payee, `mark`, `forfeit`, `flush`, `expire`, `claim`; a governed vault's `forward`, `releaseToDestination` | ECO-9 to ECO-15, ECO-27, ECO-29, ECO-30, ECO-41, ECO-43 to ECO-45 |
 | An artist's current payout address | `release`, `releaseTo`, or a signature submitted with `releaseWithAuthorization` / `claimSigned`; `revokeNonce` | ECO-16, ECO-17, ECO-20 to ECO-22 |

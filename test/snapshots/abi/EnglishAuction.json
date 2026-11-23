@@ -1246,6 +1246,11 @@
         "internalType": "uint64",
         "name": "pausedAt",
         "type": "uint64"
+      },
+      {
+        "internalType": "uint64",
+        "name": "restartedAt",
+        "type": "uint64"
       }
     ],
     "signature": "auctionClock(uint256)",

@@ -39,9 +39,11 @@ import { Splits } from "./Splits.sol";
 ///      `Roles.FUNDS_SETTER` (the network, 3 days); {setRoyaltyRate} and {setDefaultLicense} map
 ///      to `Roles.PARAMETER_SETTER` (the network, 24 hours). Each setter compares its own revision, bumped by
 ///      every change to that setting (the museum's is {museumRevision}).
-///      A fee recipient must be able to accept payments, because works lock it at mint: the
-///      resolver refuses itself, its allowlist and the split ledger (which is also the release
-///      verifier), and every protocol contract that declares an interface it cannot be paid through
+///      A fee recipient must be able to accept payments, because works lock it at mint and a
+///      running sale pays its stored share to the recipient current at settlement: the resolver
+///      refuses zero (at any share, so lowering a share to zero never leaves a running sale
+///      without a recipient), itself, its allowlist and the split ledger (which is also the
+///      release verifier), and every protocol contract that declares an interface it cannot be paid through
 ///      (`ProtocolContracts`: the revenue escrow, the claim router, the sale adapters, 6529
 ///      Stream and 6529 Stream Editions, the artist and package registries and the work
 ///      records).
@@ -251,7 +253,7 @@ contract EconomicsResolver is IEconomicsResolver, AccessManaged {
     function _validate(ProductEconomics memory e) private view {
         if (
             e.feeShare >= Splits.DENOMINATOR || e.royaltyRate > Splits.DENOMINATOR
-                || (e.feeShare != 0 && e.feeRecipient == address(0))
+                || e.feeRecipient == address(0)
         ) revert InvalidEconomics();
         if (_refused(e.feeRecipient)) revert InvalidFeeRecipient(e.feeRecipient);
     }

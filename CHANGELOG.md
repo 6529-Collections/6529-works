@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+- **Three fixes in replaceable modules.** No permanent contract changed.
+    - **An edition sale no longer follows a restarted 1/1.** `EnglishAuction` records when an
+      unsold Independent Stream work was last offered again and answers it as a fourth value
+      of `auctionClock` (`restartedAt`; the selector is unchanged). An edition sale follows
+      only the 1/1 sale it was opened in: once that 1/1 has been settled unsold and offered
+      again, the edition sale reads its 1/1 as settled and keeps the close it recorded, so it
+      closes, settles and pays by its own rule and its bidders claim, whatever the work's later
+      sales do. A sale opened after a restart follows the restarted 1/1; a cancelled 1/1 or a
+      delisting still voids the sale. 6529 Stream works are never offered again, so the
+      curated edition sale behaves as before. Both edition auctions and both lenses read the
+      new value, so they are deployed together with the English auction (EA-17, IND-56,
+      LIM-EA-22).
+    - **A fee recipient is never zero.** `EconomicsResolver.setFeeTerms` refuses a zero
+      recipient at any share (`InvalidEconomics`), also at a zero share: a sale already running
+      pays the share it stored to the recipient named when it settles, so a recipient must
+      stay named (ECO-2).
+    - **`IndependentStreamRegistry.setEntropyModule` refuses an address without code**
+      (`SaleContractInvalid`), as the module's other setters do; zero, for no module, is still
+      accepted (GV-20).
+    - IND-56 is reworded to the rule the code keeps and names its tests; no rule is left in
+      `tools/rules-uncovered.txt` as uncovered. Two regression ceilings of the gas report move
+      with the extra word the clock reads (`auctionClock` view, edition settlement). The code
+      maps of `src/economics` and `src/entropy` are corrected.
 - **Rule rows brought in line with the code.** Eight of the nine rules left in
   `tools/rules-uncovered.txt` are reworded to say what the contracts do and now name the tests
   that pin it: AUC-14, AUC-15, PROP-AUC-1, GV-20, ENT-20, EA-19, IND-58 and IND-67. IND-56

@@ -121,14 +121,15 @@ contract IndependentEditionAuction is UniformEditionAuctionBase {
         }
     }
 
-    /// @dev The lens's `clock`: the 1/1's, or cancelled once the Independent Stream module stops
-    ///      serving the sale's contract.
+    /// @dev The lens's `clock`: the 1/1's state, end and latest restart, or cancelled once the
+    ///      Independent Stream module stops serving the sale's contract.
     function _liveClock(uint256 saleId)
         internal
         view
         override
-        returns (IEnglishAuction.AuctionState, uint64, uint64)
+        returns (IEnglishAuction.AuctionState state, uint64 endTime, uint64 restartedAt)
     {
-        return IndependentEditionAuctionLens(lens).clock(_tokens[saleId], _payouts[saleId].id);
+        (state, endTime,, restartedAt) =
+            IndependentEditionAuctionLens(lens).clock(_tokens[saleId], _payouts[saleId].id);
     }
 }

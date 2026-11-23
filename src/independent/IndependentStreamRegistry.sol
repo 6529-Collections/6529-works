@@ -192,11 +192,12 @@ contract IndependentStreamRegistry is
     function setAdapter(address adapter, Form form, bool admitted) external restricted {
         SaleContract memory s = saleContractOf(adapter);
         bool active = s.addedAt != 0 && s.removedAt == 0;
+        // Adding one that is active, or removing one that is not.
+        _check(admitted == active, adapter);
         if (admitted) {
-            if (adapter.code.length == 0 || active) revert SaleContractInvalid(adapter);
+            _check(adapter.code.length == 0, adapter);
             s = SaleContract(_now(), 0, form);
         } else {
-            if (!active) revert SaleContractInvalid(adapter);
             s.removedAt = _now();
         }
         _saleContracts[adapter] = s;
@@ -246,8 +247,11 @@ contract IndependentStreamRegistry is
     }
 
     /// @notice Sets the entropy module of Independent Stream VRF works. The network.
-    /// @param next The entropy module, or zero for none.
+    /// @dev An address with no code is refused with `SaleContractInvalid`, the error this module
+    ///      gives for a contract address that is not one.
+    /// @param next The entropy module (code), or zero for none.
     function setEntropyModule(address next) external restricted {
+        _check(next != address(0) && next.code.length == 0, next);
         emit EntropyModuleSet(entropyModule, next);
         entropyModule = next;
     }
@@ -745,6 +749,12 @@ contract IndependentStreamRegistry is
             t.form,
             t.status
         );
+    }
+
+    /// @dev Reverts with `SaleContractInvalid(a)` when `invalid`. One shared check, so the
+    ///      module's code stays within its EIP-170 margin.
+    function _check(bool invalid, address a) private pure {
+        if (invalid) revert SaleContractInvalid(a);
     }
 
     /// @dev The block time as stored (48 bits last for millions of years).

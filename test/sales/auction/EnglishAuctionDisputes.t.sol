@@ -105,7 +105,7 @@ contract EnglishAuctionDisputesTest is AuctionFixture {
         assertEq(uint256(_state(saleId)), uint256(IEnglishAuction.AuctionState.PAUSED));
         vm.warp(pausedAt + 3 days + 1);
         assertEq(uint256(_state(saleId)), uint256(IEnglishAuction.AuctionState.ACTIVE));
-        (, uint64 end, uint64 at) = auction.auctionClock(saleId);
+        (, uint64 end, uint64 at,) = auction.auctionClock(saleId);
         assertEq(end, pausedAt + 3 days + DURATION);
         assertEq(at, 0);
         vm.expectEmit(address(auction));

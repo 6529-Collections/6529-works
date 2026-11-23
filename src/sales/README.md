@@ -92,6 +92,9 @@ events and their ordering: [Events and indexing](../../docs/integrators/events-a
   every bid comes back in full at its claim.
 - **The 1/1's end is cached.** It only moves later, so a bid reads `auctionClock` only within the
   soft-close window of the cached close; settlement always does.
+- **A 1/1 offered again.** `restart` reuses the sale ID, and `auctionClock` answers when it
+  happened. An edition sale opened before the restart reads its 1/1 as settled and keeps the end
+  it recorded; a later sale of the work moves nothing in it (EA-17, IND-56).
 - **No wait after a pause.** `unpause`, `resume` and the dispute `cancel` add no wait of
   their own; the network acts at any moment of the 3-day pause.
 - **Gas.** Per-operation Prague gas and slots are in

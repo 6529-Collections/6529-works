@@ -691,6 +691,11 @@
         "internalType": "uint64",
         "name": "",
         "type": "uint64"
+      },
+      {
+        "internalType": "uint64",
+        "name": "",
+        "type": "uint64"
       }
     ],
     "signature": "clock(address,uint256)",

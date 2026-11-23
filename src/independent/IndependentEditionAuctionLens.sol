@@ -60,12 +60,13 @@ contract IndependentEditionAuctionLens is UniformEditionAuctionLensBase {
     /// @return The 1/1's state.
     /// @return Its end.
     /// @return When its dispute pause began, zero if none.
+    /// @return When the 1/1 was last offered again (`IEnglishAuction.restart`), zero if never.
     function clock(address token, uint256 id)
         external
         view
-        returns (IEnglishAuction.AuctionState, uint64, uint64)
+        returns (IEnglishAuction.AuctionState, uint64, uint64, uint64)
     {
-        if (!_served(token)) return (IEnglishAuction.AuctionState.CANCELLED, 0, 0);
+        if (!_served(token)) return (IEnglishAuction.AuctionState.CANCELLED, 0, 0, 0);
         return IEnglishAuctionClock(_englishAuction)
             .auctionClock(uint256(keccak256(abi.encode(_masterFor(token), id))));
     }
@@ -114,9 +115,9 @@ contract IndependentEditionAuctionLens is UniformEditionAuctionLensBase {
         internal
         view
         override
-        returns (IEnglishAuction.AuctionState state, uint64 endTime)
+        returns (IEnglishAuction.AuctionState state, uint64 endTime, uint64 restartedAt)
     {
-        if (!_served(token)) return (IEnglishAuction.AuctionState.CANCELLED, 0);
+        if (!_served(token)) return (IEnglishAuction.AuctionState.CANCELLED, 0, 0);
         return super._clock(token, id);
     }
 

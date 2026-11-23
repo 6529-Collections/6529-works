@@ -196,12 +196,12 @@ abstract contract UniformEditionAuctionLensBase is IUniformEditionAuctionLens {
         (bool answered, bytes memory clock) = BoundedCall.tryReadAll(
             _englishAuction,
             abi.encodeCall(IEnglishAuctionClock.auctionClock, (_saleIdOf(master, id))),
-            96
+            128
         );
-        if (!answered || clock.length != 96) {
+        if (!answered || clock.length != 128) {
             revert IUniformEditionAuction.NoOneOfOneAuction(master, id);
         }
-        (uint256 state, uint256 endTime,) = abi.decode(clock, (uint256, uint256, uint256));
+        (uint256 state, uint256 endTime) = abi.decode(clock, (uint256, uint256));
         if (state == uint256(IEnglishAuction.AuctionState.CANCELLED) || state > 5) {
             revert IUniformEditionAuction.NoOneOfOneAuction(master, id);
         }
@@ -280,10 +280,10 @@ abstract contract UniformEditionAuctionLensBase is IUniformEditionAuctionLens {
             abi.encodeCall(
                 IEnglishAuctionClock.auctionClock, (_saleIdOf(_masterOfSale(saleId), p.id))
             ),
-            96
+            128
         );
-        if (answered && clock.length == 96) {
-            (uint256 state, uint256 end,) = abi.decode(clock, (uint256, uint256, uint256));
+        if (answered && clock.length == 128) {
+            (uint256 state, uint256 end) = abi.decode(clock, (uint256, uint256));
             if (
                 state == uint256(IEnglishAuction.AuctionState.ACTIVE)
                     || state == uint256(IEnglishAuction.AuctionState.PAUSED)
@@ -415,7 +415,7 @@ abstract contract UniformEditionAuctionLensBase is IUniformEditionAuctionLens {
         returns (IUniformEditionAuction.EndTimes memory e)
     {
         IStorage.SaleWord memory a = _opened(saleId);
-        (IEnglishAuction.AuctionState state, uint64 oneEnd) = _clockOf(saleId);
+        (IEnglishAuction.AuctionState state, uint64 oneEnd) = _clockOf(saleId, a.openedAt);
         _clocks(e, a, _config(a.termsId), oneEnd);
         e.oneOfOneState = state;
         // Open while the 1/1 is paused, whatever the time; else until the end, unless cancelled.
@@ -427,37 +427,49 @@ abstract contract UniformEditionAuctionLensBase is IUniformEditionAuctionLens {
     }
 
     /// @dev Sale `saleId`'s 1/1 state and end as its settlement reads them: SETTLED with no end
-    ///      of its own for an adopted sale that runs on its own, else the English auction's
-    ///      `auctionClock` (the deployment's `_clock`).
-    function _clockOf(uint256 saleId) private view returns (IEnglishAuction.AuctionState, uint64) {
+    ///      of its own for an adopted sale that runs on its own, and for a sale whose 1/1 was
+    ///      offered again after it opened at `openedAt` (the 1/1 sale it followed was settled
+    ///      unsold; a cancelled 1/1 stays CANCELLED), else the English auction's `auctionClock`
+    ///      (the deployment's `_clock`).
+    function _clockOf(uint256 saleId, uint256 openedAt)
+        private
+        view
+        returns (IEnglishAuction.AuctionState state, uint64 endTime)
+    {
         IStorage.PayoutWord memory p = _payout(saleId);
         if (p.runsOnItsOwn) return (IEnglishAuction.AuctionState.SETTLED, 0);
-        return _clock(_tokenOfSale(saleId), p.id);
+        uint64 restartedAt;
+        (state, endTime, restartedAt) = _clock(_tokenOfSale(saleId), p.id);
+        if (restartedAt > openedAt && state != IEnglishAuction.AuctionState.CANCELLED) {
+            return (IEnglishAuction.AuctionState.SETTLED, 0);
+        }
     }
 
     /// @dev The 1/1 clock of edition `id` of `token` for the views: the English auction's
-    ///      answer, or NONE with no end when it refuses or answers malformed, so a sale's views
-    ///      keep answering from the adapter's own words when its 1/1 auction stops answering. A
-    ///      shortfall reverts (`BoundedCallShortfall`).
+    ///      answer (its state, its end and when it was last offered again), or NONE with no end
+    ///      when it refuses or answers malformed, so a sale's views keep answering from the
+    ///      adapter's own words when its 1/1 auction stops answering. A shortfall reverts
+    ///      (`BoundedCallShortfall`).
     function _clock(address token, uint256 id)
         internal
         view
         virtual
-        returns (IEnglishAuction.AuctionState state, uint64 endTime)
+        returns (IEnglishAuction.AuctionState state, uint64 endTime, uint64 restartedAt)
     {
         (bool answered, bytes memory clock) = BoundedCall.tryReadAll(
             _englishAuction,
             abi.encodeCall(IEnglishAuctionClock.auctionClock, (_saleIdOf(_masterFor(token), id))),
-            96
+            128
         );
-        if (!answered || clock.length != 96) return (IEnglishAuction.AuctionState.NONE, 0);
-        (uint256 s, uint256 e,) = abi.decode(clock, (uint256, uint256, uint256));
-        if (s > uint256(IEnglishAuction.AuctionState.CANCELLED) || e > type(uint64).max) {
-            return (IEnglishAuction.AuctionState.NONE, 0);
-        }
-        // Safe: both checked above.
+        if (!answered || clock.length != 128) return (IEnglishAuction.AuctionState.NONE, 0, 0);
+        (uint256 s, uint256 e,, uint256 r) = abi.decode(clock, (uint256, uint256, uint256, uint256));
+        if (
+            s > uint256(IEnglishAuction.AuctionState.CANCELLED) || e > type(uint64).max
+                || r > type(uint64).max
+        ) return (IEnglishAuction.AuctionState.NONE, 0, 0);
+        // Safe: all three checked above.
         // forge-lint: disable-next-line(unsafe-typecast)
-        return (IEnglishAuction.AuctionState(s), uint64(e));
+        return (IEnglishAuction.AuctionState(s), uint64(e), uint64(r));
     }
 
     /// @dev Fills `e`'s clocks from the 1/1's end now (`oneOfOneEnd`, at least the cached one).

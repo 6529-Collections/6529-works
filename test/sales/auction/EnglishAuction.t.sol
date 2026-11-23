@@ -337,6 +337,52 @@ contract EnglishAuctionTest is AuctionFixture {
         assertEq(feeRecipient.balance, 0);
     }
 
+    /// @dev The network lowers the product's share to zero while a sale runs. The resolver
+    ///      refuses a zero recipient at any share, so a recipient stays named: the running sale
+    ///      settles and pays the share it stored at its start to the recipient named now.
+    function test_Settle_ARunningSaleSettlesAfterTheShareIsLoweredToZero() public {
+        uint256 saleId = _start(1);
+        _bid(alice, saleId, 1 ether);
+        uint256 stored = auction.auction(saleId).feeShare;
+        assertGt(stored, 0, "the sale stored a share");
+        bytes32 product = keccak256("PRODUCT_STREAM");
+        (uint64 feeRevision,,) = economics.revisions(product);
+        vm.expectRevert(IEconomicsResolver.InvalidEconomics.selector);
+        economics.setFeeTerms(product, feeRevision, address(0), 0);
+        address later = makeAddr("laterRecipient");
+        economics.setFeeTerms(product, feeRevision, later, 0);
+        assertEq(economics.networkFeeRecipient(product), later, "a recipient is still named");
+
+        _end(saleId);
+        uint256 sellerPart = 1 ether * (100_000 - stored) / 100_000;
+        _expectSoldToAlice(saleId, sellerPart, later);
+        auction.settle(saleId);
+        assertEq(later.balance, 1 ether - sellerPart, "the stored share, to the recipient now");
+        assertEq(seller.balance, sellerPart);
+        assertEq(stream.ownerOf(1), alice);
+        assertEq(address(auction).balance, 0);
+    }
+
+    /// @dev Expects `SaleSettled` for 6529 Stream work 1 sold to alice for 1 ETH, `sellerPart`
+    ///      to the seller and the rest to `recipient`.
+    function _expectSoldToAlice(uint256 saleId, uint256 sellerPart, address recipient) internal {
+        vm.expectEmit(address(auction));
+        emit IEnglishAuction.SaleSettled(
+            saleId,
+            address(stream),
+            1,
+            alice,
+            alice,
+            1,
+            address(0),
+            1 ether,
+            seller,
+            sellerPart,
+            recipient,
+            1 ether - sellerPart
+        );
+    }
+
     function test_Settle_UnsoldStreamWorkGoesToTheMuseum() public {
         uint256 saleId = _start(1);
         _end(saleId);
@@ -690,7 +736,8 @@ contract EnglishAuctionTest is AuctionFixture {
 
     function test_Views_ClockMatchesTheAuction() public {
         uint256 saleId = _start(1);
-        (IEnglishAuction.AuctionState s, uint64 end, uint64 pausedAt) = auction.auctionClock(saleId);
+        (IEnglishAuction.AuctionState s, uint64 end, uint64 pausedAt,) =
+            auction.auctionClock(saleId);
         assertEq(uint256(s), uint256(IEnglishAuction.AuctionState.ACTIVE));
         assertEq(end, auction.auction(saleId).endTime);
         assertEq(pausedAt, 0);

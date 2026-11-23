@@ -6,6 +6,7 @@ import { Outcome } from "src/interfaces/core/CoreTypes.sol";
 import { IMintPolicy } from "src/interfaces/core/IMintPolicy.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { PRODUCT_INDEPENDENT } from "src/interfaces/types/EconomicsTypes.sol";
+import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { BoundedCall } from "src/libraries/BoundedCall.sol";
 import { AuctionFixture } from "./AuctionFixture.sol";
 import { BidderContract } from "./AuctionMocks.sol";
@@ -86,6 +87,56 @@ contract EnglishAuctionIndependentTest is AuctionFixture {
         auction.settle(saleId);
         assertEq(ind.ownerOf(1), alice);
         assertEq(uint256(ind.workOf(1).outcome), uint256(Outcome.SOLD));
+    }
+
+    /// @dev The clock answers when a work was last offered again: zero for a sale never
+    ///      restarted, the restart's time after each restart. A sale that followed the earlier
+    ///      sale reads it to learn that sale is over.
+    function test_Restart_TheClockAnswersWhenTheWorkWasOfferedAgain() public {
+        uint256 saleId = _startInd(1);
+        (,,, uint64 restartedAt) = auction.auctionClock(saleId);
+        assertEq(restartedAt, 0, "never offered again");
+        _end(saleId);
+        auction.settle(saleId);
+        (,,, restartedAt) = auction.auctionClock(saleId);
+        assertEq(restartedAt, 0, "settling records nothing");
+
+        vm.warp(block.timestamp + 10 minutes);
+        uint64 first = uint64(block.timestamp);
+        vm.expectEmit(address(auction));
+        emit IEnglishAuction.SaleStarted(
+            saleId,
+            address(ind),
+            1,
+            SaleKind.ENGLISH_AUCTION,
+            address(0),
+            allowlist.openingBid(address(0)),
+            first,
+            first + DURATION
+        );
+        vm.prank(carol);
+        auction.restart(saleId);
+        IEnglishAuction.AuctionState state;
+        uint64 end;
+        (state, end,, restartedAt) = auction.auctionClock(saleId);
+        assertEq(uint256(state), uint256(IEnglishAuction.AuctionState.ACTIVE));
+        assertEq(end, first + DURATION);
+        assertEq(restartedAt, first, "the restart's time");
+
+        _end(saleId);
+        auction.settle(saleId);
+        vm.warp(block.timestamp + 3 days);
+        auction.restart(saleId);
+        (,,, restartedAt) = auction.auctionClock(saleId);
+        assertEq(restartedAt, block.timestamp, "the latest restart's time");
+
+        // A 6529 Stream sale is never offered again, so its clock always answers zero.
+        uint256 streamSale = _start(1);
+        _end(streamSale);
+        auction.settle(streamSale);
+        (state,,, restartedAt) = auction.auctionClock(streamSale);
+        assertEq(uint256(state), uint256(IEnglishAuction.AuctionState.SETTLED));
+        assertEq(restartedAt, 0);
     }
 
     function test_Restart_Refusals() public {
