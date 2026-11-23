@@ -489,7 +489,10 @@ switch ($Step) {
         if (-not $Out) { throw 'starterRequest needs -Out' }
         $plan = Invoke-Plan 'starterRequest(uint256,uint256,uint64,bytes)' ((@("$Index") + (Get-MoveSignature $Index)))
         $request = [ordered]@{ mintData = (Get-Info $plan 'mintData'); media = (Get-Info $plan 'media') }
-        if (-not $request.mintData -or -not $request.media) { throw 'starterRequest: no mint data in the plan' }
+        foreach ($key in 'mintData', 'media') {
+            # Whole bytes of hex, or the keeper would fail on the file later.
+            if ("$($request[$key])" -notmatch '^0x([0-9a-fA-F]{2})+$') { throw "starterRequest: the plan's $key is not hex" }
+        }
         [IO.File]::WriteAllText($Out, ($request | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
         Write-Host "wrote $Out"
     }

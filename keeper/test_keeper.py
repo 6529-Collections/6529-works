@@ -291,7 +291,7 @@ class RescueReportTest(unittest.TestCase):
 
         def owner_of(token_id):
             if token_id == 1:
-                raise k.Reverted("ERC721NonexistentToken(1)")
+                raise k.Reverted('{"code": 3, "data": "' + k.NONEXISTENT_TOKEN + "00" * 31 + '01"}')
             return k.word(minter)
 
         views = {
@@ -306,6 +306,21 @@ class RescueReportTest(unittest.TestCase):
             keeper.step_rescues({1: {"minter": minter}, 2: {"minter": minter}}, 1_100)
         self.assertNotIn("due   rescue of work 1", out.getvalue())
         self.assertIn("due   rescue of work 2", out.getvalue())
+
+    def test_AnyOtherRevertOfOwnerOfStopsTheRun(self) -> None:
+        minter = "0x" + "aa" * 20
+
+        def owner_of(token_id):
+            raise k.Reverted('{"code": 3, "message": "execution reverted"}')
+
+        views = {
+            ("rescueDelay", None): k.word(100),
+            ("workOf", None): _work(),
+            ("minterOf", None): k.word(1) + k.word(1_000),
+            ("ownerOf", None): owner_of,
+        }
+        with self.assertRaises(k.Reverted):
+            FakeKeeper(views, {}).step_rescues({1: {"minter": minter}}, 1_100)
 
 
 class AdoptReportTest(unittest.TestCase):

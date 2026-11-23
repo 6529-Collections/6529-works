@@ -57,6 +57,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.content.keccak import keccak256  # noqa: E402  (the repository's own keccak)
 
+# The selector of `ERC721NonexistentToken(uint256)`, which `ownerOf` reverts with for a burned token.
+NONEXISTENT_TOKEN = "0x7e273289"
 DEFAULT_STEPS = (
     "start,open,settle,editions,abandon,adopt,finalize,vaults,attest,expire,forfeit,rescues"
 )
@@ -628,9 +630,12 @@ class Keeper:
             removed_at = w(self.view("Stream6529", "minterOf(address)", minter), 1)
             try:
                 holder = a(self.view("Stream6529", "ownerOf(uint256)", token_id), 0)
-            except Reverted:
+            except Reverted as exc:
                 # Burned with no outcome (its sale was cancelled after a dispute): `workOf` still
-                # answers, nobody holds the token and there is nothing to rescue.
+                # answers, nobody holds the token and there is nothing to rescue. Any other
+                # revert is not expected here and stops the run.
+                if NONEXISTENT_TOKEN not in str(exc):
+                    raise
                 continue
             if removed_at and holder.lower() == minter.lower() and now >= removed_at + delay:
                 print(
