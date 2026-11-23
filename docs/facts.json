@@ -5,8 +5,8 @@
   "status": {
     "maturity": "Pre-audit",
     "mainnet": "Not deployed",
-    "release": "v1.0.0-rc.2",
-    "releaseDate": "2026-11-04"
+    "release": "v1.0.0-rc.3",
+    "releaseDate": "2026-11-23"
   },
   "networks": {
     "mainnet": {
@@ -764,7 +764,7 @@
   },
   "links": {
     "repository": "https://github.com/6529-Collections/6529-works",
-    "release": "https://github.com/6529-Collections/6529-works/releases/tag/v1.0.0-rc.2",
+    "release": "https://github.com/6529-Collections/6529-works/releases/tag/v1.0.0-rc.3",
     "docs": {
       "specification": "https://github.com/6529-Collections/6529-works/blob/main/docs/spec/README.md",
       "editionsAndSales": "https://github.com/6529-Collections/6529-works/blob/main/docs/spec/editions-and-sales.md",

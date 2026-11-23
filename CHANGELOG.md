@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+## 1.0.0-rc.3 (2026-11-23)
+
+- Release candidate 3, pre-audit and not production-ready: the plain permanent core of
+  [ADR 0010](docs/adr/0010-plain-permanent-core.md) with its replaceable modules, ETH only.
+  `src/`, the deploy and verify scripts (`script/DeployCore.sol`, `DeployCore.s.sol`,
+  `VerifyCore.sol`, `VerifyCore.s.sol`, `CoreFactory.sol`, `ScriptIO.sol`, `DeployGuards.sol`),
+  the genesis policy (`config/genesis.core.example.json`) and `foundry.toml` are those of
+  `961bc956`, the commit Sepolia r8 was deployed from and the
+  [validation record](docs/testing/validation-2026-11-23.md) covers; since that commit only
+  tests, tools, CI workflows, the Sepolia flow scripts, r8's records and configuration copy,
+  and documentation changed. The [release notes](docs/releases/v1.0.0-rc.3.md) are linked
+  from the README's status table and the docs index, and `docs/facts.json` names the release.
+  There is no mainnet deployment and no external audit has started.
+- No `v1.0.0-rc.3` tag existed before this one. Where ADR 0004, ADR 0005 §13, ADR 0007 and the
+  entries under "Earlier work" say "rc.3", they mean work planned after rc.2 that was never
+  tagged and that the plain core later replaced in part.
+- The entries below are grouped by area, newest first in each group, and each is as merged: a
+  later entry can change what an earlier one describes. The plain core removed or replaced
+  contracts that the entries under "Earlier work, before the plain core" describe.
+
+### The plain permanent core and its modules
+
 - **Three fixes in replaceable modules.** No permanent contract changed.
     - **An edition sale no longer follows a restarted 1/1.** `EnglishAuction` records when an
       unsold Independent Stream work was last offered again and answers it as a fourth value
@@ -31,87 +53,6 @@
       0004's table follows: four rows re-measured and two new rows for `restart`, measured
       by `IndependentRestartGas.t.sol` with their own ceilings. The code
       maps of `src/economics` and `src/entropy` are corrected.
-- Tests: a [validation record](docs/testing/validation-2026-11-23.md) of every test layer
-  run over `main` at `961bc956`. The Halmos proof `check_RoyaltyInfoFromStorage`, which timed
-  out on some runs of the strength workflow, now takes one slow 256-bit division as given and
-  a Forge test checks that division for every rate; it runs in under a second. The nightly
-  settlement-scan job's filter selected no test and passed; it selects its test again and
-  fails if none ran. The tables of the mutation scores page and the floors file are generated
-  from `tools/mutation-scores.json` by `tools/gen_mutation_scores.py`, which CI checks. Ten
-  files were measured again at `961bc956` with statements cut by source line (the seven
-  contracts the module fixes changed, and `PackageRegistry`, `BoundedCall` and
-  `IndependentStream6529`): 5,292 mutants, 4,925 killed; two tests added for the two gaps
-  among the new survivors; five floors rise and one falls a point
-  (`IndependentEditionAuction`, 95 to 94: three survivors of 56 mutants, two of them
-  equivalent)
-  ([scores](docs/testing/mutation-scores.md#measured-again-on-961bc956)).
-- **Sepolia round r8.** The current Sepolia instance (testnet only), from `main` at
-  `961bc956`, so that a live instance carries the three module fixes above; its governance is
-  kept as genesis installed it, `VerifyCore` passes at the chain's head and Sourcify holds an
-  exact match for its 35 contracts
-  ([record](deployments/11155111/README.md#sepolia-r8-23-november-2026-current-instance),
-  [flows](deployments/11155111/flows-r8.md)). r6 (the module-swap test) and r7 (the reference
-  at `5de6abaa`, without the fixes) stay as deployed. r8's flows show an unsold Independent
-  Stream work offered again beside its edition sales: a restart at once refused
-  (`RestartTooEarly`), an edition sale that takes a late bid, settles and pays on its own
-  clock before and after a restart, a second restart that leaves a settled edition sale as it
-  was, and an edition sale opened inside a restarted 1/1 that follows it; `auctionClock`'s
-  four values are recorded at each step. ADR 0004's table gains r8's Sepolia receipts for the
-  two `restart` rows and the edition `open` row. Tooling: `flows.ps1` gains
-  `independentStartNoBid`, `restart`, `clock` and `-Work 2` to `-Work 4`.
-- **Sepolia round r7.** A second instance of the plain core on Sepolia (testnet only), from
-  `main` at `5de6abaa`, kept with its governance as genesis installed it so that `VerifyCore`
-  passes at the chain's head; verified on Sourcify
-  ([record](deployments/11155111/README.md#sepolia-r7-23-november-2026-clean-reference-instance),
-  [flows](deployments/11155111/flows-r7.md)). r6 stays as deployed, with its renderer proposal
-  pending. r7 ran the flows r6 did not: a dispute pause and cancel, a capped edition's cut
-  step, the anti-snipe extension, a move signed by a consolidated wallet, an Independent Stream
-  edition sale, and the reference keeper sending starts, edition opens and settlements.
-  Tooling: `flows.ps1` gains the Independent Stream editions steps (`-Editions`, `-Work`),
-  `-MoveSigner` and `starterRequest`.
-- **ADR 0004's gas table** is re-measured on the plain core (`test_Gas_Table`), says what each
-  ceiling applies to, and compares every Sepolia start of r6 and r7 with its own row. No
-  ceiling changed.
-- Tests: the first mutation campaign on the plain-core contracts (23 November 2026; 15,922
-  mutants, 91.5% killed, 92.8% with the tests added here). `tools/mutation-floors.json` holds
-  measured floors for every file and has no placeholders left; the survivors of the permanent
-  contracts and of the money and mint modules are triaged in
-  [`docs/testing/mutation-scores.md`](docs/testing/mutation-scores.md). `tools/mutation.py` now
-  mutates every contract a file declares (slither-mutate alone skipped `ModuleSlots`,
-  `UniformEditionAuctionBase` and `UniformEditionAuctionLensBase`) and runs the two
-  edition-auction files' groups in parts. A statements group is cut into parts by source line,
-  so the parts together are exactly the group's mutants: cut by position, as the campaign ran
-  them, a surviving revert mutant made some comment mutants run twice and others not at all
-  (seven files, counted on the scores page). The build is cleaned between the contracts of one
-  file, and a slither-mutate run that stops before it mutates fails its shard. The two
-  edition-auction files were measured again with the corrected tool at `a39245e3`:
-  `UniformEditionAuction` 1,045 of 1,112 mutants killed, 94.0% (the campaign's final figure
-  was 94.0% of 1,113), floor 91; `UniformEditionAuctionLens` 979 of 1,113 killed, 88.0% (the
-  campaign's was 87.7% of 1,134; two survivors were not re-checked, so a lower bound), floor 85.
-  One comment mutant the campaign's parts never ran survived there and has a test now
-  (`test_Settle_AResumedScanKeepsTheDemandAlreadyCounted`).
-- **Rule rows brought in line with the code.** Eight of the nine rules left in
-  `tools/rules-uncovered.txt` are reworded to say what the contracts do and now name the tests
-  that pin it: AUC-14, AUC-15, PROP-AUC-1, GV-20, ENT-20, EA-19, IND-58 and IND-67. IND-56
-  stays listed until a decision on it is made. Stale wording is corrected in other rows
-  (AUC-27, AUC-32, AUC-40, WS-11, WS-40, ED-4, EA-21, IND-42, IND-44, IND-45, IND-70, IND-71,
-  ENT-17, PROP-ED-1, PROP-GAS-1) and in the limitations register (LIM-GAS-1, LIM-ID-21,
-  LIM-EA-18, LIM-ENT-8). Documentation only: no contract and no test changed.
-- **Rule tests on the plain core.** 146 rules of the specification and properties of the
-  invariant catalogue that named no test since the plain-core restructuring name their tests
-  again: existing suites where they already pin the rule, and 62 new tests where they did not
-  (the English auction, disputes, the records and delivery modules, the edition auction, the
-  Independent Stream module and its sales, the entropy module's setters). Nine rules stayed in
-  `tools/rules-uncovered.txt` because their row and the code differed (eight are settled by the
-  entry above). No
-  contract changed.
-- **Sepolia round r6.** The plain core is deployed on Sepolia (testnet only) from `main` at
-  `2aac8579`, read back with `VerifyCore` and verified on Sourcify
-  ([record](deployments/11155111/README.md#sepolia-r6-23-november-2026-module-swap-test-instance),
-  [flows](deployments/11155111/flows-r6.md)). Tooling: `script/sepolia/make_record.py`
-  completes a deployment record; `flows.ps1` gains the Independent Stream steps and `-Token`;
-  `sourcify.ps1` and `deploy_gas.py` find each creation transaction from the factory call's
-  salt.
 - **Before the merge of the plain core.**
     - `StreamTerms.lowerFeeShare` accepts one fee recipient, the split ledger's network fee
       vault, so the share it lowers is always the network's; the seller and the fee recipient
@@ -173,20 +114,6 @@
   gas, the ETH increment floor, the VRF coordinator, request parameters and retry delay), and
   `VerifyCore.s.sol` requires the tokens' `MinterAdded` logs since the deployment to name exactly
   the two genesis minters, so a genesis minter outside the deployment is seen.
-- Developer path on the new contracts: `script/DeployCore.s.sol` and `VerifyCore.s.sol`; the local
-  walkthrough (a full sale, an edition sale, an Independent Stream work and a module swap on anvil);
-  the reference keeper; nine integrator examples, one of them new (a module swap seen by an
-  integrator); Sepolia round r6 tooling, simulated.
-- Documentation: the curation, entropy, disputes and declarations pages cut to the new code;
-  known limitations pruned to what is true of it (removed and closed rows reduced to their IDs);
-  the invariants catalogue on the core, with the campaigns still being ported listed as
-  placeholders; trust assumptions and the runbook gain the points of care found by review
-  (Independent Stream tokens need an immediate role, an edition can be sealed at zero, a replacement
-  module carries state over, a finalized work's copies are named by the delivery module, an
-  unreleased share can still be forfeited); every event and topic0 and the module interface IDs
-  regenerated from the build; the audit scope regenerated; the testing guide rewritten; the
-  mutation baseline kept as a historical record of the earlier contracts; every broken link
-  repaired, and documents cite only tests that exist.
 - Review fixes and system tests on the plain core, integrated. A removed minter no longer seals
   (an open edition waits for the rebind, `closeEdition` closes one with no sale); a sale contract
   is admitted for one token form (`setAdapter(adapter, form, admitted)`); `cancelModule`
@@ -199,11 +126,6 @@
   escrow and the split ledger keep their token paths.
 - The renderer shows a collection name of at most 128 bytes; a longer one is not read and the
   work renders without it, so `tokenURI` stays inside its gas budget whatever a name holds.
-- Gas: every start row stays within 370,000 Prague gas and 8 new slots; a start with a bid of a
-  VRF work, which also writes the seed, has its own ceiling of 395,000 and 9. Both are test
-  budgets.
-- Operators: [Replacing a module](docs/operations/replacing-modules.md), a checklist.
-
 - Escrow credit expiry by windows (ECO-45, R12; `RevenueEscrow`, permanent): a credit opens a
   180-day window or joins the open one, and a window's credits may move to the network 180 days
   after its last credit. Every amount waits at least 180 days from its own arrival and under 360
@@ -222,13 +144,6 @@
   `CompletenessAttested`; `isComplete` walks only past the prefix, so an attested file is one
   storage read and a 4,096-chunk file can be checked by `syncOnChain` and
   `DependencyRegistry.register` once attested. `IContentStore`'s interface ID changes.
-- Documentation: a freeze and a replacement leave no moment to contest, so the right to contest
-  binds only a network that does not freeze, and ID-8 now says a running freeze can be renewed
-  at once (`unfreeze`, then `freeze`); role delays hold until a 7-day remap changes them, unlike
-  waits enforced in a contract's own code; collaborator consent does not cover the royalty rate;
-  `TokenForwarded` needs the token's own transfer to count; a fee-share cut leaves the new
-  royalty vault to deploy; the auctions' older-clock credit expiry is a known gap until their
-  rewrite (LIM-SAL-22).
 - The plain permanent core ([ADR 0010](docs/adr/0010-plain-permanent-core.md)), lane 7:
   a three-page entry point, [docs/overview.md](docs/overview.md); the spec, integrator,
   governance and audit pages rewritten for the core and cut (about 12,700 lines of Markdown, net,
@@ -242,21 +157,101 @@
   readback, the genesis policy `config/genesis.core.example.json`, a 3,000-byte size floor for
   `src/core/`, and `tools/check_comment_codes.py`, which lists internal codes in comments.
 
-- Developer path: a [quickstart](docs/quickstart.md) from clone to a local run, with measured
-  build and test times; `script/local/walkthrough.sh`, which deploys on anvil with test accounts,
-  accepts, verifies and sells one work end to end (store, curate, accept, start with a bid,
-  outbid, settle, record, finalize, `tokenURI`, edition auction, claims, payouts); a shorter
-  root README (its diagram moved to the [architecture overview](docs/architecture.md), its
-  module sizes left to the [audit scope](docs/audit/scope.md)); runbook corrections (local gas
-  figures, the genesis and manifest writers); `make_manifest.py` lists every deployed contract.
-- Integrators: exported ABIs in `abi/` (`tools/export_abis.py`, with ERC-165 IDs and the
-  forwarded surfaces merged in `abi/full/`; `--check` in CI), runnable examples in `examples/`
-  (compiled and run by `forge test` through `test/Integrators.t.sol`) and a reference keeper in
-  `keeper/` (reference code, tested end to end on anvil). CI runs the ABI check, the keeper's
-  tests (`KEEPER_E2E_REQUIRE=1`), the format of `examples/` and `keeper/test/`, and the local
-  walkthrough in its own job, which the Contracts check now requires. `make_manifest.py` builds
-  the manifest's `safes` from the new single-network genesis. The stale local deployment record
-  `deployments/31337/1793486175.json` is removed (the folder is git-ignored).
+### Deployment
+
+- **Sepolia round r8.** The current Sepolia instance (testnet only), from `main` at
+  `961bc956`, so that a live instance carries the three module fixes above; its governance is
+  kept as genesis installed it, `VerifyCore` passes at the chain's head and Sourcify holds an
+  exact match for its 35 contracts
+  ([record](deployments/11155111/README.md#sepolia-r8-23-november-2026-current-instance),
+  [flows](deployments/11155111/flows-r8.md)). r6 (the module-swap test) and r7 (the reference
+  at `5de6abaa`, without the fixes) stay as deployed. r8's flows show an unsold Independent
+  Stream work offered again beside its edition sales: a restart at once refused
+  (`RestartTooEarly`), an edition sale that takes a late bid, settles and pays on its own
+  clock before and after a restart, a second restart that leaves a settled edition sale as it
+  was, and an edition sale opened inside a restarted 1/1 that follows it; `auctionClock`'s
+  four values are recorded at each step. ADR 0004's table gains r8's Sepolia receipts for the
+  two `restart` rows and the edition `open` row. Tooling: `flows.ps1` gains
+  `independentStartNoBid`, `restart`, `clock` and `-Work 2` to `-Work 4`.
+- **Sepolia round r7.** A second instance of the plain core on Sepolia (testnet only), from
+  `main` at `5de6abaa`, kept with its governance as genesis installed it so that `VerifyCore`
+  passes at the chain's head; verified on Sourcify
+  ([record](deployments/11155111/README.md#sepolia-r7-23-november-2026-clean-reference-instance),
+  [flows](deployments/11155111/flows-r7.md)). r6 stays as deployed, with its renderer proposal
+  pending. r7 ran the flows r6 did not: a dispute pause and cancel, a capped edition's cut
+  step, the anti-snipe extension, a move signed by a consolidated wallet, an Independent Stream
+  edition sale, and the reference keeper sending starts, edition opens and settlements.
+  Tooling: `flows.ps1` gains the Independent Stream editions steps (`-Editions`, `-Work`),
+  `-MoveSigner` and `starterRequest`.
+- **Sepolia round r6.** The plain core is deployed on Sepolia (testnet only) from `main` at
+  `2aac8579`, read back with `VerifyCore` and verified on Sourcify
+  ([record](deployments/11155111/README.md#sepolia-r6-23-november-2026-module-swap-test-instance),
+  [flows](deployments/11155111/flows-r6.md)). Tooling: `script/sepolia/make_record.py`
+  completes a deployment record; `flows.ps1` gains the Independent Stream steps and `-Token`;
+  `sourcify.ps1` and `deploy_gas.py` find each creation transaction from the factory call's
+  salt.
+- Sepolia r4's live Verify passed on 6 November 2026 at block 12,076,640, after the manager's
+  5-day setback: 14 targets, 18 wiring calls and 17 holders, run read-only from `f2ec3d8` (the
+  `v1.0.0-rc.2` commit). The record says `"confirmed": true`, and `docs/facts.json` follows.
+  The Sepolia README, the release notes (a dated note), the root README, the delivery plan and
+  the auditor pack record it; the README notes that Verify needs an RPC that serves the deploy
+  blocks' logs.
+
+### Testing and gas
+
+- Tests: a [validation record](docs/testing/validation-2026-11-23.md) of every test layer
+  run over `main` at `961bc956`. The Halmos proof `check_RoyaltyInfoFromStorage`, which timed
+  out on some runs of the strength workflow, now takes one slow 256-bit division as given and
+  a Forge test checks that division for every rate; it runs in under a second. The nightly
+  settlement-scan job's filter selected no test and passed; it selects its test again and
+  fails if none ran. The tables of the mutation scores page and the floors file are generated
+  from `tools/mutation-scores.json` by `tools/gen_mutation_scores.py`, which CI checks. Ten
+  files were measured again at `961bc956` with statements cut by source line (the seven
+  contracts the module fixes changed, and `PackageRegistry`, `BoundedCall` and
+  `IndependentStream6529`): 5,292 mutants, 4,925 killed; two tests added for the two gaps
+  among the new survivors; five floors rise and one falls a point
+  (`IndependentEditionAuction`, 95 to 94: three survivors of 56 mutants, two of them
+  equivalent)
+  ([scores](docs/testing/mutation-scores.md#measured-again-on-961bc956)).
+- **ADR 0004's gas table** is re-measured on the plain core (`test_Gas_Table`), says what each
+  ceiling applies to, and compares every Sepolia start of r6 and r7 with its own row. No
+  ceiling changed.
+- Tests: the first mutation campaign on the plain-core contracts (23 November 2026; 15,922
+  mutants, 91.5% killed, 92.8% with the tests added here). `tools/mutation-floors.json` holds
+  measured floors for every file and has no placeholders left; the survivors of the permanent
+  contracts and of the money and mint modules are triaged in
+  [`docs/testing/mutation-scores.md`](docs/testing/mutation-scores.md). `tools/mutation.py` now
+  mutates every contract a file declares (slither-mutate alone skipped `ModuleSlots`,
+  `UniformEditionAuctionBase` and `UniformEditionAuctionLensBase`) and runs the two
+  edition-auction files' groups in parts. A statements group is cut into parts by source line,
+  so the parts together are exactly the group's mutants: cut by position, as the campaign ran
+  them, a surviving revert mutant made some comment mutants run twice and others not at all
+  (seven files, counted on the scores page). The build is cleaned between the contracts of one
+  file, and a slither-mutate run that stops before it mutates fails its shard. The two
+  edition-auction files were measured again with the corrected tool at `a39245e3`:
+  `UniformEditionAuction` 1,045 of 1,112 mutants killed, 94.0% (the campaign's final figure
+  was 94.0% of 1,113), floor 91; `UniformEditionAuctionLens` 979 of 1,113 killed, 88.0% (the
+  campaign's was 87.7% of 1,134; two survivors were not re-checked, so a lower bound), floor 85.
+  One comment mutant the campaign's parts never ran survived there and has a test now
+  (`test_Settle_AResumedScanKeepsTheDemandAlreadyCounted`).
+- **Rule rows brought in line with the code.** Eight of the nine rules left in
+  `tools/rules-uncovered.txt` are reworded to say what the contracts do and now name the tests
+  that pin it: AUC-14, AUC-15, PROP-AUC-1, GV-20, ENT-20, EA-19, IND-58 and IND-67. IND-56
+  stays listed until a decision on it is made. Stale wording is corrected in other rows
+  (AUC-27, AUC-32, AUC-40, WS-11, WS-40, ED-4, EA-21, IND-42, IND-44, IND-45, IND-70, IND-71,
+  ENT-17, PROP-ED-1, PROP-GAS-1) and in the limitations register (LIM-GAS-1, LIM-ID-21,
+  LIM-EA-18, LIM-ENT-8). Documentation only: no contract and no test changed.
+- **Rule tests on the plain core.** 146 rules of the specification and properties of the
+  invariant catalogue that named no test since the plain-core restructuring name their tests
+  again: existing suites where they already pin the rule, and 62 new tests where they did not
+  (the English auction, disputes, the records and delivery modules, the edition auction, the
+  Independent Stream module and its sales, the entropy module's setters). Nine rules stayed in
+  `tools/rules-uncovered.txt` because their row and the code differed (eight are settled by the
+  entry above). No
+  contract changed.
+- Gas: every start row stays within 370,000 Prague gas and 8 new slots; a start with a bid of a
+  VRF work, which also writes the seed, has its own ceiling of 395,000 and 9. Both are test
+  budgets.
 - Testing build ("all frameworks", November 2026; tests, tools, CI and docs only, no contract
   change; [Testing](docs/testing/README.md)):
   - 36 Halmos proofs of the permanent contracts' state rules (ledger, escrow and governed vault,
@@ -280,6 +275,49 @@
     INV-IND, INV-ECO-15 to 17 and INV-CUR-7 to 9 rows), the spec's test cells name the new
     proofs and tests, WS-1 excepts `finalizeNoticeAt`, and the economics rule table renders
     whole again.
+
+### Documentation and developer path
+
+- Developer path on the new contracts: `script/DeployCore.s.sol` and `VerifyCore.s.sol`; the local
+  walkthrough (a full sale, an edition sale, an Independent Stream work and a module swap on anvil);
+  the reference keeper; nine integrator examples, one of them new (a module swap seen by an
+  integrator); Sepolia round r6 tooling, simulated.
+- Documentation: the curation, entropy, disputes and declarations pages cut to the new code;
+  known limitations pruned to what is true of it (removed and closed rows reduced to their IDs);
+  the invariants catalogue on the core, with the campaigns still being ported listed as
+  placeholders; trust assumptions and the runbook gain the points of care found by review
+  (Independent Stream tokens need an immediate role, an edition can be sealed at zero, a replacement
+  module carries state over, a finalized work's copies are named by the delivery module, an
+  unreleased share can still be forfeited); every event and topic0 and the module interface IDs
+  regenerated from the build; the audit scope regenerated; the testing guide rewritten; the
+  mutation baseline kept as a historical record of the earlier contracts; every broken link
+  repaired, and documents cite only tests that exist.
+- Operators: [Replacing a module](docs/operations/replacing-modules.md), a checklist.
+- Documentation: a freeze and a replacement leave no moment to contest, so the right to contest
+  binds only a network that does not freeze, and ID-8 now says a running freeze can be renewed
+  at once (`unfreeze`, then `freeze`); role delays hold until a 7-day remap changes them, unlike
+  waits enforced in a contract's own code; collaborator consent does not cover the royalty rate;
+  `TokenForwarded` needs the token's own transfer to count; a fee-share cut leaves the new
+  royalty vault to deploy; the auctions' older-clock credit expiry is a known gap until their
+  rewrite (LIM-SAL-22).
+- Developer path: a [quickstart](docs/quickstart.md) from clone to a local run, with measured
+  build and test times; `script/local/walkthrough.sh`, which deploys on anvil with test accounts,
+  accepts, verifies and sells one work end to end (store, curate, accept, start with a bid,
+  outbid, settle, record, finalize, `tokenURI`, edition auction, claims, payouts); a shorter
+  root README (its diagram moved to the [architecture overview](docs/architecture.md), its
+  module sizes left to the [audit scope](docs/audit/scope.md)); runbook corrections (local gas
+  figures, the genesis and manifest writers); `make_manifest.py` lists every deployed contract.
+- Integrators: exported ABIs in `abi/` (`tools/export_abis.py`, with ERC-165 IDs and the
+  forwarded surfaces merged in `abi/full/`; `--check` in CI), runnable examples in `examples/`
+  (compiled and run by `forge test` through `test/Integrators.t.sol`) and a reference keeper in
+  `keeper/` (reference code, tested end to end on anvil). CI runs the ABI check, the keeper's
+  tests (`KEEPER_E2E_REQUIRE=1`), the format of `examples/` and `keeper/test/`, and the local
+  walkthrough in its own job, which the Contracts check now requires. `make_manifest.py` builds
+  the manifest's `safes` from the new single-network genesis. The stale local deployment record
+  `deployments/31337/1793486175.json` is removed (the folder is git-ignored).
+
+### Earlier work, before the plain core
+
 - Second pass (owner decisions of 16 November 2026; not yet reviewed as a whole):
   - Identity: an artist or collaborator is a 6529 consolidated account and every wallet of it
     acts (`IAccounts`, `isWallet`, `requireSigned`, `requireConsent`); an account signature is
@@ -340,7 +378,6 @@
     integrator pages, glossary, architecture and runbook describe the code as merged, with the
     network's duties as current practice; the control-proof tool reads the consolidation
     source's `isConsolidated`; `docs/facts.json` regenerated.
-
 - Independent Stream review fixes (reviews F and G; [ADR 0008](docs/adr/0008-independent-stream.md)
   §1, §2, §8, §10, §12; IND-64 to IND-70, ID-41): a template version is its runtime code hash bound
   to an ownerless `IndependentStreamDeployer` (new; `IIndependentStreamDeployer` `0xf53f1196`),
@@ -550,7 +587,6 @@
     `open` (290,000 and 337,000) and capped-sweep `settle` (174,000) regression ceilings move
     with stated reasons, and a new row measures an edition `open` that deploys both wallets
     (434,052 gas, ceiling 443,000); no start budget or slot maximum is raised.
-
 - Work powers and conventions ([ADR 0006](docs/adr/0006-work-powers-and-conventions.md)):
   - **Lower-only royalty changes.** `WorkRecords.setRoyaltyRate` refuses a rate above the
     work's current one (`RoyaltyRateNotLowered`), before any signature is checked; the rate new
@@ -583,7 +619,6 @@
   - **Gas.** ADR 0004's table is re-measured: the re-rate, which now lowers the rate, rose by
     248 to 190,150; `tokenURI`'s worst case fell by 67 to 2,736,559; the start rows moved by at
     most 20 with the deployment addresses, and the binding start row is 338,273.
-
 - Review fixes of November 2026 (RFX-*), grouped by area:
   - **English auction.** With a bid, the winning bidder may send a pending delivery to any
     address at any time; the recipient its bid named may claim to itself at any time, and to
@@ -647,7 +682,6 @@
     ADR 0002 amendment note), though they cannot stop live sales settling except 1/1 auctions
     in an ERC-20 they deprecate (LIM-SAL-15); LIM-GAS-2 covers the deployment's state gas; the trust assumptions,
     architecture, storage guide, audit scope and the module READMEs follow these changes.
-
 - Explicit Stream state machines (owner decision 28, rc.3):
   - `PrimaryOutcome` gains RESCUED (4, appended so earlier values keep their encodings).
     `rescueToMuseum` records it, in the one flag combination no adapter can produce, so no
@@ -659,12 +693,6 @@
   - The specification gains the work-lifecycle and sale-method-lifecycle tables (AUC-37), and
     `StreamStatesInvariant.t.sol` checks every observed transition against them on the real
     stack. ADR 0005 §13 records the amendment.
-- Sepolia r4's live Verify passed on 6 November 2026 at block 12,076,640, after the manager's
-  5-day setback: 14 targets, 18 wiring calls and 17 holders, run read-only from `f2ec3d8` (the
-  `v1.0.0-rc.2` commit). The record says `"confirmed": true`, and `docs/facts.json` follows.
-  The Sepolia README, the release notes (a dated note), the root README, the delivery plan and
-  the auditor pack record it; the README notes that Verify needs an RPC that serves the deploy
-  blocks' logs.
 
 ## 1.0.0-rc.2 (2026-11-04)
 

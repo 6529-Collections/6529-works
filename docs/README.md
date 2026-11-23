@@ -15,6 +15,7 @@ Start with the [three-page overview](overview.md).
 | Know why a decision was made | [ADRs](adr/README.md) |
 | Deploy or operate | The [runbook](../script/README.md) and the [genesis configuration](../config/README.md) |
 | Report a vulnerability | [SECURITY.md](../SECURITY.md) |
+| See what a release contains | The release notes of [v1.0.0-rc.3](releases/v1.0.0-rc.3.md), the current release candidate (pre-audit), and the [changelog](../CHANGELOG.md) |
 
 ## Where each fact lives
 

@@ -211,4 +211,6 @@ A record of one pass of every layer over one commit, with the counts and what wa
 - **Campaign gaps.** Listed in [Invariants: Gaps](../audit/invariants.md#gaps).
 - **Rules without a test.** The rules that name no test are listed by
   `python tools/check_rules.py --uncovered`; the declaration rules are off-chain conventions.
-- **Live rehearsal.** The new contracts have not yet been deployed on Sepolia.
+- **Live rehearsal.** The new contracts run on Sepolia only (rounds r6, r7 and r8,
+  [records](../../deployments/11155111/README.md)); what each round did not run is at the end
+  of its flows page. There is no mainnet deployment.
