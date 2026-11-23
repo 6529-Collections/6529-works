@@ -17,12 +17,14 @@ import { RulesFixture } from "../records/RulesFixture.sol";
 ///         network's share only lowered, the receiver always a deployed vault (or the seller).
 contract StreamTermsTest is RulesFixture {
     address internal constant SELLER = address(0x5E11);
-    address internal constant FEE = address(0xFEE0);
+    /// @dev The split ledger's network fee vault: the one fee party `lowerFeeShare` accepts.
+    address internal FEE;
     address internal s;
 
     function setUp() public override {
         super.setUp();
         s = address(stream);
+        FEE = ledger.network();
     }
 
     /// @dev The royalty receiver of (SELLER, FEE) at `share`, deployed.
@@ -156,6 +158,53 @@ contract StreamTermsTest is RulesFixture {
         // The old terms no longer derive the receiver: no second lowering from them.
         vm.expectRevert(ITerms.InvalidFeeShare.selector);
         streamTerms.lowerFeeShare(s, id, SELLER, FEE, current, 0);
+    }
+
+    /// @dev The same vault, stated the other way round (the seller as the fee party, at the
+    ///      complementary share), would lower the seller's share and so raise the network's. It
+    ///      is refused for a work and for an edition; the ordinary lowering then still works.
+    function test_LowerFeeShare_ThePartiesStatedTheOtherWayRoundAreRefused() public {
+        uint256 id = _mintAt(stream, 1, 10_000);
+        address vault = stream.workOf(id).royaltyReceiver;
+        // The swapped statement derives the very same vault.
+        assertEq(ledger.walletFor(Splits.royaltyPayees(FEE, SELLER, 90_000), 0), vault);
+        vm.expectRevert(ITerms.InvalidFeeShare.selector);
+        streamTerms.lowerFeeShare(s, id, FEE, SELLER, 90_000, 50_000);
+        vm.expectRevert(ITerms.InvalidFeeShare.selector);
+        streamTerms.lowerFeeShare(s, id, FEE, SELLER, 90_000, 0);
+        assertEq(stream.workOf(id).royaltyReceiver, vault);
+        sale.createEdition(address(editions), id, 0, _vault(8_000), 5_000);
+        vm.expectRevert(ITerms.InvalidFeeShare.selector);
+        streamTerms.lowerFeeShare(address(editions), id, FEE, SELLER, 92_000, 10_000);
+        assertEq(editions.editionOf(id).royaltyReceiver, _vault(8_000));
+        streamTerms.lowerFeeShare(s, id, SELLER, FEE, 10_000, 4_000);
+        assertEq(
+            stream.workOf(id).royaltyReceiver,
+            ledger.walletFor(Splits.royaltyPayees(SELLER, FEE, 4_000), 0)
+        );
+    }
+
+    /// @dev Whatever is stated, the network fee vault's share of the stored receiver never
+    ///      rises: a call either reverts or leaves a vault of (other party, fee vault) at a
+    ///      lower share for the fee vault.
+    function testFuzz_LowerFeeShare_TheFeeVaultsShareNeverRises(
+        bool swapped,
+        uint32 stated,
+        uint32 next
+    ) public {
+        uint256 id = _mintAt(stream, 1, 30_000);
+        // One run in three states the share that derives the stored vault under its labels.
+        stated = stated % 3 == 0 ? (swapped ? 70_000 : 30_000) : uint32(bound(stated, 1, 99_999));
+        next = uint32(bound(next, 0, 99_999));
+        (address a, address b) = swapped ? (FEE, SELLER) : (SELLER, FEE);
+        try streamTerms.lowerFeeShare(s, id, a, b, stated, next) {
+            assertFalse(swapped, "only the fee vault's share is lowered");
+            assertEq(stated, 30_000);
+            assertLt(next, 30_000);
+            assertEq(stream.workOf(id).royaltyReceiver, _vault(next));
+        } catch {
+            assertEq(stream.workOf(id).royaltyReceiver, _vault(30_000));
+        }
     }
 
     function test_LowerFeeShare_TheEditionMovesWhenItSharesTheReceiver() public {

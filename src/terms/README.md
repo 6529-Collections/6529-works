@@ -15,9 +15,12 @@ The royalty policy of existing works: a replaceable module behind the permanent 
 - **The network's share of a work's royalties only goes down.** `lowerFeeShare` is the
   network's. The caller states the seller, the fee recipient and the share in force; they must
   derive the receiver the token stores (`ISplitFactory.walletFor(Splits.royaltyPayees(...), 0)`,
-  or the seller at a zero share), so this module stores nothing per work. The new split vault is
-  deployed (`createWallet`) before it is set, so royalties never point at an address without
-  code.
+  or the seller at a zero share), so this module stores nothing per work. The fee recipient
+  must be the split ledger's network fee vault (`ISplitFactory.network()`, fixed in permanent
+  code): the share that goes down is always the network's, and the two parties cannot be
+  stated the other way round. A work whose vault names another fee recipient is not lowered by
+  this module. The new split vault is deployed (`createWallet`) before it is set, so royalties
+  never point at an address without code.
 - **Editions.** A master's edition moves with it when the edition's receiver is the master's
   old receiver. An edition with a receiver of its own is lowered by naming the editions
   contract as the token. The network pairs each editions contract with its token contract

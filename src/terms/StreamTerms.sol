@@ -21,9 +21,11 @@ import { IIndependentStreamRegistry } from "../interfaces/IIndependentStreamRegi
 ///         - The rate is locked for good only through the RECORDS module.
 ///         - The network alone lowers its share of a work's royalties, never raises it. The
 ///           caller states the seller, fee recipient and current share; they must derive the
-///           receiver the token stores, so this module stores nothing per work. The new split
-///           vault is deployed before it is set, so royalties never point at an address without
-///           code.
+///           receiver the token stores, so this module stores nothing per work. The fee
+///           recipient must be the split ledger's network fee vault (`ISplitFactory.network`,
+///           fixed in permanent code), so the share that goes down is always the network's:
+///           the two parties cannot be stated the other way round. The new split vault is
+///           deployed before it is set, so royalties never point at an address without code.
 /// @dev For an Independent Stream token (any token but `stream` and its editions) the new share may
 ///      not exceed the Independent Stream module's current share for that token
 ///      (`IIndependentStreamGate.feeShareOf`), which only ever goes down. An Independent Stream
@@ -101,7 +103,8 @@ contract StreamTerms is AccessManaged, ITerms {
     /// @dev `token` is an ERC-721 token contract or a paired editions contract. For a work, the
     ///      edition moves with it when the edition's receiver is the work's old receiver; an
     ///      edition with its own receiver is lowered by naming the editions contract as
-    ///      `token`. The rate never changes here.
+    ///      `token`. The rate never changes here. A work whose fee recipient is not the split
+    ///      ledger's network fee vault is not lowered by this module.
     function lowerFeeShare(
         address token,
         uint256 tokenId,
@@ -114,6 +117,8 @@ contract StreamTerms is AccessManaged, ITerms {
         bool isEdition = master != address(0);
         if (!isEdition) master = token;
         if (newShare >= currentShare) revert InvalidFeeShare();
+        // The party whose share goes down is the network's fee vault, which permanent code names.
+        if (feeRecipient != ISplitFactory(splitFactory).network()) revert InvalidFeeShare();
         if (master != stream) {
             address gate = IModuleSlots(directory).moduleOf(Slots.INDEPENDENT_STREAM);
             if (newShare > IIndependentStreamGate(gate).feeShareOf(master)) {

@@ -29,7 +29,8 @@ interface ITerms {
     /// @notice The caller is not the token's RECORDS module.
     error NotRecordsModule(address token, address caller);
     /// @notice The stated seller, fee recipient and current share do not derive the token's
-    ///         stored royalty receiver, or the new share is not lower.
+    ///         stored royalty receiver, the new share is not lower, or the fee recipient is not
+    ///         the network's fee vault.
     error InvalidFeeShare();
 
     /// @notice Sets the royalty rate of a work and of its edition, if one exists. The token's
@@ -50,7 +51,8 @@ interface ITerms {
     /// @param token The token contract.
     /// @param tokenId The token.
     /// @param seller The work's seller wallet.
-    /// @param feeRecipient The fee recipient in the current royalty vault.
+    /// @param feeRecipient The fee recipient in the current royalty vault: the network's fee
+    ///        vault.
     /// @param currentShare The share in force.
     /// @param newShare The lower share.
     function lowerFeeShare(
