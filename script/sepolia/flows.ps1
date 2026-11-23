@@ -50,6 +50,9 @@
     ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step independentEditionsList -Editions <editions>
     ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step independentOpenEdition -Editions <editions> -TokenId 1 -Work 1
     ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step editionBid -Editions <editions> -TokenId 1 -Bidder bidder3 -EditionStep 30
+    ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step independentStartNoBid -Token <token> -Work 2
+    ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step restart -Token <token> -TokenId 1
+    ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step clock -Token <token> -TokenId 1 -Label clock-before
     ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step prague
 
     The prague step replays each recorded transaction with
@@ -67,7 +70,8 @@ param(
         'englishWithdraw', 'outcome', 'cancel', 'send', 'safeCall', 'record', 'prague',
         'report', 'independentContent', 'independentDeploy', 'independentList',
         'independentStart', 'independentOpenRecord', 'starterRequest',
-        'independentEditionsDeploy', 'independentEditionsList', 'independentOpenEdition')] [string] $Step,
+        'independentEditionsDeploy', 'independentEditionsList', 'independentOpenEdition',
+        'independentStartNoBid', 'restart', 'clock')] [string] $Step,
     [string] $Rpc = 'https://ethereum-sepolia-rpc.publicnode.com',
     # The deployment record, relative to the repository root (script/DeployCore.s.sol writes
     # deployments/11155111/core-<timestamp>.json).
@@ -108,9 +112,9 @@ param(
     # steps (editionBid, editionRaise, editionSettle, claimBid, claimBidFor, editionState) act on
     # its sales in the Independent Stream edition auction when it is given.
     [string] $Editions = '',
-    # Which Independent Stream work the independent* steps act on: 0, an original; 1, an edition
-    # master.
-    [ValidateSet(0, 1)] [int] $Work = 0,
+    # Which Independent Stream work the independent* steps act on: 0, an original; 1 to 4, an
+    # edition master (each with its own media, so one pair of contracts runs several edition sales).
+    [ValidateSet(0, 1, 2, 3, 4)] [int] $Work = 0,
     # start, starter, startWithBid, starterRequest: the role whose wallet signs the artist's move
     # when it is not the account's root (a wallet consolidated with the artist, such as wallet2).
     [string] $MoveSigner = '',
@@ -153,7 +157,7 @@ $Accounts = @{
 }
 # Safe -> the owner keystores that sign for it (threshold many), from the genesis holders.
 $SafeSigners = @{
-    '0x54a769fe591c3f47cf83d30b69e576497ce34454' = @('safe-owner-1', 'safe-owner-2')  # the network Safe (r5 to r7), 2-of-3
+    '0x54a769fe591c3f47cf83d30b69e576497ce34454' = @('safe-owner-1', 'safe-owner-2')  # the network Safe (r5 to r8), 2-of-3
 }
 $Zero = '0x0000000000000000000000000000000000000000'
 
@@ -226,14 +230,17 @@ function Invoke-Cli([string]$Program, [string[]]$Arguments) {
     return $text
 }
 
-function Invoke-Plan([string]$Sig, [string[]]$Arguments) {
+# -AtBlock pins the read to one block (`--fork-block-number`), for a snapshot whose values and
+# recorded block must be the same block.
+function Invoke-Plan([string]$Sig, [string[]]$Arguments, [string]$AtBlock = '') {
+    $pin = if ($AtBlock) { @('--fork-block-number', $AtBlock) } else { @() }
     Push-Location $Repo
     try {
         # A load-balanced public RPC can answer "block not found" for a block another backend
         # just reported; retry the read-only run.
         for ($attempt = 1; ; $attempt++) {
             try {
-                $out = Invoke-Cli 'forge' (@('script', $Script, '--sig', $Sig) + $Arguments + @('--rpc-url', $Rpc))
+                $out = Invoke-Cli 'forge' (@('script', $Script, '--sig', $Sig) + $Arguments + @('--rpc-url', $Rpc) + $pin)
                 break
             }
             catch { if ($attempt -ge 4) { throw }; Start-Sleep -Seconds 5 }
@@ -402,11 +409,15 @@ function Send-Items($Items) {
     }
 }
 
-# Prints a plan's INFO lines and keeps them in the state file under notes.snapshots.<label>,
-# with the latest block's number and time.
-function Save-Snapshot($Items, [string]$Name) {
+# Reads a view plan at one block and keeps its INFO lines in the state file under
+# notes.snapshots.<label>, with that block's number and time: the head is resolved first and the
+# plan reads exactly that block, so the values and the recorded block cannot be a block apart.
+# (Snapshots recorded up to r8 took the head after the read and can name the block after it.)
+function Save-Snapshot([string]$Sig, [string[]]$Arguments, [string]$Name) {
     $block = Invoke-Cli 'cast' @('block', 'latest', '--json', '--rpc-url', $Rpc) | ConvertFrom-Json
-    $snap = [ordered]@{ block = [Convert]::ToInt64($block.number, 16); timestamp = [Convert]::ToInt64($block.timestamp, 16) }
+    $number = [Convert]::ToInt64($block.number, 16)
+    $Items = Invoke-Plan $Sig $Arguments "$number"
+    $snap = [ordered]@{ block = $number; timestamp = [Convert]::ToInt64($block.timestamp, 16) }
     foreach ($i in $Items) { if ($i[0] -eq 'INFO') { $snap[$i[1]] = $i[2] } }
     $snap.GetEnumerator() | ForEach-Object { Write-Host ("{0,-16} {1}" -f $_.Key, $_.Value) }
     if ($Name) {
@@ -561,10 +572,10 @@ switch ($Step) {
         Send-Items (Invoke-Plan 'forwardTx()' @())
     }
     'editionState' {
-        Save-Snapshot (Invoke-Plan 'editionState(uint256)' @("$TokenId")) $Label
+        Save-Snapshot 'editionState(uint256)' @("$TokenId") $Label
     }
     'englishState' {
-        Save-Snapshot (Invoke-Plan 'englishState(uint256)' @("$TokenId")) $Label
+        Save-Snapshot 'englishState(uint256)' @("$TokenId") $Label
     }
     'pause' {
         # The pauser key, or -Safe for a pauser that is a Safe.
@@ -611,6 +622,22 @@ switch ($Step) {
     'independentStart' {
         if (-not $Token) { throw 'independentStart needs -Token' }
         Send-Items (Invoke-Plan 'independentStartTx(address,address,uint256)' @($Token, (Get-Address $Bidder), $Amount))
+    }
+    'independentStartNoBid' {
+        # `start` with no bid, sent by the relay: the sale ends unsold unless someone bids.
+        if (-not $Token) { throw 'independentStartNoBid needs -Token' }
+        Send-Items (Invoke-Plan 'independentStartNoBidTx(address)' @($Token))
+    }
+    'restart' {
+        # Offers an unsold Independent Stream work again (-Token, -TokenId); with -ExpectRevert the
+        # refusal is read first and the failed transaction recorded (too early, or a 6529 Stream sale).
+        Send-Items (Invoke-Plan 'restartTx(uint256)' @("$TokenId"))
+    }
+    'clock' {
+        # auctionClock's four words (state, end, pause start, last restart), kept under -Label.
+        # For r8 and later: the English auctions of r6 and r7 answer three words, which this
+        # step cannot decode.
+        Save-Snapshot 'clock(uint256)' @("$TokenId") $Label
     }
     'independentEditionsDeploy' {
         # The artist deploys the editions contract of its 1/1 contract -Token; the address is kept

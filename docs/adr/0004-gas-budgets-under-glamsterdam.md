@@ -143,6 +143,9 @@ r7 run. Sepolia
 gas is the receipt on the r7 rehearsal (`5de6abaa`,
 [flows](../../deployments/11155111/flows-r7.md)), given only where r7 ran the row's own scenario
 (its replay at Prague prices is within 1% of the row); "—" means r7 did not run that scenario.
+A figure marked "(r8)" is the receipt on the r8 rehearsal (`961bc956`,
+[flows](../../deployments/11155111/flows-r8.md)), for a row measured after the clock change of
+23 November 2026.
 
 What each ceiling applies to (all are test gates in Prague gas, not chain code):
 
@@ -188,7 +191,7 @@ What each ceiling applies to (all are test gates in Prague gas, not chain code):
 | `auctionClock` (view, cold) | 28,787 | 30,000 (regression) | 0 | 0 | — |
 | `royaltyInfo` (view, cold; its ceiling is 21,000 plus the 50,000 execution budget of `RoyaltyInfoGas.t.sol`) | 23,937 | 71,000 | 0 | 0 | — |
 | `authorize`, the mint policy's share of a start, as a call | 115,937 | 119,000 (regression) | 0 | 0 | — |
-| Edition auction `open`, steady state (creates the edition) | 257,207 | 260,000 (regression) | 5 | 0 | 693,657 |
+| Edition auction `open`, steady state (creates the edition) | 257,207 | 260,000 (regression) | 5 | 0 | 696,058 (r8) |
 | Edition auction `open`, an artist's first sale (deploys both vaults) | 396,779 | 402,000 (regression) | 7 | 2 | — |
 | Edition `bid`, opens an 8-step word | 86,353 | 89,000 (regression) | 2 | 0 | 269,355 |
 | Edition `bid`, its 8-step word exists | 69,283 | 71,000 (regression) | 1 | 0 | — |
@@ -200,15 +203,16 @@ What each ceiling applies to (all are test gates in Prague gas, not chain code):
 | `release`, the artist's first ETH release | 101,456 | 104,000 (regression) | 2 | 0 | 274,996 |
 | `claimSigned`, the artist's first signed release (relayed) | 146,964 | 150,000 (regression) | 3 | 0 | — |
 | `claimSigned`, a later signed release (next nonce) | 95,696 | 98,000 (regression) | 0 | 0 | — |
-| Independent Stream `restart`, a work's first (records when it was offered again) | 111,151 | 114,000 (regression) | 1 | 0 | — |
-| Independent Stream `restart`, a later one | 94,051 | 96,000 (regression) | 0 | 0 | — |
+| Independent Stream `restart`, a work's first (records when it was offered again) | 111,151 | 114,000 (regression) | 1 | 0 | 201,871 (r8) |
+| Independent Stream `restart`, a later one | 94,051 | 96,000 (regression) | 0 | 0 | 103,951 (r8) |
 
 **Amendment note, 23 November 2026 (the clock answers when a work was offered again).**
 `auctionClock` now also answers when a work was last offered again, one more storage word that
 the view reads, and with it the edition auction's `open` and the first call of its `settle`. Four
 rows above were re-measured for it (`auctionClock`, the two edition `open` rows and edition
 `settle`), and two of their regression ceilings moved (28,000 to 30,000; 179,000 to 185,000). The
-Sepolia figure of the edition `open` row is still r7's receipt, taken before this change. The two
+Sepolia figures of the edition `open` row and of the two `restart` rows are r8's receipts
+(`961bc956`, the first instance with this change; the comparison is below). The two
 `restart` rows are new and measured by `test/integration/IndependentRestartGas.t.sol` in the same
 way as the rows of `test_Gas_Table`; the `restart` row of the earlier table below was measured
 before the plain core and is not comparable.
@@ -217,6 +221,29 @@ The other Independent Stream rows, the edition auction's worst-case rows and `to
 their own tests (`IndependentStreamGas.t.sol`, `EditionAuctionGasReport.t.sol`,
 `TokenUriBudget.t.sol`) and were not re-measured for this amendment; their last figures are in
 the earlier table below.
+
+**Sepolia r8 against the `restart` and edition rows.** r8 (`961bc956`) is the first instance
+with the clock change. Its transactions, replayed on their parent block's state at Prague
+prices, beside the row each is an instance of:
+
+| Transaction on r8 | Sepolia gas | Replay at Prague prices | Row | CI | Ceiling | Under the ceiling |
+| --- | ---: | ---: | --- | ---: | ---: | ---: |
+| [`restart`](https://sepolia.etherscan.io/tx/0xb0ae0650c3712d615afc9fad113db8f27b72a641cb0cefff324ec5e91f8d07f4), a work's first (also [B](https://sepolia.etherscan.io/tx/0xe5f3544f1f45d0410e4b431010a2e7cd6e42828857e51d176ffd14b2137dfe2b) and [C](https://sepolia.etherscan.io/tx/0x6cb7846b232ce96512974bb8ba01ab404657bb949e077d485d7cbe847b93f90c), the same figures) | 201,871 | 111,151 | Independent Stream `restart`, a work's first | 111,151 | 114,000 | 2,849 |
+| [`restart`](https://sepolia.etherscan.io/tx/0x5fbb5b23fefdfb96788ffb4312c54781a79644a1d4dce96fc7c1ae8e60058f5a), the same work's second | 103,951 | 94,051 | Independent Stream `restart`, a later one | 94,051 | 96,000 | 1,949 |
+| [Edition `open`](https://sepolia.etherscan.io/tx/0x4df9e60f96899d137271825ccd7904388c7f456b92798d9b1989593a0dce4bcd), steady state | 696,058 | 259,058 | Edition auction `open`, steady state | 257,207 | 260,000 | 942 |
+| [Edition `settle`](https://sepolia.etherscan.io/tx/0xa99b3fd48cbd50b72ae807b206a9330dd77145039852dbd4d74bca270b8a9585), 5 used steps (steps 0 to 32, one copy each) | 260,197 | 156,677 | Edition `settle`, 5 used steps (CI: steps 96 to 192, 280 copies) | 180,815 | 185,000 | 28,323 |
+
+- Both `restart` replays equal CI's figures to the unit.
+- The live `open` is 1,851 gas above CI, as r7's starts are above theirs: the rehearsal's
+  package has ten items where CI's has eight, and the addresses in the calldata differ. It is
+  942 under its regression ceiling, the tightest margin of this set.
+- The live `settle` used the ladder's five lowest words with one copy each, so it is not the
+  row's scenario and its receipt is not in the table; it is under the row's ceiling.
+- The Independent Stream edition auction's own `open` and `settle` are not rows of this
+  table. On r8 its `open` replayed at 314,659 to 314,671 and its three settlements at 192,365
+  to 195,396 (2 or 3 used steps);
+  the earlier table's Independent Stream rows predate the plain core and are not comparable.
+  A row and a ceiling for them are still to be measured.
 
 **The Sepolia starts against their rows.** Each start of r6 and r7, replayed on its parent
 block's state at Prague prices (`cast run --quick --evm-version prague`), beside the row it is
