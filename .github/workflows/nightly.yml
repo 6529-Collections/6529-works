@@ -293,9 +293,16 @@ jobs:
       - name: Settlement scan against UniformClearing
         # The adapter's settlement scan (Yul) against the library the lens runs, 10,000 random
         # books (`forge-config: deep.fuzz.runs` on the test).
+        # The filter is matched against the test's signature, so it ends at the opening
+        # bracket, not at `$`; a filter that selects no test passes in Forge, so the step
+        # also requires that the one test ran.
         env:
           FOUNDRY_PROFILE: deep
-        run: forge test --match-test "^testFuzz_Settlement_EqualsTheLibraryClearing$"
+        shell: bash
+        run: |
+          set -euo pipefail
+          forge test --match-test "^testFuzz_Settlement_EqualsTheLibraryClearing\(" | tee scan.log
+          grep -q "1 tests passed, 0 failed, 0 skipped (1 total tests)" scan.log
 
   fork:
     name: Fork tests

@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { Vm } from "forge-std/Vm.sol";
+import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
+import { IUniformEditionAuctionLens } from "src/interfaces/IUniformEditionAuctionLens.sol";
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import { EditionTerms, ItemKind, PackageItem } from "src/interfaces/types/PackageTypes.sol";
 import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
@@ -24,6 +27,32 @@ contract IndependentEditionAuctionMutationTest is IndependentEditionAuctionTest 
 
     function _status(uint256 saleId) internal view returns (uint8) {
         return uint8(ua.auction(saleId).status);
+    }
+
+    /// @dev The opening event names the master of the sale's own edition contract, the 1/1
+    ///      contract whose sale it follows.
+    function test_Open_TheEventNamesTheEditionContractsMaster() public {
+        vm.recordLogs();
+        uint256 saleId = _open();
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        uint256 found;
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].topics[0] != IUniformEditionAuction.AuctionOpened.selector) continue;
+            assertEq(logs[i].emitter, address(auction));
+            assertEq(uint256(logs[i].topics[1]), saleId);
+            // The master is the first word of the event's data.
+            assertEq(address(uint160(uint256(bytes32(logs[i].data)))), address(master));
+            ++found;
+        }
+        assertEq(found, 1, "one AuctionOpened");
+    }
+
+    /// @dev The Independent Stream lens reads its module from the directory and accepts no other.
+    function test_SetIndependentStreamRegistry_TheLensRefusesAnyModule() public {
+        address next = makeAddr("next");
+        IUniformEditionAuctionLens lens = _lens();
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.TargetNotAllowed.selector, next));
+        lens.setIndependentStreamRegistry(address(gate), next);
     }
 
     function test_Raise_MovesTheBidUpForTheDifference() public {

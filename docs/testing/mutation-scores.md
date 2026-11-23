@@ -14,9 +14,10 @@ come from this page. How a campaign works and how to run one is in the
   are that commit's. The fixes merged afterwards (#119) changed six of the measured files:
   `Modules` (a zero minter is refused), `PackageRegistry` (`preview`), `StreamTerms`
   (`lowerFeeShare`), `IndependentEditionAuction` (`settle`), `IndependentStreamEditions6529` and
-  `IndependentStreamMembership`. Their scores were not measured again: each floor stays as
-  measured, two points under, until the weekly run measures the merged code. Every test added
-  here passes on the merged code.
+  `IndependentStreamMembership`. `PackageRegistry` and `IndependentEditionAuction` were
+  measured again on the merged code ([Measured again](#measured-again-on-961bc956)); for the
+  other four each floor stays as measured, two points under, until the weekly run measures
+  the merged code. Every test added here passes on the merged code.
 - **Three small files measured with the fixed tool.** `IWorkPowers.sol`, `CoreTypes.sol` and
   `SaleTypes.sol` hold only libraries not named like their file; their rows are whole-file runs
   of the tool after the fix described below.
@@ -32,7 +33,7 @@ come from this page. How a campaign works and how to run one is in the
   survivors. So a few more mutants ran here than one whole-file run makes, which lowers a
   rate if anything. And where a revert mutant survived in a statements part, that part's
   list of comment mutants moved up by one from there on, so some comment mutants ran in two
-  parts and others in none. That happened in seven files; two were measured again
+  parts and others in none. That happened in seven files, all measured again since
   ([The statements parts](#the-statements-parts)).
 - **Every contract of a file.** slither-mutate mutates one contract per file, the one named
   like the file. Three base contracts declared beside their concrete contract had therefore
@@ -53,6 +54,8 @@ final score minus two points, rounded down.
 
 ### Permanent contracts
 
+<!-- generated:scores tier=1 -->
+
 | Contract | Mutants | Killed | Survived | Timed out | Score | Killed by new tests | Final | Floor |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `src/content/ContentStore.sol` | 747 | 699 | 48 | 0 | 93.6% | 2 | 93.8% | 91 (was 92) |
@@ -66,27 +69,35 @@ final score minus two points, rounded down.
 | `src/economics/RevenueEscrow.sol` | 412 | 403 | 9 | 0 | 97.8% | 1 | 98.1% | 96 |
 | `src/economics/SplitLedger.sol` | 626 | 606 | 20 | 0 | 96.8% | 0 | 96.8% | 94 |
 | `src/economics/Splits.sol` | 155 | 145 | 10 | 0 | 93.5% | 0 | 93.5% | 91 (was 88) |
-| `src/independent/IndependentStream6529.sol` | 179 | 165 | 14 | 0 | 92.2% | 14 | 100.0% | 98 (was 92) |
+| `src/independent/IndependentStream6529.sol` | 181 | 181 | 0 | 0 | 100.0% | 0 | 100.0% | 98 |
 | `src/independent/IndependentStreamEditions6529.sol` | 35 | 33 | 2 | 0 | 94.3% | 1 | 97.1% | 95 |
 | `src/records/StatementLog.sol` | 496 | 472 | 24 | 0 | 95.2% | 0 | 95.2% | 93 |
-| **Total** | **3892** | **3716** | **176** | **0** | **95.5%** | **34** | **96.4%** | |
+| **Total** | **3894** | **3732** | **162** | **0** | **95.8%** | **20** | **96.4%** | |
+
+<!-- /generated -->
 
 ### Modules that hold money or authorise mints
 
+<!-- generated:scores tier=2 -->
+
 | Contract | Mutants | Killed | Survived | Timed out | Score | Killed by new tests | Final | Floor |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `src/curation/PackageRegistry.sol` | 576 | 532 | 44 | 0 | 92.4% | 9 | 93.9% | 91 (was 94) |
+| `src/curation/PackageRegistry.sol` | 578 | 544 | 34 | 0 | 94.1% | 0 | 94.1% | 92 (was 91) |
 | `src/identity/Accounts.sol` | 562 | 532 | 30 | 0 | 94.7% | 13 | 97.0% | 94 |
-| `src/independent/IndependentEditionAuction.sol` | 35 | 29 | 6 | 0 | 82.9% | 5 | 97.1% | 95 (was 92) |
-| `src/independent/IndependentStreamRegistry.sol` | 941 | 832 | 109 | 0 | 88.4% | 37 | 92.3% | 90 (was 89) |
+| `src/independent/IndependentEditionAuction.sol` | 56 | 53 | 3 | 0 | 94.6% | 1 | 96.4% | 94 (was 95) |
+| `src/independent/IndependentStreamRegistry.sol` | 948 | 882 | 66 | 0 | 93.0% | 0 | 93.0% | 91 (was 90) |
 | `src/records/WorkRules.sol` | 373 | 353 | 20 | 0 | 94.6% | 12 | 97.9% | 95 (was 89) |
-| `src/sales/EnglishAuction.sol` | 683 | 602 | 81 | 0 | 88.1% | 60 | 96.9% | 94 (was 90) |
+| `src/sales/EnglishAuction.sol` | 695 | 674 | 21 | 0 | 97.0% | 0 | 97.0% | 94 |
 | `src/sales/UniformClearing.sol` | 278 | 276 | 2 | 0 | 99.3% | 0 | 99.3% | 97 (was 93) |
-| `src/sales/UniformEditionAuction.sol` | 1113 | 1019 | 94 | 0 | 91.6% | 27 | 94.0% (measured again) | 91 |
+| `src/sales/UniformEditionAuction.sol` | 1122 | 1055 | 67 | 0 | 94.0% | 0 | 94.0% | 92 (was 91) |
 | `src/terms/StreamTerms.sol` | 170 | 160 | 10 | 0 | 94.1% | 9 | 99.4% | 97 (was 90) |
-| **Total** | **4731** | **4335** | **396** | **0** | **91.6%** | **172** | **95.3%** | |
+| **Total** | **4782** | **4529** | **253** | **0** | **94.7%** | **35** | **95.4%** | |
+
+<!-- /generated -->
 
 ### Everything else
+
+<!-- generated:scores tier=3 -->
 
 | Contract | Mutants | Killed | Survived | Timed out | Score | Killed by new tests | Final | Floor |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -99,7 +110,7 @@ final score minus two points, rounded down.
 | `src/curation/Eip712CurationVerifier.sol` | 165 | 161 | 4 | 0 | 97.6% | 0 | 97.6% | 95 (was 94) |
 | `src/economics/AssetAllowlist.sol` | 88 | 80 | 8 | 0 | 90.9% | 0 | 90.9% | 88 (was 91) |
 | `src/economics/ClaimRouter.sol` | 261 | 230 | 31 | 0 | 88.1% | 0 | 88.1% | 86 |
-| `src/economics/EconomicsResolver.sol` | 267 | 247 | 20 | 0 | 92.5% | 0 | 92.5% | 90 |
+| `src/economics/EconomicsResolver.sol` | 262 | 242 | 20 | 0 | 92.4% | 0 | 92.4% | 90 |
 | `src/economics/GovernedVault.sol` | 126 | 123 | 3 | 0 | 97.6% | 0 | 97.6% | 95 |
 | `src/economics/RevenuePayment.sol` | 29 | 26 | 3 | 0 | 89.7% | 0 | 89.7% | 87 (was 84) |
 | `src/economics/SplitVault.sol` | 0 | 0 | 0 | 0 | n/a | 0 | n/a | none |
@@ -112,7 +123,7 @@ final score minus two points, rounded down.
 | `src/governance/Roles.sol` | 250 | 233 | 17 | 0 | 93.2% | 0 | 93.2% | 91 |
 | `src/governance/WorksAccessManager.sol` | 126 | 122 | 4 | 0 | 96.8% | 0 | 96.8% | 94 |
 | `src/identity/ConsolidationAdapter.sol` | 75 | 56 | 19 | 0 | 74.7% | 0 | 74.7% | 72 (was 83) |
-| `src/independent/IndependentEditionAuctionLens.sol` | 48 | 38 | 10 | 0 | 79.2% | 0 | 79.2% | 77 (was 83) |
+| `src/independent/IndependentEditionAuctionLens.sol` | 54 | 46 | 8 | 0 | 85.2% | 1 | 87.0% | 85 (was 77) |
 | `src/independent/IndependentStreamDeployer.sol` | 100 | 94 | 6 | 0 | 94.0% | 0 | 94.0% | 92 |
 | `src/independent/IndependentStreamMembership.sol` | 65 | 61 | 4 | 0 | 93.8% | 0 | 93.8% | 91 (was 92) |
 | `src/interfaces/IWorkPowers.sol` | 16 | 12 | 4 | 0 | 75.0% | 0 | 75.0% | 73 (was 98) |
@@ -125,7 +136,7 @@ final score minus two points, rounded down.
 | `src/interfaces/types/Typehashes.sol` | 26 | 26 | 0 | 0 | 100.0% | 0 | 100.0% | 98 |
 | `src/interfaces/types/WorksHashing.sol` | 47 | 43 | 4 | 0 | 91.5% | 0 | 91.5% | 89 (was 87) |
 | `src/libraries/AgedCredits.sol` | 24 | 22 | 2 | 0 | 91.7% | 0 | 91.7% | 89 (was 90) |
-| `src/libraries/BoundedCall.sol` | 282 | 261 | 21 | 0 | 92.6% | 0 | 92.6% | 90 (was 91) |
+| `src/libraries/BoundedCall.sol` | 279 | 259 | 20 | 0 | 92.8% | 0 | 92.8% | 90 |
 | `src/libraries/DelegatedEOA.sol` | 47 | 41 | 6 | 0 | 87.2% | 0 | 87.2% | 85 |
 | `src/libraries/Dependency.sol` | 42 | 42 | 0 | 0 | 100.0% | 0 | 100.0% | 98 (was 95) |
 | `src/libraries/JsonEscape.sol` | 90 | 76 | 14 | 0 | 84.4% | 0 | 84.4% | 82 (was 79) |
@@ -134,10 +145,12 @@ final score minus two points, rounded down.
 | `src/libraries/SignatureVerifier.sol` | 88 | 75 | 13 | 0 | 85.2% | 0 | 85.2% | 83 (was 80) |
 | `src/libraries/Utf8.sol` | 118 | 102 | 16 | 0 | 86.4% | 0 | 86.4% | 84 |
 | `src/sales/SaleStarter.sol` | 20 | 19 | 1 | 0 | 95.0% | 0 | 95.0% | 93 (was 98) |
-| `src/sales/UniformEditionAuctionLens.sol` | 1134 | 994 | 140 | 0 | 87.7% | 0 | 88.0% (measured again) | 85 (was 87) |
+| `src/sales/UniformEditionAuctionLens.sol` | 1117 | 989 | 128 | 0 | 88.5% | 0 | 88.5% | 86 (was 85) |
 | `src/stream/SpdxId.sol` | 114 | 106 | 8 | 0 | 93.0% | 0 | 93.0% | 90 |
 | `src/stream/WorkDelivery.sol` | 567 | 496 | 71 | 0 | 87.5% | 0 | 87.5% | 85 (was 88) |
-| **Total** | **7299** | **6520** | **779** | **0** | **89.3%** | **0** | **89.3%** | |
+| **Total** | **7280** | **6516** | **764** | **0** | **89.5%** | **1** | **89.5%** | |
+
+<!-- /generated -->
 
 A file with no mutants (constants of other types, or declarations only) needs no floor.
 
@@ -164,28 +177,56 @@ are exactly the whole group.
 
 `tools/mutation.py` now cuts a statements group by source line: a line's revert and comment
 mutants run in the same part, so the parts together are the mutants of the whole group
-whatever survives. The two files the tool itself runs in parts were measured again that way,
-every group, at commit a39245e3 (the contracts as merged, with the tests added here):
+whatever survives. All seven files were measured again that way at commit 961bc956
+([Measured again](#measured-again-on-961bc956)), and their rows in the tables above are that
+measurement's. The comment mutant the campaign's parts never ran in `UniformEditionAuction`
+(line 1017 then) is killed there by `test_Settle_AResumedScanKeepsTheDemandAlreadyCounted`.
 
-| Contract | Mutants | Killed | Survived | Timed out | Score | Floor |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `src/sales/UniformEditionAuction.sol` | 1112 | 1045 | 67 | 0 | 94.0% | 91 |
-| `src/sales/UniformEditionAuctionLens.sol` | 1113 | 979 | 134 | 0 | 88.0% | 85 |
+### Measured again on 961bc956
 
-These figures are the two files' "final" and floor in the tables above; the other columns of
-their rows stay as the campaign measured them. Two survivors of `UniformEditionAuctionLens`
-were not run against the whole suite before their shard's time budget ended; they count as
-survived, so that score is a lower bound.
+Ten files were measured again on 23 November 2026 at commit 961bc956, the contracts as merged
+with every test added above:
 
-The other five files in this section's first table were not measured again: their rows are the
-campaign's, with comment mutants that are a slightly different sample of the same code, and
-a mutant their parts never ran may yet survive (one did in `UniformEditionAuction`, below).
-The tool runs the statements group of each of them as one whole run, so the weekly run
-measures them without this effect.
+- the seven contracts the module fixes changed after the campaign: `EnglishAuction`,
+  `UniformEditionAuction`, `UniformEditionAuctionLens`, `IndependentEditionAuction`,
+  `IndependentEditionAuctionLens`, `IndependentStreamRegistry` and `EconomicsResolver`;
+- the three other files of the table above: `PackageRegistry`, `BoundedCall` and
+  `IndependentStream6529`.
+
+Their rows, floors and survivor tables on this page are that measurement's, and their line
+numbers that commit's; "(was N)" is the floor before it. Every other row is the campaign's.
+In these ten rows the tests the campaign added count among the killed, so "killed by new
+tests" counts only the two tests added with this measurement. The list of
+[tests added](#the-tests-added) keeps the campaign's entries with the line numbers of its
+commit.
+
+It ran with `tools/mutation.py` as it is in the repository, 5,292 mutants in 142 parts in
+separate checkouts on one rented 96-core machine, about three hours in all. The two
+edition-auction files and the two Independent Stream auction files ran as the shards the tool
+plans; each group of the other split files ran through the tool's own part mechanism in more
+parts than it plans (the same mutants); `EconomicsResolver` and `BoundedCall`, which the tool
+runs whole, ran one group at a time. A group run on its own does
+not skip the operator mutants of a line whose revert or comment mutant survived in another
+group, so a few more mutants ran than a whole-file run makes, which lowers a rate if anything.
+Every part logged that it finished, none stopped at its time budget and no mutant timed out;
+every survivor was run against the whole suite.
+
+Twelve survivors had no verdict from the campaign's triage, because their lines changed or
+their mutants are new: three in `IndependentEditionAuction`, three in `UniformEditionAuction`,
+five in `UniformEditionAuctionLens` and one in `IndependentEditionAuctionLens`. Two were gaps
+and have tests now: the master named in the Independent Stream auction's opening event, and
+the Independent Stream lens's setter, which must refuse. Eight are equivalent and two are
+defensive. The survivors seen before
+keep their verdicts at their new lines. No survivor showed a defect in a contract. For
+`UniformEditionAuctionLens` and `IndependentEditionAuctionLens` only the survivors new in
+this measurement are listed below; the others, and those of `EconomicsResolver` and
+`BoundedCall`, are the campaign's untriaged ones.
 
 ## The tests added
 
-119 test functions, each shown to fail on the mutants it is listed with:
+<!-- generated:tests -->
+
+121 test functions, each shown to fail on the mutants it is listed with:
 
 - `test/content/ContentStorePermanence.t.sol`
   - `test_Source_ARangeCheckKeepsMemoryAtOneChunk` (ContentStore L584)
@@ -227,7 +268,9 @@ measures them without this effect.
   - `test_IsArtist_TheHighestArtistIdCounts` (Accounts L578)
   - `test_RegisterIndependent_RefusesAnExpiredAcceptance` (Accounts L197)
 - `test/independent/IndependentEditionAuctionMutation.t.sol`
+  - `test_Open_TheEventNamesTheEditionContractsMaster` (IndependentEditionAuction L112)
   - `test_Raise_MovesTheBidUpForTheDifference` (IndependentEditionAuction L70, IndependentEditionAuction L71)
+  - `test_SetIndependentStreamRegistry_TheLensRefusesAnyModule` (IndependentEditionAuctionLens L98)
   - `test_Settle_AClearingThatPaidStandsThroughADelisting` (IndependentEditionAuction L82)
   - `test_Settle_AListedSalesScanFinishesOnALaterCall` (IndependentEditionAuction L82)
   - `test_Settle_ASaleVoidedDuringTheScanRefusesLaterCalls` (IndependentEditionAuction L82)
@@ -328,14 +371,19 @@ measures them without this effect.
 - `test/terms/StreamTermsFixes.t.sol`
   - `test_IndependentPair_OnlyAnErc1155ListingNamesTheTokenOfEditions` (StreamTerms L191)
 
+<!-- /generated -->
+
 No survivor showed a defect in a contract.
 
 ## Survivors, triaged
 
-One row per surviving mutant of the permanent contracts and the money and mint modules.
+One row per surviving mutant of the permanent contracts and the money and mint modules, and
+the survivors new in the second measurement of two lenses.
 "Killed" names the new test; "equivalent" mutants cannot change behaviour; "gas" and
 "defensive" ones change only gas, or only what a trusted contract could make happen by lying;
 "open" is a real gap left without a test.
+
+<!-- generated:survivors -->
 
 ### `src/content/ContentStore.sol`
 
@@ -550,27 +598,6 @@ One row per surviving mutant of the permanent contracts and the money and mint m
 | 44 | ROR | equivalent | `lastId <= id` differs from `==` only when lastId < id, which the first disjunct already accepts |
 | 82 | ROR | equivalent | binary search keeps low <= high, so `<` and `!=` agree |
 
-### `src/independent/IndependentStream6529.sol`
-
-14 survivors: 14 killed.
-
-| Line | Rule | Verdict | Why, or the test |
-| ---: | --- | --- | --- |
-| 72 | CR | killed | `test_Constructor_LogsTheFirstModuleDelay`: constructor's ModuleDelaySet(0, 7 days) was not asserted |
-| 74 | MIA | killed | `test_Constructor_WithoutARendererLogsNoModuleSet`: a deployment with no renderer must log no ModuleSet(0, 0) |
-| 86 | MIA | killed | `test_PendingModule_OnlyTheRendererSlotReadsTheAnnouncement`: pendingModule of another slot (below and above RENDERER) was never read while an announcement waits |
-| 86 | ROR | killed | `test_PendingModule_OnlyTheRendererSlotReadsTheAnnouncement`: pendingModule of another slot (below and above RENDERER) was never read while an announcement waits |
-| 86 | ROR | killed | `test_PendingModule_OnlyTheRendererSlotReadsTheAnnouncement`: pendingModule of another slot (below and above RENDERER) was never read while an announcement waits |
-| 112 | ROR | killed | `test_ActivateModule_StillInstallsAfterTheReadyTime`: activation was only tried at exactly readyAt, never later |
-| 112 | ROR | killed | `test_ActivateModule_RefusedWithNothingAnnounced`: activateModule with nothing announced was untested: the mutant lets anyone empty the renderer slot |
-| 122 | SBR | killed | `test_CancelModule_TheArtistWithdrawsTheAnnouncement`: cancelModule had no test: with a storage reference the event names the deleted (zero) module |
-| 123 | MIA | killed | `test_CancelModule_RefusedWithNothingAnnouncedForOthersAndForASharedSlot`: cancelModule with nothing announced must revert ModuleNotReady |
-| 123 | ROR | killed | `test_CancelModule_RefusedWithNothingAnnouncedForOthersAndForASharedSlot`: cancelModule with nothing announced must revert ModuleNotReady |
-| 125 | CR | killed | `test_CancelModule_TheArtistWithdrawsTheAnnouncement`: ModuleCancelled was not asserted |
-| 144 | ROR | killed | `test_SupportsInterface_RefusesIdsBelowAndAboveItsOwn`: no unsupported interface id below the token's own ids was checked |
-| 144 | ROR | killed | `test_SupportsInterface_RefusesIdsBelowAndAboveItsOwn`: no unsupported interface id below the token's own ids was checked |
-| 160 | SBR | killed | `test_Mint_RecordsTheMintingContractWhateverTheTransactionOrigin`: hasMinted must follow the calling contract, not tx.origin (origin that minted before hides the new minter) |
-
 ### `src/independent/IndependentStreamEditions6529.sol`
 
 2 survivors: 1 equivalent, 1 killed.
@@ -613,54 +640,44 @@ One row per surviving mutant of the permanent contracts and the money and mint m
 
 ### `src/curation/PackageRegistry.sol`
 
-44 survivors: 9 killed, 31 equivalent, 4 defensive.
+34 survivors: 30 equivalent, 4 defensive.
 
 | Line | Rule | Verdict | Why, or the test |
 | ---: | --- | --- | --- |
-| 92 | CONST | killed | `test_revokeMove_first255NoncesShareOneSlot`: 254 nonces per word keeps every nonce distinct (gas/layout only); the documented 255-per-word layout is now pinned by the slot written |
-| 166 | CR | killed | `test_constructor_rejectsBadEconomics`: no test built a registry with an economics address that has no code or declares another interface |
-| 180 | ROR | killed | `test_bindStream_refusesALowerOrHigherCc0Text`: `!=` vs `>`: only a Stream whose facts name a higher CC0 text was tried; one naming a lower text was unpinned |
 | 200 | ROR | equivalent | `!=` vs `>` NONE, the enum's zero value |
 | 204 | ROR | equivalent | `== 0` vs `<= 0` on an unsigned value |
 | 215 | ROR | equivalent | `==` vs `>=` REVOKED, the enum's last value |
 | 332 | CR | equivalent | `token;` is a no-op expression statement that only silences the unused-parameter warning |
-| 340 | MIA | killed | `test_preview_anArtistItemQuotesItsSeed`: no test previewed an ARTIST-seed item, so the quoted seed was unpinned |
 | 340 | ROR | equivalent | `<= ARTIST` adds NONE, whose `item.seed` `_checkItem` already forced to zero |
-| 341 | CR | killed | `test_preview_anArtistItemQuotesItsSeed`: no test previewed an ARTIST-seed item, so the quoted seed was unpinned |
-| 341 | RR | killed | `test_preview_anArtistItemQuotesItsSeed`: no test previewed an ARTIST-seed item, so a revert there went unseen |
 | 342 | ROR | equivalent | `==` vs `>=` VRF: `_checkItem` already refused every seed policy above VRF |
-| 362 | ROR | equivalent | boundary value that cannot occur: artist ID 2^160-1 needs a registered account at address 0xff..ff |
-| 374 | ROR | defensive | `!=` vs `>`: Stream token IDs only grow, so `tokenOfContent` is never below the released token; differs only if the bound Stream lowered it |
-| 411 | ROR | equivalent | `>= APPROVED` adds only REVOKED, which is not live and is assigned REVOKED again |
-| 421 | ROR | defensive | `==` vs `>=`: a release's token is never above `tokenOfContent` (Stream IDs only grow); differs only if the bound Stream lowered it |
-| 489 | ROR | killed | `test_preview_requestLengthBoundary`: the 160-byte boundary of the request length check was unpinned (existing test used 159 zero bytes, refused by the head-offset check) |
-| 507 | ROR | equivalent | `== 0` vs `<= 0` on an unsigned value |
-| 513 | ROR | equivalent | `!= 0` vs `> 0` on an unsigned value |
-| 513 | ROR | equivalent | `>= VRF` adds only policies above VRF, already refused by the first clause of the same condition |
-| 522 | ROR | killed | `test_invalidItem_cc0TextBelowOrAboveTheDeployments`: `!=` vs `>`: a CC0 item naming a text file ID below the deployment's CC0 text was unpinned |
-| 522 | ROR | killed | `test_preview_nonCc0LicencesMayNameAnyText`: `==` vs `>=`: no test quoted a non-CC0 licence whose key sorts above the CC0 key with another text |
-| 568 | ROR | equivalent | `<= ARTIST` adds NONE, whose `item.seed` is zero, the value returned anyway |
-| 569 | ROR | equivalent | `!=` vs `<` VRF: policies above VRF were refused by `_checkItem` |
-| 588 | ROR | defensive | `!=` vs `<`: a release's token is never above `tokenOfContent` (Stream IDs only grow, never reused); differs only if the bound Stream lowered it |
-| 598 | CR | equivalent | without `return false` the catch falls through to the bool default, false |
-| 611 | ROR | equivalent | `==` vs `>=`: a package's epoch is a past `_killEpoch`, which only grows, so it is never above it |
-| 619 | ROR | equivalent | `== 0` vs `<= 0` on an unsigned value |
-| 619 | ROR | equivalent | `== 0` vs `<= 0` on an unsigned value |
-| 622 | ROR | equivalent | `==` vs `<=` ORIGINAL, the enum's zero value |
-| 623 | ROR | equivalent | `!= 0` vs `> 0` on an unsigned value |
-| 646 | ROR | equivalent | `!=` vs `>` ARTIST, the enum's zero value |
-| 651 | ROR | equivalent | `<` vs `!=` on a loop counter that steps by one from zero |
-| 651 | UOR | equivalent | `++i` vs `i++` as a loop increment whose value is unused |
-| 655 | ROR | equivalent | `j <= i` also reads `ids[i]`, still zero, against an id already checked nonzero |
-| 655 | ROR | equivalent | `<` vs `!=` on a loop counter that steps by one from zero |
-| 655 | UOR | equivalent | `++j` vs `j++` as a loop increment whose value is unused |
-| 662 | ROR | equivalent | `<` vs `!=` on a loop counter that steps by one from zero |
-| 664 | ROR | equivalent | `>=` adds only `artistId` above the previous one, which the preceding clause already accepts as ordered |
-| 681 | ROR | equivalent | `<` vs `!=` on a loop counter that steps by one from zero |
-| 681 | UOR | equivalent | `++j` vs `j++` as a loop increment whose value is unused |
-| 686 | CR | equivalent | without the final `return false` the function returns the bool default, false |
-| 686 | CR | equivalent | same mutant as st-1of5:CR_0: falls through to the bool default, false |
-| 705 | ROR | defensive | a 20-byte proof naming the root (empty signature) falls to `requireSigned`, which checks the same wallet the same way; differs only as gas or if the accounts module lies |
+| 365 | ROR | equivalent | boundary value that cannot occur: artist ID 2^160-1 needs a registered account at address 0xff..ff |
+| 377 | ROR | defensive | `!=` vs `>`: Stream token IDs only grow, so `tokenOfContent` is never below the released token; differs only if the bound Stream lowered it |
+| 414 | ROR | equivalent | `>= APPROVED` adds only REVOKED, which is not live and is assigned REVOKED again |
+| 424 | ROR | defensive | `==` vs `>=`: a release's token is never above `tokenOfContent` (Stream IDs only grow); differs only if the bound Stream lowered it |
+| 510 | ROR | equivalent | `== 0` vs `<= 0` on an unsigned value |
+| 516 | ROR | equivalent | `!= 0` vs `> 0` on an unsigned value |
+| 516 | ROR | equivalent | `>= VRF` adds only policies above VRF, already refused by the first clause of the same condition |
+| 571 | ROR | equivalent | `<= ARTIST` adds NONE, whose `item.seed` is zero, the value returned anyway |
+| 572 | ROR | equivalent | `!=` vs `<` VRF: policies above VRF were refused by `_checkItem` |
+| 591 | ROR | defensive | `!=` vs `<`: a release's token is never above `tokenOfContent` (Stream IDs only grow, never reused); differs only if the bound Stream lowered it |
+| 601 | CR | equivalent | without `return false` the catch falls through to the bool default, false |
+| 614 | ROR | equivalent | `==` vs `>=`: a package's epoch is a past `_killEpoch`, which only grows, so it is never above it |
+| 622 | ROR | equivalent | `== 0` vs `<= 0` on an unsigned value |
+| 622 | ROR | equivalent | `== 0` vs `<= 0` on an unsigned value |
+| 625 | ROR | equivalent | `==` vs `<=` ORIGINAL, the enum's zero value |
+| 626 | ROR | equivalent | `!= 0` vs `> 0` on an unsigned value |
+| 649 | ROR | equivalent | `!=` vs `>` ARTIST, the enum's zero value |
+| 654 | ROR | equivalent | `<` vs `!=` on a loop counter that steps by one from zero |
+| 654 | UOR | equivalent | `++i` vs `i++` as a loop increment whose value is unused |
+| 658 | ROR | equivalent | `<` vs `!=` on a loop counter that steps by one from zero |
+| 658 | ROR | equivalent | `j <= i` also reads `ids[i]`, still zero, against an id already checked nonzero |
+| 658 | UOR | equivalent | `++j` vs `j++` as a loop increment whose value is unused |
+| 665 | ROR | equivalent | `<` vs `!=` on a loop counter that steps by one from zero |
+| 667 | ROR | equivalent | `>=` adds only `artistId` above the previous one, which the preceding clause already accepts as ordered |
+| 684 | ROR | equivalent | `<` vs `!=` on a loop counter that steps by one from zero |
+| 684 | UOR | equivalent | `++j` vs `j++` as a loop increment whose value is unused |
+| 689 | CR | equivalent | without the final `return false` the function returns the bool default, false |
+| 708 | ROR | defensive | a 20-byte proof naming the root (empty signature) falls to `requireSigned`, which checks the same wallet the same way; differs only as gas or if the accounts module lies |
 
 ### `src/identity/Accounts.sol`
 
@@ -701,25 +718,20 @@ One row per surviving mutant of the permanent contracts and the money and mint m
 
 ### `src/independent/IndependentEditionAuction.sol`
 
-6 survivors: 5 killed, 1 equivalent.
+3 survivors: 2 equivalent, 1 killed.
 
 | Line | Rule | Verdict | Why, or the test |
 | ---: | --- | --- | --- |
-| 70 | RR | killed | `test_Raise_MovesTheBidUpForTheDifference`: raise on the Independent auction was never called successfully |
-| 71 | RR | killed | `test_Raise_MovesTheBidUpForTheDifference`: raise on the Independent auction was never called successfully |
-| 82 | LOR | killed | `test_Settle_AListedSalesScanFinishesOnALaterCall`: a still-listed sale's second scan call must clear and pay; the mutant voids every multi-call settlement |
-| 82 | ROR | equivalent | _scans is written only while SETTLING and status never returns below it, so status < SETTLING implies _scans == 0 |
-| 82 | ROR | killed | `test_Settle_ASaleVoidedDuringTheScanRefusesLaterCalls`: a sale voided mid-scan keeps its scan word: a later settle must revert InvalidAuctionState, not void (and log) again |
-| 82 | ROR | killed | `test_Settle_AClearingThatPaidStandsThroughADelisting`: a cleared and paid sale still sweeping departures (SETTLING, scan done) must not void on a delisting |
+| 84 | ROR | equivalent | below OPEN is only NONE, a sale never opened: its runsOnItsOwn flag was never set, so `<= OPEN` answers what `== OPEN` answers |
+| 84 | ROR | equivalent | _scans is written only while SETTLING and status never returns below it, so status < SETTLING implies _scans == 0 |
+| 112 | CR | killed | `test_Open_TheEventNamesTheEditionContractsMaster`: the opening event named no master: nothing checked the master the Independent Stream auction logs |
 
 ### `src/independent/IndependentStreamRegistry.sol`
 
-109 survivors: 37 killed, 67 equivalent, 5 defensive.
+66 survivors: 61 equivalent, 5 defensive.
 
 | Line | Rule | Verdict | Why, or the test |
 | ---: | --- | --- | --- |
-| 68 | CONST | killed | `test_SetStatus_TakesExactly256Contracts`: exact batch bound was read from the contract, not pinned |
-| 68 | CONST | killed | `test_SetStatus_TakesExactly256Contracts`: exact batch bound was read from the contract, not pinned |
 | 68 | SBR | equivalent | constant 256 fits; the getter's ABI word is identical |
 | 68 | SBR | equivalent | constant vs immutable of the same literal: bytecode/gas only |
 | 70 | SBR | equivalent | constant vs immutable of the same literal: bytecode/gas only |
@@ -731,102 +743,61 @@ One row per surviving mutant of the permanent contracts and the money and mint m
 | 77 | SBR | equivalent | private constant 1: narrower type or immutable changes no stored value |
 | 142 | ROR | equivalent | NONE is the lowest and PAIR the highest enum value, so the comparison is unchanged |
 | 142 | ROR | equivalent | NONE is the lowest and PAIR the highest enum value, so the comparison is unchanged |
-| 171 | CR | killed | `test_RevokeTemplate_Logs`: TemplateSet on a revocation was not asserted |
-| 215 | ROR | equivalent | Status.NONE is the lowest enum value, so <= equals == |
-| 216 | ROR | equivalent | loop counter form/width over at most 256 entries |
-| 216 | SBR | equivalent | loop counter form/width over at most 256 entries |
-| 216 | SBR | equivalent | loop counter form/width over at most 256 entries |
-| 216 | UOR | equivalent | loop counter form/width over at most 256 entries |
-| 218 | ROR | equivalent | Status.NONE is the lowest enum value, so <= equals == |
-| 242 | ROR | equivalent | Status.NONE is the lowest enum value, so <= equals == |
-| 267 | ROR | killed | `test_ReleaseContent_RefusesAnEarlierBurnedTokenOfTheContent`: releasing an earlier burned token after the content was minted again was untested (only a higher id was) |
-| 267 | ROR | killed | `test_ReleaseContent_RefusesABeneficiaryNextToTheArtist`: a beneficiary above the artist ID was untested |
-| 267 | ROR | killed | `test_ReleaseContent_RefusesAnUnlistedContract`: release for a contract this module does not list (empty listing: form ERC721, artist 0) was untested |
-| 267 | ROR | equivalent | Status.NONE is the lowest enum value, so <= equals == |
-| 267 | ROR | equivalent | Form.ERC721 is the lowest enum value, so > equals != |
-| 284 | ROR | equivalent | Status.NONE is the lowest enum value, so > equals != |
-| 291 | ROR | equivalent | Form.ERC721 is the lowest enum value, so <= equals == |
-| 297 | ROR | equivalent | a listed ERC1155 always has a partner, which the next clause refuses, and PAIR is never listed |
-| 297 | ROR | equivalent | Form.ERC721 is the lowest enum value, so > equals != |
-| 297 | ROR | killed | `test_Register_RefusesEditionsOfAnotherArtistsStreamEitherWay`: editions of another artist's stream were refused in one ID order only |
-| 312 | MIA | killed | `test_Register_AStreamWritesNoListingAtTheZeroAddress`: a 1/1 listing must not write a partner at the zero address (readable through listingOf) |
-| 324 | SBR | killed | `test_ListingSubject_IsTheAbiEncodedDomainAndFields`: listing subject was only compared with itself; now pinned to abi.encode of domain and fields |
-| 421 | SBR | equivalent | storage/memory on a read-only reference in a view |
-| 427 | MIA | killed | `test_Preview_AtZeroShareTheRoyaltyReceiverIsTheSeller`: preview at a zero share was untested (authorize was) |
-| 427 | ROR | killed | `test_Preview_AtZeroShareTheRoyaltyReceiverIsTheSeller`: preview at a zero share was untested (authorize was) |
-| 436 | SBR | equivalent | storage/memory on a read-only reference |
-| 437 | ROR | equivalent | token ids only grow, so tokenOfContent never falls below the released id |
-| 437 | ROR | equivalent | without a release the beneficiary returned is zero anyway |
-| 446 | ROR | equivalent | Status.NONE is the lowest enum value, so <= equals == |
-| 462 | ROR | equivalent | a listed contract's template is never NONE, the only status added |
-| 462 | ROR | equivalent | a listed contract's template is never NONE, the only status added |
-| 476 | ROR | equivalent | no listing has form PAIR (approveTemplate refuses it), so < ERC1155 equals != ERC1155 |
-| 494 | ROR | equivalent | TemplateStatus.NONE is the lowest enum value, so <= equals == |
-| 505 | ROR | equivalent | Status.NONE is the lowest enum value, so <= equals == |
-| 514 | SBR | equivalent | storage/memory on a read-only reference |
-| 533 | ROR | killed | `test_SupportsInterface_OnlyTheExactIds`: supportsInterface was only tested false for 0xffffffff, never for an ID below a supported one |
-| 533 | ROR | killed | `test_SupportsInterface_OnlyTheExactIds`: supportsInterface was only tested false for 0xffffffff, never for an ID below a supported one |
-| 533 | ROR | killed | `test_SupportsInterface_OnlyTheExactIds`: supportsInterface was only tested false for 0xffffffff, never for an ID below a supported one |
-| 533 | ROR | killed | `test_SupportsInterface_OnlyTheExactIds`: supportsInterface was only tested false for 0xffffffff, never for an ID below a supported one |
-| 572 | CR | killed | `test_Authorize_AnswersTheItemsSaleParams`: sale params were only tested empty |
-| 585 | ROR | equivalent | unsigned <= 0 equals == 0 |
-| 585 | ROR | killed | `test_Authorize_AnOriginalMintsWithoutActiveEditions`: no test minted an original while the editions were not listed ACTIVE |
-| 585 | ROR | killed | `test_Authorize_RefusesAContentHashAboveThePrimaryDigest`: a content hash above the primary digest was untested |
-| 585 | ROR | killed | `test_Authorize_RefusesAMediaHashAboveTheFilesHash`: a media hash above the files' hash was untested |
-| 585 | ROR | equivalent | Form.ERC721 is the lowest enum value, so > equals != |
-| 585 | ROR | equivalent | kind > EDITION_MASTER is refused earlier in the same condition |
-| 585 | ROR | defensive | approveItem refuses non-ERC721 listings, so no approved item reaches _checkItem for one |
-| 585 | ROR | defensive | a zero content hash needs a stored file whose SHA-256 is zero, and the token refuses it too |
-| 593 | ROR | equivalent | loop counter form/width over at most 32 files |
-| 593 | SBR | equivalent | loop counter form/width over at most 32 files |
-| 593 | SBR | equivalent | loop counter form/width over at most 32 files |
-| 593 | UOR | equivalent | loop counter form/width over at most 32 files |
-| 596 | ROR | killed | `test_Authorize_RefusesAStatedDigestBelowTheStoredOne`: a stated digest below the stored one was untested |
-| 603 | ROR | killed | `test_Authorize_Cc0RefusesATextAboveOrBelowTheDeploymentsText`: CC0 with a text file ID above the deployment's was untested |
-| 603 | ROR | killed | `test_Authorize_OtherLicensesMintWithTheirOwnText`: only one non-CC0 license was minted, its key below CC0's |
-| 628 | ROR | killed | `test_Authorize_SixteenPartiesMint`: exactly 16 parties were never minted |
-| 628 | ROR | killed | `test_Authorize_SixtyFourPayeesMint`: exactly 64 payees were never minted |
-| 628 | ROR | killed | `test_Authorize_RefusesAFirstPartyNextToTheArtist`: a first party above the artist ID was untested |
-| 638 | ROR | equivalent | loop counter form/width over at most 16 parties |
-| 638 | SBR | equivalent | loop counter form/width over at most 16 parties |
-| 638 | SBR | equivalent | loop counter form/width over at most 16 parties |
-| 638 | UOR | equivalent | loop counter form/width over at most 16 parties |
-| 639 | AOR | killed | `test_Authorize_EachCollaboratorsOwnConsentIsChecked`: no test minted with two collaborators, so consents[i-1] was only read at index 0 |
-| 641 | ROR | equivalent | != vs < on a loop counter that steps by one |
-| 641 | SBR | equivalent | loop counter width over at most 64 payees |
-| 641 | SBR | killed | `test_Authorize_APayeeOutsideSeveralPartiesIsRefused`: non-party payee was only tested with one party and no payout address |
-| 644 | SBR | equivalent | counter width over at most 16 parties |
-| 645 | ROR | killed | `test_Authorize_APayeeOutsideSeveralPartiesIsRefused`: non-party payee was only tested with one party and no payout address |
-| 645 | ROR | killed | `test_Authorize_APayeeOutsideSeveralPartiesIsRefused`: non-party payee was only tested with one party and no payout address |
-| 645 | ROR | killed | `test_Authorize_APayeeOutsideSeveralPartiesIsRefused`: non-party payee with an ID above a party's was untested |
-| 645 | ROR | killed | `test_Authorize_APayeeOutsideSeveralPartiesIsRefused`: non-party payee was only tested with one party and no payout address |
-| 645 | ROR | equivalent | != vs < on a counter that steps by one up to n |
-| 645 | ROR | killed | `test_Authorize_APayeeOutsideSeveralPartiesIsRefused`: non-party payee with an ID below a party's was untested |
-| 645 | SBR | killed | `test_Authorize_APayeeOutsideSeveralPartiesIsRefused`: non-party payee was only tested with one party and no payout address |
-| 646 | UOR | equivalent | ++j vs j++ as a statement |
-| 648 | LOR | killed | `test_Authorize_APayeeOutsideSeveralPartiesIsRefused`: non-party payee was only tested without a payout address, where both operands hold |
-| 648 | ROR | killed | `test_Authorize_APayeeOutsideSeveralPartiesIsRefused`: non-party payee was only tested without a payout address |
-| 648 | ROR | equivalent | the loop stops at j == n, so j never exceeds n |
-| 659 | SBR | equivalent | storage/memory on a read-only reference |
-| 660 | ROR | equivalent | a release names the id tokenOfContent named then and token ids only grow, so r.tokenId > existing cannot occur |
-| 663 | MIA | defensive | unreachable: releaseContent records only beneficiary == the listing's artist, which never changes |
-| 663 | ROR | defensive | unreachable: releaseContent records only beneficiary == the listing's artist, which never changes |
-| 663 | ROR | defensive | unreachable: releaseContent records only beneficiary == the listing's artist, which never changes |
-| 670 | ROR | equivalent | seedPolicy > SEED_VRF is refused by _checkItem before _seed runs |
-| 683 | ROR | killed | `test_Register_RefusesATokenNamingAnotherAccountsRoot`: a token whose artist ID is another account's (replaced-in) root was untested: the mutant lists it on that account's signature |
-| 695 | ROR | equivalent | Form.ERC721 is the lowest enum value, so > equals != |
-| 695 | ROR | equivalent | an unlisted contract's artist is account 0, which has no wallet, so NotArtist still |
-| 695 | ROR | equivalent | Status.NONE is the lowest enum value, so <= equals == |
-| 702 | ROR | equivalent | for an unlisted (NONE) listing every caller's other condition already fails: no template, artist 0, early return |
-| 707 | ROR | equivalent | a listed contract's template is never NONE, the only status added |
-| 723 | MIA | equivalent | value assigned equals the stored value when the listing is already own |
-| 723 | ROR | equivalent | value assigned equals the stored value when the listing is already own |
-| 723 | ROR | equivalent | value assigned equals the stored value when the listing is already own |
-| 729 | MIA | equivalent | value assigned equals the stored value when the template is already own |
-| 729 | ROR | equivalent | value assigned equals the stored value when the template is already own |
-| 729 | ROR | equivalent | value assigned equals the stored value when the template is already own |
-| 736 | CR | killed | `test_Templates_SuspendResumeReinstateLog`: TemplateSet on suspend/resume/reinstate was not asserted |
-| 740 | SBR | equivalent | storage/memory on a read-only reference |
+| 216 | ROR | equivalent | Status.NONE is the lowest enum value, so <= equals == |
+| 217 | ROR | equivalent | loop counter form/width over at most 256 entries |
+| 217 | SBR | equivalent | loop counter form/width over at most 256 entries |
+| 217 | SBR | equivalent | loop counter form/width over at most 256 entries |
+| 217 | UOR | equivalent | loop counter form/width over at most 256 entries |
+| 219 | ROR | equivalent | Status.NONE is the lowest enum value, so <= equals == |
+| 243 | ROR | equivalent | Status.NONE is the lowest enum value, so <= equals == |
+| 271 | ROR | equivalent | Form.ERC721 is the lowest enum value, so > equals != |
+| 288 | ROR | equivalent | Status.NONE is the lowest enum value, so > equals != |
+| 301 | ROR | equivalent | a listed ERC1155 always has a partner, which the next clause refuses, and PAIR is never listed |
+| 301 | ROR | equivalent | Form.ERC721 is the lowest enum value, so > equals != |
+| 425 | SBR | equivalent | storage/memory on a read-only reference in a view |
+| 440 | SBR | equivalent | storage/memory on a read-only reference |
+| 441 | ROR | equivalent | token ids only grow, so tokenOfContent never falls below the released id |
+| 450 | ROR | equivalent | Status.NONE is the lowest enum value, so <= equals == |
+| 466 | ROR | equivalent | a listed contract's template is never NONE, the only status added |
+| 466 | ROR | equivalent | a listed contract's template is never NONE, the only status added |
+| 480 | ROR | equivalent | no listing has form PAIR (approveTemplate refuses it), so < ERC1155 equals != ERC1155 |
+| 498 | ROR | equivalent | TemplateStatus.NONE is the lowest enum value, so <= equals == |
+| 509 | ROR | equivalent | Status.NONE is the lowest enum value, so <= equals == |
+| 518 | SBR | equivalent | storage/memory on a read-only reference |
+| 589 | ROR | defensive | a zero content hash needs a stored file whose SHA-256 is zero, and the token refuses it too |
+| 589 | ROR | defensive | approveItem refuses non-ERC721 listings, so no approved item reaches _checkItem for one |
+| 589 | ROR | equivalent | unsigned <= 0 equals == 0 |
+| 589 | ROR | equivalent | Form.ERC721 is the lowest enum value, so > equals != |
+| 597 | ROR | equivalent | loop counter form/width over at most 32 files |
+| 597 | SBR | equivalent | loop counter form/width over at most 32 files |
+| 597 | SBR | equivalent | loop counter form/width over at most 32 files |
+| 597 | UOR | equivalent | loop counter form/width over at most 32 files |
+| 642 | ROR | equivalent | loop counter form/width over at most 16 parties |
+| 642 | SBR | equivalent | loop counter form/width over at most 16 parties |
+| 642 | SBR | equivalent | loop counter form/width over at most 16 parties |
+| 642 | UOR | equivalent | loop counter form/width over at most 16 parties |
+| 645 | ROR | equivalent | != vs < on a loop counter that steps by one |
+| 645 | SBR | equivalent | loop counter width over at most 64 payees |
+| 648 | SBR | equivalent | counter width over at most 16 parties |
+| 650 | UOR | equivalent | ++j vs j++ as a statement |
+| 652 | ROR | equivalent | the loop stops at j == n, so j never exceeds n |
+| 663 | SBR | equivalent | storage/memory on a read-only reference |
+| 664 | ROR | equivalent | a release names the id tokenOfContent named then and token ids only grow, so r.tokenId > existing cannot occur |
+| 667 | MIA | defensive | unreachable: releaseContent records only beneficiary == the listing's artist, which never changes |
+| 667 | ROR | defensive | unreachable: releaseContent records only beneficiary == the listing's artist, which never changes |
+| 667 | ROR | defensive | unreachable: releaseContent records only beneficiary == the listing's artist, which never changes |
+| 674 | ROR | equivalent | seedPolicy > SEED_VRF is refused by _checkItem before _seed runs |
+| 699 | ROR | equivalent | an unlisted contract's artist is account 0, which has no wallet, so NotArtist still |
+| 699 | ROR | equivalent | Status.NONE is the lowest enum value, so <= equals == |
+| 699 | ROR | equivalent | Form.ERC721 is the lowest enum value, so > equals != |
+| 706 | ROR | equivalent | for an unlisted (NONE) listing every caller's other condition already fails: no template, artist 0, early return |
+| 727 | MIA | equivalent | value assigned equals the stored value when the listing is already own |
+| 727 | ROR | equivalent | value assigned equals the stored value when the listing is already own |
+| 727 | ROR | equivalent | value assigned equals the stored value when the listing is already own |
+| 733 | MIA | equivalent | value assigned equals the stored value when the template is already own |
+| 733 | ROR | equivalent | value assigned equals the stored value when the template is already own |
+| 733 | ROR | equivalent | value assigned equals the stored value when the template is already own |
+| 744 | SBR | equivalent | storage/memory on a read-only reference |
 
 ### `src/records/WorkRules.sol`
 
@@ -857,91 +828,31 @@ One row per surviving mutant of the permanent contracts and the money and mint m
 
 ### `src/sales/EnglishAuction.sol`
 
-81 survivors: 60 killed, 19 equivalent, 2 defensive.
+21 survivors: 19 equivalent, 2 defensive.
 
 | Line | Rule | Verdict | Why, or the test |
 | ---: | --- | --- | --- |
-| 79 | CONST | killed | `test_Constants_GasValues`: PAYOUT_GAS 100,001: the public constant was not pinned (behaviour differs only by one gas) |
-| 79 | CONST | killed | `test_Constants_GasValues`: PAYOUT_GAS 99,999: the public constant was not pinned |
-| 82 | CONST | killed | `test_Constants_GasValues`: DELIVERY_GAS 300,001: the public constant was not pinned |
-| 82 | CONST | killed | `test_Constants_GasValues`: DELIVERY_GAS 299,999: the public constant was not pinned |
-| 84 | CONST | killed | `test_Constants_GasValues`: DELIVERY_RESERVE 50,001: the public constant was not pinned |
-| 84 | CONST | killed | `test_Constants_GasValues`: DELIVERY_RESERVE 49,999: the public constant was not pinned |
-| 95 | CONST | killed | `test_SetConfig_TakesEveryBoundItself`: setConfig refused the smallest increment share, 1,000 |
-| 96 | CONST | killed | `test_Constructor_ChecksTheEscrowAndTheRefusalGasBounds`: the constructor accepted a refusal gas of 2,999,999 |
-| 97 | CONST | killed | `test_Constructor_ChecksTheEscrowAndTheRefusalGasBounds`: a refusal gas of 15,000,000 was refused |
-| 169 | CR | killed | `test_Constructor_ChecksTheResolverTheAllowlistAndTheStatementLog`: constructor accepted an economics resolver that does not declare IEconomicsResolver |
-| 170 | CR | killed | `test_Constructor_ChecksTheEscrowAndTheRefusalGasBounds`: constructor accepted an escrow without code |
-| 171 | CR | killed | `test_Constructor_ChecksTheResolverTheAllowlistAndTheStatementLog`: constructor accepted a statement log without code |
-| 173 | CR | killed | `test_Constructor_ChecksTheResolverTheAllowlistAndTheStatementLog`: constructor accepted an asset allowlist without code |
-| 199 | CR | killed | `test_StartWithBid_APolicyCannotReenter`: startWithBid lost its reentrancy guard: a policy could settle another sale from inside the start |
-| 213 | ROR | killed | `test_Restart_RefusesACancelledSale`: revert reason only: a CANCELLED sale passed the status test and restart failed on ownerOf of the burned token instead of InvalidAuctionState |
-| 213 | ROR | equivalent | Outcome.NONE is the enum's zero: `> NONE` equals `!= NONE` |
-| 220 | MIA | killed | `test_Restart_RefusesAShareAboveTheWhole`: restart took a fee share above 100,000 from the gate (only a lying gate answers one; pinned anyway) |
-| 220 | ROR | killed | `test_Restart_RefusesAShareAboveTheWhole`: restart refused a full network share of exactly 100,000 |
-| 227 | CR | killed | `test_Restart_ForgetsTheRefundedBid`: restart kept the refunded bid as the new sale's reserve (minimum bid stayed at the old bid) |
-| 228 | CR | defensive | at a restart pausedAt is already zero and recipient is unread; a stale outcomeFrom matters only if the statement log later answers no outcome for a token it had one for |
-| 285 | MIA | defensive | the resolver never names a zero museum (EconomicsResolver._setMuseum refuses it), and the transfer to zero reverts anyway: revert reason only |
-| 308 | MIA | killed | `test_Settle_AZeroFeeNamesNoFeeRecipient`: with a zero fee SaleSettled named the network fee recipient instead of zero |
-| 357 | ROR | killed | `test_SettleOrRefund_AllowedAfterTheDelayToo`: settleOrRefund worked only in the exact second the delay ended |
-| 400 | ROR | equivalent | `> 0` equals `!= 0` on an unsigned bytes32 |
-| 407 | AOR | equivalent | `now % pausedAt` equals `now - pausedAt` while now < 2 * pausedAt; a pause is live at most 3 days, so it differs only for a pause begun within 3 days of 1970 |
-| 414 | ROR | equivalent | `<= 0` equals `== 0` on an unsigned bytes32 |
-| 414 | ROR | killed | `test_Cancel_OnlyTheRecordedOutcomeAtAnyLaterPosition`: cancel accepted any outcome reference numerically above the recorded one |
-| 414 | ROR | killed | `test_Cancel_OnlyTheRecordedOutcomeAtAnyLaterPosition`: cancel refused an outcome recorded later than the first position after the pause |
-| 471 | LOR | killed | `test_SetConfig_EachParameterIsComparedExactly`: setConfig compared only duration AND window: one stale parameter passed |
-| 471 | ROR | killed | `test_SetConfig_EachParameterIsComparedExactly`: setConfig accepted an expected duration above the one in force |
-| 471 | ROR | killed | `test_SetConfig_EachParameterIsComparedExactly`: setConfig accepted an expected extension window above the one in force |
-| 471 | ROR | killed | `test_SetConfig_EachParameterIsComparedExactly`: setConfig accepted an expected increment share above the one in force |
-| 471 | ROR | killed | `test_SetConfig_EachParameterIsComparedExactly`: setConfig accepted an expected refusal gas above the one in force |
-| 471 | ROR | killed | `test_SetConfig_EachParameterIsComparedExactly`: setConfig accepted an expected refusal gas below the one in force |
-| 471 | ROR | killed | `test_SetConfig_EachParameterIsComparedExactly`: setConfig accepted an expected duration below the one in force |
-| 471 | ROR | killed | `test_SetConfig_EachParameterIsComparedExactly`: setConfig accepted an expected extension window below the one in force |
-| 471 | ROR | killed | `test_SetConfig_EachParameterIsComparedExactly`: setConfig accepted an expected increment share below the one in force |
-| 502 | ROR | equivalent | NONE is the enum's zero: the replacement comparison is the same test |
-| 526 | ROR | equivalent | NONE is the enum's zero: the replacement comparison is the same test |
-| 533 | ROR | equivalent | NONE is the enum's zero: the replacement comparison is the same test |
-| 542 | ROR | equivalent | NONE is the enum's zero: the replacement comparison is the same test |
-| 584 | MIA | killed | `test_OnERC721Received_AcceptsAMintIntoCustodyDuringAStart`: onERC721Received refused even a mint into custody during a start (reachable only by a token that mints with a receiver callback; StreamBase does not) |
-| 587 | RR | killed | `test_OnERC721Received_AcceptsAMintIntoCustodyDuringAStart`: onERC721Received never returned the selector (same path as above) |
-| 592 | ROR | killed | `test_SupportsInterface_RefusesALowerId`: supportsInterface answered true for every ID up to IERC165's |
-| 592 | ROR | killed | `test_SupportsInterface_RefusesALowerId`: supportsInterface answered true for every ID up to IEnglishAuction's |
-| 592 | ROR | killed | `test_SupportsInterface_RefusesALowerId`: supportsInterface answered true for every ID up to IERC721Receiver's |
-| 609 | ROR | killed | `test_Start_RefusesEveryOtherSaleKind`: start accepted any sale kind numerically below ENGLISH_AUCTION |
-| 619 | ROR | equivalent | NONE is the enum's zero: the replacement comparison is the same test |
-| 647 | ROR | killed | `test_Bid_TheLargest96BitBidIsAccepted`: a bid of exactly 2^96 - 1 wei was refused |
-| 659 | MIA | equivalent | when recipientSet is false the branch writes false and zero over false and zero (recipient is zero whenever the flag is false) |
-| 661 | CR | equivalent | a stale s.recipient is never read while recipientSet is false, and is rewritten whenever the flag is set |
-| 665 | AOR | equivalent | `end % now` equals `end - now` while now < end < 2 * now, which holds for every live sale at a real clock (sales last days) |
-| 665 | ROR | equivalent | with exactly the window left the extended end, now + window, is the old end: same value stored and logged |
-| 687 | LOR | killed | `test_Settle_AFeeWithNoRecipientIsRefused`: revert reason only: _pay's own guard never fired, a zero fee recipient was refused by RevenuePayment (InvalidWallet) instead of InvalidRecipient; the auction-as-wallet arm needs a lying resolver |
-| 687 | MIA | killed | `test_Settle_AFeeWithNoRecipientIsRefused`: revert reason only: same as the LOR mutant on this line |
-| 705 | MIA | killed | `test_Settle_AGasShortfallRevertsInsteadOfDeliveringWithLess`: settle no longer refused a gas shortfall before the delivery (a caller could starve the delivery) |
-| 706 | CR | killed | `test_Settle_AGasShortfallRevertsInsteadOfDeliveringWithLess`: the DeliveryInsufficientGas revert was removed |
-| 706 | CR | killed | `test_Settle_AGasShortfallRevertsInsteadOfDeliveringWithLess`: the DeliveryInsufficientGas revert was removed (same mutant, second shard) |
-| 713 | CR | equivalent | `ok;` is a statement with no effect |
-| 726 | MIA | killed | `test_WithdrawBid_ABidForARecipientIsCreditedAndTheRecipientCleared`: a refunded bid kept its named recipient: the auction view showed a recipient with no bidder |
-| 726 | MIA | equivalent | clearing when recipientSet is false writes false and zero over false and zero |
-| 726 | MIA | killed | `test_WithdrawBid_ABidForARecipientIsCreditedAndTheRecipientCleared`: the recipient was cleared only when none was set: a refunded bid kept its recipient |
-| 727 | CR | equivalent | with the flag left true the recipient is zero and the bidder is zero, so _recipientOf answers zero either way; the next bid rewrites both |
-| 727 | RR | killed | `test_WithdrawBid_ABidForARecipientIsCreditedAndTheRecipientCleared`: refunding a bid placed for a named recipient reverted (withdrawBid, cancel, delisted settle, refusal) |
-| 728 | CR | equivalent | a stale s.recipient is never read while recipientSet is false |
-| 728 | RR | killed | `test_WithdrawBid_ABidForARecipientIsCreditedAndTheRecipientCleared`: refunding a bid placed for a named recipient reverted |
-| 742 | ROR | killed | `test_Pause_IsLiveThroughItsLastSecond`: a pause was written down as over in its last second (pausedAt + MAX_PAUSE): the bidder could no longer withdraw |
-| 746 | ROR | equivalent | NONE is the enum's zero: `<=` equals `==` |
-| 775 | ROR | killed | `test_Pause_IsLiveThroughItsLastSecond`: the clock views showed a pause as over in its last second while the state was still PAUSED |
-| 786 | AOR | equivalent | `endTime % pausedAt` equals `endTime - pausedAt` while pausedAt <= endTime < 2 * pausedAt, true at any real clock |
-| 786 | AOR | killed | `test_Resume_KeepsTheRemainingTimeWhenLongerThanTheDuration`: a resumed sale lost its remaining time when that was longer than the duration in force (endTime / pausedAt is 1) |
-| 813 | ROR | killed | `test_SetConfig_TakesEveryBoundItself`: setConfig refused the shortest duration, 1 hour |
-| 813 | ROR | killed | `test_SetConfig_TakesEveryBoundItself`: setConfig refused the longest duration, 7 days |
-| 813 | ROR | killed | `test_SetConfig_TakesEveryBoundItself`: setConfig refused the shortest extension window, 1 minute |
-| 813 | ROR | killed | `test_SetConfig_TakesEveryBoundItself`: setConfig refused the longest extension window, 1 day |
-| 813 | ROR | killed | `test_SetConfig_TakesEveryBoundItself`: setConfig refused a window equal to the duration |
-| 813 | ROR | killed | `test_SetConfig_TakesEveryBoundItself`: setConfig refused the smallest increment share, 1,000 |
-| 813 | ROR | killed | `test_SetConfig_TakesEveryBoundItself`: setConfig refused an increment share of the whole, 100,000 |
-| 813 | ROR | killed | `test_SetConfig_TakesEveryBoundItself`: setConfig refused the refusal gas ceiling, 15,000,000 |
-| 813 | ROR | killed | `test_SetConfig_TakesEveryBoundItself`: setConfig refused an unchanged refusal gas |
-| 813 | ROR | killed | `test_SetConfig_TakesEveryBoundItself`: setConfig refused every refusal gas but exactly double |
+| 220 | ROR | equivalent | Outcome.NONE is the enum's zero: `> NONE` equals `!= NONE` |
+| 237 | CR | defensive | at a restart pausedAt is already zero and recipient is unread; a stale outcomeFrom matters only if the statement log later answers no outcome for a token it had one for |
+| 297 | MIA | defensive | the resolver never names a zero museum (EconomicsResolver._setMuseum refuses it), and the transfer to zero reverts anyway: revert reason only |
+| 412 | ROR | equivalent | `> 0` equals `!= 0` on an unsigned bytes32 |
+| 419 | AOR | equivalent | `now % pausedAt` equals `now - pausedAt` while now < 2 * pausedAt; a pause is live at most 3 days, so it differs only for a pause begun within 3 days of 1970 |
+| 426 | ROR | equivalent | `<= 0` equals `== 0` on an unsigned bytes32 |
+| 514 | ROR | equivalent | NONE is the enum's zero: the replacement comparison is the same test |
+| 538 | ROR | equivalent | NONE is the enum's zero: the replacement comparison is the same test |
+| 546 | ROR | equivalent | NONE is the enum's zero: the replacement comparison is the same test |
+| 555 | ROR | equivalent | NONE is the enum's zero: the replacement comparison is the same test |
+| 632 | ROR | equivalent | NONE is the enum's zero: the replacement comparison is the same test |
+| 672 | MIA | equivalent | when recipientSet is false the branch writes false and zero over false and zero (recipient is zero whenever the flag is false) |
+| 674 | CR | equivalent | a stale s.recipient is never read while recipientSet is false, and is rewritten whenever the flag is set |
+| 678 | AOR | equivalent | `end % now` equals `end - now` while now < end < 2 * now, which holds for every live sale at a real clock (sales last days) |
+| 678 | ROR | equivalent | with exactly the window left the extended end, now + window, is the old end: same value stored and logged |
+| 726 | CR | equivalent | `ok;` is a statement with no effect |
+| 739 | MIA | equivalent | clearing when recipientSet is false writes false and zero over false and zero |
+| 740 | CR | equivalent | with the flag left true the recipient is zero and the bidder is zero, so _recipientOf answers zero either way; the next bid rewrites both |
+| 741 | CR | equivalent | a stale s.recipient is never read while recipientSet is false |
+| 759 | ROR | equivalent | NONE is the enum's zero: `<=` equals `==` |
+| 799 | AOR | equivalent | `endTime % pausedAt` equals `endTime - pausedAt` while pausedAt <= endTime < 2 * pausedAt, true at any real clock |
 
 ### `src/sales/UniformClearing.sol`
 
@@ -954,116 +865,77 @@ One row per surviving mutant of the permanent contracts and the money and mint m
 
 ### `src/sales/UniformEditionAuction.sol`
 
-94 survivors: 61 equivalent, 27 killed, 6 gas.
+67 survivors: 61 equivalent, 6 gas.
 
 | Line | Rule | Verdict | Why, or the test |
 | ---: | --- | --- | --- |
-| 100 | CR | equivalent | ADOPTED_RUN is not used by the adapter (the lens has its own constant); removing it changes no bytecode |
-| 100 | CR | equivalent | ADOPTED_RUN is not used by the adapter (the lens has its own constant); removing it changes no bytecode |
-| 210 | CR | killed | `test_Constructor_RejectsAnEnglishAuctionWithoutCode`: constructor accepted an English auction with no code when the lens was deployed for the same address |
-| 244 | CR | killed | `test_Reentry_OpenAdoptBidRaiseAndExpireCreditAreRefusedDuringARefund`: open lost its re-entry guard |
-| 261 | CR | killed | `test_Reentry_OpenAdoptBidRaiseAndExpireCreditAreRefusedDuringARefund`: adopt lost its re-entry guard |
-| 276 | CR | killed | `test_CloseEdition_RefusesAnotherTokenAndAnUnlistedOne`: closeEdition lost its target check (any token, or an unlisted one) |
-| 278 | ROR | equivalent | 0 is the lowest status, so > NONE and != NONE (or <= NONE and == NONE) agree |
-| 295 | ROR | equivalent | 0 is the lowest status, so > NONE and != NONE (or <= NONE and == NONE) agree |
-| 353 | CR | killed | `test_Reentry_OpenAdoptBidRaiseAndExpireCreditAreRefusedDuringARefund`: bid lost its re-entry guard |
-| 361 | ROR | killed | `test_Bid_TheLastBidIdIsAccepted`: the last bid ID, 2^32 - 1, was refused |
-| 371 | ROR | equivalent | step == lowStep rewrites lowStep with the same value |
-| 373 | ROR | equivalent | step == highStep rewrites highStep with the same value |
-| 395 | CR | killed | `test_Reentry_OpenAdoptBidRaiseAndExpireCreditAreRefusedDuringARefund`: raise lost its re-entry guard |
-| 409 | ROR | equivalent | newStep == highStep rewrites highStep with the same value |
-| 457 | ROR | equivalent | status is OPEN or SETTLING at this point (NONE, SETTLED and VOID left earlier), so <= OPEN is == OPEN |
-| 457 | ROR | killed | `test_Settle_OnceBegunNoLongerReadsTheOneOfOne`: a settle call continuing a scan read the 1/1 again (and reverted when it no longer answered) |
-| 463 | ROR | equivalent | VOID is the highest status |
-| 464 | ROR | equivalent | after _finish the status is SETTLING or SETTLED here (VOID returned on the line before) |
-| 507 | MIA | killed | `test_ClaimBidFor_WithoutARefundCreditsNothing`: claimBidFor with no refund emitted Credited(0) and started a credit clock |
-| 533 | CR | killed | `test_Reentry_OpenAdoptBidRaiseAndExpireCreditAreRefusedDuringARefund`: expireCredit lost its re-entry guard |
-| 542 | ROR | killed | `test_ExpireCredit_AnyTimeAfterTheExpiry`: expireCredit worked only in the exact second of the expiry |
-| 566 | LOR | killed | `test_Abandon_APaidSaleIsNeverVoidedWhateverTheLensAnswers`: abandon's own state guard let a cleared, paid SETTLING sale be voided once the lens lets the call through (lens answer mocked) |
-| 566 | MIA | killed | `test_Abandon_APaidSaleIsNeverVoidedWhateverTheLensAnswers`: abandon's own state guard removed: a paid sale voided once the lens lets the call through (lens answer mocked) |
-| 566 | ROR | equivalent | differs only for NONE, whose scan word is zero, so the guard still refuses it |
-| 566 | ROR | killed | `test_Abandon_APaidSaleIsNeverVoidedWhateverTheLensAnswers`: abandon's own state guard refused only NONE: a paid sale voided once the lens lets the call through (lens answer mocked) |
-| 566 | ROR | killed | `test_Abandon_APaidSaleIsNeverVoidedWhateverTheLensAnswers`: abandon's own state guard let a never-opened sale through once the lens lets the call through (lens answer mocked) |
-| 566 | ROR | killed | `test_Abandon_ASaleAbandonedMidScanIsNotAbandonedAgain`: abandon's own state guard let a sale abandoned mid-scan be abandoned again (lens answer mocked) |
-| 601 | ROR | killed | `test_SetLimits_RefusesAHigherExpectedValueAndAcceptsTheCurrentGas`: setLimits accepted an expected value above the current one |
-| 685 | ROR | equivalent | CANCELLED is the highest 1/1 state |
-| 691 | ROR | killed | `test_Bid_ExactlyASoftWindowBeforeTheEndStoresNoSoftEnd`: a bid exactly a soft window before the end stored a soft end equal to the end |
-| 693 | ROR | equivalent | the two differ only when the operands are equal, where both branches give the same value |
-| 714 | CR | equivalent | without the assignment the state is NONE (0) when the clock is not read; callers only compare it with PAUSED and CANCELLED on that path |
-| 719 | MIA | killed | `test_Adopt_RunsOnItsOwn_BidsAndSettlesByItsOwnCloseOnly`: a sale that runs on its own took the clock's zero end as its 1/1 end: bids near the close refused, settlement early |
-| 719 | ROR | equivalent | an equal end rewrites the same end and the same close |
-| 719 | ROR | killed | `test_Adopt_RunsOnItsOwn_BidsAndSettlesByItsOwnCloseOnly`: a sale that runs on its own took the clock's zero end as its 1/1 end |
-| 726 | AOR | equivalent | soft > backstop cannot occur: softEnd is written at most closeAt + maxExtension and closeAt only moves later, so a larger backstop in _end changes nothing |
-| 727 | MIA | equivalent | soft > backstop cannot occur: softEnd is written at most closeAt + maxExtension and closeAt only moves later |
-| 727 | ROR | equivalent | the two differ only when the operands are equal, where both branches give the same value |
-| 727 | RR | equivalent | soft > backstop cannot occur: softEnd is written at most closeAt + maxExtension and closeAt only moves later |
-| 728 | ROR | equivalent | the two differ only when the operands are equal, where both branches give the same value |
-| 742 | ROR | equivalent | CANCELLED is the highest 1/1 state |
-| 747 | ROR | equivalent | CANCELLED, the only state above SETTLED, returned on the lines before |
-| 750 | CR | killed | `test_Settle_StoresTheOneOfOneEndItRead`: the first settle call did not store the 1/1 end it read |
-| 769 | ROR | equivalent | scan[7] is never below low |
-| 778 | MIA | gas | deleting a scan slot that is already zero: gas only |
-| 802 | ROR | equivalent | the two differ only when the operands are equal, where both branches give the same value |
-| 805 | ROR | equivalent | count never exceeds demand |
-| 853 | MIA | gas | the clearing call starts every sweep, so the settler's slot it now reads is always zero: one extra SLOAD |
-| 853 | ROR | equivalent | limit is 16 (_SWEEP_FIRST) or 96, so <= and == agree |
-| 859 | ROR | equivalent | the two differ only when the operands are equal, where both branches give the same value |
-| 860 | ROR | equivalent | the two differ only when the operands are equal, where both branches give the same value |
-| 867 | ROR | equivalent | swept never exceeds total (n is clamped to total - swept) |
-| 872 | MIA | gas | deleting a sweep slot that is already zero: gas only |
-| 897 | ROR | equivalent | < vs != on a loop counter that steps by one |
-| 897 | UOR | equivalent | ++i vs i++ as a loop statement |
-| 899 | MIA | killed | `test_Settle_RefusesAnIndexThatReachesAnotherStepsDepartureLog`: with no range check an index far past the clearing step's log read another step's log and was swept as a departure, settling with a wrong cut-off |
-| 899 | ROR | killed | `test_Settle_RefusesAnIndexThatReachesAnotherStepsDepartureLog`: an index far past the clearing step's log read another step's log and was swept as a departure, settling with a wrong cut-off |
-| 899 | ROR | equivalent | index == total reads an empty entry (quantity 0), which UniformClearing.sweep refuses with the same InvalidSettlementOrder(i) |
-| 922 | MIA | equivalent | RevenuePayment.payETH returns at once for a zero amount, and the seller is never zero or the escrow |
-| 922 | ROR | equivalent | the fee never exceeds the revenue |
-| 952 | ROR | equivalent | the status here is only ever one of the values on which both comparisons agree (CLOSED is never stored) |
-| 952 | ROR | equivalent | the status here is only ever one of the values on which both comparisons agree (CLOSED is never stored) |
-| 961 | MIA | equivalent | a VOID sale never has a stored result (count 0), so the SETTLED branch computes nothing for it |
-| 961 | ROR | equivalent | the status is SETTLED or VOID here |
-| 961 | ROR | equivalent | a VOID sale never has a stored result (count 0), so the SETTLED branch computes nothing for it |
-| 965 | ROR | equivalent | inside b.step >= r.step, so != and > agree |
-| 1009 | AOR | equivalent | a starting decade one too high is lowered by the scan loop (start minus a decade, scale / 10 exactly) before any price is computed |
-| 1009 | AOR | equivalent | a starting decade one too high is lowered by the scan loop (start minus a decade, scale / 10 exactly) before any price is computed |
-| 1009 | AOR | equivalent | a starting decade one too high is lowered by the scan loop (start minus a decade, scale / 10 exactly) before any price is computed |
-| 1013 | ROR | equivalent | the two differ only when the operands are equal, where both branches give the same value |
-| 1024 | MIA | gas | an empty book has lowStep = highStep = 0: the scan reads one empty word and gives the same zero result |
-| 1025 | CR | equivalent | for an empty book scan[7] already equals low (both 0) |
-| 1026 | CR | gas | an empty book has lowStep = highStep = 0: the scan reads one empty word and gives the same zero result |
-| 1083 | CR | gas | without w := 0 the outer loop reads the remaining words, but every used step breaks again on demand >= cap: same result, more gas |
-| 1088 | MIA | equivalent | the inner loop has the same condition, so the block only re-stores unchanged start and scale |
-| 1131 | CR | equivalent | scan[11] (best revenue) is never read after _scanWords returns; a resumed scan recomputes it from the best count and step |
-| 1150 | AOR | equivalent | unreachable: a bid enters a step once, so position + quantity never exceeds the sale's live units, already checked below 2^32 in bid |
-| 1150 | AOR | equivalent | unreachable: a bid enters a step once, so position + quantity never exceeds the sale's live units, already checked below 2^32 in bid |
-| 1150 | AOR | equivalent | unreachable: a bid enters a step once, so position + quantity never exceeds the sale's live units, already checked below 2^32 in bid |
-| 1150 | MIA | equivalent | unreachable: a bid enters a step once, so position + quantity never exceeds the sale's live units, already checked below 2^32 in bid |
-| 1151 | CR | equivalent | unreachable: a bid enters a step once, so position + quantity never exceeds the sale's live units, already checked below 2^32 in bid |
-| 1151 | CR | equivalent | unreachable: a bid enters a step once, so position + quantity never exceeds the sale's live units, already checked below 2^32 in bid |
-| 1215 | MIA | killed | `test_SetConfig_RefusedOnceTheTermsCounterIsFull`: a full 24-bit terms counter reverted with Panic(0x11) instead of InvalidConfig |
-| 1215 | ROR | equivalent | id is a uint24, never above its maximum |
-| 1228 | ROR | killed | `test_SetLimits_RefusesAHigherExpectedValueAndAcceptsTheCurrentGas`: setLimits refused the current payout gas set again |
-| 1241 | ROR | killed | `test_Bid_ASoftEndAtTheLastClockSecondIsAccepted`: a soft end at the last 32-bit clock second, 2^32 - 1, reverted with ClockOverflow |
-| 1344 | CR | equivalent | settle reads the status from storage, never from the decoded word |
-| 1347 | CR | killed | `test_Adopt_RunsOnItsOwn_BidsAndSettlesByItsOwnCloseOnly`: settle read the stored 1/1 end as zero: a sale that runs on its own settled before its close |
-| 1349 | CR | equivalent | openedAt is not read on the settlement path |
-| 1353 | CR | equivalent | bidCount is not read on the settlement path |
-| 1373 | CR | equivalent | stepCount is not read on the settlement path |
-| 1375 | CR | equivalent | softWindow is read only when the 1/1 is not read fresh; settlement always reads it fresh |
-| 1387 | ROR | equivalent | 0 is the lowest status, so > NONE and != NONE (or <= NONE and == NONE) agree |
-| 1390 | ROR | equivalent | callers want OPEN (NONE refused on the line before) or SETTLING (OPEN and SETTLED handled before the call), so > and != agree |
-
-Measured again with the corrected parts ([The statements parts](#the-statements-parts)): 67
-survivors. Every mutant marked killed above is killed there. The survivors are the equivalent
-and gas mutants above, with line 1151 counted once (it is one mutant, which the campaign's
-parts ran twice), and one comment mutant the campaign's parts never ran:
-
-| Line | Rule | Verdict | Why, or the test |
-| ---: | --- | --- | --- |
-| 1017 | CR | killed | `test_Settle_AResumedScanKeepsTheDemandAlreadyCounted`: a scan resumed in a second settle call forgot the demand counted in the first and sold one copy fewer |
-
-That test was written after the second measurement and shown to fail on the mutant; the
-score measured again does not count it.
+| 114 | CR | equivalent | ADOPTED_RUN is not used by the adapter (the lens has its own constant); removing it changes no bytecode |
+| 114 | CR | equivalent | ADOPTED_RUN is not used by the adapter (the lens has its own constant); removing it changes no bytecode |
+| 292 | ROR | equivalent | 0 is the lowest status, so > NONE and != NONE (or <= NONE and == NONE) agree |
+| 309 | ROR | equivalent | 0 is the lowest status, so > NONE and != NONE (or <= NONE and == NONE) agree |
+| 385 | ROR | equivalent | step == lowStep rewrites lowStep with the same value |
+| 387 | ROR | equivalent | step == highStep rewrites highStep with the same value |
+| 423 | ROR | equivalent | newStep == highStep rewrites highStep with the same value |
+| 471 | ROR | equivalent | status is OPEN or SETTLING at this point (NONE, SETTLED and VOID left earlier), so <= OPEN is == OPEN |
+| 477 | ROR | equivalent | VOID is the highest status |
+| 478 | ROR | equivalent | after _finish the status is SETTLING or SETTLED here (VOID returned on the line before) |
+| 580 | ROR | equivalent | differs only for NONE, whose scan word is zero, so the guard still refuses it |
+| 699 | ROR | equivalent | CANCELLED is the highest 1/1 state |
+| 707 | ROR | equivalent | the two differ only when the operands are equal, where both branches give the same value |
+| 731 | CR | equivalent | without the assignment the state is NONE (0) when the clock is not read; callers only compare it with PAUSED and CANCELLED on that path |
+| 737 | ROR | equivalent | CANCELLED is the enum's last value: `< CANCELLED` equals `!= CANCELLED` |
+| 739 | ROR | equivalent | with the two ends equal the branch stores the end and the close it already had |
+| 746 | AOR | equivalent | soft > backstop cannot occur: softEnd is written at most closeAt + maxExtension and closeAt only moves later, so a larger backstop in _end changes nothing |
+| 747 | MIA | equivalent | soft > backstop cannot occur: softEnd is written at most closeAt + maxExtension and closeAt only moves later |
+| 747 | ROR | equivalent | the two differ only when the operands are equal, where both branches give the same value |
+| 747 | RR | equivalent | soft > backstop cannot occur: softEnd is written at most closeAt + maxExtension and closeAt only moves later |
+| 748 | ROR | equivalent | the two differ only when the operands are equal, where both branches give the same value |
+| 762 | ROR | equivalent | CANCELLED is the highest 1/1 state |
+| 767 | ROR | equivalent | CANCELLED, the only state above SETTLED, returned on the lines before |
+| 789 | ROR | equivalent | scan[7] is never below low |
+| 798 | MIA | gas | deleting a scan slot that is already zero: gas only |
+| 822 | ROR | equivalent | the two differ only when the operands are equal, where both branches give the same value |
+| 825 | ROR | equivalent | count never exceeds demand |
+| 873 | MIA | gas | the clearing call starts every sweep, so the settler's slot it now reads is always zero: one extra SLOAD |
+| 873 | ROR | equivalent | limit is 16 (_SWEEP_FIRST) or 96, so <= and == agree |
+| 879 | ROR | equivalent | the two differ only when the operands are equal, where both branches give the same value |
+| 880 | ROR | equivalent | the two differ only when the operands are equal, where both branches give the same value |
+| 887 | ROR | equivalent | swept never exceeds total (n is clamped to total - swept) |
+| 892 | MIA | gas | deleting a sweep slot that is already zero: gas only |
+| 917 | ROR | equivalent | < vs != on a loop counter that steps by one |
+| 917 | UOR | equivalent | ++i vs i++ as a loop statement |
+| 919 | ROR | equivalent | index == total reads an empty entry (quantity 0), which UniformClearing.sweep refuses with the same InvalidSettlementOrder(i) |
+| 942 | MIA | equivalent | RevenuePayment.payETH returns at once for a zero amount, and the seller is never zero or the escrow |
+| 942 | ROR | equivalent | the fee never exceeds the revenue |
+| 972 | ROR | equivalent | the status here is only ever one of the values on which both comparisons agree (CLOSED is never stored) |
+| 972 | ROR | equivalent | the status here is only ever one of the values on which both comparisons agree (CLOSED is never stored) |
+| 981 | MIA | equivalent | a VOID sale never has a stored result (count 0), so the SETTLED branch computes nothing for it |
+| 981 | ROR | equivalent | the status is SETTLED or VOID here |
+| 981 | ROR | equivalent | a VOID sale never has a stored result (count 0), so the SETTLED branch computes nothing for it |
+| 985 | ROR | equivalent | inside b.step >= r.step, so != and > agree |
+| 1029 | AOR | equivalent | a starting decade one too high is lowered by the scan loop (start minus a decade, scale / 10 exactly) before any price is computed |
+| 1029 | AOR | equivalent | a starting decade one too high is lowered by the scan loop (start minus a decade, scale / 10 exactly) before any price is computed |
+| 1029 | AOR | equivalent | a starting decade one too high is lowered by the scan loop (start minus a decade, scale / 10 exactly) before any price is computed |
+| 1033 | ROR | equivalent | the two differ only when the operands are equal, where both branches give the same value |
+| 1039 | MIA | equivalent | the scan writes the best count and the best step together, so with no best count the step is zero too and the branch writes zeros over zeros |
+| 1044 | MIA | gas | an empty book has lowStep = highStep = 0: the scan reads one empty word and gives the same zero result |
+| 1045 | CR | equivalent | for an empty book scan[7] already equals low (both 0) |
+| 1046 | CR | gas | an empty book has lowStep = highStep = 0: the scan reads one empty word and gives the same zero result |
+| 1103 | CR | gas | without w := 0 the outer loop reads the remaining words, but every used step breaks again on demand >= cap: same result, more gas |
+| 1108 | MIA | equivalent | the inner loop has the same condition, so the block only re-stores unchanged start and scale |
+| 1151 | CR | equivalent | scan[11] (best revenue) is never read after _scanWords returns; a resumed scan recomputes it from the best count and step |
+| 1170 | AOR | equivalent | unreachable: a bid enters a step once, so position + quantity never exceeds the sale's live units, already checked below 2^32 in bid |
+| 1170 | AOR | equivalent | unreachable: a bid enters a step once, so position + quantity never exceeds the sale's live units, already checked below 2^32 in bid |
+| 1170 | AOR | equivalent | unreachable: a bid enters a step once, so position + quantity never exceeds the sale's live units, already checked below 2^32 in bid |
+| 1170 | MIA | equivalent | unreachable: a bid enters a step once, so position + quantity never exceeds the sale's live units, already checked below 2^32 in bid |
+| 1171 | CR | equivalent | unreachable: a bid enters a step once, so position + quantity never exceeds the sale's live units, already checked below 2^32 in bid |
+| 1235 | ROR | equivalent | id is a uint24, never above its maximum |
+| 1365 | CR | equivalent | settle reads the status from storage, never from the decoded word |
+| 1374 | CR | equivalent | bidCount is not read on the settlement path |
+| 1394 | CR | equivalent | stepCount is not read on the settlement path |
+| 1396 | CR | equivalent | softWindow is read only when the 1/1 is not read fresh; settlement always reads it fresh |
+| 1408 | ROR | equivalent | 0 is the lowest status, so > NONE and != NONE (or <= NONE and == NONE) agree |
+| 1411 | ROR | equivalent | callers want OPEN (NONE refused on the line before) or SETTLING (OPEN and SETTLED handled before the call), so > and != agree |
 
 ### `src/terms/StreamTerms.sol`
 
@@ -1081,6 +953,28 @@ score measured again does not count it.
 | 191 | ROR | killed | `test_IndependentPair_OnlyAnErc1155ListingNamesTheTokenOfEditions`: a listing of form PAIR named a token for an editions contract |
 | 217 | MIA | killed | `test_Pairing_AnEmptyIndependentStreamSlotListsNoPair`: an empty INDEPENDENT_STREAM slot was never read (the mutant reverts calling address zero) |
 | 235 | MIA | killed | `test_LowerFeeShare_NeverDeploysTheOldVault`: checking the stated current terms deployed the old vault as a side effect |
+
+### `src/independent/IndependentEditionAuctionLens.sol`
+
+8 survivors: 1 killed, 7 not triaged.
+
+| Line | Rule | Verdict | Why, or the test |
+| ---: | --- | --- | --- |
+| 98 | CR | killed | `test_SetIndependentStreamRegistry_TheLensRefusesAnyModule`: the lens's setter did nothing instead of refusing: nothing called it on the Independent Stream lens |
+
+### `src/sales/UniformEditionAuctionLens.sol`
+
+128 survivors: 3 equivalent, 2 defensive, 123 not triaged.
+
+| Line | Rule | Verdict | Why, or the test |
+| ---: | --- | --- | --- |
+| 197 | ROR | equivalent | a usable answer's state is at most CANCELLED, the enum's last value: `>= CANCELLED` equals `== CANCELLED` |
+| 429 | ROR | equivalent | CANCELLED is the enum's last value: `< CANCELLED` equals `!= CANCELLED` |
+| 470 | ROR | equivalent | the read answers only what fits 128 bytes (`BoundedCall` refuses a longer answer), so `< 128` equals `!= 128` |
+| 474 | ROR | defensive | differs only if the English auction answers exactly 2^64 - 1 as when a pause began, which its 64-bit clock never holds at a real time |
+| 474 | ROR | defensive | differs only if the English auction answers exactly 2^64 - 1 as its end, which it stores in 32 bits |
+
+<!-- /generated -->
 
 ## Not triaged
 
