@@ -15,7 +15,7 @@ with `--artifacts out --update` to refresh them. No audit has taken place.
 | --- | --- |
 | Language and compiler | Solidity 0.8.37, EVM `prague`, optimizer on (200 runs), `via_ir` off ([`foundry.toml`](../../foundry.toml)) |
 | Dependencies | OpenZeppelin Contracts 5.7.0 and forge-std 1.17.0, as git submodules in `lib/` |
-| Source lines | 13,904 non-blank, non-comment lines in 120 files under `src/` (budget: 17,000) |
+| Source lines | 13,907 non-blank, non-comment lines in 120 files under `src/` (budget: 17,000) |
 | Deployed contracts | Every contract `script/DeployCore.sol` deploys: the permanent core, the money contracts, the modules, the governance pair and the two Independent Stream deployers (the deploy order is in the [runbook](../../script/README.md#how-a-deployment-is-built)) |
 | Linked libraries | None: every library function is `internal` |
 | Proxies and `delegatecall` | None in `src/`. The one exception is OpenZeppelin `Multicall` inside `AccessManager` ([ADR 0002](../adr/0002-access-manager-hardening.md)) |
@@ -33,15 +33,15 @@ Deployed once and never replaced ([ADR 0010](../adr/0010-plain-permanent-core.md
 
 | Contract | Source | nSLOC | Runtime (bytes) | Initcode (bytes) | EIP-170 margin |
 | --- | --- | ---: | ---: | ---: | ---: |
-| `Stream6529` (on `StreamBase`) | [`src/core/Stream6529.sol`](../../src/core/Stream6529.sol) | 46 | 14,773 | 16,570 | 9,803 |
-| `StreamEditions6529` (on `EditionsBase`) | [`src/core/StreamEditions6529.sol`](../../src/core/StreamEditions6529.sol) | 44 | 13,358 | 15,036 | 11,218 |
+| `Stream6529` (on `StreamBase`) | [`src/core/Stream6529.sol`](../../src/core/Stream6529.sol) | 46 | 14,823 | 16,674 | 9,753 |
+| `StreamEditions6529` (on `EditionsBase`) | [`src/core/StreamEditions6529.sol`](../../src/core/StreamEditions6529.sol) | 44 | 13,408 | 15,140 | 11,168 |
 | `StreamWorkFacts6529` | [`src/core/StreamWorkFacts6529.sol`](../../src/core/StreamWorkFacts6529.sol) | 166 | 9,533 | 9,738 | 15,043 |
 | `StreamDirectory6529` | [`src/core/StreamDirectory6529.sol`](../../src/core/StreamDirectory6529.sol) | 43 | 3,165 | 3,897 | 21,411 |
 | `StreamBase` (abstract) | [`src/core/StreamBase.sol`](../../src/core/StreamBase.sol) | 219 |  |  |  |
 | `EditionsBase` (abstract) | [`src/core/EditionsBase.sol`](../../src/core/EditionsBase.sol) | 156 |  |  |  |
-| `Modules`, `ModuleSlots` (abstract) | [`src/core/Modules.sol`](../../src/core/Modules.sol) | 92 |  |  |  |
+| `Modules`, `ModuleSlots` (abstract) | [`src/core/Modules.sol`](../../src/core/Modules.sol) | 93 |  |  |  |
 | `IndependentStream6529` (each artist deploys a full copy) | [`src/independent/IndependentStream6529.sol`](../../src/independent/IndependentStream6529.sol) | 120 | 14,112 | 15,810 | 10,464 |
-| `IndependentStreamEditions6529` (the pair's ERC-1155) | [`src/independent/IndependentStreamEditions6529.sol`](../../src/independent/IndependentStreamEditions6529.sol) | 50 | 11,134 | 12,328 | 13,442 |
+| `IndependentStreamEditions6529` (the pair's ERC-1155) | [`src/independent/IndependentStreamEditions6529.sol`](../../src/independent/IndependentStreamEditions6529.sol) | 51 | 11,186 | 12,380 | 13,390 |
 | `IndependentStreamMembership` (abstract, both templates) | [`src/independent/IndependentStreamMembership.sol`](../../src/independent/IndependentStreamMembership.sol) | 46 |  |  |  |
 | `SplitLedger` (deployed under the name `SplitFactory`) | [`src/economics/SplitLedger.sol`](../../src/economics/SplitLedger.sol) | 363 | 11,686 | 12,691 | 12,890 |
 | `SplitVault` (the 66-byte wallet; raw bytecode constants) | [`src/economics/SplitVault.sol`](../../src/economics/SplitVault.sol) | 8 |  |  |  |
@@ -65,7 +65,7 @@ Deployed once and never replaced ([ADR 0010](../adr/0010-plain-permanent-core.md
 | --- | --- | ---: | ---: | ---: | ---: |
 | `PackageRegistry` (the mint policy) | [`src/curation/PackageRegistry.sol`](../../src/curation/PackageRegistry.sol) | 517 | 19,906 | 21,552 | 4,670 |
 | `Eip712CurationVerifier` | [`src/curation/Eip712CurationVerifier.sol`](../../src/curation/Eip712CurationVerifier.sol) | 117 | 5,835 | 6,526 | 18,741 |
-| `StreamTerms` (TERMS) | [`src/terms/StreamTerms.sol`](../../src/terms/StreamTerms.sol) | 151 | 6,860 | 7,638 | 17,716 |
+| `StreamTerms` (TERMS) | [`src/terms/StreamTerms.sol`](../../src/terms/StreamTerms.sol) | 152 | 7,037 | 7,822 | 17,539 |
 | `WorkRules` (RECORDS) | [`src/records/WorkRules.sol`](../../src/records/WorkRules.sol) | 388 | 15,757 | 16,700 | 8,819 |
 | `WorkDelivery` | [`src/stream/WorkDelivery.sol`](../../src/stream/WorkDelivery.sol) | 253 | 10,172 | 10,541 | 14,404 |
 | `Renderer` (RENDERER) | [`src/content/Renderer.sol`](../../src/content/Renderer.sol) | 724 | 24,057 | 24,372 | 519 |
