@@ -3,129 +3,56 @@
 Deployment configuration for the 6529 Works `WorksAccessManager`
 ([src/governance](../src/governance/README.md)).
 
-`genesis.example.json` is the committed genesis configuration. **Every address in it is a
-placeholder**: `0x…a0xx` stands for a contract and `0x…b0xx` for a holder.
+[`genesis.core.example.json`](genesis.core.example.json) is the genesis configuration of the
+plain core ([ADR 0010](../docs/adr/0010-plain-permanent-core.md)), written by
+`python config/make_core_genesis.py` (`--check` fails if the committed file is stale). **Every
+address in it is a placeholder**: `0x…a0xx` stands for a contract and `0x…b0xx` for a holder.
+A deployment copies it, replaces the network and the holders, and the deploy library
+([`script/DeployCore.sol`](../script/README.md)) substitutes the deployed contracts by name.
 
-A real deployment copies it and replaces the holders with its Safes and keys.
-[`script/Deploy.s.sol`](../script/README.md) substitutes the deployed contracts by name and
-passes the result to `GovernanceConfigurator.configure(cfg, manifestHash, wiring)`.
-
-**This file is the policy.** A deployment's copy may differ only in its holders, its
-description and its address fields:
+**This file is the policy.** A deployment's copy may differ only in its network, its holders,
+its description and its address fields:
 - `python tools/check_genesis.py --config <copy>` compares the copy with this file;
-- off anvil, the deploy script refuses a copy whose governed targets or wiring differ from
-  what this file produces (`DeployGuards.checkPolicy`).
+- off anvil, the deploy script refuses a copy whose governed targets or wiring differ from what
+  this file produces (`DeployGuards.checkPolicy`).
 
 A change to a role, a delay class or a wiring call is a change to this file, made by PR.
 
+Genesis modules and minters are constructor arguments of `Stream6529`, `StreamEditions6529` and
+`StreamDirectory6529`, so nothing is bound by wiring. Every function that changes a waiting period,
+a module or a minter, and the two timed moves (`rescue`, `rebind`), maps to NETWORK with no role
+delay: the wait that applies is the contract's own setting, which the network changes at once.
+
 | Key | Contents |
 | --- | --- |
-| `network` | The single authority (owner, 16 Nov): until the TDH bridge exists, one 6529 Safe. Every network role (`network: true` in `roles`, `Roles.isNetworkRole`) answers for this address alone; the configurator proposes it and it calls `acceptNetwork()`. Off anvil the deploy script requires a deployed Safe with a threshold of at least 2, owners that are plain keys, a canonical Safe 1.3.0 or 1.4.1 singleton, no module and no guard. |
-| `brake` | Optional, and zero or absent at genesis: off anvil the deploy script refuses a genesis brake (`BrakeAtLaunch`). The network may set one later (`setBrake`, 7 days). |
-| `roles` | Every role in `Roles.sol`, with its ID, execution class and delay, grant delay, and `network` (true for the roles only the `network` address holds). |
-| `holders` | `cfg.grants`: operational keys only, three pauser keys, two curation signers, and one key each for storage, platform and curator. Nobody can be granted a network role. Off anvil the deploy script refuses placeholder and system addresses, a holder of a network role and fewer than two curation signers; on mainnet also the deployer as network or holder, and one account in two of the groups network, pausers and curation signers. |
-| `peers` | Ungoverned addresses that wiring passes as arguments, including the manager itself, the epoch-0 manifest's subject. |
-| `manager` | The manager's own functions beyond its OpenZeppelin base, which check the caller themselves: `transferNetwork` and `setBrake` (ADMIN, the network at 7 days), and the open `acceptNetwork` (the pending network) and `brakeOnce` (the brake). `tools/check_genesis.py` requires every added function to be listed. |
-| `contracts` | `cfg.targets`, per contract. `artifact` is the compiled ABI the entries are checked against. `implementation` is the contract on `main`, or null while its lane is pending. `functions` lists the governed selectors, each with its role, delay class and delay. `genesisOnly` lists one-shot binds that stay unmapped (`ADMIN`) and are wired. `deferred` lists restricted functions that are neither mapped nor wired in v1. |
-| `wiring` | The genesis calls `configure` executes as zero-delay admin before mapping any selector: the one-shot binds, the admitted minters, the sale targets and the epoch-0 governance manifest. |
-| `initialInstalls` | Which initial settings are constructor arguments and which are wiring (below). |
-| `unusedRoles` | Roles with no v1 selector: `MINTER` (adapters are admitted per token instead) and `KEEPER`. |
+| `network` | The single authority: one address, a 2-of-n Safe today. Every network role answers for it alone; the configurator proposes it and it calls `acceptNetwork()`. Off anvil the deploy script requires a deployed canonical Safe 1.3.0 or 1.4.1 with a threshold of at least 2, plain-key owners, no module and no guard |
+| `roles` | Every role in `Roles.sol`, with its ID, execution class and delay, grant delay, and `network` (true for the roles only the network holds) |
+| `holders` | Operational keys only: three pausers, two curation signers, one key each for storage, platform and curator. Off anvil the deploy script refuses placeholder and system addresses, a holder of a network role, a holder that is a contract of the deployment, and fewer than two curation signers |
+| `peers` | Ungoverned addresses that wiring passes as arguments, including the manager (the epoch-0 manifest's subject) |
+| `manager` | The manager's own functions beyond its OpenZeppelin base: `transferNetwork` and `setBrake` (ADMIN), the open `acceptNetwork` and `brakeOnce` |
+| `contracts` | The governed targets: per contract its artifact and its governed selectors, each with its role, delay class and delay; `genesisOnly` one-shot binds (wired, never mapped) |
+| `wiring` | The genesis calls `configure` makes before mapping any selector: the package registry's `bindStream` and entropy module, the edition auction's `setTarget(StreamEditions6529)`, the ETH opening bid of 0.05 ETH (`setOpeningBid`), the Independent Stream module's two adapters, two templates and entropy module, and the epoch-0 governance manifest. A call on a contract the deployment lacks (the entropy module without VRF) is left out |
+| `settings` | The launch values of the four waiting periods, which `VerifyCore` reads back: `moduleDelay` 604,800 s on `Stream6529`, `StreamEditions6529` and `StreamDirectory6529`; `rescueDelay` 1,209,600 s on `Stream6529`; `rebindDelay` 1,209,600 s on `StreamEditions6529`; `unclaimedPeriod` 15,552,000 s on `StreamDirectory6529` |
+| `initialInstalls` | Which initial settings are constructor arguments and which are wiring |
+| `unusedRoles` | Roles with no selector |
 
-## Sources
-
-The selector classes follow:
-- [ADR 0002](../docs/adr/0002-access-manager-hardening.md) decision 7;
-- [ADR 0003](../docs/adr/0003-build-time-decisions.md);
-- the governance map in [docs/architecture.md](../docs/architecture.md);
-- the interfaces and implementations on `main`.
-
-**Two paths for artists.** `addLocator` on WorkRecords lets the artist act directly.
-`PLATFORM`'s path to the same function goes through a manual `canCall` check in the
-implementation, not through `restricted`, so the mapping here grants PLATFORM only.
-The integration lane verifies both paths on the real contracts.
-
-## Initial installs: constructor or wiring
-
-The deploy script follows one rule:
-
-- **Constructor arguments:** anything immutable, or installed once with a pinned code hash:
-  - the curation verifier in the `PackageRegistry`;
-  - the resolver and escrow in each sale adapter;
-  - the consolidation source in the `ArtistRegistry`;
-  - the artist resolver in the `StatementLog`;
-  - the initial economics and default license in the `EconomicsResolver`.
-
-  Changing any of them later goes through its governed setter and delay class.
-- **Wiring (`wiring` in this file):** calls that connect contracts deployed independently:
-  - the one-shot `bind*` calls;
-  - the admitted-minter grants (`setAdmittedMinter`);
-  - the sale adapters' targets (`setTarget`);
-  - each product's first default currency (`setDefaultCurrency`, ETH for `PRODUCT_STREAM`,
-    `PRODUCT_EDITIONS` and `PRODUCT_FEDERATED`): `EnglishAuction.start` reads it, and the
-    setter is otherwise a 3-day FUNDS_SETTER action;
-  - the ETH opening bid of 0.05 ETH that the English auction locks at start
-    (`AssetAllowlist.setOpeningBid(ETH, 1, 0.05 ether)`, owner decision 19; ETH is at revision 1
-    from its admission at deployment), later a 24-hour PARAMETER_SETTER action;
-  - the federation's first configuration ([ADR 0008](../docs/adr/0008-federation.md)): the
-    English auction's `setFederationRegistry`, and the federation registry's `setAdapter` (the
-    English auction and the federated edition auction) and `approveTemplate` (the two v1
-    templates, named in the arguments: "T" for the runtime code hash, which
-    `DeployV1.templateCodeHash` computes from the build, and "TDeployer" for the template's
-    `FederatedDeployer`, which `DeployV1` deploys with the build's creation code; the file holds
-    no literal and the calldata's first two words are placeholders);
-  - the epoch-0 governance manifest (`appendGovernanceManifest` on the statement log).
-
-  Nothing else can be wired: `GovernanceConfig.isGenesisSelector` is an allow-list, and each
-  setter reaches only targets declaring its interface (`GovernanceConfig.genesisInterface`).
-
-  `configure` executes them as zero-delay admin before mapping selectors.
-- **Grants:** curation signers become active when they are granted `CURATION_SIGNER` in
-  `holders`. The verifier keeps no signer list to wire.
-
-`ArtistRegistry.bindFederationRegistry` is `genesisOnly`: genesis wires the one-shot bind to
-the deployment's `FederationRegistry` ([ADR 0008](../docs/adr/0008-federation.md)). Replacing
-the registry afterwards is `setFederationRegistry` (SUCCESSOR_SETTER, 7 days), following the
-[replacement procedure](../script/README.md#replacing-the-federation-registry).
+Other files:
+- `sepolia-r1/` to `sepolia-r6/`: each Sepolia round's public inputs (`accounts.json`,
+  `genesis.json`, `deploy.env`, `manifest-epoch0.json`). r1 to r5 were deployed before the
+  contracts were renamed and are kept exactly as deployed, with the names of that time
+  ([old name to new name](../deployments/11155111/README.md)); r6, not yet deployed, is the
+  first round of the plain core and uses the current names
+  ([runbook](../script/README.md#sepolia)).
+- `local/` (git-ignored): the walkthrough's genesis file, written by
+  `script/local/make_genesis.py`.
 
 ## Checks
 
-**[`test/governance/GenesisConfig.t.sol`](../test/governance/GenesisConfig.t.sol)** reads
-this file (Foundry has read-only access to `./config`) and checks:
-- **Compiled selectors:** every entry equals a compiled `Interface.f.selector` or
-  `Contract.f.selector`, in both directions, so a renamed or re-typed function fails to
-  compile.
-- **Roles and classes:** the role table matches `Roles.sol`, and every delay matches its
-  role's class.
-- **Wiring:** every call uses a genesis selector, every genesis-only bind is wired, and no
-  deferred entry is.
-- **Holders:** they hold operational roles only; network roles answer for `network` alone.
-- **Installation:** the whole configuration, wiring included, installs on a fresh manager
-  and reads back with `verify`.
-- **Gas:** the configuration plus the maximum wiring stays under 60% of the EIP-7825 cap.
-
-**[`tools/check_genesis.py`](../tools/check_genesis.py)** runs in CI (standard library
-only; unit tests in `tools/test_check_genesis.py`). It compares every entry with
-`forge inspect <path:Contract> methodIdentifiers`, including overloads such as the
-auction's two `pause` functions. It also requires every `restricted` function of every
-concrete contract under `src/` to be mapped, genesis-only or deferred, so nothing silently
-falls back to `ADMIN`. With `--config`, it also checks that copy against this committed file
-(the policy above).
-- **Inherited functions:** a `restricted` function declared in an abstract base counts for
-  each concrete contract that inherits it. The abstract base is
-  never required in the configuration itself.
-- **Pending contracts:** a configured contract whose artifact source is not in the
-  repository yet is reported as pending and passes. It is mapped ahead from its lane's
-  branch, so its merge never turns `main` red, and it is checked in full once its source
-  lands. Every configured contract is on `main` today, so none is pending. (The JSON's
-  `status` field is descriptive only; the checker ignores it.)
-
-Selectors and wiring calldata are generated from the build artifacts and `cast calldata`,
-not typed by hand. When a lane merges, add its contract's `implementation` and its
-implementation-only setters; the checker fails until they are listed.
-
-**[`tools/gen_role_matrix.py`](../tools/gen_role_matrix.py)** renders this file as the
-[role and permission matrix](../docs/audit/roles.md): every mapped selector with its role and
-delay class. After any change here, run
-`python tools/gen_role_matrix.py` and commit the result; CI's Docs job runs it with `--check`
-and fails if the matrix is stale. It also checks that every selector is the keccak-256 of its
-signature and that every delay matches its role.
+- **[`tools/check_genesis.py`](../tools/check_genesis.py)** (CI) compares every selector with
+  `forge inspect <path:Contract> methodIdentifiers` and requires every `restricted` function of
+  every concrete contract under `src/` to be mapped or genesis-only, so nothing falls back to
+  ADMIN unnoticed. With `--config` it also checks a deployment's copy against this file.
+- **[`tools/gen_role_matrix.py`](../tools/gen_role_matrix.py)** renders this file as the
+  [role and permission matrix](../docs/audit/roles.md); CI runs it with `--check`.
+- **`test/deploy/DeployCore.t.sol`** deploys the whole stack, installs this file with its
+  wiring, accepts the network and reads everything back.

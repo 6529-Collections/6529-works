@@ -4,6 +4,8 @@ Usage: python script/sepolia/make_manifest.py <new> <prev> <commit> [<simulation
        python script/sepolia/make_manifest.py r4 r3 1e7022b4...          # first pass
        python script/sepolia/make_manifest.py r4 r3 1e7022b4... sim.txt  # final pass
 
+From r6 the deployment is `script/DeployCore.s.sol` (the plain core, ADR 0010).
+
 The manifest is hashed into genesis, but no contract address depends on it, so it is written in
 two passes: without a simulation output its contracts are null; with one (the output of
 `script/sepolia/deploy.ps1` without -Broadcast, which prints the returned `Deployment`), the
@@ -23,17 +25,20 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-# `DeployV1.Deployment`'s fields, in deploy order (the manager is created by the configurator).
+# The names `script/DeployCore.s.sol` prints (`<name>: <address>`), in deploy order: the manager
+# (created by the configurator), then `DeployCore.order` with the entropy module (a VRF
+# coordinator is set for every Sepolia round).
 CONTRACTS = [
-    "configurator", "manager", "contentStore", "dependencyRegistry", "consolidationAdapter",
-    "artistRegistry", "splitFactory", "feeRecipientVault", "museumVault", "claimRouter",
-    "assetAllowlist", "economicsResolver", "revenueEscrow", "curationVerifier", "packageRegistry",
-    "statementLog",
-    "entropyModule", "renderer", "stream", "workRecords", "workDelivery", "editions",
-    "englishAuctionLens", "englishAuction", "editionAuctionLens", "editionAuction",
-    "federationRegistry", "federatedEditionAuctionLens", "federatedEditionAuction",
-    "federatedStreamDeployer", "federatedEditionsDeployer", "saleStarter",
+    "CoreFactory", "WorksAccessManager", "GovernanceConfigurator", "ContentStore", "StreamWorkFacts6529", "StreamDirectory6529",
+    "FeeRecipientVault", "MuseumVault", "SplitFactory", "ClaimRouter", "RevenueEscrow", "Stream6529",
+    "StreamEditions6529", "ConsolidationAdapter", "Accounts", "AssetAllowlist", "EconomicsResolver",
+    "CurationVerifier", "PackageRegistry", "EntropyModule", "StatementLog", "DependencyRegistry",
+    "Renderer", "WorkRules", "WorkDelivery", "StreamTerms", "EnglishAuction",
+    "UniformEditionAuctionLens", "UniformEditionAuction", "IndependentStreamRegistry",
+    "IndependentStream721Deployer", "IndependentStreamEditionsDeployer", "IndependentEditionAuctionLens",
+    "IndependentEditionAuction", "SaleStarter",
 ]
+POLICY = "config/genesis.core.example.json"
 
 
 def env(new):
@@ -137,7 +142,9 @@ def main(new, prev, commit, sim_path=None):
         if s["owners"] is None:
             print(f"warning: safes.{name} ({s['address']}) needs its owners, threshold and version",
                   file=sys.stderr)
-    m["policy"] = {"path": "config/genesis.example.json", "sha256": sha("config/genesis.example.json")}
+    m["policy"] = {"path": POLICY, "sha256": sha(POLICY)}
+    # The four waiting periods' launch values (network settings, changed by the network at once).
+    m["settings"] = g["settings"]
     m["deployer"] = e["DEPLOYER"]
     duration = int(e.get("AUCTION_DURATION", 86400))
     m["parameters"] = {
@@ -152,12 +159,14 @@ def main(new, prev, commit, sim_path=None):
             else f"Testnet deviation: {duration} seconds; mainnet is 24 hours."
         ),
     }
+    # ETH only: no Permit2 dependency from the plain core on.
+    m["dependencies"].pop("permit2", None)
     vrf = m["dependencies"]["vrf"]
     vrf["coordinator"] = e["VRF_COORDINATOR"]
     vrf["subscriptionId"] = e["VRF_SUBSCRIPTION_ID"]
     vrf["keyHash"] = e["VRF_KEY_HASH"]
     vrf["nativePayment"] = e.get("VRF_NATIVE_PAYMENT") == "1"
-    # The deploy's defaults (script/Deploy.s.sol) unless the env file sets them.
+    # The deploy's defaults (script/ScriptIO.sol `params`) unless the env file sets them.
     vrf["callbackGasLimit"] = int(e.get("VRF_CALLBACK_GAS_LIMIT", 200000))
     vrf["confirmations"] = int(e.get("VRF_CONFIRMATIONS", 3))
     if sim_path is None:
