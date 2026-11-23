@@ -275,4 +275,33 @@ contract UniformEditionAuctionAdoptTest is EditionAuctionBase {
         );
         next.adopt(address(editions), ID, data);
     }
+
+    /// @dev A sale that runs on its own keeps the close it was adopted with: a bid in its last
+    ///      second lands and extends it by the soft window, and settlement is refused until
+    ///      that end (its 1/1, never read, gives no end of its own).
+    function test_Adopt_RunsOnItsOwn_BidsAndSettlesByItsOwnCloseOnly() public {
+        _open(0);
+        stream.setOutcome(ID, Outcome.SOLD);
+        english.setRefuseClock(true);
+        _removeAndRebind();
+        uint256 saleId = next.adopt(address(editions), ID, _nextData());
+        IUniformEditionAuction n = IUniformEditionAuction(address(next));
+        uint256 closeAt = block.timestamp + 1 days + 15 minutes;
+        assertEq(n.endTimes(saleId).closeAt, closeAt);
+        vm.warp(closeAt - 1);
+        _nextBid(saleId, bob, 100, 2);
+        uint256 endTime = closeAt - 1 + 5 minutes;
+        assertEq(n.endTimes(saleId).endTime, endTime, "extended by the soft window");
+        assertEq(n.endTimes(saleId).closeAt, closeAt, "the close did not move");
+        vm.warp(endTime - 1);
+        vm.expectRevert(
+            abi.encodeWithSelector(IUniformEditionAuction.SettlementNotReady.selector, saleId)
+        );
+        next.settle(saleId, new uint256[](0));
+        vm.warp(endTime);
+        assertTrue(next.settle(saleId, new uint256[](0)));
+        vm.prank(bob);
+        (uint256 won,) = next.claimBid(saleId, 1, bob);
+        assertEq(won, 2);
+    }
 }

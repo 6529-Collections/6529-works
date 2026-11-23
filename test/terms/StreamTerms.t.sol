@@ -292,9 +292,8 @@ contract StreamTermsTest is RulesFixture {
     // ---------------------------------------------------- pinned by mutation testing
 
     function test_Constructor_WithoutEditionsPairsNothing() public {
-        StreamTerms lone = new StreamTerms(
-            address(manager), address(ledger), s, address(0), address(directory)
-        );
+        StreamTerms lone =
+            new StreamTerms(address(manager), address(ledger), s, address(0), address(directory));
         assertEq(lone.editionsOf(s), address(0));
         assertEq(lone.tokenOfEditions(address(editions)), address(0));
     }
