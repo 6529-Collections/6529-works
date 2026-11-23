@@ -424,7 +424,8 @@ contract EnglishAuctionRulesTest is AuctionFixture {
         next.incrementShare = c.incrementShare * 2;
         next.extensionWindow = c.extensionWindow * 2;
         auction.setConfig(c, next);
-        assertEq(auction.minimumBid(saleId), 1 ether + 1 ether * next.incrementShare / DENOMINATOR);
+        uint256 step = 1 ether * uint256(next.incrementShare) / DENOMINATOR;
+        assertEq(auction.minimumBid(saleId), 1 ether + step);
         (,, uint64 revision) = allowlist.assetConfig(address(0));
         allowlist.setIncrementFloor(address(0), revision, 0.5 ether);
         assertEq(auction.minimumBid(saleId), 1.5 ether);
