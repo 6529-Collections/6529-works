@@ -192,7 +192,7 @@ contract EnglishAuctionRulesTest is AuctionFixture {
         // The network changes the settings while the sale is paused, within the compiled bounds
         // (a duration of 1 hour to 7 days, a window of 1 minute to 1 day and at most the
         // duration).
-        IEnglishAuction.AuctionConfig memory next = c;
+        IEnglishAuction.AuctionConfig memory next = auction.config();
         next.duration = uint32(bound(duration, 1 hours, 7 days));
         next.extensionWindow =
             uint32(bound(window, 1 minutes, next.duration < 1 days ? next.duration : 1 days));
@@ -329,7 +329,7 @@ contract EnglishAuctionRulesTest is AuctionFixture {
         _deploy(highest + 1);
         assertEq(_deploy(highest).config().refusalGas, highest);
 
-        IEnglishAuction.AuctionConfig memory next = c;
+        IEnglishAuction.AuctionConfig memory next = auction.config();
         while (c.refusalGas < highest) {
             next.refusalGas = c.refusalGas - 1;
             vm.expectRevert(IEnglishAuction.InvalidConfig.selector);
@@ -420,7 +420,7 @@ contract EnglishAuctionRulesTest is AuctionFixture {
         uint256 saleId = _start(1);
         _bid(alice, saleId, 1 ether);
         IEnglishAuction.AuctionConfig memory c = auction.config();
-        IEnglishAuction.AuctionConfig memory next = c;
+        IEnglishAuction.AuctionConfig memory next = auction.config();
         next.incrementShare = c.incrementShare * 2;
         next.extensionWindow = c.extensionWindow * 2;
         auction.setConfig(c, next);
