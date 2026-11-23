@@ -31,6 +31,13 @@
       0004's table follows: four rows re-measured and two new rows for `restart`, measured
       by `IndependentRestartGas.t.sol` with their own ceilings. The code
       maps of `src/economics` and `src/entropy` are corrected.
+- Tests: a [validation record](docs/testing/validation-2026-11-23.md) of every test layer
+  run over `main` at `961bc956`. The Halmos proof `check_RoyaltyInfoFromStorage`, which timed
+  out on some runs of the strength workflow, now takes one slow 256-bit division as given and
+  a Forge test checks that division for every rate; it runs in under a second. The nightly
+  settlement-scan job's filter selected no test and passed; it selects its test again and
+  fails if none ran. The tables of the mutation scores page and the floors file are generated
+  from `tools/mutation-scores.json` by `tools/gen_mutation_scores.py`, which CI checks.
 - **Sepolia round r7.** A second instance of the plain core on Sepolia (testnet only), from
   `main` at `5de6abaa`, kept with its governance as genesis installed it so that `VerifyCore`
   passes at the chain's head; verified on Sourcify
