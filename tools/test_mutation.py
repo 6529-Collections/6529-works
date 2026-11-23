@@ -100,6 +100,7 @@ class ShardTest(unittest.TestCase):
                 else len(mt.FULL_SPLIT_GROUPS) if f in mt.FULL_SPLIT_FILES
                 else 1
             ) + mt.RELATION_PARTS.get(f, 1) - 1
+            expected += sum(n - 1 for n in mt.GROUP_PARTS.get(f, {}).values())
             self.assertEqual(len(mine), expected, f)
             # Every file gets the CONST pass exactly once.
             self.assertEqual(sum(s.constants for s in mine), 1, f)
@@ -149,9 +150,30 @@ class ShardTest(unittest.TestCase):
             # Every comparison, by its position in ROR's visit order, falls in exactly one part.
             for ordinal in range(500):
                 self.assertEqual(sum(ordinal % s.part[1] == s.part[0] for s in ror), 1)
-        # Every other shard is a whole file's shard.
+        # Every other shard is a whole file's shard, or a part of a group in GROUP_PARTS.
         self.assertTrue(all(s.part is None for s in shards.values()
-                            if s.path not in mt.RELATION_PARTS or s.mutators != "ROR"))
+                            if s.path not in mt.GROUP_PARTS
+                            and (s.path not in mt.RELATION_PARTS or s.mutators != "ROR")))
+
+    def test_group_parts_split_a_group_into_disjoint_parts_with_one_const_pass(self) -> None:
+        shards = mt.shards(ROOT)
+        self.assertTrue(mt.GROUP_PARTS)
+        for f, groups in mt.GROUP_PARTS.items():
+            self.assertIn(f, mt.SPLIT_FILES | mt.FULL_SPLIT_FILES)
+            self.assertNotIn(f, mt.RELATION_PARTS)
+            for group, n in groups.items():
+                base = f"{mt._module(f)}-{Path(f).stem}-{group}"
+                mine = [shards[f"{base}-{k + 1}-of-{n}"] for k in range(n)]
+                self.assertNotIn(base, shards)  # no unparted shard beside the parts
+                self.assertEqual([s.part for s in mine], [(k, n) for k in range(n)])
+                # CONST runs once, with the first statements part.
+                self.assertEqual([s.constants for s in mine],
+                                 [group == "statements" and k == 0 for k in range(n)])
+        # The parts of one operator's mutants are disjoint and together the whole list.
+        patches = [{"start": 9 - i, "end": 20, "new_string": str(i)} for i in range(10)]
+        parts = [mt.take_part(patches, (k, 3)) for k in range(3)]
+        self.assertEqual(sorted(p["start"] for part in parts for p in part), list(range(10)))
+        self.assertEqual([p["start"] for p in parts[0]], [0, 3, 6, 9])  # in source order
 
     def test_ror_part_reads_k_of_n(self) -> None:
         self.assertIsNone(mt.ror_part(""))
@@ -159,6 +181,44 @@ class ShardTest(unittest.TestCase):
         for bad in ("4/4", "-1/3"):
             with self.assertRaises(mt.MutationError):
                 mt.ror_part(bad)
+
+    def test_a_file_with_another_contract_is_mutated_once_per_contract(self) -> None:
+        # slither-mutate alone would mutate only the contract named like the file.
+        both = "abstract contract ThingBase {}\n// contract Gone {}\ncontract Thing is ThingBase {}\n"
+        self.assertEqual(mt.mutation_targets(both, "Thing"), ["ThingBase", "Thing"])
+        self.assertEqual(mt.mutation_targets("contract Thing {}\n", "Thing"), [None])
+        self.assertEqual(mt.mutation_targets("library Other {}\n", "Thing"), ["Other"])
+        self.assertEqual(mt.mutation_targets("interface IThing {}\n", "Thing"), [None])
+        modules = (ROOT / "src" / "core" / "Modules.sol").read_text(encoding="utf-8")
+        self.assertEqual(mt.mutation_targets(modules, "Modules"), ["ModuleSlots", "Modules"])
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            source = root / "src" / "x" / "Thing.sol"
+            source.parent.mkdir(parents=True)
+            source.write_bytes(both.encode("utf-8"))
+            seen = []
+
+            def record(cmd, log, timeout=None, env=None):
+                seen.append((cmd, env))
+                log.write_text("INFO:Slither-Mutate:Done mutating.\n", encoding="utf-8")
+                return 0
+
+            real = mt._run_logged
+            mt._run_logged = record
+            try:
+                shard = mt.Shard("x-Thing-operators-2-of-3", "src/x/Thing.sol", "test/x/**",
+                                 "AOR,LOR,UOR", False, (1, 3))
+                result = mt.FileResult(shard.path)
+                mt.run_slither_mutate(root, shard, root, 60, result, mt.Deadline(None))
+            finally:
+                mt._run_logged = real
+            self.assertEqual(result.status, "ok")
+            named = [cmd[cmd.index("--contract-names") + 1] for cmd, _ in seen]
+            self.assertEqual(named, ["ThingBase", "Thing"])
+            # A part of another group than relations reaches every operator but ROR.
+            self.assertEqual([env[mt.PART_ENV] for _, env in seen], ["1/3", "1/3"])
+            self.assertEqual([env[mt.ROR_PART_ENV] for _, env in seen], ["", ""])
+            self.assertTrue((root / "slither-mutate-ThingBase.log").is_file())
 
     def test_a_relations_part_reaches_slither_mutate_through_the_environment(self) -> None:
         with tempfile.TemporaryDirectory() as d:
