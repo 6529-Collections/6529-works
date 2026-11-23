@@ -106,7 +106,7 @@ input to any address).
 `deploy.ps1` without `-Broadcast` simulates: it runs every check of `DeployGuards` (the
 network is a bare Safe, every holder reachable and none a contract of the deployment, the
 policy is the committed one, no brake) and prints every address. r6's simulation needed 37
-transactions (the factory, one per contract, the install) and forge estimated 143,847,103 gas in
+transactions (the factory, one per contract, the install) and forge estimated 147,288,593 gas in
 total (Prague pricing, with forge's 1.3 multiplier).
 
 Sepolia reprices state creation, which forge cannot simulate: the broadcast skips forge's
