@@ -45,7 +45,9 @@ seed, 395,000 and 9; asserted in the gas report).
 - **Static analysis.** Slither runs in CI; every High or Medium finding has a reviewed row in
   the [triage record](../security/slither-triage.md).
 - **Sepolia.** Earlier rehearsals ran the code before this restructuring
-  ([flows](../../deployments/11155111/flows.md)); round r6 will deploy the plain core.
+  ([flows](../../deployments/11155111/flows.md)); round r6 runs the plain core
+  ([record](../../deployments/11155111/README.md#sepolia-r6-23-november-2026-current),
+  [flows](../../deployments/11155111/flows-r6.md)).
 
 ## Reporting
 

@@ -94,18 +94,18 @@ The auction is replaceable; its numbers below are compiled or governed values of
 | ID | Rule | Tests |
 | --- | --- | --- |
 | ED-1 | Only an active minter creates an edition, for an existing master, once; the edition's minter is that caller. | `test_Edition_CreateMintSealAndTheSealNeverGrows` |
-| ED-2 | An edition's ID is its master's token ID; an edition is created at most once. | |
+| ED-2 | An edition's ID is its master's token ID; an edition is created at most once. | `test_Create_StoresTheEditionAndLogsIt`, `test_Create_RefusesAMissingOrBurnedMaster`, `test_Create_OnceOnlyEvenByAnotherMinter` |
 | ED-3 | Retired: one edition per master (ED-2) makes a separate content check unnecessary. | |
-| ED-4 | Edition terms: a nonzero sale kind and at most 64 bytes of params, checked by the sale contract. | |
+| ED-4 | Edition terms: a nonzero sale kind and at most 64 bytes of params, checked by the sale contract. | `test_invalidItem_masterEditionTerms`, `test_invalidItem_masterEditionTermsSharedRule`, `test_Open_ChecksTheItem` |
 | ED-5 | Only the edition's own minter mints, a nonzero amount. | `test_Edition_CreateMintSealAndTheSealNeverGrows` |
-| ED-6 | Copies minted never exceed the maximum; burns never free room. | |
-| ED-7 | Royalty receiver and rate are set at creation and changed only by the TERMS module. | |
-| ED-8 | A holder burns only its own copies; burned copies still count as minted. | |
+| ED-6 | Copies minted never exceed the maximum; burns never free room. | `test_Mint_UpToTheCapExactlyAndNotOneMore`, `testFuzz_Mint_NeverPassesTheMaximum`, `test_Burn_AHolderBurnsItsOwnCopiesAndTheyStillCount` |
+| ED-7 | Royalty receiver and rate are set at creation and changed only by the TERMS module. | `test_Create_StoresTheEditionAndLogsIt`, `test_SetRoyalty_OnlyTheTermsModule`, `test_HostileTerms_ReachesOnlyRoyaltiesAndMetadata` |
+| ED-8 | A holder burns only its own copies; burned copies still count as minted. | `test_Burn_AHolderBurnsItsOwnCopiesAndTheyStillCount`, `test_Burn_NeverMoreThanTheCallersOwn` |
 | ED-25 | The minter seals once, between the copies minted and the maximum; a sealed maximum never grows; a removed minter seals nothing and mints only what it sealed before its removal; a minter added again gains nothing while it waits to become active. | `test_Edition_CreateMintSealAndTheSealNeverGrows` |
-| ED-26 | Every mint logs `EditionMinted(editionId, to, amount, unitPrice)`. | |
-| ED-27 | Editions' state is rebuilt from its logs alone. | |
+| ED-26 | Every mint logs `EditionMinted(editionId, to, amount, unitPrice)`. | `test_Mint_MintsCountsAndLogsThePrice`, `test_Claims_MintThroughEditionsWithTheClearingPrice` |
+| ED-27 | Editions' state is rebuilt from its logs alone. | `test_Editions_EveryEventReplaysToTheSameState`, `test_Editions_ReplayFailsOnStateNoLogExplains`, `test_Editions_ReplayFailsOnADroppedLog` |
 | ED-28 | Retired: `StreamEditions6529` holds no gas figure and asks no module for a mint. | |
-| ED-29 | The TERMS module may lower an edition's fee share with its master's, never raise it. | |
+| ED-29 | The TERMS module may lower an edition's fee share with its master's, never raise it. | `test_LowerFeeShare_AnEditionsShareGoesDownAndNeverUp`, `test_LowerFeeShare_AnEditionOnItsMastersReceiverIsLoweredWithIt`, `test_LowerFeeShare_TheEditionMovesWhenItSharesTheReceiver` |
 | ED-30 | The network may `rebind` only an edition with no seal, whose minter was removed at least `rebindDelay` ago, to an active minter. | `test_Rebind_AfterFourteenDaysOnlyUnsealed`, `testFuzz_Rebind_RefusedBeforeTheLaunchPeriod`, `test_RemovedEditionMinter_AnEditionWithCopiesAndNoSealIsRebound` |
 | ED-31 | `rebindDelay` is the network's setting (14 days at launch), changed at once, zero allowed, with old and new in `RebindDelaySet`. | `test_RebindDelay_FourteenDaysAtDeploymentOnlyTheNetworkSetsIt` |
 | EA-1 | Anyone opens an edition's sale once, from its 1/1's start until the close, with the master's stored item, in ETH. | `test_Open_LocksTermsAndEmits`, `test_Open_ChecksTheItem`, `test_Open_Timing` |
@@ -121,14 +121,14 @@ The auction is replaceable; its numbers below are compiled or governed values of
 | EA-11 | Settlement waits for the end and a settled or cancelled 1/1. | `test_Settle_NotReady`, `test_Settle_ZeroBidsMintsNothing` |
 | EA-12 | Settlement pays `count × price` once, seller and network; a refused payout goes to the escrow. | `test_Settle_RefusedPayoutsGoToTheEscrow`, `test_Settle_PaysTheFeeRecipientCurrentAtSettlement` |
 | EA-13 | A cancelled 1/1 voids its edition sale: nothing minted or paid, every bid refunded. | `test_Settle_VoidOnCancel` |
-| EA-14 | The auction holds exactly the unclaimed escrow plus its credits. | |
+| EA-14 | The auction holds exactly the unclaimed escrow plus its credits. | `test_Holdings_AreTheUnclaimedEscrowPlusTheCredits`, `invariant_editionAuction` |
 | EA-15 | `setConfig` is compare-and-set within bounds in code; `pause` stops new opens only. | `test_SetConfig_Bounds`, `test_Pause_BlocksOpensOnly` |
 | EA-16 | Claims are never blocked or re-entered; only money that has itself waited the unclaimed period in force goes from a credit to the network. | `test_Claims_RejectAndCredit` |
 | EA-17 | Every edition sale closes exactly 15 minutes after its 1/1's final end (compiled in the auction). | `test_Window_FifteenMinutesAfterTheOneOfOne` |
 | EA-18 | `setLimits` is compare-and-set within bounds; payout gas only rises. | `test_SetLimits_CompareAndSetBoundsAndEvent` |
 | EA-19 | From 21 days after the close, anyone may abandon a sale that paid nothing once the 1/1 is finished; it refunds every bid and seals the edition at zero. | |
 | EA-20 | No payment reaches an undeployed wallet: `open` deploys the split wallets first. | `test_PayoutGas_IsTheGovernedFigure` |
-| EA-21 | After a network `rebind`, the new auction may `adopt` an edition whose minter is itself and open its sale. | |
+| EA-21 | After a network `rebind`, the new auction may `adopt` an edition whose minter is itself and open its sale. | `test_Adopt_AfterRebind_RunsOnItsOwnAndSettlesWithoutTheOneOfOne`, `test_Adopt_TheNetworkOnly`, `test_Adopt_RefusesAnEditionThatIsNotItsOwn`, `test_Rebind_TheNetworkMovesAnUnsoldEditionAndTheNewAdapterSellsIt` |
 
 ## Events
 

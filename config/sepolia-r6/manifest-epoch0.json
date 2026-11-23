@@ -7,7 +7,7 @@
   "signatures": "Unsigned: testnet rehearsal. A mainnet manifest is signed by the network Safe's signers.",
   "source": {
     "repository": "https://github.com/6529-Collections/6529-works",
-    "commit": "d0299ddc9c08fb4f63e457e811c06ffd841cb473",
+    "commit": "2aac85792ed62c9d80d3469ba2aa156409bc244f",
     "compiler": "solc 0.8.37, evm prague, optimizer 200 runs, via-ir off"
   },
   "deployer": "0x26A3f4505145b5E6164260cc868e50ddd9863697",

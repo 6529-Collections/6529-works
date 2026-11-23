@@ -15,10 +15,25 @@
   (seven files, counted on the scores page). The build is cleaned between the contracts of one
   file, and a slither-mutate run that stops before it mutates fails its shard. The two
   edition-auction files were measured again with the corrected tool at `a39245e3`:
-  `UniformEditionAuction` 1045 of 1112 mutants killed, 94.0% (the campaign's final figure was 94.0% of 1113), floor 91;
-  `UniformEditionAuctionLens` 979 of 1113 mutants killed, 88.0% (the campaign's final figure was 87.7% of 1134), floor 85; 2 survivors not re-checked, so a lower bound.
+  `UniformEditionAuction` 1,045 of 1,112 mutants killed, 94.0% (the campaign's final figure
+  was 94.0% of 1,113), floor 91; `UniformEditionAuctionLens` 979 of 1,113 killed, 88.0% (the
+  campaign's was 87.7% of 1,134; two survivors were not re-checked, so a lower bound), floor 85.
   One comment mutant the campaign's parts never ran survived there and has a test now
   (`test_Settle_AResumedScanKeepsTheDemandAlreadyCounted`).
+- **Rule tests on the plain core.** 146 rules of the specification and properties of the
+  invariant catalogue that named no test since the plain-core restructuring name their tests
+  again: existing suites where they already pin the rule, and 62 new tests where they did not
+  (the English auction, disputes, the records and delivery modules, the edition auction, the
+  Independent Stream module and its sales, the entropy module's setters). Nine rules stay in
+  `tools/rules-uncovered.txt` because their row and the code differ; each entry says how. No
+  contract changed.
+- **Sepolia round r6.** The plain core is deployed on Sepolia (testnet only) from `main` at
+  `2aac8579`, read back with `VerifyCore` and verified on Sourcify
+  ([record](deployments/11155111/README.md#sepolia-r6-23-november-2026-current),
+  [flows](deployments/11155111/flows-r6.md)). Tooling: `script/sepolia/make_record.py`
+  completes a deployment record; `flows.ps1` gains the Independent Stream steps and `-Token`;
+  `sourcify.ps1` and `deploy_gas.py` find each creation transaction from the factory call's
+  salt.
 - **Before the merge of the plain core.**
     - `StreamTerms.lowerFeeShare` accepts one fee recipient, the split ledger's network fee
       vault, so the share it lowers is always the network's; the seller and the fee recipient

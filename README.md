@@ -24,7 +24,7 @@ modules**, which the network adds (after a waiting period that is the network's 
 | --- | --- |
 | Maturity | **Pre-audit.** Not production-ready. No external audit has started. |
 | Code | The plain permanent core of [ADR 0010](docs/adr/0010-plain-permanent-core.md) is integrated: the permanent contracts are in [`src/core/`](src/core/), the modules beside them. Some test suites are still being ported to it ([Testing](docs/testing/README.md#what-is-not-tested)). |
-| Testnet | Earlier Sepolia rehearsals (up to r5) ran the code before the restructuring ([deployment record](deployments/11155111/README.md)). Round r6, on Sepolia only, will deploy the plain core; its tooling is ready and simulated, not broadcast. |
+| Testnet | Sepolia round r6 (23 November 2026) runs the plain core, from `main` at `2aac8579`: a testnet rehearsal with throwaway signers ([deployment record](deployments/11155111/README.md#sepolia-r6-23-november-2026-current)). Earlier rehearsals (up to r5) ran the code before the restructuring. |
 | Mainnet | Not deployed. |
 | Known limits | [Known limitations](docs/audit/known-limitations.md) |
 
