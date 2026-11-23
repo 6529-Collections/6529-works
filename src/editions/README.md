@@ -1,6 +1,6 @@
 # editions
 
-6529 Stream Editions (`STREAMEDITIONS`): the one shared ERC-1155 of editions. Each edition is
+6529 Stream Editions (`6529STREAMEDITIONS`): the one shared ERC-1155 of editions. Each edition is
 anchored by a 6529 Stream work of kind 1 (edition master) and shares its ID. Since
 [ADR 0010](../../docs/adr/0010-plain-permanent-core.md) the token is the plain permanent core in
 [`src/core/`](../core/): `EditionsBase.sol` (the rules) and `StreamEditions6529.sol` (its minter
@@ -25,7 +25,7 @@ replaceable edition sale contract, the uniform-price edition auction in
 | The edition's minter | `mint(to, editionId, amount, unitPrice)` within the maximum; `seal(editionId, supply)` once, between the count minted and the maximum | A sealed maximum never grows; burned copies still count |
 | A removed minter | `seal`, then `mint` up to the seal | Its winners are never stranded |
 | The TERMS module | `setRoyalty`; `emitMetadataUpdate` (also the master's RECORDS module) | |
-| The network | `rebind` an edition with no copies and no seal, once `rebindDelay` has passed since its minter's removal; `setRebindDelay`; the module and minter functions; `setOwner`, `setContractURI` | `rebindDelay` is the network's setting, read when a rebind is attempted |
+| The network | `rebind` an edition with no seal, once `rebindDelay` has passed since its minter's removal; `setRebindDelay`; the module and minter functions; `setOwner`, `setContractURI` | `rebindDelay` is the network's setting, read when a rebind is attempted |
 | A holder | `burn` its own copies; transfers and approvals (OpenZeppelin's) | No module or minter can move a copy |
 
 ## Developer notes

@@ -1357,7 +1357,7 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         auction.expireCredit(bob, CURRENCY_ETH);
         vm.warp(expiresAt);
         vm.expectEmit(address(auction));
-        emit ISaleAdapter.Claimed(bob, CURRENCY_ETH, networkFee, credit);
+        emit ISaleAdapter.CreditExpired(bob, CURRENCY_ETH, networkFee, credit);
         vm.prank(carol);
         assertEq(auction.expireCredit(bob, CURRENCY_ETH), credit);
         assertEq(ua.claimable(bob, CURRENCY_ETH), 0);

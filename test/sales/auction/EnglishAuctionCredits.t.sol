@@ -38,7 +38,7 @@ contract EnglishAuctionCreditsTest is AuctionFixture {
         vm.warp(t0 + _period());
         uint256 before = feeRecipient.balance;
         vm.expectEmit(address(auction));
-        emit IEnglishAuction.Claimed(alice, address(0), feeRecipient, 1 ether);
+        emit IEnglishAuction.CreditExpired(alice, address(0), feeRecipient, 1 ether);
         assertEq(auction.expireCredit(alice), 1 ether);
         assertEq(feeRecipient.balance, before + 1 ether);
         // The later 2 ether start their own wait now.

@@ -28,33 +28,6 @@ library SaleKind {
     bytes32 internal constant UNIFORM_AUCTION = keccak256("UNIFORM_AUCTION");
 }
 
-/// @notice How a buyer or bidder pays (ADR 0001 section 5 "Asset admission").
-/// @dev DIRECT: ETH sent as `msg.value`, or an ERC-20 the payer approved beforehand.
-///      PERMIT: an EIP-2612 permit (`signature` is the 65-byte `r || s || v`), then a pull.
-///      PERMIT2: a Permit2 `permitWitnessTransferFrom` whose witness (see `Typehashes`) binds the
-///      action, so a relayer can submit it for the payer (the signed payment intent).
-enum PaymentMethod {
-    DIRECT,
-    PERMIT,
-    PERMIT2
-}
-
-/// @notice One payment, pulled with an exact balance-delta check.
-/// @dev `amount` is the exact amount of a bid; a sale method that charges a price only known
-///      at execution defines it as the most the payer will pay. For DIRECT and PERMIT, `payer`
-///      must be `msg.sender`; for PERMIT2 it is
-///      the signer and may differ from `msg.sender`. ETH uses DIRECT with `msg.value == amount`.
-///      `deadline` and `signature` are the permit's; `nonce` is the Permit2 nonce (zero
-///      otherwise). The payer is the bidder or buyer of record: refunds and credits go to it.
-struct Payment {
-    PaymentMethod method;
-    address payer;
-    uint256 amount;
-    uint256 deadline;
-    uint256 nonce;
-    bytes signature;
-}
-
 /// @notice What a token contract tells a sale adapter about a primary sale.
 /// @dev Returned by `IMintTarget.mint` and `IMintTarget.primaryTerms` (which, for a minted 6529
 ///      Stream token, sets only the sale kind, seller, fee and creator; 6529 Stream Editions'

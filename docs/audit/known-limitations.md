@@ -203,6 +203,35 @@ are this page's.
 | --- | --- | --- | --- | --- | --- |
 | LIM-REL-1 | Gap | **No deployed-bytecode verifier.** `VerifyCore.s.sol` recomputes addresses and compares code hashes with the record, but does not rebuild the bytecode from source. | Nobody can yet reproduce a deployment's bytecode from the repository with one command. | CBOR metadata with an IPFS hash is on (`bytecode_hash = "ipfs"`), so Sourcify and Etherscan can report exact matches. | [script README](../../script/README.md); [`foundry.toml`](../../foundry.toml) |
 
+## Known, accepted (plain-core reviews)
+
+Notes from the reviews of the plain permanent core (November 2026) that were left as they are.
+
+- **Bids on a sale whose edition was rebound, or whose sale contract was removed.** The edition
+  auction checks the edition's minter when it settles, not at each bid; such bids are refunded in
+  full when the sale is voided (review C L-7).
+- **A sub-delegate can add a wallet to an account.** This is the delegation contract's own rule
+  (use case 998) and follows from consolidation being the identity
+  ([Identity and recovery](../spec/identity-and-recovery.md#the-consolidation-adapter); review C L-12).
+- **Some acts of the RECORDS module are not undone by replacing it**: finalizing a record,
+  making a work CC0, locking a license or a pin, re-pinning a finalized work
+  ([ADR 0010](../adr/0010-plain-permanent-core.md); review C I-5).
+- **The accounts module names the payout address of an artist's share**, including shares
+  already in a split vault ([ADR 0010](../adr/0010-plain-permanent-core.md); review C I-6).
+- **Constructor values of the permanent tokens are not logged.** Indexers read the immutables
+  (`facts`, `stream`, `directory`, `artistId`) and the names from the contract (review A I-8).
+- **The permanent tokens' constructors do not check their address arguments.** The deployment's
+  self-check reads every one back (`VerifyCore`; review A I-9).
+- **The escrow's aged, maturing and recent amounts are rebuilt from two contracts' logs**: the
+  escrow's own and the directory's `UnclaimedPeriodSet`, ordered by block and log index; the
+  replay test does this (review B-7).
+- **`CURRENCY_DEFAULT` means ETH.** A signed item may name it; a later mint policy keeps that
+  meaning for items signed before it.
+- **A minter added again waits like a new one.** During the wait it records and burns nothing
+  on 6529 Stream, seals nothing on 6529 Stream Editions, and mints only editions sealed before
+  its removal; an edition auction's settlement of an unsealed sale waits with it. Removing it
+  again restores what a removed minter may do.
+
 ## Removed and closed IDs
 
 These IDs described code that was removed or limitations that were resolved (the full rows are

@@ -6,7 +6,8 @@ address constant CURRENCY_ETH = address(0);
 
 // The currency value meaning "the product's default currency when the sale starts" (ADR 0001
 // section 5 "Payment currency is configuration, not code"). Valid only in package sale and
-// edition terms. Sales are in ETH, so it means ETH; it is never a sale's locked currency.
+// edition terms. Sales are in ETH, so it means ETH; it is never a sale's locked currency. A
+// signed item may name it, so a later mint policy keeps this meaning for items signed before it.
 address constant CURRENCY_DEFAULT = address(type(uint160).max);
 
 // Product identifiers (ADR 0001 section 2). They scope default currencies, economics and

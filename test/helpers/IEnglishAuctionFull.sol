@@ -29,7 +29,6 @@ interface IEnglishAuctionFull is
     function PAYOUT_GAS() external view returns (uint256);
     function allowlist() external view returns (IAssetAllowlist);
     function economicsResolver() external view returns (IEconomicsResolver);
-    function permit2() external view returns (address);
     function independentStreamRegistryCodeHash() external view returns (bytes32);
     function lens() external view returns (address);
     function storageWords(bytes32[] calldata slots) external view returns (bytes32[] memory);

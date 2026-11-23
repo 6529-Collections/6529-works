@@ -23,6 +23,16 @@ import {
     RedeliveringVrfWrapper
 } from "test/mocks/entropy/EntropyMocks.sol";
 
+/// @dev A wallet contract of the artist that takes no ETH back.
+contract NoRefundWallet {
+    function request(VrfEntropyModule module, address token, PackageItem calldata item)
+        external
+        payable
+    {
+        module.requestIndependentSeed{ value: msg.value }(token, item);
+    }
+}
+
 /// @notice The paid draw of an Independent Stream contract: the request gate (a provider, a VRF
 ///         item, a served contract, a wallet of its artist, the quote), the wait and its repeats,
 ///         the provider's bounded answers, delivery by the provider alone, and the governed
@@ -206,6 +216,35 @@ contract VrfEntropyIndependentTest is EntropyBase {
         assertEq(wrapper.received(), 0, "nothing paid");
         // No refusal started the wait.
         _paidRequest(item);
+    }
+
+    /// @dev Exactly the quote reaches the provider; what the caller paid above it comes back
+    ///      (review C L-11).
+    function test_RequestIndependentSeed_ForwardsTheQuoteAndReturnsTheRest() public {
+        _setWrapper(address(wrapper));
+        PackageItem memory item = _vrfItem();
+        uint256 price = wrapper.price();
+        uint256 before = artist.balance;
+        vm.prank(artist);
+        module.requestIndependentSeed{ value: price + 0.3 ether }(token, item);
+        assertEq(wrapper.received(), price, "the provider gets the price only");
+        assertEq(before - artist.balance, price, "the rest came back");
+        assertEq(address(module).balance, 0, "nothing stays in the module");
+    }
+
+    function test_RequestIndependentSeed_ACallerThatRefusesTheReturnIsRefused() public {
+        _setWrapper(address(wrapper));
+        PackageItem memory item = _vrfItem();
+        uint256 price = wrapper.price();
+        NoRefundWallet walletContract = new NoRefundWallet();
+        accounts.setWallet(ARTIST_ID, address(walletContract), true);
+        vm.expectRevert(
+            abi.encodeWithSelector(IEntropyModule.RefundFailed.selector, address(walletContract))
+        );
+        walletContract.request{ value: price + 1 }(module, token, item);
+        // The exact price needs no return.
+        walletContract.request{ value: price }(module, token, item);
+        assertEq(wrapper.received(), price);
     }
 
     function test_RequestIndependentSeed_RefusesLessThanTheQuote() public {

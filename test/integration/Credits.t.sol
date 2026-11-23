@@ -102,7 +102,7 @@ contract CreditsTest is RecordFlowsBase {
         vm.warp(t0 + 1 days);
         uint256 vault = networkFee.balance;
         vm.expectEmit(address(auction));
-        emit IEnglishAuction.Claimed(bidder, CURRENCY_ETH, networkFee, a);
+        emit IEnglishAuction.CreditExpired(bidder, CURRENCY_ETH, networkFee, a);
         vm.prank(stranger);
         assertEq(auction.expireCredit(bidder), a, "only A, which waited the period");
         assertEq(networkFee.balance - vault, a);

@@ -245,11 +245,8 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
         // `itemHashOf` answers one word; `ERC721NonexistentToken` reverts with 36 bytes.
         (bool ok, bytes memory answer) =
             BoundedCall.tryReadAll(token, abi.encodeCall(IStream.itemHashOf, (id)), 36);
-        bytes32 head;
-        assembly ("memory-safe") {
-            // The first word: the item hash of an answer, or the selector of a revert.
-            head := mload(add(answer, 0x20))
-        }
+        // The first word: the item hash of an answer, or the selector of a revert.
+        bytes32 head = bytes32(answer);
         if (ok && answer.length == 32) {
             return _latestDispute[subjectKey(address(0), uint256(head))];
         }

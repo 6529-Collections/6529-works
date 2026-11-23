@@ -39,7 +39,9 @@ artist ID.
 
 `ConsolidationAdapter.isConsolidated(root, wallet)` is true while each of the two holds a live
 registration of the other for all collections (delegation use case 999). There is no minimum
-age. A read that fails counts as no registration.
+age. A read that fails counts as no registration. The delegation contract lets a wallet's
+sub-delegate (use case 998) register delegations for it, so an artist who appoints a sub-delegate
+gives it the means to add a wallet to the account.
 
 ## Change kinds
 

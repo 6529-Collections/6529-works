@@ -130,7 +130,7 @@ sends its refund to an address it names; `claimBidFor` lets anyone push a claim,
 refund. Supply reaches exactly k once every winner has claimed.
 
 **6529 Stream Editions** ([`IEditions`](../../src/interfaces/core/IEditions.sol)).
-- `name()` is "6529 Stream Editions" and `symbol()` `STREAMEDITIONS` (D139, decision 13). The
+- `name()` is "6529 Stream Editions" and `symbol()` `STREAMEDITIONS` (D139, decision 13; since 22 November 2026 the symbol is `6529STREAMEDITIONS`, beside the ERC-721's `6529STREAM`). The
   identifiers `StreamEditions6529`, `IEditions`, `PRODUCT_EDITIONS` and the `"EDITIONS"` binding
   label stay: renaming them would change genesis keys, tools, selectors and events for nothing a
   collector sees.

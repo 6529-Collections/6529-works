@@ -176,7 +176,7 @@ their rules in replaceable modules, in named slots: `RENDERER`, `TERMS` and `REC
 | Add a minter | `addMinter(minter)` | The network | Active `moduleDelay` later |
 | Remove a minter | `removeMinter(minter)` | The network | At once. It still finishes the sales it started |
 | Rescue a token | `Stream6529.rescue(tokenId, to)` | The network | `rescueDelay` after its minter was removed, for a token with no outcome |
-| Rebind an edition | `StreamEditions6529.rebind(editionId, minter)` | The network | `rebindDelay` after its minter was removed, for an edition with no copies and no seal |
+| Rebind an edition | `StreamEditions6529.rebind(editionId, minter)` | The network | `rebindDelay` after its minter was removed, for an edition with no seal |
 
 An Independent Stream token's own `RENDERER` slot is its artist's. A finalized work keeps the
 renderer it pinned whatever the slot holds later.

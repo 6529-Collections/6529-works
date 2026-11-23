@@ -151,12 +151,21 @@ interface IEnglishAuction {
     event Credited(
         address indexed account, address indexed currency, uint256 indexed saleId, uint256 amount
     );
-    /// @notice Credits were paid out: by their account to `to`, or expired to the network.
+    /// @notice Credits were paid out by their account to `to`.
     /// @param account The credited account.
     /// @param currency Always zero (ETH).
     /// @param to Where the ETH went.
     /// @param amount The amount in wei.
     event Claimed(
+        address indexed account, address indexed currency, address indexed to, uint256 amount
+    );
+    /// @notice The part of an account's credits that waited the unclaimed period went to the
+    ///         network (`expireCredit`); the rest stays the account's.
+    /// @param account The credited account.
+    /// @param currency Always zero (ETH).
+    /// @param to The network's fee recipient.
+    /// @param amount The amount in wei.
+    event CreditExpired(
         address indexed account, address indexed currency, address indexed to, uint256 amount
     );
     /// @notice A bid was placed; `endTime` includes any extension.

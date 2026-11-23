@@ -67,11 +67,27 @@ still holds through `Stream6529.tokenOfContent`, so the content of a burned work
 until the network releases it again in the new policy (`releaseContent`), which bars the
 burned item there too. A release made in the old policy and not yet used must be made again.
 
+## Two settings that follow a replaced module
+
+Two contracts keep their own pointer to a module instead of reading it at each use. The network
+updates them as part of the replacement:
+
+- **`StatementLog.setArtistResolver(expected, next, codeHash)`** (7-day class). The statement
+  log asks its artist resolver who is an artist of a work, pins that resolver's code hash and
+  records the resolver in every ARTIST statement. When the contract that answers changes (for
+  example a new accounts module), set the new one here; statements already written keep the
+  resolver that vouched for them.
+- **The edition auction's lens names the package registry it was deployed with**
+  (`UniformEditionAuctionLens.packageRegistry()`, fixed in the lens). It asks that registry
+  whether a master's item is still approved when an edition sale is opened. A new mint policy
+  therefore comes with a new edition auction and lens, added as a minter of
+  `StreamEditions6529`; the old auction keeps settling the sales it opened.
+
 ## Sale contracts (minters)
 
 - A removed sale contract still finishes the sales it started.
 - A token left in a removed sale contract with no outcome can be rescued after `rescueDelay`
-  (`Stream6529.rescue`); an edition with no copies and no seal can be rebound after `rebindDelay`
+  (`Stream6529.rescue`); an edition with no seal can be rebound after `rebindDelay`
   (`StreamEditions6529.rebind`), then opened with `adopt` or closed with `closeEdition` on the new
   edition auction.
 - For Independent Stream tokens, the Independent Stream module's

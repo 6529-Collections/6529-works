@@ -436,11 +436,11 @@ contract EditionAuctionIntegrationTest is EditionAuctionStack {
 }
 
 /// @notice `adopt` and `rebind` on the deployed stack: the network moves an edition its sale
-///         contract never sold (no copies, no seal) to another adapter `rebindDelay` (14 days
+///         contract never sealed to another adapter `rebindDelay` (14 days
 ///         at launch, read when the rebind is attempted) after the first one's removal; the old
 ///         sale then voids with full refunds, and the new adapter adopts the edition and sells
 ///         it. Refused before the delay, by anyone but the network, and for an edition with
-///         copies or a seal.
+///         a seal.
 contract EditionAuctionRebindTest is EditionAuctionStack {
     address internal artist;
     address internal collector = makeAddr("rebindCollector");

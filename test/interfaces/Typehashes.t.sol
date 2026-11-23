@@ -8,10 +8,6 @@ import { Typehashes } from "../../src/interfaces/types/Typehashes.sol";
 ///      failure means a signed payload changed shape: every signer, verifier and tool must change
 ///      with it.
 contract TypehashesTest is Test {
-    /// @dev Permit2's `PermitWitnessTransferFrom` stub that every witness type string completes.
-    string internal constant PERMIT2_STUB = "PermitWitnessTransferFrom(TokenPermissions permitted,"
-        "address spender,uint256 nonce,uint256 deadline,";
-
     function test_domainConstants() public pure {
         assertEq(Typehashes.DOMAIN_VERSION, "1");
         assertEq(Typehashes.PACKAGE_REGISTRY_NAME, "6529 Works Package Registry");
@@ -63,30 +59,6 @@ contract TypehashesTest is Test {
         assertEq(
             Typehashes.INDEPENDENT_LISTING,
             0xc6c1acdb6e5275d9f6ab97f01f142831a32aa8d4d19a2562f68647103f1436d0
-        );
-    }
-
-    function test_witnessTypehashes() public pure {
-        assertEq(
-            Typehashes.BID_WITNESS,
-            0x36fe48f963a8333b63c773927bbdc20f266277d65935733a27e6264edda25ea8
-        );
-        assertEq(
-            Typehashes.START_BID_WITNESS,
-            0xb8513f1f66acd0543fe8542e5c408fd4a7b59dfcf47fc1e4c2c164c66cd5bd0e
-        );
-    }
-
-    /// @dev Each witness type string must complete Permit2's stub into the full typehash Permit2
-    ///      recomputes on-chain.
-    function test_witnessTypeStrings() public pure {
-        assertEq(
-            keccak256(bytes.concat(bytes(PERMIT2_STUB), bytes(Typehashes.BID_WITNESS_TYPE))),
-            0x0bfd3d1d308e98f9f0a38b17a9eaaad1118b7813eead91902f6714537c0eb034
-        );
-        assertEq(
-            keccak256(bytes.concat(bytes(PERMIT2_STUB), bytes(Typehashes.START_BID_WITNESS_TYPE))),
-            0xb44f39960bfdaf0c5fedccb2b3159844117a56c2d506bcf2c35776fe2c346acf
         );
     }
 }

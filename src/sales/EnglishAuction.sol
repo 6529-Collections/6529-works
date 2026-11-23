@@ -441,7 +441,7 @@ contract EnglishAuction is
         address to = economics.networkFeeRecipient(PRODUCT_STREAM);
         if (to == address(0)) revert InvalidRecipient(to);
         amount = AgedCredits.expireAged(c);
-        emit Claimed(account, CURRENCY_ETH, to, amount);
+        emit CreditExpired(account, CURRENCY_ETH, to, amount);
         _send(to, amount);
     }
 

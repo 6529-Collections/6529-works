@@ -39,7 +39,12 @@ decoder, hash table, hand-packed word or assembly in the tokens and records; no 
    taken back.
 3. Everything else is run by replaceable modules, which the network adds and removes; waiting
    periods are the network's settings, not promises (at launch: 7 days before an added module
-   takes effect); money already in a split vault or the escrow is paid out by permanent code.
+   takes effect); money already in a split vault or the escrow is paid out by permanent code,
+   an artist's share to the address the accounts module names for the artist at that time.
+
+Some acts of the RECORDS module cannot be undone by replacing it, and are allowed by this
+design: finalizing a record, making a work CC0, locking a license or a pin, and re-pinning a
+finalized work.
 
 ### The seam
 
@@ -71,7 +76,7 @@ carrying the old and the new value. They are not promises.
 | --- | --- | --- | --- |
 | Before an added module or minter takes effect | 7 days | `moduleDelay` in each token contract and in `StreamDirectory6529` | An addition already announced keeps the time it was given |
 | After a minter's removal, before `rescue` of a token it still holds unsold | 14 days | `Stream6529.rescueDelay` (each Independent Stream token has its own) | Read when the rescue is attempted |
-| After a minter's removal, before `rebind` of an edition with no copies and no seal | 14 days | `StreamEditions6529.rebindDelay` | Read when the rebind is attempted |
+| After a minter's removal, before `rebind` of an edition with no seal | 14 days | `StreamEditions6529.rebindDelay` | Read when the rebind is attempted |
 | Before unclaimed money can go to the network (a marked split-vault share; an aged escrow credit) | 180 days | `StreamDirectory6529.unclaimedPeriod`, read by `SplitLedger` and `RevenueEscrow` | Read when the forfeit or expiry is attempted, so it applies to marks and credits already running |
 
 Removing a module or minter is immediate. The split ledger stays unowned: it reads the unclaimed
@@ -199,3 +204,9 @@ Decision 4 (the 370,000 ceiling and 8 new slots) holds for every start row but o
 start with a bid of a VRF work also writes the work's seed, a ninth slot, in the token. Those
 rows have their own ceiling: 395,000 Prague gas and 9 new slots. The ceilings are test budgets
 asserted in the gas report, not chain code (owner ruling of 22 November 2026).
+
+Decision 7 (the network may rebind a stuck edition) covers every edition with no seal whose
+minter was removed, with or without copies: the copies stay and count toward the maximum, and
+the new minter seals at or above them (owner ruling of 22 November 2026). A minter added again
+after a removal gets no new power during its wait, on both tokens: on the editions token it
+seals nothing and mints only editions sealed before its removal.

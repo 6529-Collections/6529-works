@@ -101,12 +101,12 @@ The auction is replaceable; its numbers below are compiled or governed values of
 | ED-6 | Copies minted never exceed the maximum; burns never free room. | |
 | ED-7 | Royalty receiver and rate are set at creation and changed only by the TERMS module. | |
 | ED-8 | A holder burns only its own copies; burned copies still count as minted. | |
-| ED-25 | The minter seals once, between the copies minted and the maximum; a sealed maximum never grows; a removed minter still seals and mints only what it sealed. | `test_Edition_CreateMintSealAndTheSealNeverGrows` |
+| ED-25 | The minter seals once, between the copies minted and the maximum; a sealed maximum never grows; a removed minter seals nothing and mints only what it sealed before its removal; a minter added again gains nothing while it waits to become active. | `test_Edition_CreateMintSealAndTheSealNeverGrows` |
 | ED-26 | Every mint logs `EditionMinted(editionId, to, amount, unitPrice)`. | |
 | ED-27 | Editions' state is rebuilt from its logs alone. | |
 | ED-28 | Retired: `StreamEditions6529` holds no gas figure and asks no module for a mint. | |
 | ED-29 | The TERMS module may lower an edition's fee share with its master's, never raise it. | |
-| ED-30 | The network may `rebind` only an edition with no copies and no seal, whose minter was removed at least `rebindDelay` ago, to an active minter. | `test_Rebind_AfterFourteenDaysOnlyUnmintedUnsealed`, `testFuzz_Rebind_RefusedBeforeTheLaunchPeriod` |
+| ED-30 | The network may `rebind` only an edition with no seal, whose minter was removed at least `rebindDelay` ago, to an active minter. | `test_Rebind_AfterFourteenDaysOnlyUnsealed`, `testFuzz_Rebind_RefusedBeforeTheLaunchPeriod`, `test_RemovedEditionMinter_AnEditionWithCopiesAndNoSealIsRebound` |
 | ED-31 | `rebindDelay` is the network's setting (14 days at launch), changed at once, zero allowed, with old and new in `RebindDelaySet`. | `test_RebindDelay_FourteenDaysAtDeploymentOnlyTheNetworkSetsIt` |
 | EA-1 | Anyone opens an edition's sale once, from its 1/1's start until the close, with the master's stored item, in ETH. | `test_Open_LocksTermsAndEmits`, `test_Open_ChecksTheItem`, `test_Open_Timing` |
 | EA-2 | A sale stores at open the cap, the configuration, the seller and the fee share. | `test_Open_LocksTermsAndEmits`, `test_SetConfig_CompareAndSetAndLocksPerSale` |

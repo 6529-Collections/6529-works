@@ -349,7 +349,9 @@ abstract contract UniformEditionAuctionLensBase is IUniformEditionAuctionLens {
     /// @inheritdoc IUniformEditionAuctionLens
     function feeRecipient(address token, uint256 id) public view returns (address recipient) {
         (IEconomicsResolver resolver, bytes32 product) = _feeSource();
-        recipient = resolver.networkFeeRecipient(product);
+        try resolver.networkFeeRecipient(product) returns (address named) {
+            recipient = named;
+        } catch { }
         if ((recipient == address(0) || recipient == _escrow) && token != address(0)) {
             recipient = address(
                 uint160(storageWord(IStorage.Space.FEE_RECIPIENT, _saleIdOf(token, id), 0))

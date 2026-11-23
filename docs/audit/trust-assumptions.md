@@ -35,7 +35,7 @@ trusted with; and what nobody can do. The plain-language summary is the
 | Remove a module or a sale contract | The same | At once |
 | Change `moduleDelay`, `rescueDelay`, `rebindDelay`, `unclaimedPeriod` | Additions announced later; rescues, rebinds, forfeits and expiries attempted later | At once |
 | `rescue` a token a removed sale contract still holds unsold | That unsold token only; never a collector's | Once `rescueDelay` has passed since the removal |
-| `rebind` an edition with no copies and no seal to another sale contract | That edition only | Once `rebindDelay` has passed since its sale contract's removal |
+| `rebind` an edition with no seal to another sale contract | That edition only | Once `rebindDelay` has passed since its sale contract's removal |
 | Create collections, set the marketplace owner and contract URI | Marketplace presentation | Per the role matrix |
 | Governed parameters of modules (fees for new works, auction timing within bounds, museum, recipients) | New sales and new works | 24 hours, 3 days or 7 days, per the role matrix |
 | Freeze an artist account, cancel a replacement, revoke a package, disable a signer, cancel a dispute-paused sale | The account, package, signer or sale named | At once |

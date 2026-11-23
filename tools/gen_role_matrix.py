@@ -66,7 +66,7 @@ NOTES: dict[tuple[str, str], str] = {
     ("StreamEditions6529", "setRebindDelay(uint48)"):
         "A setting of the network, at once, zero allowed; read when a rebind is attempted.",
     ("StreamEditions6529", "rebind(uint256,address)"):
-        "Only an edition with no copies and no seal, once `rebindDelay()` has passed since its "
+        "Only an edition with no seal, once `rebindDelay()` has passed since its "
         "minter was removed; the new minter adopts it.",
     ("StreamDirectory6529", "setUnclaimedPeriod(uint48)"):
         "A setting of the network, at once, zero allowed. The split ledger and the escrow read "

@@ -122,7 +122,7 @@
     },
     "src/independent/IndependentEditionAuction.sol": {
       "lines": 99.0,
-      "branches": 64.6
+      "branches": 98.0
     },
     "src/independent/IndependentEditionAuctionLens.sol": {
       "lines": 88.1,
@@ -234,7 +234,7 @@
     },
     "src/sales/SaleStarter.sol": {
       "lines": 99.0,
-      "branches": 31.3
+      "branches": 98.0
     },
     "src/sales/UniformClearing.sol": {
       "lines": 99.0,

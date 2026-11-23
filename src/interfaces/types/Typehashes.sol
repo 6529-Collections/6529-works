@@ -3,7 +3,7 @@ pragma solidity 0.8.37;
 
 /// @title Typehashes
 /// @notice The EIP-712 domain names and typehashes of the package registry, curation verifier,
-///         work records and artist registry, and every Permit2 witness.
+///         work records and artist registry.
 ///         Implementations use these constants; golden tests in `test/interfaces/` pin their
 ///         values (ADR 0001 section 17 "golden typehash tests"). The statement log and the
 ///         release verifier keep their own domains and typehashes beside their code
@@ -81,22 +81,4 @@ library Typehashes {
         "IndependentListing(uint256 artistId,address token,uint8 form,address partner,"
         "uint32 feeShare,address feeRecipient,uint64 deadline)"
     );
-
-    // ----- Permit2 witnesses (relayable payment intents, signed in Permit2's own domain) -----
-
-    /// @notice An English-auction bid.
-    bytes32 internal constant BID_WITNESS =
-        keccak256("Bid(uint256 saleId,address recipient,uint256 amount,uint256 deadline)");
-    /// @notice The `witnessTypeString` for `BID_WITNESS`.
-    string internal constant BID_WITNESS_TYPE = "Bid witness)Bid(uint256 saleId,address recipient,"
-        "uint256 amount,uint256 deadline)TokenPermissions(address token,uint256 amount)";
-    /// @notice A start-with-bid; `mintDataHash` is `keccak256(mintData)`, as no sale ID exists yet.
-    bytes32 internal constant START_BID_WITNESS = keccak256(
-        "StartBid(address token,bytes32 mintDataHash,address recipient,uint256 amount,"
-        "uint256 deadline)"
-    );
-    /// @notice The `witnessTypeString` for `START_BID_WITNESS`.
-    string internal constant START_BID_WITNESS_TYPE = "StartBid witness)StartBid(address token,"
-        "bytes32 mintDataHash,address recipient,uint256 amount,uint256 deadline)"
-        "TokenPermissions(address token,uint256 amount)";
 }

@@ -166,7 +166,7 @@ class RepositoryTest(unittest.TestCase):
         self.assertEqual(names["Stream6529"]["name"], "6529 Stream")
         self.assertEqual(
             (names["StreamEditions6529"]["name"], names["StreamEditions6529"]["symbol"]),
-            ("6529 Stream Editions", "STREAMEDITIONS"),
+            ("6529 Stream Editions", "6529STREAMEDITIONS"),
         )
         auction = facts["parameters"]["editionAuction"]
         self.assertEqual(auction["breadthMargin"]["default"], 10_000)

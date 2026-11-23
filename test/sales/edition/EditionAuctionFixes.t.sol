@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { Outcome } from "src/interfaces/core/CoreTypes.sol";
 import { IEditions } from "src/interfaces/core/IEditions.sol";
+import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
@@ -128,6 +129,46 @@ contract EditionAuctionFixesTest is EditionAuctionBase {
         next.closeEdition(address(editions), ID);
         assertTrue(editions.editionOf(ID).supplySealed);
         assertEq(editions.editionOf(ID).maxSupply, 0);
+    }
+
+    /// @dev An edition moved here with copies already minted is closed at those copies.
+    function test_CloseEdition_AMovedEditionWithCopiesIsSealedAtThem() public {
+        _item(ID, 0); // the master exists
+        DirectMinter first = new DirectMinter();
+        _addMinter(address(first));
+        first.create(editions, ID);
+        for (uint256 i; i < 3; ++i) {
+            first.mint(editions, ID, alice);
+        }
+        editions.removeMinter(address(first));
+        skip(editions.rebindDelay());
+        editions.rebind(ID, address(next));
+        next.closeEdition(address(editions), ID);
+        assertTrue(editions.editionOf(ID).supplySealed);
+        assertEq(editions.editionOf(ID).maxSupply, 3);
+        assertEq(editions.balanceOf(alice, ID), 3);
+    }
+
+    // ------------------------------------------- a fee resolver that reverts (review C L-6)
+
+    /// @dev The clearing call pays the recipient stored at open when the resolver cannot be
+    ///      read, so a failing resolver does not hold a sale's settlement.
+    function test_Settle_AResolverThatRevertsFallsBackToTheRecipientStoredAtOpen() public {
+        uint256 saleId = _open(0);
+        _bid(saleId, alice, 100, 2);
+        _closeOneOfOne(saleId);
+        vm.mockCallRevert(
+            address(economics),
+            abi.encodeWithSelector(IEconomicsResolver.networkFeeRecipient.selector),
+            "resolver down"
+        );
+        uint256 before = networkFee.balance;
+        assertTrue(auction.settle(saleId, new uint256[](0)));
+        assertEq(
+            uint8(ua.auction(saleId).status), uint8(IUniformEditionAuction.AuctionStatus.SETTLED)
+        );
+        uint256 revenue = 2 * _price(saleId, 100);
+        assertEq(networkFee.balance - before, revenue * FEE_SHARE / 100_000, "the stored recipient");
     }
 
     function test_CloseEdition_TheNetworkOnlyAndNeverASaleOpenedHere() public {

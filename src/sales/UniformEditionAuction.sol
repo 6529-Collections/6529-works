@@ -264,7 +264,8 @@ abstract contract UniformEditionAuctionBase is
         saleId = _start(token, id, data, true);
     }
 
-    /// @notice Closes, with a seal at zero, an edition the network moved to this adapter for
+    /// @notice Closes, with a seal at the copies already minted (zero for an edition with
+    ///         none), an edition the network moved to this adapter for
     ///         which no sale was opened here and none will be (`IUniformEditionAuction.
     ///         closeEdition`): for example one whose master's sale was cancelled, which `adopt`
     ///         refuses. The network only.
@@ -277,7 +278,7 @@ abstract contract UniformEditionAuctionBase is
         if (a.status != IUniformEditionAuction.AuctionStatus.NONE) {
             revert IUniformEditionAuction.AuctionExists(saleId);
         }
-        IEditions(token).seal(id, 0);
+        IEditions(token).seal(id, IEditions(token).editionOf(id).minted);
         emit IUniformEditionAuction.EditionClosed(saleId, token, id);
     }
 
@@ -542,7 +543,7 @@ abstract contract UniformEditionAuctionBase is
         address to = IUniformEditionAuctionLens(lens).feeRecipient(address(0), 0);
         if (to == address(0)) revert ISaleAdapter.InvalidRecipient(to);
         amount = AgedCredits.expireAged(c);
-        emit ISaleAdapter.Claimed(account, currency, to, amount);
+        emit ISaleAdapter.CreditExpired(account, currency, to, amount);
         if (!TokenTransfer.sendETH(to, amount, gasleft())) revert ISaleAdapter.ClaimFailed(to);
     }
 
@@ -784,7 +785,7 @@ abstract contract UniformEditionAuctionBase is
     ///      unitsAbove << 64 | demand`; zero for an empty book): SETTLED, or SETTLING while the
     ///      clearing step's departures wait to be swept. Returns the count and the price, which
     ///      `settle` pays after its last write. If the edition is no longer this adapter's (the
-    ///      network rebound it, which needs no copies and no seal), or this adapter was removed
+    ///      network rebound it, which needs no seal), or this adapter was removed
     ///      as its minter (a removed minter can no longer seal, so the edition waits for the
     ///      network's rebind), the sale is voided instead: every bid is refunded in full and
     ///      nothing is paid.

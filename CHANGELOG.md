@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- **Last fixes on the plain core.**
+    - `StreamTerms` takes an Independent Stream token's editions partner from the Independent
+      Stream module only if the editions contract names the token as its `stream()`.
+    - `StreamEditions6529` and the Independent Stream editions token: a minter added again after a
+      removal seals nothing while it waits (as it records nothing on the ERC-721), and the
+      network may `rebind` any edition with no seal whose minter was removed, with or without
+      copies. The edition auction's `closeEdition` seals at the copies already minted.
+    - Both auctions log `CreditExpired` (not `Claimed`) when `expireCredit` sends aged credits
+      to the network.
+    - The edition auction's lens pays the fee recipient stored at open when the economics
+      resolver cannot be read.
+    - `VrfEntropyModule.requestIndependentSeed` forwards exactly the quoted price and returns
+      the rest to the caller (`RefundFailed` if refused).
+    - The symbol of 6529 Stream Editions is `6529STREAMEDITIONS`.
+    - Removed, unused since sales are ETH only: `ISignatureTransfer`, the Permit2 witness
+      typehashes, `PaymentMethod`, `Payment` and `ISaleAdapter.PaymentExpired`.
+    - `SplitLedger` keeps a mark, and `ContentStore` a file's link, as a plain two-field struct in
+      one slot; the payee search uses checked arithmetic; wallets are created with OpenZeppelin
+      `Create2.deploy`. `SplitVault` keeps its 66 bytes, now with a Solidity reference vault and
+      a differential test.
+    - The Sepolia records of r1 to r5 are kept exactly as deployed, with the names of their time.
 - **Final names.** The products are 6529 Stream, 6529 Stream Editions, 6529 Independent Stream
   and 6529 Independent Stream Editions. The permanent contracts are `Stream6529`,
   `StreamEditions6529`, `StreamWorkFacts6529`, `StreamDirectory6529`, `IndependentStream6529` and

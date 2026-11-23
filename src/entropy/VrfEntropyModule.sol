@@ -314,9 +314,10 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
     /// @dev The gate reads the directory's INDEPENDENT_STREAM module (the token must be served:
     ///      `IIndependentStreamRegistry.isActive`, and its listed artist comes from `entry`) and
     ///      its ACCOUNTS module (the caller must be a wallet of that artist). The wait and repeat
-    ///      count are a curated draw's ({requestSeed}). The quote is read and the whole payment
+    ///      count are a curated draw's ({requestSeed}). The quote is read and exactly that price
     ///      forwarded in the same call (the price follows the transaction's gas price); the request
     ///      ID is recorded after the wrapper returns, as {requestSeed} records a coordinator's.
+    ///      Anything paid above the price goes back to the caller as the last step.
     function requestIndependentSeed(address token, PackageItem calldata item)
         external
         payable
@@ -354,7 +355,7 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
         if (msg.value < price) revert InsufficientPayment(price);
         (ok, answer) = BoundedCall.tryCallAll(
             w,
-            msg.value,
+            price,
             abi.encodeCall(
                 IVRFV2PlusWrapper.requestRandomWordsInNative,
                 (
@@ -372,6 +373,10 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
         if (!seed.delivered) {
             seed.value = requestId;
             emit IndependentSeedRequested(token, item.contentHash, key, requestId);
+        }
+        if (msg.value > price) {
+            (bool returned,) = msg.sender.call{ value: msg.value - price }("");
+            if (!returned) revert RefundFailed(msg.sender);
         }
     }
 

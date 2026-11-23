@@ -131,7 +131,7 @@ CONTRACTS = [
             *SLOTS,
             *MINTERS,
             fn("setRebindDelay(uint48)", "NETWORK", "the network's setting, 14 days at launch; zero allowed"),
-            fn("rebind(uint256,address)", "NETWORK", "only an edition with no copies and no seal, once rebindDelay has passed since its minter's removal"),
+            fn("rebind(uint256,address)", "NETWORK", "only an edition with no seal, once rebindDelay has passed since its minter's removal"),
         ],
     ),
     contract(

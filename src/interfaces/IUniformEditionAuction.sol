@@ -371,7 +371,8 @@ interface IUniformEditionAuction is ISaleAdapter {
     ///         the edition at zero: `IEditions.EditionSupplySealed(id, 0)`).
     /// @param saleId The sale ID.
     event AuctionVoided(uint256 indexed saleId);
-    /// @notice The network closed, with a seal at zero, an edition moved to this adapter that
+    /// @notice The network closed, with a seal at the copies it had (zero for one with none),
+    ///         an edition moved to this adapter that
     ///         has no sale here (`closeEdition`).
     /// @param saleId The sale ID the edition would have had.
     /// @param token The edition contract.
@@ -511,10 +512,10 @@ interface IUniformEditionAuction is ISaleAdapter {
 
     /// @notice Closes an edition the network moved to this adapter that has no sale here and
     ///         will not be sold, such as one whose master's sale was cancelled (`adopt` refuses
-    ///         it): seals it at zero (`IEditions.seal(id, 0)`), so it has no copies for good. The
-    ///         network only. Reverts with `AuctionExists` if a sale of it was opened here, and as
-    ///         `IEditions.seal` does for an edition this adapter does not mint, or that has
-    ///         copies or a seal.
+    ///         it): seals it at the copies it already has (`IEditions.seal`; zero for an edition
+    ///         with none), so it gets no further copies for good. The network only. Reverts with
+    ///         `AuctionExists` if a sale of it was opened here, and as `IEditions.seal` does for
+    ///         an edition this adapter does not mint, or that has a seal.
     /// @param token The edition contract.
     /// @param id The edition ID.
     function closeEdition(address token, uint256 id) external;

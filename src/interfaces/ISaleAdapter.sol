@@ -93,6 +93,15 @@ interface ISaleAdapter is IERC165 {
     event Claimed(
         address indexed account, address indexed currency, address indexed to, uint256 amount
     );
+    /// @notice The part of `account`'s credits that waited the unclaimed period went to the
+    ///         network; the rest stays the account's.
+    /// @param account The credited account.
+    /// @param currency The currency, zero for ETH.
+    /// @param to The network's fee recipient.
+    /// @param amount The amount sent, in base units.
+    event CreditExpired(
+        address indexed account, address indexed currency, address indexed to, uint256 amount
+    );
     /// @notice Governance listed or unlisted a token contract.
     /// @param token The token contract.
     /// @param listed Whether the token is now listed.
@@ -114,8 +123,6 @@ interface ISaleAdapter is IERC165 {
     error NothingToClaim(address account, address currency);
     /// @notice The payment does not match the method, the amount, `msg.value` or the payer.
     error InvalidPayment();
-    /// @notice A PERMIT or PERMIT2 payment's deadline has passed.
-    error PaymentExpired(uint256 deadline);
     /// @notice No sale has this ID.
     error UnknownSale(uint256 saleId);
     /// @notice The adapter is paused, so no sale may open, start or sell; also a repeated

@@ -123,6 +123,7 @@ The 1/1 sale contract. Sale IDs are `uint256(keccak256(abi.encode(token, tokenId
 | `BidWithdrawn(uint256 indexed saleId, address indexed bidder, uint256 amount)` | `0x8f8619524e8d462cead34604bd2247ede24175801481e4d0b8059ac8aa41c301` |
 | `Claimed(address indexed account, address indexed currency, address indexed to, uint256 amount)` | `0x913c992353dc81b7a8ba31496c484e9b6306bd2f6c509a649a38fdf5e1c953b2` |
 | `ConfigSet(AuctionConfig previous, AuctionConfig next)` | `0x025b824563463f0ba9863c8fdb5ff2a80996d3d6625a22c1c94ed01c5e866e5b` |
+| `CreditExpired(address indexed account, address indexed currency, address indexed to, uint256 amount)` | `0xf9ca24059cdd86b3607573ff5bb441a41b3469f47964d6d58b6330ec91964d23` |
 | `Credited(address indexed account, address indexed currency, uint256 indexed saleId, uint256 amount)` | `0xdd0ef63b44a932361273bab95d6e9bfcea5c7850c43844f540314e89899b970c` |
 | `DeliveryClaimed(uint256 indexed saleId, address indexed recipient, address to)` | `0x97b1d318557d1873c3d7a8a9ef7fb4b4c83f2bb976bb53525208ed7712543748` |
 | `DeliveryPending(uint256 indexed saleId, address indexed recipient)` | `0x96b5b68e86af123b788e4434fa8a32249a60a4f022f6bb2451d03055a8dfcb26` |
@@ -150,6 +151,7 @@ The edition sale contract; `IndependentEditionAuction` emits the same. Key a bid
 | `BidRaised(uint256 indexed saleId, uint256 indexed bidId, address indexed bidder, uint256 fromStep, uint256 toStep, uint256 position, uint256 paid, uint64 endTime)` | `0x147e61d6f7ae34d614677da9caeca4f1607dad8a974ce9713980887341d7f677` |
 | `Claimed(address indexed account, address indexed currency, address indexed to, uint256 amount)` | `0x913c992353dc81b7a8ba31496c484e9b6306bd2f6c509a649a38fdf5e1c953b2` |
 | `ConfigSet(AuctionConfig previous, AuctionConfig next)` | `0xfb9b971e8d5d17ae15a88f6bb9c0cca5b551b15393093171d0ae29aa9e33f2d7` |
+| `CreditExpired(address indexed account, address indexed currency, address indexed to, uint256 amount)` | `0xf9ca24059cdd86b3607573ff5bb441a41b3469f47964d6d58b6330ec91964d23` |
 | `Credited(address indexed account, address indexed currency, uint256 indexed saleId, uint256 amount)` | `0xdd0ef63b44a932361273bab95d6e9bfcea5c7850c43844f540314e89899b970c` |
 | `DeparturesSwept(uint256 indexed saleId, uint256 swept, uint256 total, uint256 cutoff)` | `0xcd2f0b03cb6f968ada1bbdaff91cc336fb6973b27da2abf27ce51dae3bfa057e` |
 | `EditionAdopted(uint256 indexed saleId, address indexed token, uint256 indexed id, bool runsOnItsOwn)` | `0x5e2c9651e7abdb68cf247374efb1c467424e2bdced9b578b44016895638e920b` |

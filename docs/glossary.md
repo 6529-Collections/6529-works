@@ -140,7 +140,7 @@ when the rescue is attempted.
 
 ### rebind
 
-The network's move of an edition with no copies and no seal to another edition sale contract,
+The network's move of an edition with no seal to another edition sale contract,
 once the [rebind delay](#rebinddelay) has passed since its own sale contract was removed.
 
 ### rebindDelay
