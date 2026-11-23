@@ -318,21 +318,24 @@
     },
     "src/independent/IndependentEditionAuction.sol": {
       "tier": 2,
-      "mutants": 35,
-      "killed": 29,
+      "mutants": 56,
+      "killed": 53,
       "timedOut": 0,
-      "newKills": 5,
-      "floor": 95,
-      "was": 92
+      "newKills": 1,
+      "floor": 94,
+      "was": 95,
+      "measuredAt": "961bc956"
     },
     "src/independent/IndependentEditionAuctionLens.sol": {
       "tier": 3,
-      "mutants": 48,
-      "killed": 38,
+      "mutants": 54,
+      "killed": 46,
       "timedOut": 0,
-      "newKills": 0,
-      "floor": 77,
-      "was": 83
+      "newKills": 1,
+      "floor": 85,
+      "was": 77,
+      "measuredAt": "961bc956",
+      "untriaged": 7
     },
     "src/independent/IndependentStream6529.sol": {
       "tier": 1,
@@ -1929,40 +1932,30 @@
     ],
     "src/independent/IndependentEditionAuction.sol": [
       {
-        "line": 70,
-        "rule": "RR",
-        "verdict": "killed",
-        "why": "`test_Raise_MovesTheBidUpForTheDifference`: raise on the Independent auction was never called successfully"
+        "line": 84,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "below OPEN is only NONE, a sale never opened: its runsOnItsOwn flag was never set, so `<= OPEN` answers what `== OPEN` answers"
       },
       {
-        "line": 71,
-        "rule": "RR",
-        "verdict": "killed",
-        "why": "`test_Raise_MovesTheBidUpForTheDifference`: raise on the Independent auction was never called successfully"
-      },
-      {
-        "line": 82,
-        "rule": "LOR",
-        "verdict": "killed",
-        "why": "`test_Settle_AListedSalesScanFinishesOnALaterCall`: a still-listed sale's second scan call must clear and pay; the mutant voids every multi-call settlement"
-      },
-      {
-        "line": 82,
+        "line": 84,
         "rule": "ROR",
         "verdict": "equivalent",
         "why": "_scans is written only while SETTLING and status never returns below it, so status < SETTLING implies _scans == 0"
       },
       {
-        "line": 82,
-        "rule": "ROR",
+        "line": 112,
+        "rule": "CR",
         "verdict": "killed",
-        "why": "`test_Settle_ASaleVoidedDuringTheScanRefusesLaterCalls`: a sale voided mid-scan keeps its scan word: a later settle must revert InvalidAuctionState, not void (and log) again"
-      },
+        "why": "`test_Open_TheEventNamesTheEditionContractsMaster`: the opening event named no master: nothing checked the master the Independent Stream auction logs"
+      }
+    ],
+    "src/independent/IndependentEditionAuctionLens.sol": [
       {
-        "line": 82,
-        "rule": "ROR",
+        "line": 98,
+        "rule": "CR",
         "verdict": "killed",
-        "why": "`test_Settle_AClearingThatPaidStandsThroughADelisting`: a cleared and paid sale still sweeping departures (SETTLING, scan done) must not void on a delisting"
+        "why": "`test_SetIndependentStreamRegistry_TheLensRefusesAnyModule`: the lens's setter did nothing instead of refusing: nothing called it on the Independent Stream lens"
       }
     ],
     "src/independent/IndependentStream6529.sol": [
@@ -4380,10 +4373,22 @@
       "file": "test/independent/IndependentEditionAuctionMutation.t.sol",
       "tests": [
         {
+          "name": "test_Open_TheEventNamesTheEditionContractsMaster",
+          "where": [
+            "IndependentEditionAuction L112"
+          ]
+        },
+        {
           "name": "test_Raise_MovesTheBidUpForTheDifference",
           "where": [
             "IndependentEditionAuction L70",
             "IndependentEditionAuction L71"
+          ]
+        },
+        {
+          "name": "test_SetIndependentStreamRegistry_TheLensRefusesAnyModule",
+          "where": [
+            "IndependentEditionAuctionLens L98"
           ]
         },
         {

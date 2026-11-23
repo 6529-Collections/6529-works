@@ -83,14 +83,14 @@ final score minus two points, rounded down.
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `src/curation/PackageRegistry.sol` | 576 | 532 | 44 | 0 | 92.4% | 9 | 93.9% | 91 (was 94) |
 | `src/identity/Accounts.sol` | 562 | 532 | 30 | 0 | 94.7% | 13 | 97.0% | 94 |
-| `src/independent/IndependentEditionAuction.sol` | 35 | 29 | 6 | 0 | 82.9% | 5 | 97.1% | 95 (was 92) |
+| `src/independent/IndependentEditionAuction.sol` | 56 | 53 | 3 | 0 | 94.6% | 1 | 96.4% | 94 (was 95) |
 | `src/independent/IndependentStreamRegistry.sol` | 941 | 832 | 109 | 0 | 88.4% | 37 | 92.3% | 90 (was 89) |
 | `src/records/WorkRules.sol` | 373 | 353 | 20 | 0 | 94.6% | 12 | 97.9% | 95 (was 89) |
 | `src/sales/EnglishAuction.sol` | 683 | 602 | 81 | 0 | 88.1% | 60 | 96.9% | 94 (was 90) |
 | `src/sales/UniformClearing.sol` | 278 | 276 | 2 | 0 | 99.3% | 0 | 99.3% | 97 (was 93) |
 | `src/sales/UniformEditionAuction.sol` | 1113 | 1019 | 94 | 0 | 91.6% | 27 | 94.0% (measured again) | 91 |
 | `src/terms/StreamTerms.sol` | 170 | 160 | 10 | 0 | 94.1% | 9 | 99.4% | 97 (was 90) |
-| **Total** | **4731** | **4335** | **396** | **0** | **91.6%** | **172** | **95.3%** | |
+| **Total** | **4752** | **4359** | **393** | **0** | **91.7%** | **168** | **95.3%** | |
 
 <!-- /generated -->
 
@@ -122,7 +122,7 @@ final score minus two points, rounded down.
 | `src/governance/Roles.sol` | 250 | 233 | 17 | 0 | 93.2% | 0 | 93.2% | 91 |
 | `src/governance/WorksAccessManager.sol` | 126 | 122 | 4 | 0 | 96.8% | 0 | 96.8% | 94 |
 | `src/identity/ConsolidationAdapter.sol` | 75 | 56 | 19 | 0 | 74.7% | 0 | 74.7% | 72 (was 83) |
-| `src/independent/IndependentEditionAuctionLens.sol` | 48 | 38 | 10 | 0 | 79.2% | 0 | 79.2% | 77 (was 83) |
+| `src/independent/IndependentEditionAuctionLens.sol` | 54 | 46 | 8 | 0 | 85.2% | 1 | 87.0% | 85 (was 77) |
 | `src/independent/IndependentStreamDeployer.sol` | 100 | 94 | 6 | 0 | 94.0% | 0 | 94.0% | 92 |
 | `src/independent/IndependentStreamMembership.sol` | 65 | 61 | 4 | 0 | 93.8% | 0 | 93.8% | 91 (was 92) |
 | `src/interfaces/IWorkPowers.sol` | 16 | 12 | 4 | 0 | 75.0% | 0 | 75.0% | 73 (was 98) |
@@ -147,7 +147,7 @@ final score minus two points, rounded down.
 | `src/sales/UniformEditionAuctionLens.sol` | 1134 | 994 | 140 | 0 | 87.7% | 0 | 88.0% (measured again) | 85 (was 87) |
 | `src/stream/SpdxId.sol` | 114 | 106 | 8 | 0 | 93.0% | 0 | 93.0% | 90 |
 | `src/stream/WorkDelivery.sol` | 567 | 496 | 71 | 0 | 87.5% | 0 | 87.5% | 85 (was 88) |
-| **Total** | **7299** | **6520** | **779** | **0** | **89.3%** | **0** | **89.4%** | |
+| **Total** | **7305** | **6528** | **777** | **0** | **89.4%** | **1** | **89.4%** | |
 
 <!-- /generated -->
 
@@ -199,7 +199,7 @@ measures them without this effect.
 
 <!-- generated:tests -->
 
-119 test functions, each shown to fail on the mutants it is listed with:
+121 test functions, each shown to fail on the mutants it is listed with:
 
 - `test/content/ContentStorePermanence.t.sol`
   - `test_Source_ARangeCheckKeepsMemoryAtOneChunk` (ContentStore L584)
@@ -241,7 +241,9 @@ measures them without this effect.
   - `test_IsArtist_TheHighestArtistIdCounts` (Accounts L578)
   - `test_RegisterIndependent_RefusesAnExpiredAcceptance` (Accounts L197)
 - `test/independent/IndependentEditionAuctionMutation.t.sol`
+  - `test_Open_TheEventNamesTheEditionContractsMaster` (IndependentEditionAuction L112)
   - `test_Raise_MovesTheBidUpForTheDifference` (IndependentEditionAuction L70, IndependentEditionAuction L71)
+  - `test_SetIndependentStreamRegistry_TheLensRefusesAnyModule` (IndependentEditionAuctionLens L98)
   - `test_Settle_AClearingThatPaidStandsThroughADelisting` (IndependentEditionAuction L82)
   - `test_Settle_AListedSalesScanFinishesOnALaterCall` (IndependentEditionAuction L82)
   - `test_Settle_ASaleVoidedDuringTheScanRefusesLaterCalls` (IndependentEditionAuction L82)
@@ -719,16 +721,13 @@ One row per surviving mutant of the permanent contracts and the money and mint m
 
 ### `src/independent/IndependentEditionAuction.sol`
 
-6 survivors: 5 killed, 1 equivalent.
+3 survivors: 2 equivalent, 1 killed.
 
 | Line | Rule | Verdict | Why, or the test |
 | ---: | --- | --- | --- |
-| 70 | RR | killed | `test_Raise_MovesTheBidUpForTheDifference`: raise on the Independent auction was never called successfully |
-| 71 | RR | killed | `test_Raise_MovesTheBidUpForTheDifference`: raise on the Independent auction was never called successfully |
-| 82 | LOR | killed | `test_Settle_AListedSalesScanFinishesOnALaterCall`: a still-listed sale's second scan call must clear and pay; the mutant voids every multi-call settlement |
-| 82 | ROR | equivalent | _scans is written only while SETTLING and status never returns below it, so status < SETTLING implies _scans == 0 |
-| 82 | ROR | killed | `test_Settle_ASaleVoidedDuringTheScanRefusesLaterCalls`: a sale voided mid-scan keeps its scan word: a later settle must revert InvalidAuctionState, not void (and log) again |
-| 82 | ROR | killed | `test_Settle_AClearingThatPaidStandsThroughADelisting`: a cleared and paid sale still sweeping departures (SETTLING, scan done) must not void on a delisting |
+| 84 | ROR | equivalent | below OPEN is only NONE, a sale never opened: its runsOnItsOwn flag was never set, so `<= OPEN` answers what `== OPEN` answers |
+| 84 | ROR | equivalent | _scans is written only while SETTLING and status never returns below it, so status < SETTLING implies _scans == 0 |
+| 112 | CR | killed | `test_Open_TheEventNamesTheEditionContractsMaster`: the opening event named no master: nothing checked the master the Independent Stream auction logs |
 
 ### `src/independent/IndependentStreamRegistry.sol`
 
@@ -1099,6 +1098,14 @@ score measured again does not count it.
 | 191 | ROR | killed | `test_IndependentPair_OnlyAnErc1155ListingNamesTheTokenOfEditions`: a listing of form PAIR named a token for an editions contract |
 | 217 | MIA | killed | `test_Pairing_AnEmptyIndependentStreamSlotListsNoPair`: an empty INDEPENDENT_STREAM slot was never read (the mutant reverts calling address zero) |
 | 235 | MIA | killed | `test_LowerFeeShare_NeverDeploysTheOldVault`: checking the stated current terms deployed the old vault as a side effect |
+
+### `src/independent/IndependentEditionAuctionLens.sol`
+
+8 survivors: 1 killed, 7 not triaged.
+
+| Line | Rule | Verdict | Why, or the test |
+| ---: | --- | --- | --- |
+| 98 | CR | killed | `test_SetIndependentStreamRegistry_TheLensRefusesAnyModule`: the lens's setter did nothing instead of refusing: nothing called it on the Independent Stream lens |
 
 <!-- /generated -->
 
