@@ -160,7 +160,9 @@ class RepositoryTest(unittest.TestCase):
         sepolia = facts["networks"]["sepolia"]
         self.assertTrue(sepolia["deployed"])
         record = json.loads((ROOT / sepolia["record"]).read_text(encoding="utf-8"))
-        self.assertEqual(sepolia["contracts"]["Stream"], record["contracts"]["Stream"]["address"])
+        self.assertEqual(
+            sepolia["contracts"]["Stream6529"], record["contracts"]["Stream6529"]["address"]
+        )
         self.assertFalse(facts["networks"]["mainnet"]["deployed"])
         names = {c["contract"]: c for c in facts["collections"]}
         self.assertEqual(names["Stream6529"]["name"], "6529 Stream")

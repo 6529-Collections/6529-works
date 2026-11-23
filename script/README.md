@@ -14,7 +14,7 @@ deploy script refuses every other chain. 6529 Works is pre-audit and not deploye
 | [`DeployGuards.sol`](DeployGuards.sol) | The off-anvil checks run before anything is broadcast |
 | [`ScriptIO.sol`](ScriptIO.sol) | Everything the scripts read from outside the EVM: environment, files, chain ID, the deployment parameters |
 | [`local/`](local/README.md) | The local walkthrough: one command, a full sale end to end on anvil |
-| [`sepolia/`](sepolia/) | The Sepolia round tooling: genesis and manifest writers, deploy, flows, Sourcify |
+| [`sepolia/`](sepolia/) | The Sepolia round tooling: genesis and manifest writers, deploy, record, flows, Sourcify |
 
 ## How a deployment is built
 
@@ -124,7 +124,26 @@ so broadcast through an endpoint with a higher estimate cap:
 
 A broadcast that stops partway resumes with `-Resume`: forge sends the transactions it recorded
 that are not yet mined, without simulating again, so the script, the namespace, the environment
-and the deployer's nonce must be as the stopped run left them.
+and the deployer's nonce must be as the stopped run left them: forge recorded a nonce for each
+transaction. Do not run the script afresh instead: the factory creates each address once, so a
+fresh run stops at the first contract that exists.
+
+A transaction that was mined and failed is a different case, and `-Resume` is not the way out of
+it. It created nothing (the factory's call reverts whole, proxy included) but used its nonce, so
+sending it again moves the deployer's nonce past the ones recorded for the transactions after
+it. This case did not occur on r6 and the recovery was not rehearsed there. The path used on r5,
+when forge stopped partway, was to send the calldata forge recorded
+(`broadcast/DeployCore.s.sol/11155111/run-latest.json`), the failed transaction first and then
+every later one, in order, from the deployer at its current nonce, each with a gas limit taken
+from the node. No address depends on the deployer's nonce (the factory's address depends on the
+namespace and the deployer, each contract's on the factory and its name), so the addresses and
+the record the script already wrote stay valid; read the result back with `VerifyCore.s.sol`.
+
+r6's broadcast (23 November 2026, `-PriorityFee 10000000`) ran without a stop: 37 transactions
+in 37 consecutive blocks, 709,793,904 gas and 0.0071 Sepolia ETH. The largest was
+`IndependentEditionAuction`'s creation, 37,788,154 gas; the node estimated every creation,
+`IndependentStreamRegistry`'s included (37,739,713 gas used), once the contracts before it
+existed.
 
 ### 4. After the broadcast
 
@@ -153,12 +172,18 @@ and the deployer's nonce must be as the stopped run left them.
    `https://sepolia.gateway.tenderly.co`, or run it soon after the deploy).
 3. **VRF.** The subscription owner adds the entropy module as a consumer and funds the
    subscription.
-4. **Sourcify.** `./script/sepolia/sourcify.ps1 -Record <record> -Out sourcify.json`, from the
+4. **Complete the record.** `python script/sepolia/make_record.py <record> r6 <commit> --confirmed`
+   (after the read-back passed) adds to the record its chain ID, instance, source commit, first
+   and last block, genesis and manifest hashes, and every contract's code hash, creation
+   transaction and block. The scripts keep reading the `<name>: <address>` entries.
+5. **Sourcify.** `./script/sepolia/sourcify.ps1 -Record <record> -Out sourcify.json`, from the
    deployed commit after `forge build`.
-5. **Gas table.** `python script/sepolia/deploy_gas.py deploy-gas.json <record>`.
-6. **Flows.** `./script/sepolia/flows.ps1 -SignerModule <path> -State <state.json> -Record <record> -Step <step>`
+6. **Gas table.** `python script/sepolia/deploy_gas.py deploy-gas.json <record>`.
+7. **Flows.** `./script/sepolia/flows.ps1 -SignerModule <path> -State <state.json> -Record <record> -Step <step>`
    (steps and examples are in the script's header; `-Step prague` replays each transaction at
-   Prague prices).
+   Prague prices). The `independent*` steps deploy an artist's own Independent Stream 1/1
+   contract, list it and start a sale there; `-Token <address>` points `bid`, `settle`,
+   `finalize` and `sync` at it.
 
 ## Operating procedures
 

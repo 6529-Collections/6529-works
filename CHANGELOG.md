@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Sepolia round r6.** The plain core is deployed on Sepolia (testnet only) from `main` at
+  `2aac8579`, read back with `VerifyCore` and verified on Sourcify
+  ([record](deployments/11155111/README.md#sepolia-r6-23-november-2026-current),
+  [flows](deployments/11155111/flows-r6.md)). Tooling: `script/sepolia/make_record.py`
+  completes a deployment record; `flows.ps1` gains the Independent Stream steps and `-Token`;
+  `sourcify.ps1` and `deploy_gas.py` find each creation transaction from the factory call's
+  salt.
 - **Before the merge of the plain core.**
     - `StreamTerms.lowerFeeShare` accepts one fee recipient, the split ledger's network fee
       vault, so the share it lowers is always the network's; the seller and the fee recipient

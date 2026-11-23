@@ -9,10 +9,12 @@
     transaction from forge's broadcast cache (broadcast/DeployCore.s.sol/11155111/
     run-latest.json, not committed), then reads Sourcify's v2 status for the address. Every
     contract is created inside a transaction to the deployer's CoreFactory, and the manager
-    inside the configurator's constructor: the creation transaction of each is the transaction
-    whose created contracts (`additionalContracts`) include it. The manager's address is read
-    from the configurator (`worksManager()`). Run it from the commit the record was deployed
-    from, after `forge build`. Nothing is signed.
+    inside the configurator's constructor. A broadcast with --skip-simulation records no
+    created contracts for a call, so the creation transaction of each contract is found from
+    the call itself: `create(salt, code)` creates the factory's `addressOf(salt)`. The manager's
+    address is read from the configurator (`worksManager()`) and its creation transaction is
+    the configurator's. Run it from the commit the record was deployed from, after
+    `forge build`. Nothing is signed.
 
     -StatusOnly re-reads every contract's status without submitting anything.
 
@@ -39,8 +41,11 @@ $rec = Get-Content -Raw -Encoding UTF8 (Join-Path $Repo $Record) | ConvertFrom-J
 $addresses = [ordered]@{}
 # The record also names the deployer, the delegation contract and the fork block (not contracts
 # of the deployment).
+# A completed record (script/sepolia/make_record.py) holds more keys: only `<name>: <address>`
+# entries are contracts.
 foreach ($p in $rec.PSObject.Properties) {
-    if (@('deployer', 'delegation', 'forkBlock') -notcontains $p.Name) { $addresses[$p.Name] = $p.Value }
+    if (@('deployer', 'delegation', 'forkBlock') -contains $p.Name) { continue }
+    if ($p.Value -is [string] -and $p.Value -match '^0x[0-9a-fA-F]{40}$') { $addresses[$p.Name] = $p.Value }
 }
 $addresses['WorksAccessManager'] = (& cast call $addresses['GovernanceConfigurator'] 'worksManager()(address)' --rpc-url $Rpc).Trim()
 if ($LASTEXITCODE -ne 0) { throw 'could not read the manager from the configurator' }
@@ -86,8 +91,10 @@ if ($unmapped.Count) { throw "unmapped contract in the record: $($unmapped -join
 # The creation transactions, from forge's broadcast cache: needed to submit, not to read status.
 $creation = @{}
 if (-not $StatusOnly) {
-    $run = Get-Content -Raw -Encoding UTF8 (Join-Path $Repo $Run) | ConvertFrom-Json
-    foreach ($t in $run.transactions) {
+    # Not `$run`: PowerShell names are case-insensitive, and the typed parameter $Run would
+    # turn the parsed cache into a string.
+    $cache = Get-Content -Raw -Encoding UTF8 (Join-Path $Repo $Run) | ConvertFrom-Json
+    foreach ($t in $cache.transactions) {
         # On a CALL forge records the destination as contractAddress: only a creation counts.
         if ($t.contractAddress -and $t.transactionType -like 'CREATE*') {
             $creation[$t.contractAddress.ToLower()] = $t.hash
@@ -95,7 +102,16 @@ if (-not $StatusOnly) {
         foreach ($c in @($t.additionalContracts)) {
             if ($c -and $c.address) { $creation[$c.address.ToLower()] = $t.hash }
         }
+        # The factory's `create(salt, code)`: the created address depends only on the salt.
+        if ($t.transactionType -eq 'CALL' -and $t.function -eq 'create(bytes32,bytes)') {
+            $made = (& cast call $t.contractAddress 'addressOf(bytes32)(address)' $t.arguments[0] --rpc-url $Rpc).Trim()
+            if ($LASTEXITCODE -ne 0) { throw "could not read the address created by $($t.hash)" }
+            $creation[$made.ToLower()] = $t.hash
+        }
     }
+    # The manager is created by the configurator's constructor.
+    $manager = $addresses['WorksAccessManager'].ToLower()
+    if (-not $creation[$manager]) { $creation[$manager] = $creation[$addresses['GovernanceConfigurator'].ToLower()] }
 }
 # Earlier results are kept only for this record's addresses.
 $results = [ordered]@{}
