@@ -24,6 +24,7 @@ contract EditionsHarness is EditionsBase {
     address public immutable network;
     mapping(address account => bool) public minter;
     mapping(address account => uint256) public removedAt;
+    mapping(address account => bool) public waiting;
 
     constructor(address stream_) EditionsBase(stream_, msg.sender) {
         network = msg.sender;
@@ -37,12 +38,20 @@ contract EditionsHarness is EditionsBase {
         removedAt[account] = at;
     }
 
+    function setWaiting(address account, bool yes) external {
+        waiting[account] = yes;
+    }
+
     function _moduleOf(bytes32) internal pure override returns (address) {
         return address(0);
     }
 
     function _isMinter(address account) internal view override returns (bool) {
         return minter[account];
+    }
+
+    function _wasMinter(address account) internal view override returns (bool) {
+        return !waiting[account];
     }
 
     function _minterRemovedAt(address account) internal view override returns (uint256) {
@@ -136,7 +145,27 @@ contract EditionsCoreSymbolicTest is Test {
         assert(_mint(SALE, 1) == (!removed || sealed_));
     }
 
-    /// @dev `rebind` succeeds exactly when the edition exists with no copies and no seal, its
+    /// @dev A seal succeeds exactly for the edition's minter while it is neither removed nor
+    ///      waiting to become active; a minter added again (waiting, not active) mints only what
+    ///      was sealed before.
+    function check_OnlyAMinterThatIsNeitherRemovedNorWaitingSeals(
+        address caller,
+        uint256 removedAt,
+        bool waiting,
+        bool sealedBefore
+    ) public {
+        _create(100);
+        if (sealedBefore) assert(_seal(SALE, 50));
+        editions.setRemovedAt(SALE, removedAt);
+        editions.setWaiting(SALE, waiting);
+        if (waiting) editions.setMinter(SALE, false);
+        if (!sealedBefore) {
+            assert(_seal(caller, 60) == (caller == SALE && removedAt == 0 && !waiting));
+        }
+        if (waiting) assert(_mint(SALE, 1) == sealedBefore);
+    }
+
+    /// @dev `rebind` succeeds exactly when the edition exists with no seal (copies or none), its
     ///      minter was removed, the rebind wait in force has passed since the removal, and the
     ///      new minter is active; the minter then is the new one, and nothing else changed.
     function check_RebindPredicate(
@@ -156,8 +185,8 @@ contract EditionsCoreSymbolicTest is Test {
         editions.setMinter(NEXT, nextActive);
         vm.warp(block.timestamp + wait);
         (bool ok,) = address(editions).call(abi.encodeCall(editions.rebind, (ID, NEXT)));
-        bool expected = !minted && !sealed_ && removedAt != 0
-            && block.timestamp >= removedAt + delay && nextActive;
+        bool expected =
+            !sealed_ && removedAt != 0 && block.timestamp >= removedAt + delay && nextActive;
         assert(ok == expected);
         Edition memory e = editions.editionOf(ID);
         assert(e.minter == (ok ? NEXT : SALE));

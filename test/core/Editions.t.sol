@@ -45,7 +45,7 @@ contract EditionsTest is EditionsFixture {
         assertEq(e.rebindDelay(), 14 days);
         assertEq(e.moduleDelay(), 7 days);
         assertEq(e.name(), "6529 Stream Editions");
-        assertEq(e.symbol(), "STREAMEDITIONS");
+        assertEq(e.symbol(), "6529STREAMEDITIONS");
         assertEq(e.contractURI(), "");
         assertEq(e.authority(), address(manager));
     }
@@ -388,7 +388,7 @@ contract EditionsTest is EditionsFixture {
         editions.rebind(id, address(other));
     }
 
-    function test_Rebind_RefusesAnEditionWithCopiesASealOrNoneAtAll() public {
+    function test_Rebind_RefusesAnEditionWithASealOrNoneAtAll() public {
         uint256 minted = _edition(1, 10);
         uint256 sealed_ = _edition(2, 10);
         sale.mintEdition(address(editions), buyer, minted, 1, 1);
@@ -396,8 +396,9 @@ contract EditionsTest is EditionsFixture {
         _addActive(address(other));
         editions.removeMinter(address(sale));
         skip(14 days);
-        vm.expectRevert(abi.encodeWithSelector(IEditions.NotRebindable.selector, minted));
+        // Copies without a seal do not hold an edition back.
         editions.rebind(minted, address(other));
+        assertEq(editions.editionOf(minted).minter, address(other));
         vm.expectRevert(abi.encodeWithSelector(IEditions.NotRebindable.selector, sealed_));
         editions.rebind(sealed_, address(other));
         vm.expectRevert(abi.encodeWithSelector(IEditions.NotRebindable.selector, 99));

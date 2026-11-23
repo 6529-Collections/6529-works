@@ -38,7 +38,7 @@ interface IEditions is IERC1155, IERC2981 {
     /// @param editionId The edition.
     /// @param supply The final maximum.
     event EditionSupplySealed(uint256 indexed editionId, uint256 supply);
-    /// @notice The network moved an edition with no copies and no seal to another minter.
+    /// @notice The network moved an edition with no seal to another minter.
     /// @param editionId The edition.
     /// @param previous The removed minter.
     /// @param minter The new minter.
@@ -77,23 +77,23 @@ interface IEditions is IERC1155, IERC2981 {
     error EditionExists(uint256 editionId);
     /// @notice The edition does not exist.
     error UnknownEdition(uint256 editionId);
-    /// @notice The caller is not the edition's minter; or, to seal, it is removed; or, to mint
-    ///         an edition that is not sealed, it is not an active minter.
+    /// @notice The caller is not the edition's minter; or, to seal, it is removed or waiting to
+    ///         become active; or, to mint an edition that is not sealed, it is not an active
+    ///         minter.
     error NotEditionMinter(uint256 editionId, address caller);
     /// @notice The mint would pass the maximum.
     error SupplyExceeded(uint256 editionId);
     /// @notice The edition is sealed, or the seal is below the count minted or above the maximum.
     error InvalidSeal(uint256 editionId);
-    /// @notice The edition has copies or a seal, its minter is not removed for `rebindDelay`,
-    ///         or the new minter is not active.
+    /// @notice The edition has a seal, its minter is not removed for `rebindDelay`, or the new
+    ///         minter is not active.
     error NotRebindable(uint256 editionId);
     /// @notice The rate is over 100,000, or nonzero with a zero receiver.
     error InvalidRoyalty();
     /// @notice The caller may not emit metadata updates.
     error NotMetadataSource(address caller);
 
-    /// @notice How long after a minter's removal the network may rebind its unminted, unsealed
-    ///         editions. A setting of the network, 14 days at deployment; not a fixed promise.
+    /// @notice How long after a minter's removal the network may rebind its unsealed editions. A setting of the network, 14 days at deployment; not a fixed promise.
     ///         Read when a rebind is attempted.
     /// @return The wait, in seconds.
     function rebindDelay() external view returns (uint48);
@@ -134,14 +134,17 @@ interface IEditions is IERC1155, IERC2981 {
 
     /// @notice Fixes the supply, once, between the count minted and the maximum. The edition's
     ///         minter only, while it is not removed: a removed minter seals nothing, so an
-    ///         edition still open at its removal waits for the network's `rebind`. A seal is
-    ///         one-way; a seal at zero closes the edition for good.
+    ///         edition still open at its removal waits for the network's `rebind`. A minter
+    ///         added again after a removal seals nothing until it is active again, and until then
+    ///         mints only editions sealed before its removal. A seal is one-way; a seal at zero
+    ///         closes the edition for good.
     /// @param editionId The edition.
     /// @param supply The final maximum.
     function seal(uint256 editionId, uint40 supply) external;
 
-    /// @notice Moves an edition with no copies and no seal to another active minter,
-    ///         `rebindDelay` after its own minter was removed. The network only.
+    /// @notice Moves an edition with no seal to another active minter, `rebindDelay` after its
+    ///         own minter was removed. The network only. Copies already minted stay and count
+    ///         toward the maximum; the new minter seals at or above them.
     /// @param editionId The edition.
     /// @param minter The new minter.
     function rebind(uint256 editionId, address minter) external;

@@ -78,6 +78,10 @@ contract GatedEditions is EditionsBase {
             MockGate(directory.moduleOf(Slots.INDEPENDENT_STREAM)).canMint(address(this), account);
     }
 
+    function _wasMinter(address) internal pure override returns (bool) {
+        return true;
+    }
+
     function _minterRemovedAt(address account) internal view override returns (uint256) {
         return MockGate(directory.moduleOf(Slots.INDEPENDENT_STREAM)).minterRemovedAt(account);
     }

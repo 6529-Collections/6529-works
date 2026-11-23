@@ -19,7 +19,7 @@ contract StreamEditions6529 is EditionsBase, Modules {
     /// @notice The ERC-1155 collection name.
     string public constant name = "6529 Stream Editions";
     /// @notice The ERC-1155 collection symbol.
-    string public constant symbol = "STREAMEDITIONS";
+    string public constant symbol = "6529STREAMEDITIONS";
 
     /// @param authority_ The AccessManager.
     /// @param stream_ 6529 Stream.
@@ -53,6 +53,10 @@ contract StreamEditions6529 is EditionsBase, Modules {
 
     function _isMinter(address account) internal view override returns (bool) {
         return isMinter(account);
+    }
+
+    function _wasMinter(address account) internal view override returns (bool) {
+        return _wasActiveMinter(account);
     }
 
     function _minterRemovedAt(address account) internal view override returns (uint256) {

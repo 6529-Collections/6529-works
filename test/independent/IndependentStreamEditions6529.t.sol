@@ -125,9 +125,24 @@ contract IndependentStreamEditionsTest is IndependentTokenFixture {
         fe.rebind(master, address(next));
     }
 
-    function test_Rebind_RefusedWithCopiesASealOrToAContractTheGateRefuses() public {
+    function test_Rebind_AnEditionWithCopiesAndNoSealIsRebound() public {
+        sale.createEdition(address(fe), master, 10, address(0xFEE), 700);
+        sale.mintEdition(address(fe), collector, master, 2, 1);
+        _gateRemove(address(sale), block.timestamp);
+        vm.warp(block.timestamp + 14 days);
+        fe.rebind(master, address(next));
+        assertEq(fe.editionOf(master).minter, address(next));
+        assertEq(fe.editionOf(master).minted, 2);
+        vm.expectRevert(abi.encodeWithSelector(IEditions.InvalidSeal.selector, master));
+        next.seal(address(fe), master, 1);
+        next.seal(address(fe), master, 2);
+        assertEq(fe.editionOf(master).maxSupply, 2);
+    }
+
+    function test_Rebind_RefusedWithASealOrToAContractTheGateRefuses() public {
         sale.createEdition(address(fe), master, 10, address(0xFEE), 700);
         sale.mintEdition(address(fe), collector, master, 1, 1);
+        sale.seal(address(fe), master, 5);
         _gateRemove(address(sale), block.timestamp);
         vm.warp(block.timestamp + 14 days);
         vm.expectRevert(abi.encodeWithSelector(IEditions.NotRebindable.selector, master));

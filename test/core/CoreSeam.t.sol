@@ -195,25 +195,32 @@ contract CoreSeamTest is CoreFixture {
         editions.rebind(id, address(next));
     }
 
-    function test_Rebind_AfterFourteenDaysOnlyUnmintedUnsealed() public {
+    function test_Rebind_AfterFourteenDaysOnlyUnsealed() public {
         uint256 stuck = _sell(1, collector);
         uint256 live = _sell(2, collector);
+        uint256 done = _sell(3, collector);
         sale.createEdition(address(editions), stuck, 10, address(0xFEE), 6529);
         sale.createEdition(address(editions), live, 10, address(0xFEE), 6529);
+        sale.createEdition(address(editions), done, 10, address(0xFEE), 6529);
         sale.mintEdition(address(editions), collector, live, 1, 1);
+        sale.seal(address(editions), done, 4);
         MockSale next = new MockSale();
         editions.addMinter(address(next));
         skip(7 days);
         editions.removeMinter(address(sale));
         skip(14 days);
-        vm.expectRevert(abi.encodeWithSelector(IEditions.NotRebindable.selector, live));
-        editions.rebind(live, address(next));
+        vm.expectRevert(abi.encodeWithSelector(IEditions.NotRebindable.selector, done));
+        editions.rebind(done, address(next));
         editions.rebind(stuck, address(next));
         assertEq(editions.editionOf(stuck).minter, address(next));
-        // The removed minter no longer seals: an open edition with copies stays open.
+        // The removed minter no longer seals: an open edition with copies waits for the rebind
+        // too, and keeps its copies through it.
         vm.expectRevert(
             abi.encodeWithSelector(IEditions.NotEditionMinter.selector, live, address(sale))
         );
         sale.seal(address(editions), live, 1);
+        editions.rebind(live, address(next));
+        assertEq(editions.editionOf(live).minter, address(next));
+        assertEq(editions.editionOf(live).minted, 1);
     }
 }

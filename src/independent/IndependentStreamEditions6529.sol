@@ -17,7 +17,7 @@ import { IndependentStreamMembership } from "./IndependentStreamMembership.sol";
 ///        contract (`IIndependentStreamGate.canMint`); an empty INDEPENDENT_STREAM slot stops
 ///        creating and minting unsealed editions. A sealed edition is minted by its own sale
 ///        contract whatever the module says, so removing a sale contract never strands its winners.
-///      - Rebind: the network moves an edition with no copies and no seal to another sale
+///      - Rebind: the network moves an edition with no seal to another sale
 ///        contract once `rebindDelay` (the network's setting) has passed since the Independent
 ///        Stream module removed its own.
 ///      - TERMS: the directory's shared `INDEPENDENT_TERMS`.
@@ -80,6 +80,11 @@ contract IndependentStreamEditions6529 is EditionsBase, IndependentStreamMembers
 
     function _isMinter(address account) internal view override returns (bool) {
         return _gateCanMint(account);
+    }
+
+    /// @dev A sale contract of Independent Stream is admitted at once, with no wait.
+    function _wasMinter(address) internal pure override returns (bool) {
+        return true;
     }
 
     function _minterRemovedAt(address account) internal view override returns (uint256) {

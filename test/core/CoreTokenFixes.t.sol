@@ -75,13 +75,62 @@ contract CoreTokenFixesTest is IndependentTokenFixture {
         assertEq(editions.editionOf(id).maxSupply, 3);
     }
 
-    function test_RemovedEditionMinter_AddedAgainMaySealAgain() public {
-        uint256 id = _edition(1, 10);
+    /// @dev A minter added again gets no new power during its new wait, as on the ERC-721: it
+    ///      seals nothing and mints only an edition sealed before its removal.
+    function test_RemovedEditionMinter_AddedAgainGainsNothingDuringItsWait() public {
+        uint256 open = _edition(1, 10);
+        uint256 sealedBefore = _edition(2, 10);
+        sale.seal(address(editions), sealedBefore, 4);
         editions.removeMinter(address(sale));
         editions.addMinter(address(sale));
         assertEq(editions.minterRemovedAt(address(sale)), 0);
-        sale.seal(address(editions), id, 2);
-        assertTrue(editions.editionOf(id).supplySealed);
+        assertFalse(editions.isMinter(address(sale)), "waiting");
+
+        vm.expectRevert(
+            abi.encodeWithSelector(IEditions.NotEditionMinter.selector, open, address(sale))
+        );
+        sale.seal(address(editions), open, 2);
+        vm.expectRevert(
+            abi.encodeWithSelector(IEditions.NotEditionMinter.selector, open, address(sale))
+        );
+        sale.mintEdition(address(editions), buyer, open, 1, 0);
+        assertFalse(editions.editionOf(open).supplySealed);
+        assertEq(editions.editionOf(open).minted, 0);
+        // What it sealed before its removal is still served.
+        sale.mintEdition(address(editions), buyer, sealedBefore, 4, 0);
+        assertEq(editions.balanceOf(buyer, sealedBefore), 4);
+
+        // Active again: its open edition is its own to seal and mint.
+        vm.warp(editions.minterOf(address(sale)).activeFrom);
+        sale.seal(address(editions), open, 2);
+        sale.mintEdition(address(editions), buyer, open, 2, 0);
+        assertEq(editions.editionOf(open).maxSupply, 2);
+    }
+
+    /// @dev An edition with copies and no seal at its minter's removal is not stuck: the network
+    ///      rebinds it under the same wait, and the new minter seals at or above the copies.
+    function test_RemovedEditionMinter_AnEditionWithCopiesAndNoSealIsRebound() public {
+        uint256 id = _edition(1, 10);
+        sale.mintEdition(address(editions), buyer, id, 3, 0);
+        editions.removeMinter(address(sale));
+        editions.addMinter(address(other));
+        skip(editions.rebindDelay() - 1);
+        vm.expectRevert(abi.encodeWithSelector(IEditions.NotRebindable.selector, id));
+        editions.rebind(id, address(other));
+        skip(1);
+        vm.expectEmit(address(editions));
+        emit IEditions.EditionRebound(id, address(sale), address(other));
+        editions.rebind(id, address(other));
+        assertEq(editions.editionOf(id).minter, address(other));
+        assertEq(editions.editionOf(id).minted, 3, "the copies stay");
+        assertEq(editions.balanceOf(buyer, id), 3);
+
+        vm.expectRevert(abi.encodeWithSelector(IEditions.InvalidSeal.selector, id));
+        other.seal(address(editions), id, 2);
+        other.seal(address(editions), id, 3);
+        assertEq(editions.editionOf(id).maxSupply, 3);
+        vm.expectRevert(abi.encodeWithSelector(IEditions.SupplyExceeded.selector, id));
+        other.mintEdition(address(editions), buyer, id, 1, 0);
     }
 
     function test_IndependentRemovedEditionMinter_CannotSeal() public {

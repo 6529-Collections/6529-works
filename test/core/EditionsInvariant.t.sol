@@ -7,7 +7,7 @@ import { EditionsHandler } from "./EditionsHandler.sol";
 
 /// @notice Stateful invariants of 6529 Stream Editions (256 runs, depth 128, `fail_on_revert`):
 ///         copies minted never pass the maximum; a sealed maximum never changes; an edition's
-///         minter changes only by `rebind`, and only with no copies, no seal and the rebind wait
+///         minter changes only by `rebind`, and only with no seal and the rebind wait
 ///         in force passed since its minter's removal (the handler checks the rule on every
 ///         attempt); balances plus burned copies equal the copies minted.
 contract EditionsInvariantTest is EditionsFixture {

@@ -23,13 +23,15 @@ import { IStream } from "../interfaces/core/IStream.sol";
 ///      - only the edition's own minter mints it, and copies minted never pass the maximum;
 ///      - the supply is sealed once, between the copies minted and the maximum, and a sealed
 ///        maximum never grows; burned copies still count toward it;
-///      - only a minter that is not removed seals; a removed minter mints only the editions it
-///        sealed before its removal, up to the seal, so the winners of its sealed sales are
-///        served, and an edition still open at its removal is frozen (no seal, no copy) until
-///        the network rebinds it;
+///      - only a minter that is active, or was and is not removed, seals; a removed minter mints
+///        only the editions it sealed before its removal, up to the seal, so the winners of its
+///        sealed sales are served, and an edition still open at its removal is frozen (no seal,
+///        no copy) until the network rebinds it; a minter added again gains nothing while it
+///        waits to become active (no seal, and copies only of editions already sealed);
 ///      - the minter of an edition changes only by `rebind`: the network moves an edition with no
-///        copies and no seal to another active minter, once `rebindDelay` (the network's setting,
-///        read when the rebind is attempted) has passed since its minter's removal;
+///        seal to another active minter, once `rebindDelay` (the network's setting, read when
+///        the rebind is attempted) has passed since its minter's removal; copies already minted
+///        stay and count toward the maximum;
 ///      - transfers, approvals and balances are OpenZeppelin's, untouched: no module or minter
 ///        can move or burn a copy, and no call leaves this contract during a transfer except
 ///        the standard ERC-1155 acceptance check of the receiver;
@@ -101,11 +103,12 @@ abstract contract EditionsBase is ERC1155, IEditions {
     }
 
     /// @inheritdoc IEditions
-    /// @dev The caller is the edition's minter, never the zero address; a minter reported
-    ///      removed (`_minterRemovedAt` nonzero) seals nothing.
+    /// @dev The caller is the edition's minter. A minter reported removed (`_minterRemovedAt`
+    ///      nonzero) seals nothing, and neither does one waiting to become active (`_wasMinter`
+    ///      false: added again after a removal), the same rule as a minter of the ERC-721.
     function seal(uint256 editionId, uint40 supply) external {
         Edition storage e = _editions[editionId];
-        if (e.minter != msg.sender || msg.sender == address(0) || _minterRemovedAt(msg.sender) != 0)
+        if (e.minter != msg.sender || !_wasMinter(msg.sender) || _minterRemovedAt(msg.sender) != 0)
         {
             revert NotEditionMinter(editionId, msg.sender);
         }
@@ -121,14 +124,15 @@ abstract contract EditionsBase is ERC1155, IEditions {
     /// @dev The wait in force when the rebind is attempted decides, counted from the removal.
     ///      A minter added again after its removal is no longer removed, so its editions cannot
     ///      be rebound. A removed minter can neither seal nor mint an unsealed edition, so an
-    ///      edition with no copies and no seal at the removal stays so until the rebind.
+    ///      edition is rebound with the copies it had at the removal, and the new minter seals it
+    ///      at or above that count.
     function rebind(uint256 editionId, address minter) external {
         _checkNetwork();
         Edition storage e = _editions[editionId];
         address previous = e.minter;
         uint256 removedAt = _minterRemovedAt(previous);
         if (
-            previous == address(0) || e.supplySealed || e.minted != 0 || removedAt == 0
+            previous == address(0) || e.supplySealed || removedAt == 0
                 || block.timestamp < removedAt + rebindDelay || !_isMinter(minter)
         ) revert NotRebindable(editionId);
         e.minter = minter;
@@ -246,6 +250,9 @@ abstract contract EditionsBase is ERC1155, IEditions {
 
     /// @dev Whether `account` may mint now.
     function _isMinter(address account) internal view virtual returns (bool);
+
+    /// @dev Whether `account` is or was an active minter (false while it waits to become one).
+    function _wasMinter(address account) internal view virtual returns (bool);
 
     /// @dev When `account` was removed as a minter, or zero.
     function _minterRemovedAt(address account) internal view virtual returns (uint256);
