@@ -5,8 +5,8 @@ it. Start with the [overview](../overview.md) for the shape of the system.
 
 > Pre-audit. See the [project status](../../README.md#status).
 
-There is no mainnet deployment, and interfaces may change before an audit. The current Sepolia
-round, r6, runs this design ([Addresses](addresses.md)).
+There is no mainnet deployment, and interfaces may change before an audit. Two Sepolia
+instances run this design: r7, the reference instance, and r6 ([Addresses](addresses.md)).
 
 ## The pages
 

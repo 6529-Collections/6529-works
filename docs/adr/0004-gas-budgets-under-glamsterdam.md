@@ -133,13 +133,126 @@ also lets a package's sale terms name any currency on the asset allowlist.
 
 ### The table
 
+**Amendment, 23 November 2026 (the table re-measured on the plain core; Sepolia r6 and r7).**
+The table below replaces the earlier one, which is kept further down as history: its start rows
+carried the 370,000 ceiling of [ADR 0010](0010-plain-permanent-core.md) over gas and slot counts
+measured before the plain core, so no row of it could be compared with a transaction of the
+plain core. Every Prague figure, count and ceiling below is `test/integration/GasReport.t.sol`
+(`forge test --match-test test_Gas_Table -vv`) on `main` at `5de6abaa`, the source Sepolia r6 and
+r7 run. Sepolia
+gas is the receipt on the r7 rehearsal (`5de6abaa`,
+[flows](../../deployments/11155111/flows-r7.md)), given only where r7 ran the row's own scenario
+(its replay at Prague prices is within 1% of the row); "—" means r7 did not run that scenario.
+
+What each ceiling applies to (all are test gates in Prague gas, not chain code):
+
+- **370,000 and 8 new slots** (`START_BUDGET`, `START_MAX_SLOTS`): every English-auction start
+  of a 6529 Stream work that is not a one-time row, with or without a bid. That includes an
+  artist's first work, the first work in a new collection, an edition master, a two-party work,
+  a VRF work started without a bid and a move signed by a consolidated wallet.
+- **395,000 and 9 new slots** (`VRF_START_BUDGET`, `VRF_START_MAX_SLOTS`): a start *with a bid*
+  of a VRF work, which writes the bid and the seed. Three rows.
+- **The one-time rows** have regression ceilings, not budgets: the deployment's first start
+  (357,000) and the auction's first bid (353,000). Each happens once per deployment.
+- **400,000** is the settlement rows' test ceiling. Decision 1 above also names 400K for the
+  first start in a new collection; since ADR 0010 CI holds that row to the start budget
+  (370,000), the stricter gate, and it measures 320,947.
+- Every other ceiling is a regression ceiling (the figure when set plus about 2%).
+
+| Operation | Prague gas | Prague ceiling | New slots | New accounts | Sepolia gas |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `start`, steady state | 320,904 | 370,000 | **7** | 0 | 963,757 |
+| `startWithBid`, steady state | 351,143 | 370,000 | **8** | 0 | 1,087,996 |
+| `start`, steady state, move signed by a consolidated (non-root) wallet | 368,117 | 370,000 | **7** | 0 | 1,011,745 |
+| `start`, two-party work | 329,634 | 370,000 | **7** | 0 | — |
+| `startWithBid`, two-party work | 359,873 | 370,000 | **8** | 0 | — |
+| `start`, VRF work | 353,855 | 370,000 | **8** | 0 | — |
+| `startWithBid`, VRF work | 384,094 | 395,000 | **9** | 0 | 1,209,264 |
+| `start`, edition master | 320,995 | 370,000 | **7** | 0 | — |
+| `start`, edition master with 64 bytes of params (the bound) | 322,097 | 370,000 | **7** | 0 | — |
+| `start`, first work in a new collection | 320,947 | 370,000 | **7** | 0 | 963,747 |
+| `start`, an artist's first work | 320,915 | 370,000 | **7** | 0 | — |
+| `startWithBid`, an artist's first work | 351,154 | 370,000 | **8** | 0 | — |
+| `startWithBid`, an artist's first work, two-party | 359,861 | 370,000 | **8** | 0 | — |
+| `startWithBid`, an artist's first work, two-party, VRF | 392,818 | 395,000 | **9** | 0 | — |
+| `startWithBid`, an artist's first work, two-party, VRF, edition master with 64 bytes of params (the bound) | 393,933 | 395,000 | **9** | 0 | — |
+| `start`, first work ever (one-time) | 355,116 | 357,000 (regression) | 9 | 0 | 1,159,577 |
+| `startWithBid`, the auction's first bid (one-time) | 351,143 | 353,000 (regression) | 8 | 0 | 1,087,971 |
+| `SaleStarter.start`, steady state (start, vaults confirmed, record opened) | 575,413 | 579,000 (regression) | 13 | 0 | 1,745,955 |
+| `bid` that outbids | 74,192 | 76,000 (regression) | 1 | 0 | 169,824 |
+| `settle`, first payout to a seller vault | 152,306 | 400,000 | 1 | 1 | — |
+| `settle`, with a bid | 127,306 | 400,000 | 1 | 0 | 244,974 |
+| `settle`, no bid (to the museum, D140) | 81,436 | 400,000 | 0 | 0 | 112,448 |
+| `auction` (view, cold) | 32,425 | 34,000 (regression) | 0 | 0 | — |
+| `minimumBid` (view, cold) | 39,086 | 40,000 (regression) | 0 | 0 | — |
+| `auctionClock` (view, cold) | 26,613 | 28,000 (regression) | 0 | 0 | — |
+| `royaltyInfo` (view, cold; its ceiling is 21,000 plus the 50,000 execution budget of `RoyaltyInfoGas.t.sol`) | 23,937 | 71,000 | 0 | 0 | — |
+| `authorize`, the mint policy's share of a start, as a call | 115,937 | 119,000 (regression) | 0 | 0 | — |
+| Edition auction `open`, steady state (creates the edition) | 254,764 | 260,000 (regression) | 5 | 0 | 693,657 |
+| Edition auction `open`, an artist's first sale (deploys both vaults) | 394,336 | 402,000 (regression) | 7 | 2 | — |
+| Edition `bid`, opens an 8-step word | 86,353 | 89,000 (regression) | 2 | 0 | 269,355 |
+| Edition `bid`, its 8-step word exists | 69,283 | 71,000 (regression) | 1 | 0 | — |
+| Edition `settle`, 5 used steps | 178,445 | 179,000 (regression) | 1 | 0 | — |
+| Edition `claimBid`, a winner, the edition's first mint | 111,227 | 114,000 (regression) | 1 | 0 | — |
+| Edition `claimBid`, refund only | 72,540 | 74,000 (regression) | 0 | 0 | — |
+| re-rate a work (governed `execute`) | 225,603 | 231,000 (regression) | 1 | 0 | — |
+| `createWallet`, a seller vault (one artist payee) | 96,160 | 98,000 (regression) | 1 | 1 | — |
+| `release`, the artist's first ETH release | 101,456 | 104,000 (regression) | 2 | 0 | 274,996 |
+| `claimSigned`, the artist's first signed release (relayed) | 146,964 | 150,000 (regression) | 3 | 0 | — |
+| `claimSigned`, a later signed release (next nonce) | 95,696 | 98,000 (regression) | 0 | 0 | — |
+
+The Independent Stream rows, the edition auction's worst-case rows and `tokenURI` are measured by
+their own tests (`IndependentStreamGas.t.sol`, `EditionAuctionGasReport.t.sol`,
+`TokenUriBudget.t.sol`) and were not re-measured for this amendment; their last figures are in
+the earlier table below.
+
+**The Sepolia starts against their rows.** Each start of r6 and r7, replayed on its parent
+block's state at Prague prices (`cast run --quick --evm-version prague`), beside the row it is
+an instance of:
+
+| Start on Sepolia | Replay at Prague prices | Row | CI | Ceiling | Under the ceiling |
+| --- | ---: | --- | ---: | ---: | ---: |
+| [r7](https://sepolia.etherscan.io/tx/0xb377f4ed0f0d7a63f255209f416c18e247d781b7ae1c3ddda73cc5d2291a9734): `start`, the deployment's first | 355,897 | `start`, first work ever (one-time) | 355,116 | 357,000 | 1,103 |
+| [r7](https://sepolia.etherscan.io/tx/0x3ccf05576943e60e2833caf6ff7730cbaa6ac0b30253a399a04bb67109716dce): `startWithBid`, the auction's first bid | 351,911 | `startWithBid`, the auction's first bid (one-time) | 351,143 | 353,000 | 1,089 |
+| [r7](https://sepolia.etherscan.io/tx/0x2ebef972fa182740e0f5200ebcabf5bd37231e77aeb6fbc0d105d61dc3741a9d): `start` | 321,717 | `start`, steady state | 320,904 | 370,000 | 48,283 |
+| [r7](https://sepolia.etherscan.io/tx/0xddccbf4ed74652491cf62175fc27f180fa238129d0df119a9777504049b1c04b): `startWithBid` | 351,936 | `startWithBid`, steady state | 351,143 | 370,000 | 18,064 |
+| [r7](https://sepolia.etherscan.io/tx/0x11233120001342d2da2b27a5e5920520b3bd537b6d32dd98fcf4b1f031005360): `start`, move signed by a consolidated wallet | 368,905 | `start`, steady state, move signed by a consolidated (non-root) wallet | 368,117 | 370,000 | 1,095 |
+| [r7](https://sepolia.etherscan.io/tx/0xf34c270720ecf32304930d60db47789edef8d2371a8149df9d65c91db63a5b89): `start`, first work in a new collection | 321,707 | `start`, first work in a new collection | 320,947 | 370,000 | 48,293 |
+| [r7](https://sepolia.etherscan.io/tx/0xedd3c2e3f4f7934950257a8f734f8d304b399d2e25bff6a12ccc7e035f9ba51c): `startWithBid`, VRF work | 384,884 | `startWithBid`, VRF work | 384,094 | 395,000 | 10,116 |
+| [r7](https://sepolia.etherscan.io/tx/0x32c11bbf3d1b8f2a3c33aa4c2b440289f0da66981745fa7edc4e21f5f22393fa): `SaleStarter.start`, vaults exist | 574,695 | `SaleStarter.start`, steady state (start, vaults confirmed, record opened) | 575,413 | 579,000 | 4,305 |
+| [r7](https://sepolia.etherscan.io/tx/0xd25a0ee2b0d8c8b161ccebfa4d58907deb565fa2e41c9b6d9219612eb6090567): `SaleStarter.start`, vaults exist | 574,690 | `SaleStarter.start`, steady state (start, vaults confirmed, record opened) | 575,413 | 579,000 | 4,310 |
+| [r7](https://sepolia.etherscan.io/tx/0x2045fdfbe90e83a17d15bb7166bedc52f919162becac182cb0c749ed2748f958): `SaleStarter.start`, the artist's first (deploys both vaults) | 715,901 | none | — | — | — |
+| [r6](https://sepolia.etherscan.io/tx/0xb8298fb46e6520496b693c5b11961548e3d02ca8e5ae797e3ccbc1e5c5596c1e): `startWithBid`, the deployment's first start and the auction's first bid at once | 386,146 | none | — | — | — |
+| [r6](https://sepolia.etherscan.io/tx/0xfdd6aeb53b84155097b66d397f29b02c00b20cc47b3dbb57b72f5599a2f54cc5): `startWithBid`, VRF work | 384,842 | `startWithBid`, VRF work | 384,094 | 395,000 | 10,158 |
+| [r6](https://sepolia.etherscan.io/tx/0x897f2a38a6b1a875c9559818997fead8290f739a3a9dec3ba66fdafebee921f5): `SaleStarter.start`, the artist's first (deploys both vaults) | 715,851 | none | — | — | — |
+
+- **Every r7 start is within its own row's ceiling.** The replays are 760 to 813 gas above CI
+  for a direct start and 718 below it for `SaleStarter.start`. The rehearsal's package has ten
+  items where CI's has eight, so the Merkle proof of an item among the first eight is one word
+  longer than CI's and the proof of item 8, started through `SaleStarter`, one word shorter;
+  the addresses in the calldata differ too. No cold-account effect appears: a replay runs on
+  the live chain's own state.
+- **r6's 386,146 has no row, and the 370,000 budget does not apply to it.** It was the
+  deployment's first start and the auction's first bid in one transaction: `startWithBid` of the
+  first work ever. CI measures those two one-time effects apart (355,116 and 351,143); together
+  they come to the first start plus a bid, about 386,000. r7 ran them apart, as the rows do:
+  355,897 and 351,911. r6's record called it a
+  first start in a new collection; that row is a later collection's first work at steady state,
+  which r7 ran (321,707).
+- **r6's 384,842 is a start with a bid of a VRF work**: the row at 384,094, ceiling 395,000.
+  r7's is 384,884.
+- The tightest live margin is the start whose move a consolidated wallet signed:
+  368,905, 1,095 under 370,000 (CI: 368,117, 1,883 under).
+
 **Amendment, 22 November 2026 ([ADR 0010](0010-plain-permanent-core.md)).** The 350,000 start
 budget and its 6- and 7-slot maxima are replaced by one gate: **every start row, with or without
 a bid, at most 370,000 Prague gas and 8 new storage slots** (`START_BUDGET` and
-`START_MAX_SLOTS` in the integration base). The start rows below carry the new ceiling; their
-measured gas and slot counts are from before the plain core and are re-measured on the built
-stack when the restructuring is integrated (the study measured the tightest row at 363,899 gas
-and 8 slots, and a steady `start` at 311,906). The history below is unchanged.
+`START_MAX_SLOTS` in the integration base). The start rows of the earlier table (further down)
+carry the new ceiling; their measured gas and slot counts are from before the plain core (the
+study measured the tightest row at 363,899 gas and 8 slots, and a steady `start` at 311,906).
+The table above is the re-measurement on the built stack. The history below is unchanged.
+
+**The earlier table and its history** (measured before the plain core; kept as written).
 
 Prague gas, counts and ceilings are from `test/integration/GasReport.t.sol`
 (`forge test --match-test test_Gas_Table -vv`) at the head of this ADR's pull
@@ -528,6 +641,9 @@ bid rises by 21; the start, bid and settle rows below are measured after it. A s
 ceiling (LIM-ID-21). The `refreshStanding` rows and the edition `withdrawBid` row left with
 their functions. The Independent Stream rows keep their earlier figures with the current ceilings;
 CI enforces those ceilings (`IndependentStreamGas.t.sol`).
+
+The earlier table (before the plain core; its start rows show the 370,000 ceiling over earlier
+measurements, and its Sepolia column is r3's):
 
 | Operation | Prague gas | Prague ceiling | New slots | New accounts | Sepolia gas |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -949,6 +1065,10 @@ mainnet.
   been reviewed and integrated.
 
 ## Superseded or amended
+
+- **This ADR's table** (amendment of 23 November 2026): re-measured on the plain core, with what
+  each ceiling applies to and the Sepolia starts of r6 and r7 beside their rows. No ceiling or
+  count changed; the earlier table is kept as history.
 
 - **ADR 0001.** The 300K start budget (Intended behavior) was already amended
   to 350K by ADR 0003. It is now Prague gas plus the slot maximum. The storage
