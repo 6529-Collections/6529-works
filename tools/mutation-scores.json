@@ -1,0 +1,5002 @@
+{
+  "margin": 2.0,
+  "files": {
+    "src/content/Base64Validator.sol": {
+      "tier": 3,
+      "mutants": 16,
+      "killed": 13,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 79,
+      "was": 74
+    },
+    "src/content/ContentStore.sol": {
+      "tier": 1,
+      "mutants": 747,
+      "killed": 699,
+      "timedOut": 0,
+      "newKills": 2,
+      "floor": 91,
+      "was": 92
+    },
+    "src/content/DataUri.sol": {
+      "tier": 3,
+      "mutants": 43,
+      "killed": 41,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 93,
+      "was": null
+    },
+    "src/content/DependencyRegistry.sol": {
+      "tier": 3,
+      "mutants": 119,
+      "killed": 109,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 89,
+      "was": 85
+    },
+    "src/content/HtmlScript.sol": {
+      "tier": 3,
+      "mutants": 48,
+      "killed": 42,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 85,
+      "was": null
+    },
+    "src/content/JsonScan.sol": {
+      "tier": 3,
+      "mutants": 421,
+      "killed": 347,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 80,
+      "was": 79
+    },
+    "src/content/Renderer.sol": {
+      "tier": 3,
+      "mutants": 874,
+      "killed": 775,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 86,
+      "was": 84
+    },
+    "src/core/EditionsBase.sol": {
+      "tier": 1,
+      "mutants": 267,
+      "killed": 262,
+      "timedOut": 0,
+      "newKills": 5,
+      "floor": 98,
+      "was": 93
+    },
+    "src/core/Modules.sol": {
+      "tier": 1,
+      "mutants": 209,
+      "killed": 205,
+      "timedOut": 0,
+      "newKills": 1,
+      "floor": 96,
+      "was": 94
+    },
+    "src/core/Stream6529.sol": {
+      "tier": 1,
+      "mutants": 48,
+      "killed": 44,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 89,
+      "was": 90
+    },
+    "src/core/StreamBase.sol": {
+      "tier": 1,
+      "mutants": 327,
+      "killed": 317,
+      "timedOut": 0,
+      "newKills": 2,
+      "floor": 95,
+      "was": 90
+    },
+    "src/core/StreamDirectory6529.sol": {
+      "tier": 1,
+      "mutants": 46,
+      "killed": 42,
+      "timedOut": 0,
+      "newKills": 4,
+      "floor": 98,
+      "was": 94
+    },
+    "src/core/StreamEditions6529.sol": {
+      "tier": 1,
+      "mutants": 46,
+      "killed": 40,
+      "timedOut": 0,
+      "newKills": 2,
+      "floor": 89,
+      "was": 93
+    },
+    "src/core/StreamWorkFacts6529.sol": {
+      "tier": 1,
+      "mutants": 299,
+      "killed": 283,
+      "timedOut": 0,
+      "newKills": 2,
+      "floor": 93,
+      "was": 89
+    },
+    "src/curation/Eip712CurationVerifier.sol": {
+      "tier": 3,
+      "mutants": 165,
+      "killed": 161,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 95,
+      "was": 94
+    },
+    "src/curation/PackageRegistry.sol": {
+      "tier": 2,
+      "mutants": 576,
+      "killed": 532,
+      "timedOut": 0,
+      "newKills": 9,
+      "floor": 91,
+      "was": 94
+    },
+    "src/economics/AssetAllowlist.sol": {
+      "tier": 3,
+      "mutants": 88,
+      "killed": 80,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 88,
+      "was": 91
+    },
+    "src/economics/ClaimRouter.sol": {
+      "tier": 3,
+      "mutants": 261,
+      "killed": 230,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 86,
+      "was": null
+    },
+    "src/economics/EconomicsResolver.sol": {
+      "tier": 3,
+      "mutants": 267,
+      "killed": 247,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 90,
+      "was": null
+    },
+    "src/economics/GovernedVault.sol": {
+      "tier": 3,
+      "mutants": 126,
+      "killed": 123,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 95,
+      "was": null
+    },
+    "src/economics/RevenueEscrow.sol": {
+      "tier": 1,
+      "mutants": 412,
+      "killed": 403,
+      "timedOut": 0,
+      "newKills": 1,
+      "floor": 96,
+      "was": null
+    },
+    "src/economics/RevenuePayment.sol": {
+      "tier": 3,
+      "mutants": 29,
+      "killed": 26,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 87,
+      "was": 84
+    },
+    "src/economics/SplitLedger.sol": {
+      "tier": 1,
+      "mutants": 626,
+      "killed": 606,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 94,
+      "was": null
+    },
+    "src/economics/SplitVault.sol": {
+      "tier": 3,
+      "mutants": 0,
+      "killed": 0,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": null,
+      "was": null
+    },
+    "src/economics/Splits.sol": {
+      "tier": 1,
+      "mutants": 155,
+      "killed": 145,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 91,
+      "was": 88
+    },
+    "src/economics/TokenTransfer.sol": {
+      "tier": 3,
+      "mutants": 153,
+      "killed": 130,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 82,
+      "was": 90
+    },
+    "src/editions/EditionRules.sol": {
+      "tier": 3,
+      "mutants": 16,
+      "killed": 12,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 73,
+      "was": 85
+    },
+    "src/entropy/VrfEntropyModule.sol": {
+      "tier": 3,
+      "mutants": 589,
+      "killed": 537,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 89,
+      "was": 90
+    },
+    "src/governance/BoundedParameter.sol": {
+      "tier": 3,
+      "mutants": 57,
+      "killed": 57,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 98,
+      "was": 94
+    },
+    "src/governance/GovernanceConfig.sol": {
+      "tier": 3,
+      "mutants": 307,
+      "killed": 259,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 82,
+      "was": 83
+    },
+    "src/governance/GovernanceConfigurator.sol": {
+      "tier": 3,
+      "mutants": 22,
+      "killed": 22,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 98,
+      "was": null
+    },
+    "src/governance/Roles.sol": {
+      "tier": 3,
+      "mutants": 250,
+      "killed": 233,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 91,
+      "was": null
+    },
+    "src/governance/WorksAccessManager.sol": {
+      "tier": 3,
+      "mutants": 126,
+      "killed": 122,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 94,
+      "was": null
+    },
+    "src/identity/Accounts.sol": {
+      "tier": 2,
+      "mutants": 562,
+      "killed": 532,
+      "timedOut": 0,
+      "newKills": 13,
+      "floor": 94,
+      "was": null
+    },
+    "src/identity/ConsolidationAdapter.sol": {
+      "tier": 3,
+      "mutants": 75,
+      "killed": 56,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 72,
+      "was": 83
+    },
+    "src/independent/IndependentEditionAuction.sol": {
+      "tier": 2,
+      "mutants": 35,
+      "killed": 29,
+      "timedOut": 0,
+      "newKills": 5,
+      "floor": 95,
+      "was": 92
+    },
+    "src/independent/IndependentEditionAuctionLens.sol": {
+      "tier": 3,
+      "mutants": 48,
+      "killed": 38,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 77,
+      "was": 83
+    },
+    "src/independent/IndependentStream6529.sol": {
+      "tier": 1,
+      "mutants": 179,
+      "killed": 165,
+      "timedOut": 0,
+      "newKills": 14,
+      "floor": 98,
+      "was": 92
+    },
+    "src/independent/IndependentStreamDeployer.sol": {
+      "tier": 3,
+      "mutants": 100,
+      "killed": 94,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 92,
+      "was": null
+    },
+    "src/independent/IndependentStreamEditions6529.sol": {
+      "tier": 1,
+      "mutants": 35,
+      "killed": 33,
+      "timedOut": 0,
+      "newKills": 1,
+      "floor": 95,
+      "was": null
+    },
+    "src/independent/IndependentStreamMembership.sol": {
+      "tier": 3,
+      "mutants": 65,
+      "killed": 61,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 91,
+      "was": 92
+    },
+    "src/independent/IndependentStreamRegistry.sol": {
+      "tier": 2,
+      "mutants": 941,
+      "killed": 832,
+      "timedOut": 0,
+      "newKills": 37,
+      "floor": 90,
+      "was": 89
+    },
+    "src/interfaces/IWorkPowers.sol": {
+      "tier": 3,
+      "mutants": 16,
+      "killed": 12,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 73,
+      "was": 98
+    },
+    "src/interfaces/core/CoreTypes.sol": {
+      "tier": 3,
+      "mutants": 12,
+      "killed": 11,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 89,
+      "was": null
+    },
+    "src/interfaces/types/HashRef.sol": {
+      "tier": 3,
+      "mutants": 6,
+      "killed": 6,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 98,
+      "was": null
+    },
+    "src/interfaces/types/Limits.sol": {
+      "tier": 3,
+      "mutants": 36,
+      "killed": 27,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 73,
+      "was": null
+    },
+    "src/interfaces/types/SaleTypes.sol": {
+      "tier": 3,
+      "mutants": 4,
+      "killed": 4,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 98,
+      "was": null
+    },
+    "src/interfaces/types/StatementKinds.sol": {
+      "tier": 3,
+      "mutants": 15,
+      "killed": 15,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 98,
+      "was": null
+    },
+    "src/interfaces/types/StepLadder.sol": {
+      "tier": 3,
+      "mutants": 216,
+      "killed": 205,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 92,
+      "was": null
+    },
+    "src/interfaces/types/Typehashes.sol": {
+      "tier": 3,
+      "mutants": 26,
+      "killed": 26,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 98,
+      "was": null
+    },
+    "src/interfaces/types/WorksHashing.sol": {
+      "tier": 3,
+      "mutants": 47,
+      "killed": 43,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 89,
+      "was": 87
+    },
+    "src/libraries/AgedCredits.sol": {
+      "tier": 3,
+      "mutants": 24,
+      "killed": 22,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 89,
+      "was": 90
+    },
+    "src/libraries/BoundedCall.sol": {
+      "tier": 3,
+      "mutants": 282,
+      "killed": 261,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 90,
+      "was": 91
+    },
+    "src/libraries/DelegatedEOA.sol": {
+      "tier": 3,
+      "mutants": 47,
+      "killed": 41,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 85,
+      "was": null
+    },
+    "src/libraries/Dependency.sol": {
+      "tier": 3,
+      "mutants": 42,
+      "killed": 42,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 98,
+      "was": 95
+    },
+    "src/libraries/JsonEscape.sol": {
+      "tier": 3,
+      "mutants": 90,
+      "killed": 76,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 82,
+      "was": 79
+    },
+    "src/libraries/ProtocolContracts.sol": {
+      "tier": 3,
+      "mutants": 5,
+      "killed": 5,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 98,
+      "was": null
+    },
+    "src/libraries/SSTORE2.sol": {
+      "tier": 3,
+      "mutants": 125,
+      "killed": 117,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 91,
+      "was": null
+    },
+    "src/libraries/SignatureVerifier.sol": {
+      "tier": 3,
+      "mutants": 88,
+      "killed": 75,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 83,
+      "was": 80
+    },
+    "src/libraries/Utf8.sol": {
+      "tier": 3,
+      "mutants": 118,
+      "killed": 102,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 84,
+      "was": null
+    },
+    "src/records/StatementLog.sol": {
+      "tier": 1,
+      "mutants": 496,
+      "killed": 472,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 93,
+      "was": null
+    },
+    "src/records/WorkRules.sol": {
+      "tier": 2,
+      "mutants": 373,
+      "killed": 353,
+      "timedOut": 0,
+      "newKills": 12,
+      "floor": 95,
+      "was": 89
+    },
+    "src/sales/EnglishAuction.sol": {
+      "tier": 2,
+      "mutants": 683,
+      "killed": 602,
+      "timedOut": 0,
+      "newKills": 60,
+      "floor": 94,
+      "was": 90
+    },
+    "src/sales/SaleStarter.sol": {
+      "tier": 3,
+      "mutants": 20,
+      "killed": 19,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 93,
+      "was": 98
+    },
+    "src/sales/UniformClearing.sol": {
+      "tier": 2,
+      "mutants": 278,
+      "killed": 276,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 97,
+      "was": 93
+    },
+    "src/sales/UniformEditionAuction.sol": {
+      "tier": 2,
+      "mutants": 1113,
+      "killed": 1019,
+      "timedOut": 0,
+      "newKills": 27,
+      "floor": 91,
+      "was": null,
+      "remeasured": {
+        "mutants": 1112,
+        "killed": 1045
+      }
+    },
+    "src/sales/UniformEditionAuctionLens.sol": {
+      "tier": 3,
+      "mutants": 1134,
+      "killed": 994,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 85,
+      "was": 87,
+      "remeasured": {
+        "mutants": 1113,
+        "killed": 979
+      }
+    },
+    "src/stream/SpdxId.sol": {
+      "tier": 3,
+      "mutants": 114,
+      "killed": 106,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 90,
+      "was": null
+    },
+    "src/stream/WorkDelivery.sol": {
+      "tier": 3,
+      "mutants": 567,
+      "killed": 496,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 85,
+      "was": 88
+    },
+    "src/terms/StreamTerms.sol": {
+      "tier": 2,
+      "mutants": 170,
+      "killed": 160,
+      "timedOut": 0,
+      "newKills": 9,
+      "floor": 97,
+      "was": 90
+    }
+  },
+  "survivors": {
+    "src/content/ContentStore.sol": [
+      {
+        "line": 120,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`<` vs `!=` on a counter that steps by one from a start never above the bound"
+      },
+      {
+        "line": 120,
+        "rule": "UOR",
+        "verdict": "equivalent",
+        "why": "++i vs i++ as a loop increment whose value is unused"
+      },
+      {
+        "line": 129,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`<` vs `!=` on a counter that steps by one from a start never above the bound"
+      },
+      {
+        "line": 139,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`<` vs `!=` on a counter that steps by one from a start never above the bound"
+      },
+      {
+        "line": 181,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`<` vs `!=` on a counter that steps by one from a start never above the bound"
+      },
+      {
+        "line": 181,
+        "rule": "UOR",
+        "verdict": "equivalent",
+        "why": "++i vs i++ as a loop increment whose value is unused"
+      },
+      {
+        "line": 201,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`<` vs `!=` on a counter that steps by one from a start never above the bound (completeThrough is only ever set to a stop <= chunkCount)"
+      },
+      {
+        "line": 201,
+        "rule": "UOR",
+        "verdict": "equivalent",
+        "why": "++i vs i++ as a loop increment whose value is unused"
+      },
+      {
+        "line": 210,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`<` vs `!=` on a counter that steps by one from a start never above the bound"
+      },
+      {
+        "line": 210,
+        "rule": "UOR",
+        "verdict": "equivalent",
+        "why": "++i vs i++ as a loop increment whose value is unused"
+      },
+      {
+        "line": 213,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`>` vs `>=` on a running maximum: at equality the value assigned equals the old value"
+      },
+      {
+        "line": 224,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "cap of `to` at chunkCount: at equality the value assigned equals the old value"
+      },
+      {
+        "line": 225,
+        "rule": "UOR",
+        "verdict": "equivalent",
+        "why": "++i vs i++ as a loop increment whose value is unused"
+      },
+      {
+        "line": 226,
+        "rule": "MIA",
+        "verdict": "killed",
+        "why": "`test_Source_TheStoreItselfIsCheckedWithoutACall`: own-store shortcut: without it firstMissing asks itself through chunkData, same answer at more gas; pinned by expecting zero chunkData calls"
+      },
+      {
+        "line": 236,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`<` vs `!=` on a counter that steps by one from a start never above the bound"
+      },
+      {
+        "line": 236,
+        "rule": "UOR",
+        "verdict": "equivalent",
+        "why": "++i vs i++ as a loop increment whose value is unused"
+      },
+      {
+        "line": 256,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`== 0` vs `<= 0` on an unsigned bytes32"
+      },
+      {
+        "line": 293,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "at equality validated + maxChunks equals count, so both branches give the same stop"
+      },
+      {
+        "line": 296,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`==` vs `>=`: stop is never above count"
+      },
+      {
+        "line": 314,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`==` vs `>=`: completeThrough is never above chunkCount"
+      },
+      {
+        "line": 315,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "at equality from + maxChunks equals count, so both branches give the same stop"
+      },
+      {
+        "line": 316,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`<` vs `!=` on a counter that steps by one from a start never above the bound (stop >= from; maxChunks 0 gives stop == from)"
+      },
+      {
+        "line": 316,
+        "rule": "UOR",
+        "verdict": "equivalent",
+        "why": "++i vs i++ as a loop increment whose value is unused"
+      },
+      {
+        "line": 320,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`==` vs `>=`: stop is never above count"
+      },
+      {
+        "line": 342,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`<` vs `!=`: each take is clamped to what remains, so done lands exactly on length"
+      },
+      {
+        "line": 343,
+        "rule": "AOR",
+        "verdict": "equivalent",
+        "why": "the clamp only matters on the last piece; the over-copy lands past the returned length in released memory and the ABI encoder zeroes the padding word, so the returned bytes are identical"
+      },
+      {
+        "line": 365,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`== 0` vs `<= 0` on an unsigned bytes32"
+      },
+      {
+        "line": 409,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`<` vs `!=` on a counter that steps by one from a start never above the bound"
+      },
+      {
+        "line": 409,
+        "rule": "UOR",
+        "verdict": "equivalent",
+        "why": "++i vs i++ as a loop increment whose value is unused"
+      },
+      {
+        "line": 413,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`j + 1 < k` vs `!=` inside a loop where j < k, so j + 1 <= k"
+      },
+      {
+        "line": 422,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`<` vs `!=` on a counter that steps by one from a start never above the bound"
+      },
+      {
+        "line": 450,
+        "rule": "MIA",
+        "verdict": "equivalent",
+        "why": "no clamp: the over-copy lands past the returned length in released memory, done only overshoots and ends the loop; returned bytes identical"
+      },
+      {
+        "line": 450,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "clamp of take to remaining: at equality the value assigned equals the old value"
+      },
+      {
+        "line": 468,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`<` vs `!=` on a counter that steps by one from a start never above the bound (to is the stop, never below the validated count)"
+      },
+      {
+        "line": 468,
+        "rule": "UOR",
+        "verdict": "equivalent",
+        "why": "++i vs i++ as a loop increment whose value is unused"
+      },
+      {
+        "line": 475,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "at equality strictEnd - start is 0, the same as the other branch"
+      },
+      {
+        "line": 476,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "clamp of strict to the chunk length: at equality the value assigned equals the old value"
+      },
+      {
+        "line": 498,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`n > 1` vs `n != 1`: a file chunk is never empty, and tail[n - 1] on the line above already needs n >= 1"
+      },
+      {
+        "line": 502,
+        "rule": "CR",
+        "verdict": "gas",
+        "why": "free-pointer release in _padding: without it attestBase64 holds one or two extra chunk buffers once (a few thousand gas), no behaviour change"
+      },
+      {
+        "line": 533,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`<` vs `!=` on a counter that steps by one from a start never above the bound"
+      },
+      {
+        "line": 533,
+        "rule": "UOR",
+        "verdict": "equivalent",
+        "why": "++i vs i++ as a loop increment whose value is unused"
+      },
+      {
+        "line": 536,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`!=` vs `<`: parts are immutable code whose sizes summed to the recorded length at linking, so filled always equals data.length"
+      },
+      {
+        "line": 584,
+        "rule": "CR",
+        "verdict": "killed",
+        "why": "`test_Source_ARangeCheckKeepsMemoryAtOneChunk`: free-pointer release in _served: without it memory grows by one chunk per chunk checked (quadratic gas); pinned by a 64-vs-16 chunk gas ratio"
+      },
+      {
+        "line": 602,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "at equality remaining is CHUNK_SIZE, so both branches return the same value"
+      },
+      {
+        "line": 617,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`<` vs `!=` on a counter that steps by one from a start never above the bound"
+      },
+      {
+        "line": 617,
+        "rule": "UOR",
+        "verdict": "equivalent",
+        "why": "++i vs i++ as a loop increment whose value is unused"
+      },
+      {
+        "line": 620,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`==` vs `>=`: the loop index is never above m.length - 1"
+      },
+      {
+        "line": 621,
+        "rule": "UOR",
+        "verdict": "equivalent",
+        "why": "++slashes vs slashes++ as a statement whose value is unused"
+      }
+    ],
+    "src/core/EditionsBase.sol": [
+      {
+        "line": 75,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_Create_AcceptsARateOfExactlyTheDenominatorAndNotOneMore`: create with a rate of exactly 100,000 (the denominator) was not pinned"
+      },
+      {
+        "line": 160,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_SetRoyalty_AZeroReceiverWithAZeroRateClearsTheRoyalty`: setRoyalty(zero receiver, zero rate) on an edition was not pinned"
+      },
+      {
+        "line": 174,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_EmitMetadataUpdate_ADescendingRangeIsLoggedAsARange`: emitMetadataUpdate with from > to (logged as a range, not one update) was not pinned"
+      },
+      {
+        "line": 234,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_SupportsInterface_NothingBelowTheSupportedIds`: supportsInterface was never asked an unsupported ID below 0x49064906"
+      },
+      {
+        "line": 234,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_SupportsInterface_NothingBelowTheSupportedIds`: supportsInterface was never asked an unsupported ID below ERC-2981's"
+      }
+    ],
+    "src/core/Modules.sol": [
+      {
+        "line": 114,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "memory/storage on a read-only reference in a function that writes nothing through it (gas only)"
+      },
+      {
+        "line": 122,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "memory/storage on a read-only reference in a function that writes nothing through it (gas only); `_addMinter` is called after the last read"
+      },
+      {
+        "line": 142,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "memory/storage on a read-only reference in a function that writes nothing through it (gas only)"
+      },
+      {
+        "line": 143,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_RemoveMinter_AgainBeforeTheNewWaitStillCountsAsOnceActive (also test_RecordPrimarySale_AMinterRemovedTwiceStillSettlesItsSales in test/core/Stream.t.sol)`: a minter removed, added again and removed before its new start must still count as once active (settle its sales); no test reached that state"
+      }
+    ],
+    "src/core/Stream6529.sol": [
+      {
+        "line": 40,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "loop counter that steps by one from zero up to the length: same iterations"
+      },
+      {
+        "line": 40,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "narrower counter/return type for a value that never exceeds 32 bits (or a short array length): same value"
+      },
+      {
+        "line": 40,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "narrower counter/return type for a value that never exceeds 32 bits (or a short array length): same value"
+      },
+      {
+        "line": 40,
+        "rule": "UOR",
+        "verdict": "equivalent",
+        "why": "`++i` vs `i++` as a loop step"
+      }
+    ],
+    "src/core/StreamBase.sol": [
+      {
+        "line": 84,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`<= 0` on a bytes32 is `== 0`"
+      },
+      {
+        "line": 84,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`<= 0` on a bytes32 is `== 0`"
+      },
+      {
+        "line": 112,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`> 0` on a bytes32 is `!= 0`"
+      },
+      {
+        "line": 136,
+        "rule": "UOR",
+        "verdict": "equivalent",
+        "why": "`++x` vs `x++` as a statement"
+      },
+      {
+        "line": 155,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "Outcome.NONE is the enum's zero: `> NONE` is `!= NONE`"
+      },
+      {
+        "line": 203,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_SetRoyalty_AcceptsARateOfExactlyTheDenominator`: setRoyalty with a rate of exactly 100,000 (the denominator) was not pinned"
+      },
+      {
+        "line": 229,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_EmitMetadataUpdate_ADescendingRangeIsLoggedAsARange`: emitMetadataUpdate with from > to (logged as a range, not one update) was not pinned"
+      },
+      {
+        "line": 266,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "storage/memory on a read-only reference in a view (gas only)"
+      },
+      {
+        "line": 307,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "the collection ID is cast to 32 bits before it is returned: uint128 holds it"
+      },
+      {
+        "line": 320,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "Outcome.NONE is the enum's zero: `> NONE` is `!= NONE`"
+      }
+    ],
+    "src/core/StreamDirectory6529.sol": [
+      {
+        "line": 66,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_SupportsInterface_NothingBelowTheSupportedIds`: supportsInterface was never asked an unsupported ID below ERC-165's"
+      },
+      {
+        "line": 66,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_SupportsInterface_NothingBelowTheSupportedIds`: supportsInterface was never asked an unsupported ID below IArtistPayoutResolver's"
+      },
+      {
+        "line": 66,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_SupportsInterface_NothingBelowTheSupportedIds`: supportsInterface was never asked an unsupported ID below IModuleSlots'"
+      },
+      {
+        "line": 66,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_SupportsInterface_NothingBelowTheSupportedIds`: supportsInterface was never asked an unsupported ID below IDirectory's"
+      }
+    ],
+    "src/core/StreamEditions6529.sol": [
+      {
+        "line": 39,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "loop counter that steps by one from zero up to the length: same iterations"
+      },
+      {
+        "line": 39,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "narrower counter/return type for a value that never exceeds 32 bits (or a short array length): same value"
+      },
+      {
+        "line": 39,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "narrower counter/return type for a value that never exceeds 32 bits (or a short array length): same value"
+      },
+      {
+        "line": 39,
+        "rule": "UOR",
+        "verdict": "equivalent",
+        "why": "`++i` vs `i++` as a loop step"
+      },
+      {
+        "line": 46,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_SupportsInterface_NothingBelowTheSupportedIds`: supportsInterface was never asked an unsupported ID below IModules'"
+      },
+      {
+        "line": 46,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_SupportsInterface_NothingBelowTheSupportedIds`: supportsInterface was never asked an unsupported ID below IModuleSlots'"
+      }
+    ],
+    "src/core/StreamWorkFacts6529.sol": [
+      {
+        "line": 38,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "constant vs immutable of the same value: same getter, same uses"
+      },
+      {
+        "line": 38,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "uint128 constant 16: the getter's ABI word and every comparison are the same"
+      },
+      {
+        "line": 83,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "loop counter that steps by one from zero up to the length: same iterations"
+      },
+      {
+        "line": 83,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "uint128 counter over at most MAX_MEDIA_FILES entries: same values"
+      },
+      {
+        "line": 83,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "uint128 counter over at most MAX_MEDIA_FILES entries: same values"
+      },
+      {
+        "line": 83,
+        "rule": "UOR",
+        "verdict": "equivalent",
+        "why": "`++i` vs `i++` as a loop step"
+      },
+      {
+        "line": 103,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "loop counter that steps by one from zero up to the length: same iterations"
+      },
+      {
+        "line": 103,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "uint128 counter over at most MAX_MEDIA_FILES entries: same values"
+      },
+      {
+        "line": 103,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "uint128 counter over at most MAX_MEDIA_FILES entries: same values"
+      },
+      {
+        "line": 103,
+        "rule": "UOR",
+        "verdict": "equivalent",
+        "why": "`++i` vs `i++` as a loop step"
+      },
+      {
+        "line": 110,
+        "rule": "CR",
+        "verdict": "killed",
+        "why": "`test_MarkOnChainComplete_TheTokenLogsAMetadataUpdate`: the token's ERC-4906 update on markOnChainComplete was not asserted"
+      },
+      {
+        "line": 157,
+        "rule": "ROR",
+        "verdict": "defensive",
+        "why": "differs only for a file of zero chunks, which ContentStore never reports (registration needs 1+ chunks, an unknown file reverts); the content store is an immutable trusted contract"
+      },
+      {
+        "line": 203,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "storage/memory on a read-only reference in a view (gas only)"
+      },
+      {
+        "line": 233,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "differs only for code with the 0xef0100 prefix at a length other than 23 bytes, which cannot exist on chain (EIP-3541 forbids deploying 0xef code; EIP-7702 designators are exactly 23 bytes; the test EVM's vm.etch refuses it too)"
+      },
+      {
+        "line": 233,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "differs only for code with the 0xef0100 prefix at a length other than 23 bytes, which cannot exist on chain (EIP-3541 forbids deploying 0xef code; EIP-7702 designators are exactly 23 bytes; the test EVM's vm.etch refuses it too)"
+      },
+      {
+        "line": 233,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_Pin_TwentyThreeBytesAboveTheDesignatorPrefix`: a 23-byte contract whose first bytes sort above 0xef0100 (e.g. starting 0xfe) must be pinnable; untested"
+      }
+    ],
+    "src/curation/PackageRegistry.sol": [
+      {
+        "line": 92,
+        "rule": "CONST",
+        "verdict": "killed",
+        "why": "`test_revokeMove_first255NoncesShareOneSlot`: 254 nonces per word keeps every nonce distinct (gas/layout only); the documented 255-per-word layout is now pinned by the slot written"
+      },
+      {
+        "line": 166,
+        "rule": "CR",
+        "verdict": "killed",
+        "why": "`test_constructor_rejectsBadEconomics`: no test built a registry with an economics address that has no code or declares another interface"
+      },
+      {
+        "line": 180,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_bindStream_refusesALowerOrHigherCc0Text`: `!=` vs `>`: only a Stream whose facts name a higher CC0 text was tried; one naming a lower text was unpinned"
+      },
+      {
+        "line": 200,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`!=` vs `>` NONE, the enum's zero value"
+      },
+      {
+        "line": 204,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`== 0` vs `<= 0` on an unsigned value"
+      },
+      {
+        "line": 215,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`==` vs `>=` REVOKED, the enum's last value"
+      },
+      {
+        "line": 332,
+        "rule": "CR",
+        "verdict": "equivalent",
+        "why": "`token;` is a no-op expression statement that only silences the unused-parameter warning"
+      },
+      {
+        "line": 340,
+        "rule": "MIA",
+        "verdict": "killed",
+        "why": "`test_preview_anArtistItemQuotesItsSeed`: no test previewed an ARTIST-seed item, so the quoted seed was unpinned"
+      },
+      {
+        "line": 340,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`<= ARTIST` adds NONE, whose `item.seed` `_checkItem` already forced to zero"
+      },
+      {
+        "line": 341,
+        "rule": "CR",
+        "verdict": "killed",
+        "why": "`test_preview_anArtistItemQuotesItsSeed`: no test previewed an ARTIST-seed item, so the quoted seed was unpinned"
+      },
+      {
+        "line": 341,
+        "rule": "RR",
+        "verdict": "killed",
+        "why": "`test_preview_anArtistItemQuotesItsSeed`: no test previewed an ARTIST-seed item, so a revert there went unseen"
+      },
+      {
+        "line": 342,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`==` vs `>=` VRF: `_checkItem` already refused every seed policy above VRF"
+      },
+      {
+        "line": 362,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "boundary value that cannot occur: artist ID 2^160-1 needs a registered account at address 0xff..ff"
+      },
+      {
+        "line": 374,
+        "rule": "ROR",
+        "verdict": "defensive",
+        "why": "`!=` vs `>`: Stream token IDs only grow, so `tokenOfContent` is never below the released token; differs only if the bound Stream lowered it"
+      },
+      {
+        "line": 411,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`>= APPROVED` adds only REVOKED, which is not live and is assigned REVOKED again"
+      },
+      {
+        "line": 421,
+        "rule": "ROR",
+        "verdict": "defensive",
+        "why": "`==` vs `>=`: a release's token is never above `tokenOfContent` (Stream IDs only grow); differs only if the bound Stream lowered it"
+      },
+      {
+        "line": 489,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_preview_requestLengthBoundary`: the 160-byte boundary of the request length check was unpinned (existing test used 159 zero bytes, refused by the head-offset check)"
+      },
+      {
+        "line": 507,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`== 0` vs `<= 0` on an unsigned value"
+      },
+      {
+        "line": 513,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`!= 0` vs `> 0` on an unsigned value"
+      },
+      {
+        "line": 513,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`>= VRF` adds only policies above VRF, already refused by the first clause of the same condition"
+      },
+      {
+        "line": 522,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_invalidItem_cc0TextBelowOrAboveTheDeployments`: `!=` vs `>`: a CC0 item naming a text file ID below the deployment's CC0 text was unpinned"
+      },
+      {
+        "line": 522,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_preview_nonCc0LicencesMayNameAnyText`: `==` vs `>=`: no test quoted a non-CC0 licence whose key sorts above the CC0 key with another text"
+      },
+      {
+        "line": 568,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`<= ARTIST` adds NONE, whose `item.seed` is zero, the value returned anyway"
+      },
+      {
+        "line": 569,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`!=` vs `<` VRF: policies above VRF were refused by `_checkItem`"
+      },
+      {
+        "line": 588,
+        "rule": "ROR",
+        "verdict": "defensive",
+        "why": "`!=` vs `<`: a release's token is never above `tokenOfContent` (Stream IDs only grow, never reused); differs only if the bound Stream lowered it"
+      },
+      {
+        "line": 598,
+        "rule": "CR",
+        "verdict": "equivalent",
+        "why": "without `return false` the catch falls through to the bool default, false"
+      },
+      {
+        "line": 611,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`==` vs `>=`: a package's epoch is a past `_killEpoch`, which only grows, so it is never above it"
+      },
+      {
+        "line": 619,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`== 0` vs `<= 0` on an unsigned value"
+      },
+      {
+        "line": 619,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`== 0` vs `<= 0` on an unsigned value"
+      },
+      {
+        "line": 622,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`==` vs `<=` ORIGINAL, the enum's zero value"
+      },
+      {
+        "line": 623,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`!= 0` vs `> 0` on an unsigned value"
+      },
+      {
+        "line": 646,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`!=` vs `>` ARTIST, the enum's zero value"
+      },
+      {
+        "line": 651,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`<` vs `!=` on a loop counter that steps by one from zero"
+      },
+      {
+        "line": 651,
+        "rule": "UOR",
+        "verdict": "equivalent",
+        "why": "`++i` vs `i++` as a loop increment whose value is unused"
+      },
+      {
+        "line": 655,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`j <= i` also reads `ids[i]`, still zero, against an id already checked nonzero"
+      },
+      {
+        "line": 655,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`<` vs `!=` on a loop counter that steps by one from zero"
+      },
+      {
+        "line": 655,
+        "rule": "UOR",
+        "verdict": "equivalent",
+        "why": "`++j` vs `j++` as a loop increment whose value is unused"
+      },
+      {
+        "line": 662,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`<` vs `!=` on a loop counter that steps by one from zero"
+      },
+      {
+        "line": 664,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`>=` adds only `artistId` above the previous one, which the preceding clause already accepts as ordered"
+      },
+      {
+        "line": 681,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`<` vs `!=` on a loop counter that steps by one from zero"
+      },
+      {
+        "line": 681,
+        "rule": "UOR",
+        "verdict": "equivalent",
+        "why": "`++j` vs `j++` as a loop increment whose value is unused"
+      },
+      {
+        "line": 686,
+        "rule": "CR",
+        "verdict": "equivalent",
+        "why": "without the final `return false` the function returns the bool default, false"
+      },
+      {
+        "line": 686,
+        "rule": "CR",
+        "verdict": "equivalent",
+        "why": "same mutant as st-1of5:CR_0: falls through to the bool default, false"
+      },
+      {
+        "line": 705,
+        "rule": "ROR",
+        "verdict": "defensive",
+        "why": "a 20-byte proof naming the root (empty signature) falls to `requireSigned`, which checks the same wallet the same way; differs only as gas or if the accounts module lies"
+      }
+    ],
+    "src/economics/RevenueEscrow.sol": [
+      {
+        "line": 147,
+        "rule": "CR",
+        "verdict": "killed",
+        "why": "`test_Recover_ReentryIsBlocked`: recover's reentrancy guard was unpinned: an authorised account re-entering recover from a flush that pays it"
+      },
+      {
+        "line": 151,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "bytes32 `!= 0` vs `> 0`: unsigned, identical"
+      },
+      {
+        "line": 222,
+        "rule": "SBR",
+        "verdict": "gas",
+        "why": "storage/memory on a read-only reference in a view; only the copy costs gas"
+      },
+      {
+        "line": 234,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "at time == block.timestamp the assignment stores the same value"
+      },
+      {
+        "line": 293,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "with maturing == 0 the branch adds 0 and zeroes a zero"
+      },
+      {
+        "line": 297,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "recent == 0 implies maturingLastAt == lastAt (recent is zeroed only by this branch or a delete; lastAt changes only in _add, which makes recent non-zero), so the branch adds 0, re-stores the same time and repeats the first branch's test"
+      },
+      {
+        "line": 298,
+        "rule": "ASOR",
+        "verdict": "equivalent",
+        "why": "maturing is always 0 here: maturingLastAt <= openedAt and one period per roll, so the first branch aged it; `=` equals `+=`"
+      },
+      {
+        "line": 298,
+        "rule": "ASOR",
+        "verdict": "equivalent",
+        "why": "maturing is always 0 here (as ASOR_0), so `|=` equals `+=`"
+      },
+      {
+        "line": 298,
+        "rule": "ASOR",
+        "verdict": "equivalent",
+        "why": "maturing is always 0 here (as ASOR_0), so `^=` equals `+=`"
+      }
+    ],
+    "src/economics/SplitLedger.sol": [
+      {
+        "line": 59,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "constant vs immutable: same value from the same getter"
+      },
+      {
+        "line": 121,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "bytes32 `!= 0` vs `> 0`: unsigned, identical"
+      },
+      {
+        "line": 130,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "bytes32 `!= 0` vs `> 0`: unsigned, identical"
+      },
+      {
+        "line": 213,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "bytes32 `== 0` vs `<= 0`: unsigned, identical"
+      },
+      {
+        "line": 249,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "storage/memory on a read-only reference in a view"
+      },
+      {
+        "line": 318,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`== type(uint256).max` vs `>=`: nothing is above the maximum"
+      },
+      {
+        "line": 324,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`_due` just reverted on current < recorded, so `!=` and `>` agree"
+      },
+      {
+        "line": 324,
+        "rule": "ROR",
+        "verdict": "gas",
+        "why": "`>=` only adds a write of the value already stored when current == recorded"
+      },
+      {
+        "line": 347,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "the sum is uint48 + uint48 (checked in uint48) either way; uint128 holds it as uint256 does"
+      },
+      {
+        "line": 353,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "at done == target both arms give 0"
+      },
+      {
+        "line": 355,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "at amount == due the assignment stores the same value"
+      },
+      {
+        "line": 383,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`lowerBound` never returns more than the list length"
+      },
+      {
+        "line": 425,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "differs only if a vault's ETH fell by more than the instructed amount; a vault moves ETH only on the ledger's instruction, and the wallet's lock bars a second one"
+      },
+      {
+        "line": 431,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "for 1..31 return bytes `bytes32(data)` is right-padded, its last byte is 0, so `!= 1` refuses as `!= 32` did"
+      },
+      {
+        "line": 431,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`BoundedCall._outcome` returns (false, empty) for more than 32 bytes, so data.length > 32 never reaches here"
+      },
+      {
+        "line": 464,
+        "rule": "MIA",
+        "verdict": "equivalent",
+        "why": "`recordedObserved[wallet][address(0)]` is never written (L324 guard), so the ETH check reads 0 and cannot revert; one extra SLOAD"
+      },
+      {
+        "line": 499,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "bytes32 `== 0` vs `<= 0`: unsigned, identical"
+      },
+      {
+        "line": 505,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "`abi.encode` and `abi.encodePacked` of two bytes32 give the same 64 bytes"
+      },
+      {
+        "line": 512,
+        "rule": "BOR",
+        "verdict": "equivalent",
+        "why": "the line above reverted unless the bit is clear, so `|` and `^` both set it"
+      },
+      {
+        "line": 536,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "the lock word is only ever 0 or 1, which fits uint128"
+      }
+    ],
+    "src/economics/Splits.sol": [
+      {
+        "line": 17,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "MAX_PAYEES = 64 fits uint128; every use widens it to uint256"
+      },
+      {
+        "line": 33,
+        "rule": "LIR",
+        "verdict": "equivalent",
+        "why": "the literal 0 replaced by the type's minimum, which is 0"
+      },
+      {
+        "line": 33,
+        "rule": "MVIV",
+        "verdict": "equivalent",
+        "why": "an uninitialised uint256 is zero"
+      },
+      {
+        "line": 33,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "at most 64 shares of 32 bits each: the sum fits uint128"
+      },
+      {
+        "line": 36,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`<` vs `!=` on a counter that starts at 0 and steps by one up to count"
+      },
+      {
+        "line": 36,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "the counter is at most 64"
+      },
+      {
+        "line": 36,
+        "rule": "UOR",
+        "verdict": "equivalent",
+        "why": "`++i` vs `i++` as a loop step"
+      },
+      {
+        "line": 44,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "at i = 0 the last pair is (0, 0) and L40 lets through only a payee with exactly one of id and account nonzero, which sorts above it"
+      },
+      {
+        "line": 44,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`lastId <= id` differs from `==` only when lastId < id, which the first disjunct already accepts"
+      },
+      {
+        "line": 82,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "binary search keeps low <= high, so `<` and `!=` agree"
+      }
+    ],
+    "src/identity/Accounts.sol": [
+      {
+        "line": 197,
+        "rule": "CR",
+        "verdict": "killed",
+        "why": "`test_RegisterIndependent_RefusesAnExpiredAcceptance`: registerIndependent accepted an expired acceptance signature (deadline check removed)"
+      },
+      {
+        "line": 214,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "ChangeKind.NONE is the lowest enum value, so the comparison is the same"
+      },
+      {
+        "line": 231,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`<= 0` equals `== 0` on an unsigned bytes32"
+      },
+      {
+        "line": 234,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "ChangeKind.REPLACEMENT is the highest enum value, so the comparison is the same"
+      },
+      {
+        "line": 241,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "REPLACEMENT already reverted at L234, so `>= OWN` only ever sees OWN"
+      },
+      {
+        "line": 257,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "_pendingOf already reverted on NONE, so `<= OWN` only ever sees OWN"
+      },
+      {
+        "line": 272,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "ChangeKind.REPLACEMENT is the highest enum value, so the comparison is the same"
+      },
+      {
+        "line": 289,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`<= 0` equals `== 0` on an unsigned bytes32"
+      },
+      {
+        "line": 405,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "ChangeKind.NONE is the lowest enum value, so the comparison is the same"
+      },
+      {
+        "line": 420,
+        "rule": "LOR",
+        "verdict": "equivalent",
+        "why": "early exit only: a zero token has no code so both reads fail to 'no', and isWallet refuses a zero account"
+      },
+      {
+        "line": 420,
+        "rule": "MIA",
+        "verdict": "equivalent",
+        "why": "early exit only: a zero token has no code so both reads fail to 'no', and isWallet refuses a zero account"
+      },
+      {
+        "line": 424,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_IsArtist_AnEditionAnswerThatIsNotOneCleanAddressIsNo`: an edition's `stream()` answer longer than one word was read as a master"
+      },
+      {
+        "line": 426,
+        "rule": "LOR",
+        "verdict": "killed",
+        "why": "`test_IsArtist_AnEditionAnswerThatIsNotOneCleanAddressIsNo`: a `stream()` word with bits above the address was truncated and read as a master"
+      },
+      {
+        "line": 426,
+        "rule": "MIA",
+        "verdict": "killed",
+        "why": "`test_IsArtist_AnEditionAnswerThatIsNotOneCleanAddressIsNo`: a `stream()` word with bits above the address was truncated and read as a master"
+      },
+      {
+        "line": 426,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_IsArtist_AMasterAtTheHighestAddressCounts`: a master at address(type(uint160).max) was refused (`>=` for `>`)"
+      },
+      {
+        "line": 427,
+        "rule": "CR",
+        "verdict": "killed",
+        "why": "`test_IsArtist_AnEditionAnswerThatIsNotOneCleanAddressIsNo`: a `stream()` word with bits above the address was truncated and read as a master"
+      },
+      {
+        "line": 564,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_Register_RefusesARootAPendingChangeReserves`: register created an account on a root another account's pending change reserves"
+      },
+      {
+        "line": 569,
+        "rule": "CR",
+        "verdict": "killed",
+        "why": "`test_Register_LogsTheNewAccount`: ArtistRegistered was not pinned by any test"
+      },
+      {
+        "line": 578,
+        "rule": "MIA",
+        "verdict": "equivalent",
+        "why": "an ID over 160 bits names no account (isWallet answers false for it), so returning it instead of zero gives the same 'no'"
+      },
+      {
+        "line": 578,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_IsArtist_TheHighestArtistIdCounts`: the artist ID type(uint160).max was read as no artist (`>=` for `>`)"
+      },
+      {
+        "line": 599,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "ChangeKind.NONE is the lowest enum value, so the comparison is the same"
+      },
+      {
+        "line": 663,
+        "rule": "LOR",
+        "verdict": "killed",
+        "why": "`test_OwnChange_CurrentBehaviour_APayoutAnsweringTrueToEveryProbeIsAccepted`: a payout contract that answers true to every ERC-165 probe (so is not ERC-165) was refused as a network contract"
+      },
+      {
+        "line": 663,
+        "rule": "MIA",
+        "verdict": "killed",
+        "why": "`test_OwnChange_CurrentBehaviour_APayoutAnsweringTrueToEveryProbeIsAccepted`: a payout contract that answers true to every ERC-165 probe (so is not ERC-165) was refused as a network contract"
+      },
+      {
+        "line": 675,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`<` vs `!=` on a loop counter that steps by one"
+      },
+      {
+        "line": 675,
+        "rule": "UOR",
+        "verdict": "equivalent",
+        "why": "`++i` vs `i++` as a loop step whose value is unused"
+      },
+      {
+        "line": 678,
+        "rule": "CR",
+        "verdict": "equivalent",
+        "why": "the removed `return false` equals the default return value"
+      },
+      {
+        "line": 695,
+        "rule": "MIA",
+        "verdict": "killed",
+        "why": "`test_OwnChange_TheAccountStillActsWhileItsOwnChangeWaits`: an account's own pending change set `replacing`, so nobody could act for the account while it waited"
+      },
+      {
+        "line": 695,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_OwnChange_TheAccountStillActsWhileItsOwnChangeWaits`: an account's own pending change set `replacing`, so nobody could act for the account while it waited"
+      },
+      {
+        "line": 695,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "ChangeKind.REPLACEMENT is the highest enum value, so the comparison is the same"
+      },
+      {
+        "line": 713,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "_apply only runs with a pending change (OWN or REPLACEMENT), so `> OWN` equals `!= OWN`"
+      }
+    ],
+    "src/independent/IndependentEditionAuction.sol": [
+      {
+        "line": 70,
+        "rule": "RR",
+        "verdict": "killed",
+        "why": "`test_Raise_MovesTheBidUpForTheDifference`: raise on the Independent auction was never called successfully"
+      },
+      {
+        "line": 71,
+        "rule": "RR",
+        "verdict": "killed",
+        "why": "`test_Raise_MovesTheBidUpForTheDifference`: raise on the Independent auction was never called successfully"
+      },
+      {
+        "line": 82,
+        "rule": "LOR",
+        "verdict": "killed",
+        "why": "`test_Settle_AListedSalesScanFinishesOnALaterCall`: a still-listed sale's second scan call must clear and pay; the mutant voids every multi-call settlement"
+      },
+      {
+        "line": 82,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "_scans is written only while SETTLING and status never returns below it, so status < SETTLING implies _scans == 0"
+      },
+      {
+        "line": 82,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_Settle_ASaleVoidedDuringTheScanRefusesLaterCalls`: a sale voided mid-scan keeps its scan word: a later settle must revert InvalidAuctionState, not void (and log) again"
+      },
+      {
+        "line": 82,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_Settle_AClearingThatPaidStandsThroughADelisting`: a cleared and paid sale still sweeping departures (SETTLING, scan done) must not void on a delisting"
+      }
+    ],
+    "src/independent/IndependentStream6529.sol": [
+      {
+        "line": 72,
+        "rule": "CR",
+        "verdict": "killed",
+        "why": "`test_Constructor_LogsTheFirstModuleDelay`: constructor's ModuleDelaySet(0, 7 days) was not asserted"
+      },
+      {
+        "line": 74,
+        "rule": "MIA",
+        "verdict": "killed",
+        "why": "`test_Constructor_WithoutARendererLogsNoModuleSet`: a deployment with no renderer must log no ModuleSet(0, 0)"
+      },
+      {
+        "line": 86,
+        "rule": "MIA",
+        "verdict": "killed",
+        "why": "`test_PendingModule_OnlyTheRendererSlotReadsTheAnnouncement`: pendingModule of another slot (below and above RENDERER) was never read while an announcement waits"
+      },
+      {
+        "line": 86,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_PendingModule_OnlyTheRendererSlotReadsTheAnnouncement`: pendingModule of another slot (below and above RENDERER) was never read while an announcement waits"
+      },
+      {
+        "line": 86,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_PendingModule_OnlyTheRendererSlotReadsTheAnnouncement`: pendingModule of another slot (below and above RENDERER) was never read while an announcement waits"
+      },
+      {
+        "line": 112,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_ActivateModule_StillInstallsAfterTheReadyTime`: activation was only tried at exactly readyAt, never later"
+      },
+      {
+        "line": 112,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_ActivateModule_RefusedWithNothingAnnounced`: activateModule with nothing announced was untested: the mutant lets anyone empty the renderer slot"
+      },
+      {
+        "line": 122,
+        "rule": "SBR",
+        "verdict": "killed",
+        "why": "`test_CancelModule_TheArtistWithdrawsTheAnnouncement`: cancelModule had no test: with a storage reference the event names the deleted (zero) module"
+      },
+      {
+        "line": 123,
+        "rule": "MIA",
+        "verdict": "killed",
+        "why": "`test_CancelModule_RefusedWithNothingAnnouncedForOthersAndForASharedSlot`: cancelModule with nothing announced must revert ModuleNotReady"
+      },
+      {
+        "line": 123,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_CancelModule_RefusedWithNothingAnnouncedForOthersAndForASharedSlot`: cancelModule with nothing announced must revert ModuleNotReady"
+      },
+      {
+        "line": 125,
+        "rule": "CR",
+        "verdict": "killed",
+        "why": "`test_CancelModule_TheArtistWithdrawsTheAnnouncement`: ModuleCancelled was not asserted"
+      },
+      {
+        "line": 144,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_SupportsInterface_RefusesIdsBelowAndAboveItsOwn`: no unsupported interface id below the token's own ids was checked"
+      },
+      {
+        "line": 144,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_SupportsInterface_RefusesIdsBelowAndAboveItsOwn`: no unsupported interface id below the token's own ids was checked"
+      },
+      {
+        "line": 160,
+        "rule": "SBR",
+        "verdict": "killed",
+        "why": "`test_Mint_RecordsTheMintingContractWhateverTheTransactionOrigin`: hasMinted must follow the calling contract, not tx.origin (origin that minted before hides the new minter)"
+      }
+    ],
+    "src/independent/IndependentStreamEditions6529.sol": [
+      {
+        "line": 61,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "for a slot above TERMS _sharedModule returns zero anyway: its only other slot, RECORDS, sorts below TERMS"
+      },
+      {
+        "line": 71,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_SupportsInterface_RefusesIdsBelowAndAboveItsOwn`: no unsupported interface id above the membership id was checked"
+      }
+    ],
+    "src/independent/IndependentStreamRegistry.sol": [
+      {
+        "line": 68,
+        "rule": "CONST",
+        "verdict": "killed",
+        "why": "`test_SetStatus_TakesExactly256Contracts`: exact batch bound was read from the contract, not pinned"
+      },
+      {
+        "line": 68,
+        "rule": "CONST",
+        "verdict": "killed",
+        "why": "`test_SetStatus_TakesExactly256Contracts`: exact batch bound was read from the contract, not pinned"
+      },
+      {
+        "line": 68,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "constant 256 fits; the getter's ABI word is identical"
+      },
+      {
+        "line": 68,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "constant vs immutable of the same literal: bytecode/gas only"
+      },
+      {
+        "line": 70,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "constant vs immutable of the same literal: bytecode/gas only"
+      },
+      {
+        "line": 72,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "constant vs immutable of the same literal: bytecode/gas only"
+      },
+      {
+        "line": 73,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "constant vs immutable of the same literal: bytecode/gas only"
+      },
+      {
+        "line": 75,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "private constant 16: narrower type or immutable changes no comparison"
+      },
+      {
+        "line": 75,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "private constant 16: narrower type or immutable changes no comparison"
+      },
+      {
+        "line": 77,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "private constant 1: narrower type or immutable changes no stored value"
+      },
+      {
+        "line": 77,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "private constant 1: narrower type or immutable changes no stored value"
+      },
+      {
+        "line": 142,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "NONE is the lowest and PAIR the highest enum value, so the comparison is unchanged"
+      },
+      {
+        "line": 142,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "NONE is the lowest and PAIR the highest enum value, so the comparison is unchanged"
+      },
+      {
+        "line": 171,
+        "rule": "CR",
+        "verdict": "killed",
+        "why": "`test_RevokeTemplate_Logs`: TemplateSet on a revocation was not asserted"
+      },
+      {
+        "line": 215,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "Status.NONE is the lowest enum value, so <= equals =="
+      },
+      {
+        "line": 216,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "loop counter form/width over at most 256 entries"
+      },
+      {
+        "line": 216,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "loop counter form/width over at most 256 entries"
+      },
+      {
+        "line": 216,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "loop counter form/width over at most 256 entries"
+      },
+      {
+        "line": 216,
+        "rule": "UOR",
+        "verdict": "equivalent",
+        "why": "loop counter form/width over at most 256 entries"
+      },
+      {
+        "line": 218,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "Status.NONE is the lowest enum value, so <= equals =="
+      },
+      {
+        "line": 242,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "Status.NONE is the lowest enum value, so <= equals =="
+      },
+      {
+        "line": 267,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_ReleaseContent_RefusesAnEarlierBurnedTokenOfTheContent`: releasing an earlier burned token after the content was minted again was untested (only a higher id was)"
+      },
+      {
+        "line": 267,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_ReleaseContent_RefusesABeneficiaryNextToTheArtist`: a beneficiary above the artist ID was untested"
+      },
+      {
+        "line": 267,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_ReleaseContent_RefusesAnUnlistedContract`: release for a contract this module does not list (empty listing: form ERC721, artist 0) was untested"
+      },
+      {
+        "line": 267,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "Status.NONE is the lowest enum value, so <= equals =="
+      },
+      {
+        "line": 267,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "Form.ERC721 is the lowest enum value, so > equals !="
+      },
+      {
+        "line": 284,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "Status.NONE is the lowest enum value, so > equals !="
+      },
+      {
+        "line": 291,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "Form.ERC721 is the lowest enum value, so <= equals =="
+      },
+      {
+        "line": 297,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "a listed ERC1155 always has a partner, which the next clause refuses, and PAIR is never listed"
+      },
+      {
+        "line": 297,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "Form.ERC721 is the lowest enum value, so > equals !="
+      },
+      {
+        "line": 297,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_Register_RefusesEditionsOfAnotherArtistsStreamEitherWay`: editions of another artist's stream were refused in one ID order only"
+      },
+      {
+        "line": 312,
+        "rule": "MIA",
+        "verdict": "killed",
+        "why": "`test_Register_AStreamWritesNoListingAtTheZeroAddress`: a 1/1 listing must not write a partner at the zero address (readable through listingOf)"
+      },
+      {
+        "line": 324,
+        "rule": "SBR",
+        "verdict": "killed",
+        "why": "`test_ListingSubject_IsTheAbiEncodedDomainAndFields`: listing subject was only compared with itself; now pinned to abi.encode of domain and fields"
+      },
+      {
+        "line": 421,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "storage/memory on a read-only reference in a view"
+      },
+      {
+        "line": 427,
+        "rule": "MIA",
+        "verdict": "killed",
+        "why": "`test_Preview_AtZeroShareTheRoyaltyReceiverIsTheSeller`: preview at a zero share was untested (authorize was)"
+      },
+      {
+        "line": 427,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_Preview_AtZeroShareTheRoyaltyReceiverIsTheSeller`: preview at a zero share was untested (authorize was)"
+      },
+      {
+        "line": 436,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "storage/memory on a read-only reference"
+      },
+      {
+        "line": 437,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "token ids only grow, so tokenOfContent never falls below the released id"
+      },
+      {
+        "line": 437,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "without a release the beneficiary returned is zero anyway"
+      },
+      {
+        "line": 446,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "Status.NONE is the lowest enum value, so <= equals =="
+      },
+      {
+        "line": 462,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "a listed contract's template is never NONE, the only status added"
+      },
+      {
+        "line": 462,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "a listed contract's template is never NONE, the only status added"
+      },
+      {
+        "line": 476,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "no listing has form PAIR (approveTemplate refuses it), so < ERC1155 equals != ERC1155"
+      },
+      {
+        "line": 494,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "TemplateStatus.NONE is the lowest enum value, so <= equals =="
+      },
+      {
+        "line": 505,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "Status.NONE is the lowest enum value, so <= equals =="
+      },
+      {
+        "line": 514,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "storage/memory on a read-only reference"
+      },
+      {
+        "line": 533,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_SupportsInterface_OnlyTheExactIds`: supportsInterface was only tested false for 0xffffffff, never for an ID below a supported one"
+      },
+      {
+        "line": 533,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_SupportsInterface_OnlyTheExactIds`: supportsInterface was only tested false for 0xffffffff, never for an ID below a supported one"
+      },
+      {
+        "line": 533,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_SupportsInterface_OnlyTheExactIds`: supportsInterface was only tested false for 0xffffffff, never for an ID below a supported one"
+      },
+      {
+        "line": 533,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_SupportsInterface_OnlyTheExactIds`: supportsInterface was only tested false for 0xffffffff, never for an ID below a supported one"
+      },
+      {
+        "line": 572,
+        "rule": "CR",
+        "verdict": "killed",
+        "why": "`test_Authorize_AnswersTheItemsSaleParams`: sale params were only tested empty"
+      },
+      {
+        "line": 585,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "unsigned <= 0 equals == 0"
+      },
+      {
+        "line": 585,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_Authorize_AnOriginalMintsWithoutActiveEditions`: no test minted an original while the editions were not listed ACTIVE"
+      },
+      {
+        "line": 585,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_Authorize_RefusesAContentHashAboveThePrimaryDigest`: a content hash above the primary digest was untested"
+      },
+      {
+        "line": 585,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_Authorize_RefusesAMediaHashAboveTheFilesHash`: a media hash above the files' hash was untested"
+      },
+      {
+        "line": 585,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "Form.ERC721 is the lowest enum value, so > equals !="
+      },
+      {
+        "line": 585,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "kind > EDITION_MASTER is refused earlier in the same condition"
+      },
+      {
+        "line": 585,
+        "rule": "ROR",
+        "verdict": "defensive",
+        "why": "approveItem refuses non-ERC721 listings, so no approved item reaches _checkItem for one"
+      },
+      {
+        "line": 585,
+        "rule": "ROR",
+        "verdict": "defensive",
+        "why": "a zero content hash needs a stored file whose SHA-256 is zero, and the token refuses it too"
+      },
+      {
+        "line": 593,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "loop counter form/width over at most 32 files"
+      },
+      {
+        "line": 593,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "loop counter form/width over at most 32 files"
+      },
+      {
+        "line": 593,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "loop counter form/width over at most 32 files"
+      },
+      {
+        "line": 593,
+        "rule": "UOR",
+        "verdict": "equivalent",
+        "why": "loop counter form/width over at most 32 files"
+      },
+      {
+        "line": 596,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_Authorize_RefusesAStatedDigestBelowTheStoredOne`: a stated digest below the stored one was untested"
+      },
+      {
+        "line": 603,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_Authorize_Cc0RefusesATextAboveOrBelowTheDeploymentsText`: CC0 with a text file ID above the deployment's was untested"
+      },
+      {
+        "line": 603,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_Authorize_OtherLicensesMintWithTheirOwnText`: only one non-CC0 license was minted, its key below CC0's"
+      },
+      {
+        "line": 628,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_Authorize_SixteenPartiesMint`: exactly 16 parties were never minted"
+      },
+      {
+        "line": 628,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_Authorize_SixtyFourPayeesMint`: exactly 64 payees were never minted"
+      },
+      {
+        "line": 628,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_Authorize_RefusesAFirstPartyNextToTheArtist`: a first party above the artist ID was untested"
+      },
+      {
+        "line": 638,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "loop counter form/width over at most 16 parties"
+      },
+      {
+        "line": 638,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "loop counter form/width over at most 16 parties"
+      },
+      {
+        "line": 638,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "loop counter form/width over at most 16 parties"
+      },
+      {
+        "line": 638,
+        "rule": "UOR",
+        "verdict": "equivalent",
+        "why": "loop counter form/width over at most 16 parties"
+      },
+      {
+        "line": 639,
+        "rule": "AOR",
+        "verdict": "killed",
+        "why": "`test_Authorize_EachCollaboratorsOwnConsentIsChecked`: no test minted with two collaborators, so consents[i-1] was only read at index 0"
+      },
+      {
+        "line": 641,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "!= vs < on a loop counter that steps by one"
+      },
+      {
+        "line": 641,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "loop counter width over at most 64 payees"
+      },
+      {
+        "line": 641,
+        "rule": "SBR",
+        "verdict": "killed",
+        "why": "`test_Authorize_APayeeOutsideSeveralPartiesIsRefused`: non-party payee was only tested with one party and no payout address"
+      },
+      {
+        "line": 644,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "counter width over at most 16 parties"
+      },
+      {
+        "line": 645,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_Authorize_APayeeOutsideSeveralPartiesIsRefused`: non-party payee was only tested with one party and no payout address"
+      },
+      {
+        "line": 645,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_Authorize_APayeeOutsideSeveralPartiesIsRefused`: non-party payee was only tested with one party and no payout address"
+      },
+      {
+        "line": 645,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_Authorize_APayeeOutsideSeveralPartiesIsRefused`: non-party payee with an ID above a party's was untested"
+      },
+      {
+        "line": 645,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_Authorize_APayeeOutsideSeveralPartiesIsRefused`: non-party payee was only tested with one party and no payout address"
+      },
+      {
+        "line": 645,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "!= vs < on a counter that steps by one up to n"
+      },
+      {
+        "line": 645,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_Authorize_APayeeOutsideSeveralPartiesIsRefused`: non-party payee with an ID below a party's was untested"
+      },
+      {
+        "line": 645,
+        "rule": "SBR",
+        "verdict": "killed",
+        "why": "`test_Authorize_APayeeOutsideSeveralPartiesIsRefused`: non-party payee was only tested with one party and no payout address"
+      },
+      {
+        "line": 646,
+        "rule": "UOR",
+        "verdict": "equivalent",
+        "why": "++j vs j++ as a statement"
+      },
+      {
+        "line": 648,
+        "rule": "LOR",
+        "verdict": "killed",
+        "why": "`test_Authorize_APayeeOutsideSeveralPartiesIsRefused`: non-party payee was only tested without a payout address, where both operands hold"
+      },
+      {
+        "line": 648,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_Authorize_APayeeOutsideSeveralPartiesIsRefused`: non-party payee was only tested without a payout address"
+      },
+      {
+        "line": 648,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "the loop stops at j == n, so j never exceeds n"
+      },
+      {
+        "line": 659,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "storage/memory on a read-only reference"
+      },
+      {
+        "line": 660,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "a release names the id tokenOfContent named then and token ids only grow, so r.tokenId > existing cannot occur"
+      },
+      {
+        "line": 663,
+        "rule": "MIA",
+        "verdict": "defensive",
+        "why": "unreachable: releaseContent records only beneficiary == the listing's artist, which never changes"
+      },
+      {
+        "line": 663,
+        "rule": "ROR",
+        "verdict": "defensive",
+        "why": "unreachable: releaseContent records only beneficiary == the listing's artist, which never changes"
+      },
+      {
+        "line": 663,
+        "rule": "ROR",
+        "verdict": "defensive",
+        "why": "unreachable: releaseContent records only beneficiary == the listing's artist, which never changes"
+      },
+      {
+        "line": 670,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "seedPolicy > SEED_VRF is refused by _checkItem before _seed runs"
+      },
+      {
+        "line": 683,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_Register_RefusesATokenNamingAnotherAccountsRoot`: a token whose artist ID is another account's (replaced-in) root was untested: the mutant lists it on that account's signature"
+      },
+      {
+        "line": 695,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "Form.ERC721 is the lowest enum value, so > equals !="
+      },
+      {
+        "line": 695,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "an unlisted contract's artist is account 0, which has no wallet, so NotArtist still"
+      },
+      {
+        "line": 695,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "Status.NONE is the lowest enum value, so <= equals =="
+      },
+      {
+        "line": 702,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "for an unlisted (NONE) listing every caller's other condition already fails: no template, artist 0, early return"
+      },
+      {
+        "line": 707,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "a listed contract's template is never NONE, the only status added"
+      },
+      {
+        "line": 723,
+        "rule": "MIA",
+        "verdict": "equivalent",
+        "why": "value assigned equals the stored value when the listing is already own"
+      },
+      {
+        "line": 723,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "value assigned equals the stored value when the listing is already own"
+      },
+      {
+        "line": 723,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "value assigned equals the stored value when the listing is already own"
+      },
+      {
+        "line": 729,
+        "rule": "MIA",
+        "verdict": "equivalent",
+        "why": "value assigned equals the stored value when the template is already own"
+      },
+      {
+        "line": 729,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "value assigned equals the stored value when the template is already own"
+      },
+      {
+        "line": 729,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "value assigned equals the stored value when the template is already own"
+      },
+      {
+        "line": 736,
+        "rule": "CR",
+        "verdict": "killed",
+        "why": "`test_Templates_SuspendResumeReinstateLog`: TemplateSet on suspend/resume/reinstate was not asserted"
+      },
+      {
+        "line": 740,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "storage/memory on a read-only reference"
+      }
+    ],
+    "src/records/StatementLog.sol": [
+      {
+        "line": 76,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "uint128 constant getter returns the same 32-byte word (8192); only the ABI type label differs"
+      },
+      {
+        "line": 76,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "constant vs immutable: same value, only bytecode/gas differs"
+      },
+      {
+        "line": 86,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "constant vs immutable on a private hash: same value"
+      },
+      {
+        "line": 87,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "constant vs immutable on a private hash: same value"
+      },
+      {
+        "line": 212,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "storage vs memory on a read-only reference in a view"
+      },
+      {
+        "line": 242,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`> 0` equals `!= 0` on bytes32"
+      },
+      {
+        "line": 242,
+        "rule": "ROR",
+        "verdict": "gas",
+        "why": "`length < 0` is never true, so a codeless token goes on to the ERC-165 probe, which answers false for it: same zero result, more gas"
+      },
+      {
+        "line": 256,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "tryReadAll returns revert data only if it fits the 36-byte cap, so length never exceeds 36"
+      },
+      {
+        "line": 313,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "Role.NONE never reaches _write (append refuses it, _isAuthorized answers false), so `<= ARTIST` equals `== ARTIST`"
+      },
+      {
+        "line": 334,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "encodePacked of three bytes32 words equals abi.encode of them"
+      },
+      {
+        "line": 358,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "unsigned bytes32 compared with zero: the replacement is the same test"
+      },
+      {
+        "line": 360,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "PLATFORM is the last Role value, `< PLATFORM` equals `!= PLATFORM`"
+      },
+      {
+        "line": 363,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`<= 0` equals `== 0` on an unsigned bytes32"
+      },
+      {
+        "line": 364,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "unsigned bytes32 compared with zero: the replacement is the same test"
+      },
+      {
+        "line": 369,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "unsigned bytes32 compared with zero: the replacement is the same test"
+      },
+      {
+        "line": 370,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "unsigned bytes32 compared with zero: the replacement is the same test"
+      },
+      {
+        "line": 388,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "unsigned bytes32 compared with zero: the replacement is the same test"
+      },
+      {
+        "line": 405,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "ARTIST and OWNER returned earlier; of NONE, CURATOR, PLATFORM only NONE is below CURATOR, and it is still refused"
+      },
+      {
+        "line": 405,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "PLATFORM is the last Role value and ARTIST/OWNER returned earlier, so `< PLATFORM` equals `!= PLATFORM` here (NONE, the only other value, is still refused)"
+      },
+      {
+        "line": 406,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "only CURATOR or PLATFORM reach this line, so `<= CURATOR` equals `== CURATOR`"
+      },
+      {
+        "line": 419,
+        "rule": "LOR",
+        "verdict": "defensive",
+        "why": "guard is unreachable in effect: token 0 has no code so both reads fail (not owner), and `who` is msg.sender or a signer SignatureVerifier already refused when zero"
+      },
+      {
+        "line": 419,
+        "rule": "MIA",
+        "verdict": "defensive",
+        "why": "same guard: a zero token has no code (both reads answer 'not owner') and a zero signer never reaches _owns"
+      },
+      {
+        "line": 427,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "unsigned bytes32 compared with zero: the replacement is the same test"
+      },
+      {
+        "line": 434,
+        "rule": "BOR",
+        "verdict": "equivalent",
+        "why": "the bit was just checked to be clear, so `^` equals `|`"
+      }
+    ],
+    "src/records/WorkRules.sol": [
+      {
+        "line": 147,
+        "rule": "CR",
+        "verdict": "killed",
+        "why": "`test_Constructor_AnnouncesTheFirstDelivery`: constructor did not have to emit DeliverySet"
+      },
+      {
+        "line": 162,
+        "rule": "MIA",
+        "verdict": "killed",
+        "why": "`test_SetRecord_AFinalizedWorkRefusesBeforeAnyOtherCheck`: setRecord on a finalized work: refusal order (same record no-op, stranger) was unpinned; WorkFacts still refuses the write itself"
+      },
+      {
+        "line": 185,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "Outcome.NONE is the first enum value, `<=` equals `==`"
+      },
+      {
+        "line": 236,
+        "rule": "MIA",
+        "verdict": "killed",
+        "why": "`test_Renounce_TheRoyaltyPowerAloneNeverTouchesTheRecordLocks`: renouncing only the royalty power called facts.lock(false,false) (an extra Locked event)"
+      },
+      {
+        "line": 255,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`<= 0` equals `== 0` on bytes32"
+      },
+      {
+        "line": 259,
+        "rule": "CR",
+        "verdict": "killed",
+        "why": "`test_Relicense_RefreshesTheMetadata`: relicense did not have to emit the ERC-4906 refresh"
+      },
+      {
+        "line": 274,
+        "rule": "CR",
+        "verdict": "killed",
+        "why": "`test_SetRoyaltyRate_NeedsAnOpenRecord`: setRoyaltyRate on a record that is not open (same-rate no-op, unminted token) was unpinned"
+      },
+      {
+        "line": 306,
+        "rule": "CR",
+        "verdict": "killed",
+        "why": "`test_RepinRenderer_MovesTheVersionAndRefreshesTheMetadata`: repinRenderer did not have to bump the version (the state hash moved anyway through the renderer)"
+      },
+      {
+        "line": 307,
+        "rule": "CR",
+        "verdict": "killed",
+        "why": "`test_RepinRenderer_MovesTheVersionAndRefreshesTheMetadata`: repinRenderer did not have to emit the ERC-4906 refresh"
+      },
+      {
+        "line": 328,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_Stores_ACodeHashAboveTheStoresOwnIsRefused`: addStore accepted a code hash above the store's own (only a lower one was tested)"
+      },
+      {
+        "line": 362,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`<` vs `!=` on a loop counter that steps by one"
+      },
+      {
+        "line": 362,
+        "rule": "UOR",
+        "verdict": "equivalent",
+        "why": "`++i` vs `i++` as a loop statement"
+      },
+      {
+        "line": 363,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_FileStore_OnlyTheWorksOwnFilesAndTheMetadataIsRefreshed`: setFileStore accepted any file ID above one of the work's media files (only ID 0 was tested)"
+      },
+      {
+        "line": 371,
+        "rule": "ROR",
+        "verdict": "defensive",
+        "why": "ContentStore.firstMissing never answers above `to` (clamped to chunkCount), so `<` equals `!=` unless the permanent store lies"
+      },
+      {
+        "line": 377,
+        "rule": "CR",
+        "verdict": "killed",
+        "why": "`test_FileStore_OnlyTheWorksOwnFilesAndTheMetadataIsRefreshed`: setFileStore did not have to emit the ERC-4906 refresh"
+      },
+      {
+        "line": 408,
+        "rule": "MIA",
+        "verdict": "killed",
+        "why": "`test_RefreshAllMetadata_ATokenWithoutEditionsIsRefreshedAlone`: refreshAllMetadata for a token without an editions contract was never run (the mutant reverts calling address zero)"
+      },
+      {
+        "line": 546,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`<` vs `!=` on a loop counter that steps by one"
+      },
+      {
+        "line": 546,
+        "rule": "UOR",
+        "verdict": "equivalent",
+        "why": "`++i` vs `i++` as a loop statement"
+      },
+      {
+        "line": 557,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "ContentStore refuses a manifest with zero chunks (ContentChunkCountInvalid), so chunkCount 0 cannot occur for a known file"
+      },
+      {
+        "line": 564,
+        "rule": "AOR",
+        "verdict": "killed",
+        "why": "`test_Stores_EachIdNamesItsOwnStore`: every store ID answered the first store: tests never added two different stores"
+      }
+    ],
+    "src/sales/EnglishAuction.sol": [
+      {
+        "line": 79,
+        "rule": "CONST",
+        "verdict": "killed",
+        "why": "`test_Constants_GasValues`: PAYOUT_GAS 100,001: the public constant was not pinned (behaviour differs only by one gas)"
+      },
+      {
+        "line": 79,
+        "rule": "CONST",
+        "verdict": "killed",
+        "why": "`test_Constants_GasValues`: PAYOUT_GAS 99,999: the public constant was not pinned"
+      },
+      {
+        "line": 82,
+        "rule": "CONST",
+        "verdict": "killed",
+        "why": "`test_Constants_GasValues`: DELIVERY_GAS 300,001: the public constant was not pinned"
+      },
+      {
+        "line": 82,
+        "rule": "CONST",
+        "verdict": "killed",
+        "why": "`test_Constants_GasValues`: DELIVERY_GAS 299,999: the public constant was not pinned"
+      },
+      {
+        "line": 84,
+        "rule": "CONST",
+        "verdict": "killed",
+        "why": "`test_Constants_GasValues`: DELIVERY_RESERVE 50,001: the public constant was not pinned"
+      },
+      {
+        "line": 84,
+        "rule": "CONST",
+        "verdict": "killed",
+        "why": "`test_Constants_GasValues`: DELIVERY_RESERVE 49,999: the public constant was not pinned"
+      },
+      {
+        "line": 95,
+        "rule": "CONST",
+        "verdict": "killed",
+        "why": "`test_SetConfig_TakesEveryBoundItself`: setConfig refused the smallest increment share, 1,000"
+      },
+      {
+        "line": 96,
+        "rule": "CONST",
+        "verdict": "killed",
+        "why": "`test_Constructor_ChecksTheEscrowAndTheRefusalGasBounds`: the constructor accepted a refusal gas of 2,999,999"
+      },
+      {
+        "line": 97,
+        "rule": "CONST",
+        "verdict": "killed",
+        "why": "`test_Constructor_ChecksTheEscrowAndTheRefusalGasBounds`: a refusal gas of 15,000,000 was refused"
+      },
+      {
+        "line": 169,
+        "rule": "CR",
+        "verdict": "killed",
+        "why": "`test_Constructor_ChecksTheResolverTheAllowlistAndTheStatementLog`: constructor accepted an economics resolver that does not declare IEconomicsResolver"
+      },
+      {
+        "line": 170,
+        "rule": "CR",
+        "verdict": "killed",
+        "why": "`test_Constructor_ChecksTheEscrowAndTheRefusalGasBounds`: constructor accepted an escrow without code"
+      },
+      {
+        "line": 171,
+        "rule": "CR",
+        "verdict": "killed",
+        "why": "`test_Constructor_ChecksTheResolverTheAllowlistAndTheStatementLog`: constructor accepted a statement log without code"
+      },
+      {
+        "line": 173,
+        "rule": "CR",
+        "verdict": "killed",
+        "why": "`test_Constructor_ChecksTheResolverTheAllowlistAndTheStatementLog`: constructor accepted an asset allowlist without code"
+      },
+      {
+        "line": 199,
+        "rule": "CR",
+        "verdict": "killed",
+        "why": "`test_StartWithBid_APolicyCannotReenter`: startWithBid lost its reentrancy guard: a policy could settle another sale from inside the start"
+      },
+      {
+        "line": 213,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_Restart_RefusesACancelledSale`: revert reason only: a CANCELLED sale passed the status test and restart failed on ownerOf of the burned token instead of InvalidAuctionState"
+      },
+      {
+        "line": 213,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "Outcome.NONE is the enum's zero: `> NONE` equals `!= NONE`"
+      },
+      {
+        "line": 220,
+        "rule": "MIA",
+        "verdict": "killed",
+        "why": "`test_Restart_RefusesAShareAboveTheWhole`: restart took a fee share above 100,000 from the gate (only a lying gate answers one; pinned anyway)"
+      },
+      {
+        "line": 220,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_Restart_RefusesAShareAboveTheWhole`: restart refused a full network share of exactly 100,000"
+      },
+      {
+        "line": 227,
+        "rule": "CR",
+        "verdict": "killed",
+        "why": "`test_Restart_ForgetsTheRefundedBid`: restart kept the refunded bid as the new sale's reserve (minimum bid stayed at the old bid)"
+      },
+      {
+        "line": 228,
+        "rule": "CR",
+        "verdict": "defensive",
+        "why": "at a restart pausedAt is already zero and recipient is unread; a stale outcomeFrom matters only if the statement log later answers no outcome for a token it had one for"
+      },
+      {
+        "line": 285,
+        "rule": "MIA",
+        "verdict": "defensive",
+        "why": "the resolver never names a zero museum (EconomicsResolver._setMuseum refuses it), and the transfer to zero reverts anyway: revert reason only"
+      },
+      {
+        "line": 308,
+        "rule": "MIA",
+        "verdict": "killed",
+        "why": "`test_Settle_AZeroFeeNamesNoFeeRecipient`: with a zero fee SaleSettled named the network fee recipient instead of zero"
+      },
+      {
+        "line": 357,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_SettleOrRefund_AllowedAfterTheDelayToo`: settleOrRefund worked only in the exact second the delay ended"
+      },
+      {
+        "line": 400,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`> 0` equals `!= 0` on an unsigned bytes32"
+      },
+      {
+        "line": 407,
+        "rule": "AOR",
+        "verdict": "equivalent",
+        "why": "`now % pausedAt` equals `now - pausedAt` while now < 2 * pausedAt; a pause is live at most 3 days, so it differs only for a pause begun within 3 days of 1970"
+      },
+      {
+        "line": 414,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`<= 0` equals `== 0` on an unsigned bytes32"
+      },
+      {
+        "line": 414,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_Cancel_OnlyTheRecordedOutcomeAtAnyLaterPosition`: cancel accepted any outcome reference numerically above the recorded one"
+      },
+      {
+        "line": 414,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_Cancel_OnlyTheRecordedOutcomeAtAnyLaterPosition`: cancel refused an outcome recorded later than the first position after the pause"
+      },
+      {
+        "line": 471,
+        "rule": "LOR",
+        "verdict": "killed",
+        "why": "`test_SetConfig_EachParameterIsComparedExactly`: setConfig compared only duration AND window: one stale parameter passed"
+      },
+      {
+        "line": 471,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_SetConfig_EachParameterIsComparedExactly`: setConfig accepted an expected duration above the one in force"
+      },
+      {
+        "line": 471,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_SetConfig_EachParameterIsComparedExactly`: setConfig accepted an expected extension window above the one in force"
+      },
+      {
+        "line": 471,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_SetConfig_EachParameterIsComparedExactly`: setConfig accepted an expected increment share above the one in force"
+      },
+      {
+        "line": 471,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_SetConfig_EachParameterIsComparedExactly`: setConfig accepted an expected refusal gas above the one in force"
+      },
+      {
+        "line": 471,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_SetConfig_EachParameterIsComparedExactly`: setConfig accepted an expected refusal gas below the one in force"
+      },
+      {
+        "line": 471,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_SetConfig_EachParameterIsComparedExactly`: setConfig accepted an expected duration below the one in force"
+      },
+      {
+        "line": 471,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_SetConfig_EachParameterIsComparedExactly`: setConfig accepted an expected extension window below the one in force"
+      },
+      {
+        "line": 471,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_SetConfig_EachParameterIsComparedExactly`: setConfig accepted an expected increment share below the one in force"
+      },
+      {
+        "line": 502,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "NONE is the enum's zero: the replacement comparison is the same test"
+      },
+      {
+        "line": 526,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "NONE is the enum's zero: the replacement comparison is the same test"
+      },
+      {
+        "line": 533,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "NONE is the enum's zero: the replacement comparison is the same test"
+      },
+      {
+        "line": 542,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "NONE is the enum's zero: the replacement comparison is the same test"
+      },
+      {
+        "line": 584,
+        "rule": "MIA",
+        "verdict": "killed",
+        "why": "`test_OnERC721Received_AcceptsAMintIntoCustodyDuringAStart`: onERC721Received refused even a mint into custody during a start (reachable only by a token that mints with a receiver callback; StreamBase does not)"
+      },
+      {
+        "line": 587,
+        "rule": "RR",
+        "verdict": "killed",
+        "why": "`test_OnERC721Received_AcceptsAMintIntoCustodyDuringAStart`: onERC721Received never returned the selector (same path as above)"
+      },
+      {
+        "line": 592,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_SupportsInterface_RefusesALowerId`: supportsInterface answered true for every ID up to IERC165's"
+      },
+      {
+        "line": 592,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_SupportsInterface_RefusesALowerId`: supportsInterface answered true for every ID up to IEnglishAuction's"
+      },
+      {
+        "line": 592,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_SupportsInterface_RefusesALowerId`: supportsInterface answered true for every ID up to IERC721Receiver's"
+      },
+      {
+        "line": 609,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_Start_RefusesEveryOtherSaleKind`: start accepted any sale kind numerically below ENGLISH_AUCTION"
+      },
+      {
+        "line": 619,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "NONE is the enum's zero: the replacement comparison is the same test"
+      },
+      {
+        "line": 647,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_Bid_TheLargest96BitBidIsAccepted`: a bid of exactly 2^96 - 1 wei was refused"
+      },
+      {
+        "line": 659,
+        "rule": "MIA",
+        "verdict": "equivalent",
+        "why": "when recipientSet is false the branch writes false and zero over false and zero (recipient is zero whenever the flag is false)"
+      },
+      {
+        "line": 661,
+        "rule": "CR",
+        "verdict": "equivalent",
+        "why": "a stale s.recipient is never read while recipientSet is false, and is rewritten whenever the flag is set"
+      },
+      {
+        "line": 665,
+        "rule": "AOR",
+        "verdict": "equivalent",
+        "why": "`end % now` equals `end - now` while now < end < 2 * now, which holds for every live sale at a real clock (sales last days)"
+      },
+      {
+        "line": 665,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "with exactly the window left the extended end, now + window, is the old end: same value stored and logged"
+      },
+      {
+        "line": 687,
+        "rule": "LOR",
+        "verdict": "killed",
+        "why": "`test_Settle_AFeeWithNoRecipientIsRefused`: revert reason only: _pay's own guard never fired, a zero fee recipient was refused by RevenuePayment (InvalidWallet) instead of InvalidRecipient; the auction-as-wallet arm needs a lying resolver"
+      },
+      {
+        "line": 687,
+        "rule": "MIA",
+        "verdict": "killed",
+        "why": "`test_Settle_AFeeWithNoRecipientIsRefused`: revert reason only: same as the LOR mutant on this line"
+      },
+      {
+        "line": 705,
+        "rule": "MIA",
+        "verdict": "killed",
+        "why": "`test_Settle_AGasShortfallRevertsInsteadOfDeliveringWithLess`: settle no longer refused a gas shortfall before the delivery (a caller could starve the delivery)"
+      },
+      {
+        "line": 706,
+        "rule": "CR",
+        "verdict": "killed",
+        "why": "`test_Settle_AGasShortfallRevertsInsteadOfDeliveringWithLess`: the DeliveryInsufficientGas revert was removed"
+      },
+      {
+        "line": 706,
+        "rule": "CR",
+        "verdict": "killed",
+        "why": "`test_Settle_AGasShortfallRevertsInsteadOfDeliveringWithLess`: the DeliveryInsufficientGas revert was removed (same mutant, second shard)"
+      },
+      {
+        "line": 713,
+        "rule": "CR",
+        "verdict": "equivalent",
+        "why": "`ok;` is a statement with no effect"
+      },
+      {
+        "line": 726,
+        "rule": "MIA",
+        "verdict": "killed",
+        "why": "`test_WithdrawBid_ABidForARecipientIsCreditedAndTheRecipientCleared`: a refunded bid kept its named recipient: the auction view showed a recipient with no bidder"
+      },
+      {
+        "line": 726,
+        "rule": "MIA",
+        "verdict": "equivalent",
+        "why": "clearing when recipientSet is false writes false and zero over false and zero"
+      },
+      {
+        "line": 726,
+        "rule": "MIA",
+        "verdict": "killed",
+        "why": "`test_WithdrawBid_ABidForARecipientIsCreditedAndTheRecipientCleared`: the recipient was cleared only when none was set: a refunded bid kept its recipient"
+      },
+      {
+        "line": 727,
+        "rule": "CR",
+        "verdict": "equivalent",
+        "why": "with the flag left true the recipient is zero and the bidder is zero, so _recipientOf answers zero either way; the next bid rewrites both"
+      },
+      {
+        "line": 727,
+        "rule": "RR",
+        "verdict": "killed",
+        "why": "`test_WithdrawBid_ABidForARecipientIsCreditedAndTheRecipientCleared`: refunding a bid placed for a named recipient reverted (withdrawBid, cancel, delisted settle, refusal)"
+      },
+      {
+        "line": 728,
+        "rule": "CR",
+        "verdict": "equivalent",
+        "why": "a stale s.recipient is never read while recipientSet is false"
+      },
+      {
+        "line": 728,
+        "rule": "RR",
+        "verdict": "killed",
+        "why": "`test_WithdrawBid_ABidForARecipientIsCreditedAndTheRecipientCleared`: refunding a bid placed for a named recipient reverted"
+      },
+      {
+        "line": 742,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_Pause_IsLiveThroughItsLastSecond`: a pause was written down as over in its last second (pausedAt + MAX_PAUSE): the bidder could no longer withdraw"
+      },
+      {
+        "line": 746,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "NONE is the enum's zero: `<=` equals `==`"
+      },
+      {
+        "line": 775,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_Pause_IsLiveThroughItsLastSecond`: the clock views showed a pause as over in its last second while the state was still PAUSED"
+      },
+      {
+        "line": 786,
+        "rule": "AOR",
+        "verdict": "equivalent",
+        "why": "`endTime % pausedAt` equals `endTime - pausedAt` while pausedAt <= endTime < 2 * pausedAt, true at any real clock"
+      },
+      {
+        "line": 786,
+        "rule": "AOR",
+        "verdict": "killed",
+        "why": "`test_Resume_KeepsTheRemainingTimeWhenLongerThanTheDuration`: a resumed sale lost its remaining time when that was longer than the duration in force (endTime / pausedAt is 1)"
+      },
+      {
+        "line": 813,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_SetConfig_TakesEveryBoundItself`: setConfig refused the shortest duration, 1 hour"
+      },
+      {
+        "line": 813,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_SetConfig_TakesEveryBoundItself`: setConfig refused the longest duration, 7 days"
+      },
+      {
+        "line": 813,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_SetConfig_TakesEveryBoundItself`: setConfig refused the shortest extension window, 1 minute"
+      },
+      {
+        "line": 813,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_SetConfig_TakesEveryBoundItself`: setConfig refused the longest extension window, 1 day"
+      },
+      {
+        "line": 813,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_SetConfig_TakesEveryBoundItself`: setConfig refused a window equal to the duration"
+      },
+      {
+        "line": 813,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_SetConfig_TakesEveryBoundItself`: setConfig refused the smallest increment share, 1,000"
+      },
+      {
+        "line": 813,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_SetConfig_TakesEveryBoundItself`: setConfig refused an increment share of the whole, 100,000"
+      },
+      {
+        "line": 813,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_SetConfig_TakesEveryBoundItself`: setConfig refused the refusal gas ceiling, 15,000,000"
+      },
+      {
+        "line": 813,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_SetConfig_TakesEveryBoundItself`: setConfig refused an unchanged refusal gas"
+      },
+      {
+        "line": 813,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_SetConfig_TakesEveryBoundItself`: setConfig refused every refusal gas but exactly double"
+      }
+    ],
+    "src/sales/UniformClearing.sol": [
+      {
+        "line": 144,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "count is min(demand, cap), never above demand, so < and != agree"
+      },
+      {
+        "line": 272,
+        "rule": "UOR",
+        "verdict": "equivalent",
+        "why": "--i vs i-- as a statement"
+      }
+    ],
+    "src/sales/UniformEditionAuction.sol": [
+      {
+        "line": 100,
+        "rule": "CR",
+        "verdict": "equivalent",
+        "why": "ADOPTED_RUN is not used by the adapter (the lens has its own constant); removing it changes no bytecode"
+      },
+      {
+        "line": 100,
+        "rule": "CR",
+        "verdict": "equivalent",
+        "why": "ADOPTED_RUN is not used by the adapter (the lens has its own constant); removing it changes no bytecode"
+      },
+      {
+        "line": 210,
+        "rule": "CR",
+        "verdict": "killed",
+        "why": "`test_Constructor_RejectsAnEnglishAuctionWithoutCode`: constructor accepted an English auction with no code when the lens was deployed for the same address"
+      },
+      {
+        "line": 244,
+        "rule": "CR",
+        "verdict": "killed",
+        "why": "`test_Reentry_OpenAdoptBidRaiseAndExpireCreditAreRefusedDuringARefund`: open lost its re-entry guard"
+      },
+      {
+        "line": 261,
+        "rule": "CR",
+        "verdict": "killed",
+        "why": "`test_Reentry_OpenAdoptBidRaiseAndExpireCreditAreRefusedDuringARefund`: adopt lost its re-entry guard"
+      },
+      {
+        "line": 276,
+        "rule": "CR",
+        "verdict": "killed",
+        "why": "`test_CloseEdition_RefusesAnotherTokenAndAnUnlistedOne`: closeEdition lost its target check (any token, or an unlisted one)"
+      },
+      {
+        "line": 278,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "0 is the lowest status, so > NONE and != NONE (or <= NONE and == NONE) agree"
+      },
+      {
+        "line": 295,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "0 is the lowest status, so > NONE and != NONE (or <= NONE and == NONE) agree"
+      },
+      {
+        "line": 353,
+        "rule": "CR",
+        "verdict": "killed",
+        "why": "`test_Reentry_OpenAdoptBidRaiseAndExpireCreditAreRefusedDuringARefund`: bid lost its re-entry guard"
+      },
+      {
+        "line": 361,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_Bid_TheLastBidIdIsAccepted`: the last bid ID, 2^32 - 1, was refused"
+      },
+      {
+        "line": 371,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "step == lowStep rewrites lowStep with the same value"
+      },
+      {
+        "line": 373,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "step == highStep rewrites highStep with the same value"
+      },
+      {
+        "line": 395,
+        "rule": "CR",
+        "verdict": "killed",
+        "why": "`test_Reentry_OpenAdoptBidRaiseAndExpireCreditAreRefusedDuringARefund`: raise lost its re-entry guard"
+      },
+      {
+        "line": 409,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "newStep == highStep rewrites highStep with the same value"
+      },
+      {
+        "line": 457,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "status is OPEN or SETTLING at this point (NONE, SETTLED and VOID left earlier), so <= OPEN is == OPEN"
+      },
+      {
+        "line": 457,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_Settle_OnceBegunNoLongerReadsTheOneOfOne`: a settle call continuing a scan read the 1/1 again (and reverted when it no longer answered)"
+      },
+      {
+        "line": 463,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "VOID is the highest status"
+      },
+      {
+        "line": 464,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "after _finish the status is SETTLING or SETTLED here (VOID returned on the line before)"
+      },
+      {
+        "line": 507,
+        "rule": "MIA",
+        "verdict": "killed",
+        "why": "`test_ClaimBidFor_WithoutARefundCreditsNothing`: claimBidFor with no refund emitted Credited(0) and started a credit clock"
+      },
+      {
+        "line": 533,
+        "rule": "CR",
+        "verdict": "killed",
+        "why": "`test_Reentry_OpenAdoptBidRaiseAndExpireCreditAreRefusedDuringARefund`: expireCredit lost its re-entry guard"
+      },
+      {
+        "line": 542,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_ExpireCredit_AnyTimeAfterTheExpiry`: expireCredit worked only in the exact second of the expiry"
+      },
+      {
+        "line": 566,
+        "rule": "LOR",
+        "verdict": "killed",
+        "why": "`test_Abandon_APaidSaleIsNeverVoidedWhateverTheLensAnswers`: abandon's own state guard let a cleared, paid SETTLING sale be voided once the lens lets the call through (lens answer mocked)"
+      },
+      {
+        "line": 566,
+        "rule": "MIA",
+        "verdict": "killed",
+        "why": "`test_Abandon_APaidSaleIsNeverVoidedWhateverTheLensAnswers`: abandon's own state guard removed: a paid sale voided once the lens lets the call through (lens answer mocked)"
+      },
+      {
+        "line": 566,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "differs only for NONE, whose scan word is zero, so the guard still refuses it"
+      },
+      {
+        "line": 566,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_Abandon_APaidSaleIsNeverVoidedWhateverTheLensAnswers`: abandon's own state guard refused only NONE: a paid sale voided once the lens lets the call through (lens answer mocked)"
+      },
+      {
+        "line": 566,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_Abandon_APaidSaleIsNeverVoidedWhateverTheLensAnswers`: abandon's own state guard let a never-opened sale through once the lens lets the call through (lens answer mocked)"
+      },
+      {
+        "line": 566,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_Abandon_ASaleAbandonedMidScanIsNotAbandonedAgain`: abandon's own state guard let a sale abandoned mid-scan be abandoned again (lens answer mocked)"
+      },
+      {
+        "line": 601,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_SetLimits_RefusesAHigherExpectedValueAndAcceptsTheCurrentGas`: setLimits accepted an expected value above the current one"
+      },
+      {
+        "line": 685,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "CANCELLED is the highest 1/1 state"
+      },
+      {
+        "line": 691,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_Bid_ExactlyASoftWindowBeforeTheEndStoresNoSoftEnd`: a bid exactly a soft window before the end stored a soft end equal to the end"
+      },
+      {
+        "line": 693,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "the two differ only when the operands are equal, where both branches give the same value"
+      },
+      {
+        "line": 714,
+        "rule": "CR",
+        "verdict": "equivalent",
+        "why": "without the assignment the state is NONE (0) when the clock is not read; callers only compare it with PAUSED and CANCELLED on that path"
+      },
+      {
+        "line": 719,
+        "rule": "MIA",
+        "verdict": "killed",
+        "why": "`test_Adopt_RunsOnItsOwn_BidsAndSettlesByItsOwnCloseOnly`: a sale that runs on its own took the clock's zero end as its 1/1 end: bids near the close refused, settlement early"
+      },
+      {
+        "line": 719,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "an equal end rewrites the same end and the same close"
+      },
+      {
+        "line": 719,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_Adopt_RunsOnItsOwn_BidsAndSettlesByItsOwnCloseOnly`: a sale that runs on its own took the clock's zero end as its 1/1 end"
+      },
+      {
+        "line": 726,
+        "rule": "AOR",
+        "verdict": "equivalent",
+        "why": "soft > backstop cannot occur: softEnd is written at most closeAt + maxExtension and closeAt only moves later, so a larger backstop in _end changes nothing"
+      },
+      {
+        "line": 727,
+        "rule": "MIA",
+        "verdict": "equivalent",
+        "why": "soft > backstop cannot occur: softEnd is written at most closeAt + maxExtension and closeAt only moves later"
+      },
+      {
+        "line": 727,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "the two differ only when the operands are equal, where both branches give the same value"
+      },
+      {
+        "line": 727,
+        "rule": "RR",
+        "verdict": "equivalent",
+        "why": "soft > backstop cannot occur: softEnd is written at most closeAt + maxExtension and closeAt only moves later"
+      },
+      {
+        "line": 728,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "the two differ only when the operands are equal, where both branches give the same value"
+      },
+      {
+        "line": 742,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "CANCELLED is the highest 1/1 state"
+      },
+      {
+        "line": 747,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "CANCELLED, the only state above SETTLED, returned on the lines before"
+      },
+      {
+        "line": 750,
+        "rule": "CR",
+        "verdict": "killed",
+        "why": "`test_Settle_StoresTheOneOfOneEndItRead`: the first settle call did not store the 1/1 end it read"
+      },
+      {
+        "line": 769,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "scan[7] is never below low"
+      },
+      {
+        "line": 778,
+        "rule": "MIA",
+        "verdict": "gas",
+        "why": "deleting a scan slot that is already zero: gas only"
+      },
+      {
+        "line": 802,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "the two differ only when the operands are equal, where both branches give the same value"
+      },
+      {
+        "line": 805,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "count never exceeds demand"
+      },
+      {
+        "line": 853,
+        "rule": "MIA",
+        "verdict": "gas",
+        "why": "the clearing call starts every sweep, so the settler's slot it now reads is always zero: one extra SLOAD"
+      },
+      {
+        "line": 853,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "limit is 16 (_SWEEP_FIRST) or 96, so <= and == agree"
+      },
+      {
+        "line": 859,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "the two differ only when the operands are equal, where both branches give the same value"
+      },
+      {
+        "line": 860,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "the two differ only when the operands are equal, where both branches give the same value"
+      },
+      {
+        "line": 867,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "swept never exceeds total (n is clamped to total - swept)"
+      },
+      {
+        "line": 872,
+        "rule": "MIA",
+        "verdict": "gas",
+        "why": "deleting a sweep slot that is already zero: gas only"
+      },
+      {
+        "line": 897,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "< vs != on a loop counter that steps by one"
+      },
+      {
+        "line": 897,
+        "rule": "UOR",
+        "verdict": "equivalent",
+        "why": "++i vs i++ as a loop statement"
+      },
+      {
+        "line": 899,
+        "rule": "MIA",
+        "verdict": "killed",
+        "why": "`test_Settle_RefusesAnIndexThatReachesAnotherStepsDepartureLog`: with no range check an index far past the clearing step's log read another step's log and was swept as a departure, settling with a wrong cut-off"
+      },
+      {
+        "line": 899,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_Settle_RefusesAnIndexThatReachesAnotherStepsDepartureLog`: an index far past the clearing step's log read another step's log and was swept as a departure, settling with a wrong cut-off"
+      },
+      {
+        "line": 899,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "index == total reads an empty entry (quantity 0), which UniformClearing.sweep refuses with the same InvalidSettlementOrder(i)"
+      },
+      {
+        "line": 922,
+        "rule": "MIA",
+        "verdict": "equivalent",
+        "why": "RevenuePayment.payETH returns at once for a zero amount, and the seller is never zero or the escrow"
+      },
+      {
+        "line": 922,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "the fee never exceeds the revenue"
+      },
+      {
+        "line": 952,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "the status here is only ever one of the values on which both comparisons agree (CLOSED is never stored)"
+      },
+      {
+        "line": 952,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "the status here is only ever one of the values on which both comparisons agree (CLOSED is never stored)"
+      },
+      {
+        "line": 961,
+        "rule": "MIA",
+        "verdict": "equivalent",
+        "why": "a VOID sale never has a stored result (count 0), so the SETTLED branch computes nothing for it"
+      },
+      {
+        "line": 961,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "the status is SETTLED or VOID here"
+      },
+      {
+        "line": 961,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "a VOID sale never has a stored result (count 0), so the SETTLED branch computes nothing for it"
+      },
+      {
+        "line": 965,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "inside b.step >= r.step, so != and > agree"
+      },
+      {
+        "line": 1009,
+        "rule": "AOR",
+        "verdict": "equivalent",
+        "why": "a starting decade one too high is lowered by the scan loop (start minus a decade, scale / 10 exactly) before any price is computed"
+      },
+      {
+        "line": 1009,
+        "rule": "AOR",
+        "verdict": "equivalent",
+        "why": "a starting decade one too high is lowered by the scan loop (start minus a decade, scale / 10 exactly) before any price is computed"
+      },
+      {
+        "line": 1009,
+        "rule": "AOR",
+        "verdict": "equivalent",
+        "why": "a starting decade one too high is lowered by the scan loop (start minus a decade, scale / 10 exactly) before any price is computed"
+      },
+      {
+        "line": 1013,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "the two differ only when the operands are equal, where both branches give the same value"
+      },
+      {
+        "line": 1024,
+        "rule": "MIA",
+        "verdict": "gas",
+        "why": "an empty book has lowStep = highStep = 0: the scan reads one empty word and gives the same zero result"
+      },
+      {
+        "line": 1025,
+        "rule": "CR",
+        "verdict": "equivalent",
+        "why": "for an empty book scan[7] already equals low (both 0)"
+      },
+      {
+        "line": 1026,
+        "rule": "CR",
+        "verdict": "gas",
+        "why": "an empty book has lowStep = highStep = 0: the scan reads one empty word and gives the same zero result"
+      },
+      {
+        "line": 1083,
+        "rule": "CR",
+        "verdict": "gas",
+        "why": "without w := 0 the outer loop reads the remaining words, but every used step breaks again on demand >= cap: same result, more gas"
+      },
+      {
+        "line": 1088,
+        "rule": "MIA",
+        "verdict": "equivalent",
+        "why": "the inner loop has the same condition, so the block only re-stores unchanged start and scale"
+      },
+      {
+        "line": 1131,
+        "rule": "CR",
+        "verdict": "equivalent",
+        "why": "scan[11] (best revenue) is never read after _scanWords returns; a resumed scan recomputes it from the best count and step"
+      },
+      {
+        "line": 1150,
+        "rule": "AOR",
+        "verdict": "equivalent",
+        "why": "unreachable: a bid enters a step once, so position + quantity never exceeds the sale's live units, already checked below 2^32 in bid"
+      },
+      {
+        "line": 1150,
+        "rule": "AOR",
+        "verdict": "equivalent",
+        "why": "unreachable: a bid enters a step once, so position + quantity never exceeds the sale's live units, already checked below 2^32 in bid"
+      },
+      {
+        "line": 1150,
+        "rule": "AOR",
+        "verdict": "equivalent",
+        "why": "unreachable: a bid enters a step once, so position + quantity never exceeds the sale's live units, already checked below 2^32 in bid"
+      },
+      {
+        "line": 1150,
+        "rule": "MIA",
+        "verdict": "equivalent",
+        "why": "unreachable: a bid enters a step once, so position + quantity never exceeds the sale's live units, already checked below 2^32 in bid"
+      },
+      {
+        "line": 1151,
+        "rule": "CR",
+        "verdict": "equivalent",
+        "why": "unreachable: a bid enters a step once, so position + quantity never exceeds the sale's live units, already checked below 2^32 in bid"
+      },
+      {
+        "line": 1151,
+        "rule": "CR",
+        "verdict": "equivalent",
+        "why": "unreachable: a bid enters a step once, so position + quantity never exceeds the sale's live units, already checked below 2^32 in bid"
+      },
+      {
+        "line": 1215,
+        "rule": "MIA",
+        "verdict": "killed",
+        "why": "`test_SetConfig_RefusedOnceTheTermsCounterIsFull`: a full 24-bit terms counter reverted with Panic(0x11) instead of InvalidConfig"
+      },
+      {
+        "line": 1215,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "id is a uint24, never above its maximum"
+      },
+      {
+        "line": 1228,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_SetLimits_RefusesAHigherExpectedValueAndAcceptsTheCurrentGas`: setLimits refused the current payout gas set again"
+      },
+      {
+        "line": 1241,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_Bid_ASoftEndAtTheLastClockSecondIsAccepted`: a soft end at the last 32-bit clock second, 2^32 - 1, reverted with ClockOverflow"
+      },
+      {
+        "line": 1344,
+        "rule": "CR",
+        "verdict": "equivalent",
+        "why": "settle reads the status from storage, never from the decoded word"
+      },
+      {
+        "line": 1347,
+        "rule": "CR",
+        "verdict": "killed",
+        "why": "`test_Adopt_RunsOnItsOwn_BidsAndSettlesByItsOwnCloseOnly`: settle read the stored 1/1 end as zero: a sale that runs on its own settled before its close"
+      },
+      {
+        "line": 1349,
+        "rule": "CR",
+        "verdict": "equivalent",
+        "why": "openedAt is not read on the settlement path"
+      },
+      {
+        "line": 1353,
+        "rule": "CR",
+        "verdict": "equivalent",
+        "why": "bidCount is not read on the settlement path"
+      },
+      {
+        "line": 1373,
+        "rule": "CR",
+        "verdict": "equivalent",
+        "why": "stepCount is not read on the settlement path"
+      },
+      {
+        "line": 1375,
+        "rule": "CR",
+        "verdict": "equivalent",
+        "why": "softWindow is read only when the 1/1 is not read fresh; settlement always reads it fresh"
+      },
+      {
+        "line": 1387,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "0 is the lowest status, so > NONE and != NONE (or <= NONE and == NONE) agree"
+      },
+      {
+        "line": 1390,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "callers want OPEN (NONE refused on the line before) or SETTLING (OPEN and SETTLED handled before the call), so > and != agree"
+      }
+    ],
+    "src/terms/StreamTerms.sol": [
+      {
+        "line": 73,
+        "rule": "MIA",
+        "verdict": "killed",
+        "why": "`test_Constructor_WithoutEditionsPairsNothing`: deploying without an editions contract was never run"
+      },
+      {
+        "line": 130,
+        "rule": "CR",
+        "verdict": "killed",
+        "why": "`test_LowerFeeShare_NeedsALiveWork`: lowerFeeShare on a token never minted: only the revert reason differs (a burned token is still refused by the token's setRoyalty)"
+      },
+      {
+        "line": 138,
+        "rule": "MIA",
+        "verdict": "killed",
+        "why": "`test_Pairing_APairSetHereNeverAsksTheIndependentStreamModule`: IStream.setRoyalty and IEditions.setRoyalty share a selector; the mutant differs only by then asking the Independent Stream module about the editions contract"
+      },
+      {
+        "line": 171,
+        "rule": "LOR",
+        "verdict": "killed",
+        "why": "`test_Pairing_APairSetHereNeverAsksTheIndependentStreamModule`: a pair set by the network must be answered without the Independent Stream module"
+      },
+      {
+        "line": 174,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "Form.ERC721 is the first enum value, `<=` equals `==`"
+      },
+      {
+        "line": 188,
+        "rule": "LOR",
+        "verdict": "killed",
+        "why": "`test_Pairing_APairSetHereNeverAsksTheIndependentStreamModule`: tokenOfEditions of a pair set here must not ask the Independent Stream module"
+      },
+      {
+        "line": 188,
+        "rule": "MIA",
+        "verdict": "killed",
+        "why": "`test_Pairing_APairSetHereNeverAsksTheIndependentStreamModule`: tokenOfEditions of a pair set here must not ask the Independent Stream module"
+      },
+      {
+        "line": 191,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_IndependentPair_OnlyAnErc1155ListingNamesTheTokenOfEditions`: a listing of form PAIR named a token for an editions contract"
+      },
+      {
+        "line": 217,
+        "rule": "MIA",
+        "verdict": "killed",
+        "why": "`test_Pairing_AnEmptyIndependentStreamSlotListsNoPair`: an empty INDEPENDENT_STREAM slot was never read (the mutant reverts calling address zero)"
+      },
+      {
+        "line": 235,
+        "rule": "MIA",
+        "verdict": "killed",
+        "why": "`test_LowerFeeShare_NeverDeploysTheOldVault`: checking the stated current terms deployed the old vault as a side effect"
+      }
+    ]
+  },
+  "addenda": {
+    "src/sales/UniformEditionAuction.sol": [
+      {
+        "text": [
+          "Measured again with the corrected parts ([The statements parts](#the-statements-parts)): 67",
+          "survivors. Every mutant marked killed above is killed there. The survivors are the equivalent",
+          "and gas mutants above, with line 1151 counted once (it is one mutant, which the campaign's",
+          "parts ran twice), and one comment mutant the campaign's parts never ran:"
+        ]
+      },
+      {
+        "rows": [
+          {
+            "line": 1017,
+            "rule": "CR",
+            "verdict": "killed",
+            "why": "`test_Settle_AResumedScanKeepsTheDemandAlreadyCounted`: a scan resumed in a second settle call forgot the demand counted in the first and sold one copy fewer"
+          }
+        ]
+      },
+      {
+        "text": [
+          "That test was written after the second measurement and shown to fail on the mutant; the",
+          "score measured again does not count it."
+        ]
+      }
+    ]
+  },
+  "tests": [
+    {
+      "file": "test/content/ContentStorePermanence.t.sol",
+      "tests": [
+        {
+          "name": "test_Source_ARangeCheckKeepsMemoryAtOneChunk",
+          "where": [
+            "ContentStore L584"
+          ]
+        },
+        {
+          "name": "test_Source_TheStoreItselfIsCheckedWithoutACall",
+          "where": [
+            "ContentStore L226"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "test/core/Directory.t.sol",
+      "tests": [
+        {
+          "name": "test_SupportsInterface_NothingBelowTheSupportedIds",
+          "where": [
+            "StreamDirectory6529 L66"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "test/core/Editions.t.sol",
+      "tests": [
+        {
+          "name": "test_Create_AcceptsARateOfExactlyTheDenominatorAndNotOneMore",
+          "where": [
+            "EditionsBase L75"
+          ]
+        },
+        {
+          "name": "test_EmitMetadataUpdate_ADescendingRangeIsLoggedAsARange",
+          "where": [
+            "EditionsBase L174"
+          ]
+        },
+        {
+          "name": "test_SetRoyalty_AZeroReceiverWithAZeroRateClearsTheRoyalty",
+          "where": [
+            "EditionsBase L160"
+          ]
+        },
+        {
+          "name": "test_SupportsInterface_NothingBelowTheSupportedIds",
+          "where": [
+            "EditionsBase L234",
+            "StreamEditions6529 L46"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "test/core/Modules.t.sol",
+      "tests": [
+        {
+          "name": "test_RemoveMinter_AgainBeforeTheNewWaitStillCountsAsOnceActive (also test_RecordPrimarySale_AMinterRemovedTwiceStillSettlesItsSales in test/core/Stream.t.sol)",
+          "where": [
+            "Modules L143"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "test/core/Stream.t.sol",
+      "tests": [
+        {
+          "name": "test_EmitMetadataUpdate_ADescendingRangeIsLoggedAsARange",
+          "where": [
+            "StreamBase L229"
+          ]
+        },
+        {
+          "name": "test_SetRoyalty_AcceptsARateOfExactlyTheDenominator",
+          "where": [
+            "StreamBase L203"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "test/core/WorkFacts.t.sol",
+      "tests": [
+        {
+          "name": "test_MarkOnChainComplete_TheTokenLogsAMetadataUpdate",
+          "where": [
+            "StreamWorkFacts6529 L110"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "test/core/WorkFactsFixes.t.sol",
+      "tests": [
+        {
+          "name": "test_Pin_TwentyThreeBytesAboveTheDesignatorPrefix",
+          "where": [
+            "StreamWorkFacts6529 L233"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "test/curation/PackageRegistry.t.sol",
+      "tests": [
+        {
+          "name": "test_bindStream_refusesALowerOrHigherCc0Text",
+          "where": [
+            "PackageRegistry L180"
+          ]
+        },
+        {
+          "name": "test_constructor_rejectsBadEconomics",
+          "where": [
+            "PackageRegistry L166"
+          ]
+        },
+        {
+          "name": "test_invalidItem_cc0TextBelowOrAboveTheDeployments",
+          "where": [
+            "PackageRegistry L522"
+          ]
+        },
+        {
+          "name": "test_preview_anArtistItemQuotesItsSeed",
+          "where": [
+            "PackageRegistry L340",
+            "PackageRegistry L341"
+          ]
+        },
+        {
+          "name": "test_preview_nonCc0LicencesMayNameAnyText",
+          "where": [
+            "PackageRegistry L522"
+          ]
+        },
+        {
+          "name": "test_preview_requestLengthBoundary",
+          "where": [
+            "PackageRegistry L489"
+          ]
+        },
+        {
+          "name": "test_revokeMove_first255NoncesShareOneSlot",
+          "where": [
+            "PackageRegistry L92"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "test/economics/RevenueEscrow.t.sol",
+      "tests": [
+        {
+          "name": "test_Recover_ReentryIsBlocked",
+          "where": [
+            "RevenueEscrow L147"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "test/identity/Accounts.t.sol",
+      "tests": [
+        {
+          "name": "test_OwnChange_CurrentBehaviour_APayoutAnsweringTrueToEveryProbeIsAccepted",
+          "where": [
+            "Accounts L663"
+          ]
+        },
+        {
+          "name": "test_OwnChange_TheAccountStillActsWhileItsOwnChangeWaits",
+          "where": [
+            "Accounts L695"
+          ]
+        },
+        {
+          "name": "test_Register_LogsTheNewAccount",
+          "where": [
+            "Accounts L569"
+          ]
+        },
+        {
+          "name": "test_Register_RefusesARootAPendingChangeReserves",
+          "where": [
+            "Accounts L564"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "test/identity/AccountsResolvers.t.sol",
+      "tests": [
+        {
+          "name": "test_IsArtist_AMasterAtTheHighestAddressCounts",
+          "where": [
+            "Accounts L426"
+          ]
+        },
+        {
+          "name": "test_IsArtist_AnEditionAnswerThatIsNotOneCleanAddressIsNo",
+          "where": [
+            "Accounts L424",
+            "Accounts L426",
+            "Accounts L427"
+          ]
+        },
+        {
+          "name": "test_IsArtist_TheHighestArtistIdCounts",
+          "where": [
+            "Accounts L578"
+          ]
+        },
+        {
+          "name": "test_RegisterIndependent_RefusesAnExpiredAcceptance",
+          "where": [
+            "Accounts L197"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "test/independent/IndependentEditionAuctionMutation.t.sol",
+      "tests": [
+        {
+          "name": "test_Raise_MovesTheBidUpForTheDifference",
+          "where": [
+            "IndependentEditionAuction L70",
+            "IndependentEditionAuction L71"
+          ]
+        },
+        {
+          "name": "test_Settle_AClearingThatPaidStandsThroughADelisting",
+          "where": [
+            "IndependentEditionAuction L82"
+          ]
+        },
+        {
+          "name": "test_Settle_AListedSalesScanFinishesOnALaterCall",
+          "where": [
+            "IndependentEditionAuction L82"
+          ]
+        },
+        {
+          "name": "test_Settle_ASaleVoidedDuringTheScanRefusesLaterCalls",
+          "where": [
+            "IndependentEditionAuction L82"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "test/independent/IndependentStream6529.t.sol",
+      "tests": [
+        {
+          "name": "test_ActivateModule_RefusedWithNothingAnnounced",
+          "where": [
+            "IndependentStream6529 L112"
+          ]
+        },
+        {
+          "name": "test_ActivateModule_StillInstallsAfterTheReadyTime",
+          "where": [
+            "IndependentStream6529 L112"
+          ]
+        },
+        {
+          "name": "test_CancelModule_RefusedWithNothingAnnouncedForOthersAndForASharedSlot",
+          "where": [
+            "IndependentStream6529 L123"
+          ]
+        },
+        {
+          "name": "test_CancelModule_TheArtistWithdrawsTheAnnouncement",
+          "where": [
+            "IndependentStream6529 L122",
+            "IndependentStream6529 L125"
+          ]
+        },
+        {
+          "name": "test_Constructor_LogsTheFirstModuleDelay",
+          "where": [
+            "IndependentStream6529 L72"
+          ]
+        },
+        {
+          "name": "test_Constructor_WithoutARendererLogsNoModuleSet",
+          "where": [
+            "IndependentStream6529 L74"
+          ]
+        },
+        {
+          "name": "test_Mint_RecordsTheMintingContractWhateverTheTransactionOrigin",
+          "where": [
+            "IndependentStream6529 L160"
+          ]
+        },
+        {
+          "name": "test_PendingModule_OnlyTheRendererSlotReadsTheAnnouncement",
+          "where": [
+            "IndependentStream6529 L86"
+          ]
+        },
+        {
+          "name": "test_SupportsInterface_RefusesIdsBelowAndAboveItsOwn",
+          "where": [
+            "IndependentStream6529 L144"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "test/independent/IndependentStreamEditions6529.t.sol",
+      "tests": [
+        {
+          "name": "test_SupportsInterface_RefusesIdsBelowAndAboveItsOwn",
+          "where": [
+            "IndependentStreamEditions6529 L71"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "test/independent/IndependentStreamRegistryMutation.t.sol",
+      "tests": [
+        {
+          "name": "test_Authorize_APayeeOutsideSeveralPartiesIsRefused",
+          "where": [
+            "IndependentStreamRegistry L641",
+            "IndependentStreamRegistry L645",
+            "IndependentStreamRegistry L648"
+          ]
+        },
+        {
+          "name": "test_Authorize_AnOriginalMintsWithoutActiveEditions",
+          "where": [
+            "IndependentStreamRegistry L585"
+          ]
+        },
+        {
+          "name": "test_Authorize_AnswersTheItemsSaleParams",
+          "where": [
+            "IndependentStreamRegistry L572"
+          ]
+        },
+        {
+          "name": "test_Authorize_Cc0RefusesATextAboveOrBelowTheDeploymentsText",
+          "where": [
+            "IndependentStreamRegistry L603"
+          ]
+        },
+        {
+          "name": "test_Authorize_EachCollaboratorsOwnConsentIsChecked",
+          "where": [
+            "IndependentStreamRegistry L639"
+          ]
+        },
+        {
+          "name": "test_Authorize_OtherLicensesMintWithTheirOwnText",
+          "where": [
+            "IndependentStreamRegistry L603"
+          ]
+        },
+        {
+          "name": "test_Authorize_RefusesAContentHashAboveThePrimaryDigest",
+          "where": [
+            "IndependentStreamRegistry L585"
+          ]
+        },
+        {
+          "name": "test_Authorize_RefusesAFirstPartyNextToTheArtist",
+          "where": [
+            "IndependentStreamRegistry L628"
+          ]
+        },
+        {
+          "name": "test_Authorize_RefusesAMediaHashAboveTheFilesHash",
+          "where": [
+            "IndependentStreamRegistry L585"
+          ]
+        },
+        {
+          "name": "test_Authorize_RefusesAStatedDigestBelowTheStoredOne",
+          "where": [
+            "IndependentStreamRegistry L596"
+          ]
+        },
+        {
+          "name": "test_Authorize_SixteenPartiesMint",
+          "where": [
+            "IndependentStreamRegistry L628"
+          ]
+        },
+        {
+          "name": "test_Authorize_SixtyFourPayeesMint",
+          "where": [
+            "IndependentStreamRegistry L628"
+          ]
+        },
+        {
+          "name": "test_ListingSubject_IsTheAbiEncodedDomainAndFields",
+          "where": [
+            "IndependentStreamRegistry L324"
+          ]
+        },
+        {
+          "name": "test_Preview_AtZeroShareTheRoyaltyReceiverIsTheSeller",
+          "where": [
+            "IndependentStreamRegistry L427"
+          ]
+        },
+        {
+          "name": "test_Register_AStreamWritesNoListingAtTheZeroAddress",
+          "where": [
+            "IndependentStreamRegistry L312"
+          ]
+        },
+        {
+          "name": "test_Register_RefusesATokenNamingAnotherAccountsRoot",
+          "where": [
+            "IndependentStreamRegistry L683"
+          ]
+        },
+        {
+          "name": "test_Register_RefusesEditionsOfAnotherArtistsStreamEitherWay",
+          "where": [
+            "IndependentStreamRegistry L297"
+          ]
+        },
+        {
+          "name": "test_ReleaseContent_RefusesABeneficiaryNextToTheArtist",
+          "where": [
+            "IndependentStreamRegistry L267"
+          ]
+        },
+        {
+          "name": "test_ReleaseContent_RefusesAnEarlierBurnedTokenOfTheContent",
+          "where": [
+            "IndependentStreamRegistry L267"
+          ]
+        },
+        {
+          "name": "test_ReleaseContent_RefusesAnUnlistedContract",
+          "where": [
+            "IndependentStreamRegistry L267"
+          ]
+        },
+        {
+          "name": "test_RevokeTemplate_Logs",
+          "where": [
+            "IndependentStreamRegistry L171"
+          ]
+        },
+        {
+          "name": "test_SetStatus_TakesExactly256Contracts",
+          "where": [
+            "IndependentStreamRegistry L68"
+          ]
+        },
+        {
+          "name": "test_SupportsInterface_OnlyTheExactIds",
+          "where": [
+            "IndependentStreamRegistry L533"
+          ]
+        },
+        {
+          "name": "test_Templates_SuspendResumeReinstateLog",
+          "where": [
+            "IndependentStreamRegistry L736"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "test/records/WorkRules.t.sol",
+      "tests": [
+        {
+          "name": "test_Constructor_AnnouncesTheFirstDelivery",
+          "where": [
+            "WorkRules L147"
+          ]
+        },
+        {
+          "name": "test_FileStore_OnlyTheWorksOwnFilesAndTheMetadataIsRefreshed",
+          "where": [
+            "WorkRules L363",
+            "WorkRules L377"
+          ]
+        },
+        {
+          "name": "test_RefreshAllMetadata_ATokenWithoutEditionsIsRefreshedAlone",
+          "where": [
+            "WorkRules L408"
+          ]
+        },
+        {
+          "name": "test_Relicense_RefreshesTheMetadata",
+          "where": [
+            "WorkRules L259"
+          ]
+        },
+        {
+          "name": "test_Renounce_TheRoyaltyPowerAloneNeverTouchesTheRecordLocks",
+          "where": [
+            "WorkRules L236"
+          ]
+        },
+        {
+          "name": "test_RepinRenderer_MovesTheVersionAndRefreshesTheMetadata",
+          "where": [
+            "WorkRules L306",
+            "WorkRules L307"
+          ]
+        },
+        {
+          "name": "test_SetRecord_AFinalizedWorkRefusesBeforeAnyOtherCheck",
+          "where": [
+            "WorkRules L162"
+          ]
+        },
+        {
+          "name": "test_SetRoyaltyRate_NeedsAnOpenRecord",
+          "where": [
+            "WorkRules L274"
+          ]
+        },
+        {
+          "name": "test_Stores_ACodeHashAboveTheStoresOwnIsRefused",
+          "where": [
+            "WorkRules L328"
+          ]
+        },
+        {
+          "name": "test_Stores_EachIdNamesItsOwnStore",
+          "where": [
+            "WorkRules L564"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "test/sales/auction/EnglishAuctionMutation.t.sol",
+      "tests": [
+        {
+          "name": "test_Bid_TheLargest96BitBidIsAccepted",
+          "where": [
+            "EnglishAuction L647"
+          ]
+        },
+        {
+          "name": "test_Cancel_OnlyTheRecordedOutcomeAtAnyLaterPosition",
+          "where": [
+            "EnglishAuction L414"
+          ]
+        },
+        {
+          "name": "test_Constants_GasValues",
+          "where": [
+            "EnglishAuction L79",
+            "EnglishAuction L82",
+            "EnglishAuction L84"
+          ]
+        },
+        {
+          "name": "test_Constructor_ChecksTheEscrowAndTheRefusalGasBounds",
+          "where": [
+            "EnglishAuction L170",
+            "EnglishAuction L96",
+            "EnglishAuction L97"
+          ]
+        },
+        {
+          "name": "test_Constructor_ChecksTheResolverTheAllowlistAndTheStatementLog",
+          "where": [
+            "EnglishAuction L169",
+            "EnglishAuction L171",
+            "EnglishAuction L173"
+          ]
+        },
+        {
+          "name": "test_OnERC721Received_AcceptsAMintIntoCustodyDuringAStart",
+          "where": [
+            "EnglishAuction L584",
+            "EnglishAuction L587"
+          ]
+        },
+        {
+          "name": "test_Pause_IsLiveThroughItsLastSecond",
+          "where": [
+            "EnglishAuction L742",
+            "EnglishAuction L775"
+          ]
+        },
+        {
+          "name": "test_Restart_ForgetsTheRefundedBid",
+          "where": [
+            "EnglishAuction L227"
+          ]
+        },
+        {
+          "name": "test_Restart_RefusesACancelledSale",
+          "where": [
+            "EnglishAuction L213"
+          ]
+        },
+        {
+          "name": "test_Restart_RefusesAShareAboveTheWhole",
+          "where": [
+            "EnglishAuction L220"
+          ]
+        },
+        {
+          "name": "test_Resume_KeepsTheRemainingTimeWhenLongerThanTheDuration",
+          "where": [
+            "EnglishAuction L786"
+          ]
+        },
+        {
+          "name": "test_SetConfig_EachParameterIsComparedExactly",
+          "where": [
+            "EnglishAuction L471"
+          ]
+        },
+        {
+          "name": "test_SetConfig_TakesEveryBoundItself",
+          "where": [
+            "EnglishAuction L813",
+            "EnglishAuction L95"
+          ]
+        },
+        {
+          "name": "test_SettleOrRefund_AllowedAfterTheDelayToo",
+          "where": [
+            "EnglishAuction L357"
+          ]
+        },
+        {
+          "name": "test_Settle_AFeeWithNoRecipientIsRefused",
+          "where": [
+            "EnglishAuction L687"
+          ]
+        },
+        {
+          "name": "test_Settle_AGasShortfallRevertsInsteadOfDeliveringWithLess",
+          "where": [
+            "EnglishAuction L705",
+            "EnglishAuction L706"
+          ]
+        },
+        {
+          "name": "test_Settle_AZeroFeeNamesNoFeeRecipient",
+          "where": [
+            "EnglishAuction L308"
+          ]
+        },
+        {
+          "name": "test_StartWithBid_APolicyCannotReenter",
+          "where": [
+            "EnglishAuction L199"
+          ]
+        },
+        {
+          "name": "test_Start_RefusesEveryOtherSaleKind",
+          "where": [
+            "EnglishAuction L609"
+          ]
+        },
+        {
+          "name": "test_SupportsInterface_RefusesALowerId",
+          "where": [
+            "EnglishAuction L592"
+          ]
+        },
+        {
+          "name": "test_WithdrawBid_ABidForARecipientIsCreditedAndTheRecipientCleared",
+          "where": [
+            "EnglishAuction L726",
+            "EnglishAuction L727",
+            "EnglishAuction L728"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "test/sales/edition/UniformEditionAuctionAdopt.t.sol",
+      "tests": [
+        {
+          "name": "test_Adopt_RunsOnItsOwn_BidsAndSettlesByItsOwnCloseOnly",
+          "where": [
+            "UniformEditionAuction L1347",
+            "UniformEditionAuction L719"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "test/sales/edition/UniformEditionAuctionMutation.t.sol",
+      "tests": [
+        {
+          "name": "test_Abandon_APaidSaleIsNeverVoidedWhateverTheLensAnswers",
+          "where": [
+            "UniformEditionAuction L566"
+          ]
+        },
+        {
+          "name": "test_Abandon_ASaleAbandonedMidScanIsNotAbandonedAgain",
+          "where": [
+            "UniformEditionAuction L566"
+          ]
+        },
+        {
+          "name": "test_Bid_ASoftEndAtTheLastClockSecondIsAccepted",
+          "where": [
+            "UniformEditionAuction L1241"
+          ]
+        },
+        {
+          "name": "test_Bid_ExactlyASoftWindowBeforeTheEndStoresNoSoftEnd",
+          "where": [
+            "UniformEditionAuction L691"
+          ]
+        },
+        {
+          "name": "test_Bid_TheLastBidIdIsAccepted",
+          "where": [
+            "UniformEditionAuction L361"
+          ]
+        },
+        {
+          "name": "test_ClaimBidFor_WithoutARefundCreditsNothing",
+          "where": [
+            "UniformEditionAuction L507"
+          ]
+        },
+        {
+          "name": "test_CloseEdition_RefusesAnotherTokenAndAnUnlistedOne",
+          "where": [
+            "UniformEditionAuction L276"
+          ]
+        },
+        {
+          "name": "test_Constructor_RejectsAnEnglishAuctionWithoutCode",
+          "where": [
+            "UniformEditionAuction L210"
+          ]
+        },
+        {
+          "name": "test_ExpireCredit_AnyTimeAfterTheExpiry",
+          "where": [
+            "UniformEditionAuction L542"
+          ]
+        },
+        {
+          "name": "test_Reentry_OpenAdoptBidRaiseAndExpireCreditAreRefusedDuringARefund",
+          "where": [
+            "UniformEditionAuction L244",
+            "UniformEditionAuction L261",
+            "UniformEditionAuction L353",
+            "UniformEditionAuction L395",
+            "UniformEditionAuction L533"
+          ]
+        },
+        {
+          "name": "test_SetConfig_RefusedOnceTheTermsCounterIsFull",
+          "where": [
+            "UniformEditionAuction L1215"
+          ]
+        },
+        {
+          "name": "test_SetLimits_RefusesAHigherExpectedValueAndAcceptsTheCurrentGas",
+          "where": [
+            "UniformEditionAuction L1228",
+            "UniformEditionAuction L601"
+          ]
+        },
+        {
+          "name": "test_Settle_OnceBegunNoLongerReadsTheOneOfOne",
+          "where": [
+            "UniformEditionAuction L457"
+          ]
+        },
+        {
+          "name": "test_Settle_RefusesAnIndexThatReachesAnotherStepsDepartureLog",
+          "where": [
+            "UniformEditionAuction L899"
+          ]
+        },
+        {
+          "name": "test_Settle_StoresTheOneOfOneEndItRead",
+          "where": [
+            "UniformEditionAuction L750"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "test/terms/StreamTerms.t.sol",
+      "tests": [
+        {
+          "name": "test_Constructor_WithoutEditionsPairsNothing",
+          "where": [
+            "StreamTerms L73"
+          ]
+        },
+        {
+          "name": "test_LowerFeeShare_NeedsALiveWork",
+          "where": [
+            "StreamTerms L130"
+          ]
+        },
+        {
+          "name": "test_LowerFeeShare_NeverDeploysTheOldVault",
+          "where": [
+            "StreamTerms L235"
+          ]
+        },
+        {
+          "name": "test_Pairing_APairSetHereNeverAsksTheIndependentStreamModule",
+          "where": [
+            "StreamTerms L138",
+            "StreamTerms L171",
+            "StreamTerms L188"
+          ]
+        },
+        {
+          "name": "test_Pairing_AnEmptyIndependentStreamSlotListsNoPair",
+          "where": [
+            "StreamTerms L217"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "test/terms/StreamTermsFixes.t.sol",
+      "tests": [
+        {
+          "name": "test_IndependentPair_OnlyAnErc1155ListingNamesTheTokenOfEditions",
+          "where": [
+            "StreamTerms L191"
+          ]
+        }
+      ]
+    }
+  ]
+}

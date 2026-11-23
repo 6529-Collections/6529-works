@@ -53,6 +53,8 @@ final score minus two points, rounded down.
 
 ### Permanent contracts
 
+<!-- generated:scores tier=1 -->
+
 | Contract | Mutants | Killed | Survived | Timed out | Score | Killed by new tests | Final | Floor |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `src/content/ContentStore.sol` | 747 | 699 | 48 | 0 | 93.6% | 2 | 93.8% | 91 (was 92) |
@@ -71,7 +73,11 @@ final score minus two points, rounded down.
 | `src/records/StatementLog.sol` | 496 | 472 | 24 | 0 | 95.2% | 0 | 95.2% | 93 |
 | **Total** | **3892** | **3716** | **176** | **0** | **95.5%** | **34** | **96.4%** | |
 
+<!-- /generated -->
+
 ### Modules that hold money or authorise mints
+
+<!-- generated:scores tier=2 -->
 
 | Contract | Mutants | Killed | Survived | Timed out | Score | Killed by new tests | Final | Floor |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -86,7 +92,11 @@ final score minus two points, rounded down.
 | `src/terms/StreamTerms.sol` | 170 | 160 | 10 | 0 | 94.1% | 9 | 99.4% | 97 (was 90) |
 | **Total** | **4731** | **4335** | **396** | **0** | **91.6%** | **172** | **95.3%** | |
 
+<!-- /generated -->
+
 ### Everything else
+
+<!-- generated:scores tier=3 -->
 
 | Contract | Mutants | Killed | Survived | Timed out | Score | Killed by new tests | Final | Floor |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -139,6 +149,8 @@ final score minus two points, rounded down.
 | `src/stream/WorkDelivery.sol` | 567 | 496 | 71 | 0 | 87.5% | 0 | 87.5% | 85 (was 88) |
 | **Total** | **7299** | **6520** | **779** | **0** | **89.3%** | **0** | **89.3%** | |
 
+<!-- /generated -->
+
 A file with no mutants (constants of other types, or declarations only) needs no floor.
 
 ### The statements parts
@@ -184,6 +196,8 @@ The tool runs the statements group of each of them as one whole run, so the week
 measures them without this effect.
 
 ## The tests added
+
+<!-- generated:tests -->
 
 119 test functions, each shown to fail on the mutants it is listed with:
 
@@ -328,6 +342,8 @@ measures them without this effect.
 - `test/terms/StreamTermsFixes.t.sol`
   - `test_IndependentPair_OnlyAnErc1155ListingNamesTheTokenOfEditions` (StreamTerms L191)
 
+<!-- /generated -->
+
 No survivor showed a defect in a contract.
 
 ## Survivors, triaged
@@ -336,6 +352,8 @@ One row per surviving mutant of the permanent contracts and the money and mint m
 "Killed" names the new test; "equivalent" mutants cannot change behaviour; "gas" and
 "defensive" ones change only gas, or only what a trusted contract could make happen by lying;
 "open" is a real gap left without a test.
+
+<!-- generated:survivors -->
 
 ### `src/content/ContentStore.sol`
 
@@ -1081,6 +1099,8 @@ score measured again does not count it.
 | 191 | ROR | killed | `test_IndependentPair_OnlyAnErc1155ListingNamesTheTokenOfEditions`: a listing of form PAIR named a token for an editions contract |
 | 217 | MIA | killed | `test_Pairing_AnEmptyIndependentStreamSlotListsNoPair`: an empty INDEPENDENT_STREAM slot was never read (the mutant reverts calling address zero) |
 | 235 | MIA | killed | `test_LowerFeeShare_NeverDeploysTheOldVault`: checking the stated current terms deployed the old vault as a side effect |
+
+<!-- /generated -->
 
 ## Not triaged
 
