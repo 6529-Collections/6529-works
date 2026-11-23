@@ -10,7 +10,13 @@ come from this page. How a campaign works and how to run one is in the
 
 ## How it was measured
 
-- **Code.** Commit 149ac3c8 (`src/` unchanged since). Line numbers below are that commit's.
+- **Code.** Commit 149ac3c8, the plain core before its last review fixes. Line numbers below
+  are that commit's. The fixes merged afterwards (#119) changed six of the measured files:
+  `Modules` (a zero minter is refused), `PackageRegistry` (`preview`), `StreamTerms`
+  (`lowerFeeShare`), `IndependentEditionAuction` (`settle`), `IndependentStreamEditions6529` and
+  `IndependentStreamMembership`. Their scores were not measured again: each floor stays as
+  measured, two points under, until the weekly run measures the merged code. Every test added
+  here passes on the merged code.
 - **Tools.** slither-analyzer 0.11.6 (`slither-mutate`) through `tools/mutation.py`, Foundry
   1.7.1, solc 0.8.37, tests under the `lite` profile; three rented 96-core machines for about 3.7
   hours each (485 parts, 203 hours of part time in all).

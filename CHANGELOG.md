@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Tests: the first mutation campaign on the plain-core contracts (23 November 2026; 15,900
+  mutants, 91.5% killed, 92.6% with the tests added here). `tools/mutation-floors.json` holds
+  measured floors for every file and has no placeholders left; the survivors of the permanent
+  contracts and of the money and mint modules are triaged in
+  [`docs/testing/mutation-scores.md`](docs/testing/mutation-scores.md). `tools/mutation.py` now
+  mutates every contract a file declares (slither-mutate alone skipped `ModuleSlots`,
+  `UniformEditionAuctionBase` and `UniformEditionAuctionLensBase`) and runs the two
+  edition-auction files' groups in parts.
 - **Before the merge of the plain core.**
     - `StreamTerms.lowerFeeShare` accepts one fee recipient, the split ledger's network fee
       vault, so the share it lowers is always the network's; the seller and the fee recipient
