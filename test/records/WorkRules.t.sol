@@ -798,4 +798,111 @@ contract WorkRulesTest is RulesFixture {
         vm.prank(artist);
         rules.setRecord(s, id, next, state);
     }
+
+    // ---------------------------------------------------- pinned by mutation testing
+
+    /// @dev The first delivery contract is announced at deployment.
+    function test_Constructor_AnnouncesTheFirstDelivery() public {
+        vm.expectEmit();
+        emit IWorkRules.DeliverySet(address(0), address(0xD311));
+        new WorkRules(address(manager), address(facts), address(directory), address(0xD311));
+    }
+
+    /// @dev Once finalized, the refusal comes before the no-op and before the artist check.
+    function test_SetRecord_AFinalizedWorkRefusesBeforeAnyOtherCheck() public {
+        (uint256 id, PackageItem memory item) = _open(1);
+        _artistFinalize(id);
+        vm.prank(artist);
+        vm.expectRevert(abi.encodeWithSelector(IWorkFacts.WorkIsFinalized.selector, s, id));
+        rules.setRecord(s, id, item.recordFileId, bytes32(0));
+        vm.prank(stranger);
+        vm.expectRevert(abi.encodeWithSelector(IWorkFacts.WorkIsFinalized.selector, s, id));
+        rules.setRecord(s, id, bytes32(uint256(5)), bytes32(0));
+    }
+
+    /// @dev Renouncing the royalty power alone makes no call to the record's locks.
+    function test_Renounce_TheRoyaltyPowerAloneNeverTouchesTheRecordLocks() public {
+        (uint256 id,) = _open(1);
+        vm.expectCall(address(facts), abi.encodeWithSelector(facts.lock.selector), 0);
+        _renounce(id, WorkPowers.ROYALTY_RATE);
+        assertEq(rules.renouncedPowers(s, id), WorkPowers.ROYALTY_RATE);
+    }
+
+    function test_Relicense_RefreshesTheMetadata() public {
+        (uint256 id, PackageItem memory item) = _mitWork(1);
+        vm.expectEmit(s);
+        emit IERC4906.MetadataUpdate(id);
+        _relicense(id, item, License("CC-BY-4.0", mitText));
+    }
+
+    /// @dev Not even the current rate, a no-op on an open record, passes before the record is
+    ///      open; a token that was never minted has no open record either.
+    function test_SetRoyaltyRate_NeedsAnOpenRecord() public {
+        PackageItem memory item = _item(1, _single(1));
+        uint256 id = _mintItem(stream, item);
+        vm.expectRevert(abi.encodeWithSelector(IWorkFacts.RecordNotOpen.selector, s, id));
+        rules.setRoyaltyRate(s, id, 6529, item, 0, 0, new bytes[](0));
+        vm.expectRevert(abi.encodeWithSelector(IWorkFacts.RecordNotOpen.selector, s, 99));
+        rules.setRoyaltyRate(s, 99, 1, item, 0, 0, new bytes[](0));
+    }
+
+    function test_RepinRenderer_MovesTheVersionAndRefreshesTheMetadata() public {
+        (uint256 id,) = _open(1);
+        _artistFinalize(id);
+        CodeRenderer next = new CodeRenderer(1);
+        bytes32 state = _state(id);
+        vm.expectEmit(address(rules));
+        emit WorkRules.VersionBumped(s, id, 2);
+        vm.expectEmit(s);
+        emit IERC4906.MetadataUpdate(id);
+        rules.repinRenderer(s, id, address(next), state);
+        assertEq(rules.versionOf(s, id), 2);
+    }
+
+    /// @dev The code hash must be the store's own: one above it is refused as one below is.
+    function test_Stores_ACodeHashAboveTheStoresOwnIsRefused() public {
+        RulesChunkStore cs = new RulesChunkStore();
+        vm.expectRevert(abi.encodeWithSelector(WorkRules.InvalidStore.selector, address(cs)));
+        rules.addStore(address(cs), bytes32(type(uint256).max));
+        assertEq(rules.storeCount(), 0);
+    }
+
+    function test_Stores_EachIdNamesItsOwnStore() public {
+        RulesChunkStore first = new RulesChunkStore();
+        RulesChunkStore second = new RulesChunkStore();
+        rules.addStore(address(first), address(first).codehash);
+        rules.addStore(address(second), address(second).codehash);
+        assertEq(rules.store(1).source, address(first));
+        assertEq(rules.store(2).source, address(second));
+        rules.retireStore(2);
+        assertFalse(rules.store(1).retired);
+        assertTrue(rules.store(2).retired);
+    }
+
+    /// @dev A file ID above every media file of the work is still not one of its files; a
+    ///      choice of store is announced and refreshes the token's metadata.
+    function test_FileStore_OnlyTheWorksOwnFilesAndTheMetadataIsRefreshed() public {
+        (uint256 id,, MediaFile[] memory media) = _work(stream, 1);
+        bytes32 foreign = bytes32(type(uint256).max);
+        vm.prank(artist);
+        vm.expectRevert(abi.encodeWithSelector(WorkRules.FileNotServed.selector, foreign, 0));
+        rules.setFileStore(s, id, foreign, 0);
+        vm.expectEmit(address(rules));
+        emit WorkRules.FileStoreSet(s, id, media[0].fileId, 0);
+        vm.expectEmit(s);
+        emit IERC4906.MetadataUpdate(id);
+        vm.prank(artist);
+        rules.setFileStore(s, id, media[0].fileId, 0);
+    }
+
+    /// @dev A token with no editions contract (here: no TERMS module) is refreshed alone.
+    function test_RefreshAllMetadata_ATokenWithoutEditionsIsRefreshedAlone() public {
+        _open(1);
+        _open(2);
+        stream.removeModule(Slots.TERMS);
+        vm.expectEmit(s);
+        emit IERC4906.BatchMetadataUpdate(1, 2);
+        vm.prank(address(delivery));
+        rules.refreshAllMetadata(s);
+    }
 }

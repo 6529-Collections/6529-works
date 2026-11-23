@@ -15,6 +15,24 @@
 - **ADR 0004's gas table** is re-measured on the plain core (`test_Gas_Table`), says what each
   ceiling applies to, and compares every Sepolia start of r6 and r7 with its own row. No
   ceiling changed.
+- Tests: the first mutation campaign on the plain-core contracts (23 November 2026; 15,922
+  mutants, 91.5% killed, 92.8% with the tests added here). `tools/mutation-floors.json` holds
+  measured floors for every file and has no placeholders left; the survivors of the permanent
+  contracts and of the money and mint modules are triaged in
+  [`docs/testing/mutation-scores.md`](docs/testing/mutation-scores.md). `tools/mutation.py` now
+  mutates every contract a file declares (slither-mutate alone skipped `ModuleSlots`,
+  `UniformEditionAuctionBase` and `UniformEditionAuctionLensBase`) and runs the two
+  edition-auction files' groups in parts. A statements group is cut into parts by source line,
+  so the parts together are exactly the group's mutants: cut by position, as the campaign ran
+  them, a surviving revert mutant made some comment mutants run twice and others not at all
+  (seven files, counted on the scores page). The build is cleaned between the contracts of one
+  file, and a slither-mutate run that stops before it mutates fails its shard. The two
+  edition-auction files were measured again with the corrected tool at `a39245e3`:
+  `UniformEditionAuction` 1,045 of 1,112 mutants killed, 94.0% (the campaign's final figure
+  was 94.0% of 1,113), floor 91; `UniformEditionAuctionLens` 979 of 1,113 killed, 88.0% (the
+  campaign's was 87.7% of 1,134; two survivors were not re-checked, so a lower bound), floor 85.
+  One comment mutant the campaign's parts never ran survived there and has a test now
+  (`test_Settle_AResumedScanKeepsTheDemandAlreadyCounted`).
 - **Rule rows brought in line with the code.** Eight of the nine rules left in
   `tools/rules-uncovered.txt` are reworded to say what the contracts do and now name the tests
   that pin it: AUC-14, AUC-15, PROP-AUC-1, GV-20, ENT-20, EA-19, IND-58 and IND-67. IND-56

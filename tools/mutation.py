@@ -9,13 +9,15 @@ equivalent mutant (the change does not alter behaviour) or a missing test.
 
 slither-mutate never changes a `constant`, and the protocol's limits are constants, so this
 tool adds one rule of its own, CONST: every integer-literal constant is moved one up and one
-down, and each change must fail a test.
+down, and each change must fail a test. Left alone, slither-mutate also mutates only the
+contract named like its file; a file that declares another contract or library (a base contract
+beside the concrete one) is run once per contract, so all of its code is mutated.
 
 Subcommands:
   list                     the shards: one per src/ file with code, the largest split into
                            four mutator groups (SPLIT_FILES, SPLIT_GROUPS) or into five that
                            keep every operator (FULL_SPLIT_FILES, FULL_SPLIT_GROUPS); the
-                           slowest relational shards run in parts (RELATION_PARTS)
+                           slowest shards run in parts (RELATION_PARTS, GROUP_PARTS)
   run SHARD [...]          mutate the shard's file against its module's tests, re-run every
                            survivor against the whole suite (--no-recheck skips that) and
                            write OUT/SHARD/results.json and the logs; --budget MINUTES stops
@@ -127,6 +129,13 @@ SKIPPED_ON_SPLIT_FILES = "ASOR,BOR,FHR,LIR,MVIE,MVIV,MWA,SBR"
 # replacements. Their mutants are exactly the ones a single shard would make, so their floors
 # are measured on the same mutants (the 21 November 2026 campaign measured them this way).
 FULL_SPLIT_FILES = {
+    # The permanent core (ADR 0010): on the 23 November 2026 campaign one mutant took about half
+    # a minute on a loaded 96-core machine, which puts a whole-file shard of 200 to 330 mutants
+    # past a CI job.
+    "src/core/EditionsBase.sol",
+    "src/core/Modules.sol",
+    "src/core/StreamBase.sol",
+    "src/core/StreamWorkFacts6529.sol",
     "src/economics/RevenueEscrow.sol",
     "src/economics/SplitLedger.sol",
     "src/independent/IndependentStreamEditions6529.sol",
@@ -145,15 +154,44 @@ RELATION_PARTS = {
     "src/independent/IndependentStream6529.sol": 4,
     "src/independent/IndependentStreamRegistry.sol": 3,
 }
+# Split files with a group too slow for one CI job even so: the group runs as this many shards,
+# part k of n taking every n-th mutant of each operator (per contract, in source order) from the
+# k-th. The statements group is cut by source line instead, every n-th line with a statement
+# from the k-th: slither-mutate makes no comment mutant on a line whose revert mutant survived,
+# so both mutants of a line have to run in the same part (`take_line_part`). Either way the
+# parts' mutants together are exactly the whole group's. The two edition-auction files
+# keep nearly all their code in a base contract (`UniformEditionAuctionBase`, about a thousand
+# mutants), which the 23 November 2026 campaign ran in parts of about 45 mutants.
+GROUP_PARTS: dict[str, dict[str, int]] = {
+    "src/sales/UniformEditionAuction.sol": {
+        "statements": 10, "operators": 4, "relations": 4, "conditions": 7,
+    },
+    "src/sales/UniformEditionAuctionLens.sol": {
+        "statements": 9, "operators": 4, "relations": 4, "conditions": 6,
+    },
+}
 # The split files' relational shard uses two replacements per comparison instead of five.
 SUFFICIENT_ROR_ENV = "MUTATION_SUFFICIENT_ROR"
 # "k/n": ROR makes only part k of n of the file's relational mutants (RELATION_PARTS).
 ROR_PART_ENV = "MUTATION_ROR_PART"
+# "k/n": every other operator makes only part k of n of its mutants (GROUP_PARTS).
+PART_ENV = "MUTATION_PART"
+# The operators cut by source line: the two whose survivors stop later mutants of their line.
+LINE_PARTED = ("RR", "CR")
 
 CATEGORIES = ("revert", "comment", "tweak", "constant")
 SUMMARY = re.compile(r"(Revert|Comment|Tweak) mutants: (\d+) caught of (\d+)", re.IGNORECASE)
 UNCAUGHT = re.compile(r"\[(\w+)\] Line (\d+): '(.*?)' ==> '(.*?)' --> UNCAUGHT", re.S)
 ABORTED = "Test suite fails with mutations, aborting"
+# Logged once slither-mutate has run every mutant of its target. A run that stops before (its
+# first, unmutated test run took longer than --timeout, or the named contract is not in the
+# file) logs nothing of the kind and still exits with 0.
+COMPLETED = "Done mutating"
+# Logged by slither-mutate 0.11.6 when an operator raises while it makes its mutants: the
+# operator then counts as having none, and the run goes on and finishes. The text is that
+# version's (`AbstractMutator.mutate`); check it again when the pin in requirements-tools.lock
+# moves.
+MUTATOR_FAILED = "mutator failed in"
 TIMED_OUT = "Tests took too long"
 # `uint256 internal constant NAME = 1_000;` (any visibility order), integer literals only.
 CONSTANT = re.compile(
@@ -161,6 +199,8 @@ CONSTANT = re.compile(
     r"[A-Za-z_]\w*[ \t]*=[ \t]*)(?P<value>0x[0-9a-fA-F_]+|\d[\d_]*)(?P<tail>[ \t]*;)",
     re.M,
 )
+# A contract or library a file declares, by name.
+DECLARED = re.compile(r"^[ \t]*(?:abstract[ \t]+)?(?:contract|library)[ \t]+([A-Za-z_]\w*)", re.M)
 # A contract or library, or a file-level function or constant (HashRef.sol has both).
 CODE = re.compile(
     r"^\s*(?:abstract\s+)?(?:contract|library)\s+\w+|^function\s|^u?int\d*\s+constant\s",
@@ -266,14 +306,18 @@ def shards(root: Path) -> dict[str, Shard]:
         )
         if groups:
             for group, mutators in groups.items():
-                parts = RELATION_PARTS.get(rel, 1) if group == "relations" else 1
+                parts = GROUP_PARTS.get(rel, {}).get(group) or (
+                    RELATION_PARTS.get(rel, 1) if group == "relations" else 1
+                )
                 if parts == 1:
                     name = f"{base}-{group}"
                     out[name] = Shard(name, rel, tests, mutators, group == "statements")
                     continue
                 for k in range(parts):
                     name = f"{base}-{group}-{k + 1}-of-{parts}"
-                    out[name] = Shard(name, rel, tests, mutators, False, (k, parts))
+                    # CONST moves the file's constants once: with the first statements part.
+                    const = group == "statements" and k == 0
+                    out[name] = Shard(name, rel, tests, mutators, const, (k, parts))
         else:
             out[base] = Shard(base, rel, tests, None, True)
     missing = (SPLIT_FILES | FULL_SPLIT_FILES) - {s.path for s in out.values()}
@@ -281,10 +325,34 @@ def shards(root: Path) -> dict[str, Shard]:
         raise MutationError(f"SPLIT_FILES names files that do not exist: {sorted(missing)}")
     if SPLIT_FILES & FULL_SPLIT_FILES:
         raise MutationError(f"split two ways: {sorted(SPLIT_FILES & FULL_SPLIT_FILES)}")
-    unsplit = set(RELATION_PARTS) - SPLIT_FILES - FULL_SPLIT_FILES
-    if unsplit or any(n < 2 for n in RELATION_PARTS.values()):
-        raise MutationError(f"RELATION_PARTS needs split files and two parts or more: {unsplit}")
+    unsplit = (set(RELATION_PARTS) | set(GROUP_PARTS)) - SPLIT_FILES - FULL_SPLIT_FILES
+    counts = [*RELATION_PARTS.values(), *(n for g in GROUP_PARTS.values() for n in g.values())]
+    if unsplit or any(n < 2 for n in counts):
+        raise MutationError(
+            f"RELATION_PARTS and GROUP_PARTS need split files and two parts or more: {unsplit}"
+        )
+    if set(RELATION_PARTS) & set(GROUP_PARTS):
+        raise MutationError("a file is in RELATION_PARTS or in GROUP_PARTS, not both")
     return out
+
+
+def declared_contracts(text: str) -> list[str]:
+    """The contracts and libraries a source file declares, in order (interfaces left out)."""
+    return DECLARED.findall(_strip_comments(text))
+
+
+def mutation_targets(text: str, stem: str) -> list[str | None]:
+    """The contracts slither-mutate is run for, one run each; None is its own choice.
+
+    Left alone, slither-mutate mutates one contract per file, the one named like the file, and
+    nothing else: a base contract declared beside it (`ModuleSlots` in Modules.sol,
+    `UniformEditionAuctionBase` in UniformEditionAuction.sol) would never be mutated. A file
+    that declares anything else is therefore run once per contract or library, by name.
+    """
+    names = declared_contracts(text)
+    if not names or [n.lower() for n in names] == [stem.lower()]:
+        return [None]
+    return names
 
 
 # ------------------------------------------------------------------------- slither-mutate
@@ -458,15 +526,81 @@ def _patch_mutators() -> None:
 
     ROR.ROR._mutate = ror_mutate
 
+    whole = part_of(os.environ.get(PART_ENV, ""))
+    if whole:
+        import slither.tools.mutator.mutators.all_mutators  # noqa: F401  (defines them all)
+        from slither.tools.mutator.mutators.abstract_mutator import AbstractMutator
 
-def ror_part(value: str) -> tuple[int, int] | None:
-    """(k, n) from ROR_PART_ENV's "k/n", or None for the whole file."""
+        for mutator in AbstractMutator.__subclasses__():
+            if mutator is not ROR.ROR:  # ROR has its own parts, by comparison (ROR_PART_ENV)
+                in_parts(mutator, whole)
+
+
+def in_parts(cls, part: tuple[int, int]) -> None:
+    """Makes the operator `cls` generate only part (k, n) of its mutants."""
+    make = cls._mutate
+    by_line = cls.NAME in LINE_PARTED
+
+    def part_mutate(self) -> dict:
+        result = make(self)
+        lines = statement_lines(self) if by_line else []
+        for file, patches in list(result.get("patches", {}).items()):
+            result["patches"][file] = (
+                take_line_part(patches, lines, part) if by_line else take_part(patches, part)
+            )
+        return result
+
+    cls._mutate = part_mutate
+
+
+def take_part(patches: list[dict], part: tuple[int, int]) -> list[dict]:
+    """Every n-th patch from the k-th, in source order: part (k, n) of one operator's mutants."""
+    ordered = sorted(patches, key=lambda p: (p["start"], p["end"], p["new_string"]))
+    return [p for i, p in enumerate(ordered) if i % part[1] == part[0]]
+
+
+def statement_lines(mutator) -> list[int]:
+    """The first line of every statement of the mutated contract in its own file.
+
+    Read from the contract, not from an operator's mutants: slither-mutate leaves out the lines
+    whose revert or comment mutant survived earlier in the same run (`dont_mutate_line`), and
+    which those are differs from part to part.
+    """
+    return [
+        node.source_mapping.lines[0]
+        for function in mutator.contract.functions_and_modifiers_declared
+        for node in function.nodes
+        if node.source_mapping.lines and node.source_mapping.filename.absolute == mutator.in_file
+    ]
+
+
+def take_line_part(patches: list[dict], lines: list[int], part: tuple[int, int]) -> list[dict]:
+    """The patches on every n-th line of `lines` from the k-th: part (k, n) of RR's or CR's mutants.
+
+    slither-mutate runs RR first and makes no CR mutant on a line where an RR mutant survived.
+    Cutting each operator's own list by position would let one part's survivors shift the
+    positions of its CR list only, so a comment mutant could run in two parts or in none. Here a
+    line belongs to one part whatever survived, and every mutant of the line runs in that part:
+    the part skips exactly the comment mutants a run of the whole group skips on its lines.
+    """
+    k, n = part
+    rank = {line: i for i, line in enumerate(sorted(set(lines)))}
+    return [p for p in patches if rank[p["line_number"]] % n == k]
+
+
+def part_of(value: str) -> tuple[int, int] | None:
+    """(k, n) from "k/n" (PART_ENV, ROR_PART_ENV), or None for the whole file."""
     if not value:
         return None
     k, n = (int(x) for x in value.split("/"))
     if not 0 <= k < n:
-        raise MutationError(f"{ROR_PART_ENV}={value!r}: want k/n with 0 <= k < n")
+        raise MutationError(f"part {value!r}: want k/n with 0 <= k < n")
     return k, n
+
+
+def ror_part(value: str) -> tuple[int, int] | None:
+    """(k, n) from ROR_PART_ENV's "k/n", or None for the whole file."""
+    return part_of(value)
 
 
 # For an unsigned `x`, the replacement of a comparison with the literal 0 that cannot change
@@ -569,51 +703,107 @@ def _run_logged(
             raise
 
 
+def _clean_build(out: Path, contract: str | None, shard: Shard, deadline: Deadline) -> bool:
+    """`forge clean` in the default profile, before a later target of the same file.
+
+    slither-mutate reads the file's build once, when it starts, and every mutant it then
+    compiles leaves its own build record behind (`--skip-clean` keeps them). A second run in the
+    same checkout would read a mutant's record against the restored source and stop on source
+    offsets past the end of the file. The lite build the tests use is left alone.
+    """
+    log = out / f"forge-clean-{contract or 'file'}.log"
+    code = _run_logged(["forge", "clean"], log, timeout=deadline.cap(600))
+    if code != 0 and not deadline.passed:
+        print(
+            f"[{shard.name}] `forge clean` before {contract or shard.path} failed (exit code "
+            f"{code}, {log.as_posix()})",
+            file=sys.stderr,
+            flush=True,
+        )
+    return code == 0
+
+
 def run_slither_mutate(
     root: Path, shard: Shard, out: Path, timeout: int, result: FileResult, deadline: Deadline
 ) -> None:
     stem = Path(shard.path).stem
-    campaign = out / "campaign"
-    cmd = _self(
-        "slither-mutate",
-        shard.path,
-        "--test-cmd",
-        test_command(shard.tests),
-        "--output-dir",
-        str(campaign),
-        "--skip-clean",
-        # Generous: a timeout counts as a kill, and an incremental build under load can take
-        # several times the first timed run. Looping mutants end at the block gas limit.
-        "--timeout",
-        str(timeout),
-    )
-    if shard.mutators:
-        cmd += ["--mutators-to-run", shard.mutators]
-    log = out / "slither-mutate.log"
     env = {k: v for k, v in os.environ.items() if k != "FOUNDRY_PROFILE"}
     env[SUFFICIENT_ROR_ENV] = "1" if shard.path in SPLIT_FILES else "0"
-    env[ROR_PART_ENV] = f"{shard.part[0]}/{shard.part[1]}" if shard.part else ""
+    part = f"{shard.part[0]}/{shard.part[1]}" if shard.part else ""
+    env[ROR_PART_ENV] = part if shard.mutators == "ROR" else ""
+    env[PART_ENV] = "" if shard.mutators == "ROR" else part
     source = root / shard.path
     original = source.read_bytes()
-    try:
-        code = _run_logged(cmd, log, timeout=deadline.cap(None), env=env)
-    finally:
-        # slither-mutate restores the file only when it finishes; this covers a stop at the
-        # budget, a crash and Ctrl+C. Its process tree has exited by now, so nothing races.
-        source.write_bytes(original)
-    if code == -1 and deadline.passed:
-        result.status = "timeout"
-        return
-    text = log.read_text(encoding="utf-8", errors="replace")
-    if code != 0 and "Done mutating" not in text:
-        result.status = "error"
-        return
-    parse_log(text, result)
-    for s in result.survivors:
-        if s.rule == "CONST":
-            continue
-        rule, index = s.mutant_file.rsplit("_", 1)
-        s.mutant_file = (campaign / stem / f"{stem}_{rule}_{index}.sol").as_posix()
+    # One run per contract of the file (`mutation_targets`); a file with only the contract named
+    # like it runs once, with slither-mutate's own choice.
+    for index, contract in enumerate(mutation_targets(original.decode("utf-8"), stem)):
+        campaign = out / "campaign" / contract if contract else out / "campaign"
+        if index and not _clean_build(out, contract, shard, deadline):
+            result.status = "timeout" if deadline.passed else "error"
+            return
+        cmd = _self(
+            "slither-mutate",
+            shard.path,
+            "--test-cmd",
+            test_command(shard.tests),
+            "--output-dir",
+            str(campaign),
+            "--skip-clean",
+            # Generous: a timeout counts as a kill, and an incremental build under load can
+            # take several times the first timed run. Looping mutants end at the block gas limit.
+            "--timeout",
+            str(timeout),
+        )
+        if shard.mutators:
+            cmd += ["--mutators-to-run", shard.mutators]
+        if contract:
+            cmd += ["--contract-names", contract]
+        log = out / (f"slither-mutate-{contract}.log" if contract else "slither-mutate.log")
+        try:
+            code = _run_logged(cmd, log, timeout=deadline.cap(None), env=env)
+        finally:
+            # slither-mutate restores the file only when it finishes; this covers a stop at the
+            # budget, a crash and Ctrl+C. Its process tree has exited by now, so nothing races.
+            source.write_bytes(original)
+        if code == -1 and deadline.passed:
+            result.status = "timeout"
+            return
+        text = log.read_text(encoding="utf-8", errors="replace")
+        # Every run has to say that it finished: a run that stopped early exits with 0 too, and
+        # read as a result it would count as a target with nothing to mutate. A run that finds
+        # nothing to mutate still logs the line. (An aborted run is told apart in `parse_log`.)
+        if MUTATOR_FAILED in text:
+            # The run finished, without that operator's mutants: its totals are not the file's.
+            result.status = "error"
+            print(
+                f"[{shard.name}] an operator failed for {contract or shard.path} "
+                f"(`{MUTATOR_FAILED}` in {log.as_posix()})",
+                file=sys.stderr,
+                flush=True,
+            )
+            return
+        if ABORTED not in text and COMPLETED not in text:
+            result.status = "error"
+            print(
+                f"[{shard.name}] slither-mutate did not finish {contract or shard.path} (exit "
+                f"code {code}, no `{COMPLETED}` line in {log.as_posix()})",
+                file=sys.stderr,
+                flush=True,
+            )
+            return
+        run = FileResult(shard.path)
+        parse_log(text, run)
+        if run.status != "ok":
+            result.status = run.status
+            return
+        for s in run.survivors:
+            rule, index = s.mutant_file.rsplit("_", 1)
+            s.mutant_file = (campaign / stem / f"{stem}_{rule}_{index}.sol").as_posix()
+        for c in CATEGORIES:
+            result.caught[c] += run.caught[c]
+            result.total[c] += run.total[c]
+        result.timeouts += run.timeouts
+        result.survivors.extend(run.survivors)
 
 
 # --------------------------------------------------------------------------------- CONST
