@@ -10,7 +10,7 @@ signers; do not send them value you care about.
 | Network | Chain ID | Instance | Source | Record |
 | --- | ---: | --- | --- | --- |
 | Ethereum mainnet | 1 | Not deployed | | |
-| Sepolia | 11155111 | r6 (planned) | the plain core ([ADR 0010](../adr/0010-plain-permanent-core.md)) | added to [`deployments/11155111/`](../../deployments/11155111) when deployed |
+| Sepolia | 11155111 | r6 (current) | `main` at `2aac8579`, the plain core ([ADR 0010](../adr/0010-plain-permanent-core.md)) | [`core-1795412520.json`](../../deployments/11155111/core-1795412520.json) |
 | Sepolia | 11155111 | r5 (superseded) | `main` at `ca02473`, the design before ADR 0010 | [`1795338612.json`](../../deployments/11155111/1795338612.json) |
 
 Earlier rounds (r1 to r4) ran earlier designs; their records stay in
@@ -24,9 +24,12 @@ pages describe.
 ## Checking an instance yourself
 
 - **Code.** Each record pins every contract's address and code hash.
-  [`script/Verify.s.sol`](../../script/VerifyCore.s.sol) recomputes every address from the recorded
-  constructor parameters and compares the code, the module slots, the minters, the settings
-  and the governance configuration with the chain. Run it from the instance's source commit.
+  [`script/VerifyCore.s.sol`](../../script/VerifyCore.s.sol) deploys the same build again in
+  memory from the record's `forkBlock` and compares every address and runtime code, the module
+  slots, the minters, the settings, the stored configuration, the epoch-0 manifest and the
+  governance configuration with the chain. Run it from the instance's source commit with the
+  round's `deploy.env` ([runbook](../../script/README.md#4-after-the-broadcast)). r6 passed it
+  on 23 November 2026, and Sourcify holds an exact match for each of its 35 contracts.
 - **Governance.** The genesis policy each instance installed is committed under `config/`. The
   [role matrix](../audit/roles.md) is generated from `main`'s genesis policy.
 - **Settings.** Read `moduleDelay()`, `rescueDelay()`, `rebindDelay()` and

@@ -18,8 +18,8 @@ emits an event for every state change, enough to rebuild its state from its own 
 - **Module slots** (`bytes32 slot`) are ASCII names left-aligned: `"TERMS"`, `"RENDERER"`,
   `"RECORDS"`, `"ACCOUNTS"`, `"INDEPENDENT_STREAM"`, `"INDEPENDENT_TERMS"`, `"INDEPENDENT_RECORDS"`.
 - **Where to start.** Scan from the deployment record's `startBlock` in
-  [`deployments/11155111/`](../../deployments/11155111). The Sepolia round for this code is r6;
-  earlier rounds ran an earlier design.
+  [`deployments/11155111/`](../../deployments/11155111). The Sepolia round for this code is r6
+  (`core-1795412520.json`, `startBlock` 12,193,722); earlier rounds ran an earlier design.
 - **Module events** are listed below with their topics, generated from the build.
 
 ## The permanent core
