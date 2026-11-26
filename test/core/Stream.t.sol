@@ -774,6 +774,8 @@ contract StreamTest is CoreFixture {
         uint24 other,
         address receiver
     ) public {
+        // A zero receiver with a rate is refused whether or not the rate is locked.
+        vm.assume(receiver != address(0));
         uint256 id = _sell(1, collector);
         vm.expectEmit(address(stream));
         emit IStream.RoyaltyRateLocked(id);
