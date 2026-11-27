@@ -23,7 +23,9 @@ Subcommands:
                            write OUT/SHARD/results.json and the logs; --budget MINUTES stops
                            a shard that runs longer, with status `timeout`
   report OUT [...]         merge results.json files into a Markdown report (--markdown) and a
-                           JSON summary (--json); --shards names the shards the run planned
+                           JSON summary (--json), each giving the mutants that timed out
+                           apart from those a failing test killed (both count as killed in
+                           the rate); --shards names the shards the run planned
                            and fails when one left no results; --floors FILE fails when a
                            contract did not finish, has no floor, or falls below its floor
   forge-test [ARGS ...]    the test command slither-mutate runs (internal): `forge test
@@ -240,7 +242,9 @@ class FileResult:
     caught: dict[str, int] = field(default_factory=lambda: {c: 0 for c in CATEGORIES})
     total: dict[str, int] = field(default_factory=lambda: {c: 0 for c in CATEGORIES})
     survivors: list[Survivor] = field(default_factory=list)
-    # Mutants counted as killed because the test command timed out (slither-mutate's rule).
+    # Mutants counted as killed because their module's test command timed out
+    # (slither-mutate's rule). A survivor whose re-check timed out is not in this count: see
+    # `timed_out`.
     timeouts: int = 0
     seconds: float = 0.0
     # The shards whose results were merged into this file, and (in a report) the planned
@@ -259,10 +263,24 @@ class FileResult:
 
     @property
     def killed(self) -> int:
-        """Killed by the module's tests, plus survivors the whole suite killed."""
+        """Killed by the module's tests, plus survivors the whole suite killed.
+
+        A mutant whose tests timed out counts as killed (the score's definition, which the
+        floors were measured with); `timed_out` says how many of the kills those are.
+        """
         return sum(self.caught.values()) + sum(
             1 for s in self.survivors if s.recheck in ("killed", "timeout")
         )
+
+    @property
+    def timed_out(self) -> int:
+        """Kills that are timeouts: of the module's tests, or of the re-check of a survivor."""
+        return self.timeouts + sum(1 for s in self.survivors if s.recheck == "timeout")
+
+    @property
+    def killed_by_assertion(self) -> int:
+        """Kills where a test failed: every kill that is not a timeout."""
+        return self.killed - self.timed_out
 
 
 class MutationError(Exception):
@@ -1069,23 +1087,33 @@ def markdown(results: list[FileResult]) -> str:
         lines.extend(f"- `{r.path}`: {r.unrechecked} not re-checked" for r in partial)
         lines.append("")
     lines += [
-        "| Contract | Mutants | Killed | Survived | Kill rate | Revert | Comment | Tweak | "
-        "Constant |",
-        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| Contract | Mutants | Killed | Timed out | Survived | Kill rate | Revert | Comment | "
+        "Tweak | Constant |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
-    total = killed = 0
+    total = killed = timed_out = 0
     for r in results:
         rate = kill_rate(r)
         cats = " | ".join(f"{r.caught[c]}/{r.total[c]}" for c in CATEGORIES)
         status = "" if r.status == "ok" else f" ({'missing' if r.missing else r.status})"
         lines.append(
-            f"| `{r.path}`{status} | {r.mutants} | {r.killed} | {r.mutants - r.killed} | "
-            f"{'n/a' if rate is None else f'{rate:.1f}%'} | {cats} |"
+            f"| `{r.path}`{status} | {r.mutants} | {r.killed} | {r.timed_out} | "
+            f"{r.mutants - r.killed} | {'n/a' if rate is None else f'{rate:.1f}%'} | {cats} |"
         )
         total += r.mutants
         killed += r.killed
+        timed_out += r.timed_out
     rate = "n/a" if total == 0 else f"{100.0 * killed / total:.1f}%"
-    lines.append(f"| **Total** | {total} | {killed} | {total - killed} | {rate} | | | | |")
+    lines.append(
+        f"| **Total** | {total} | {killed} | {timed_out} | {total - killed} | {rate} | | | | |"
+    )
+    lines.append("")
+    lines.append(
+        "Killed includes Timed out: a mutant whose tests ran past the time limit counts as"
+    )
+    lines.append(
+        f"killed, and no assertion failed for it. Killed by a failing test: {killed - timed_out}."
+    )
     lines.append("")
     lines.append(
         "The category columns count what the module's own tests killed, out of the mutants that"
@@ -1276,7 +1304,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.json:
             summary = {
                 r.path: {"mutants": r.mutants, "killed": r.killed, "kill_rate": kill_rate(r),
-                         "timeouts": r.timeouts, "status": r.status, "shards": r.shards,
+                         "killed_by_assertion": r.killed_by_assertion,
+                         "timeouts": r.timed_out, "status": r.status, "shards": r.shards,
                          "missing_shards": r.missing, "not_rechecked": r.unrechecked}
                 for r in results
             }
