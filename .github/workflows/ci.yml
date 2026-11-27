@@ -83,6 +83,15 @@ jobs:
         # EIPs and repository names, never internal reference codes.
         run: python tools/check_comment_codes.py src script
 
+      - name: Invariant shard checker unit tests
+        run: python -m tools.test_check_invariant_shards
+
+      - name: Invariant shards
+        # Every invariant test in the sources is selected by exactly one part of the Tests job
+        # below and of nightly.yml's Deep invariants job. Forge passes when a filter selects
+        # nothing, so a suite that no part runs would otherwise go unnoticed.
+        run: python tools/check_invariant_shards.py
+
       - name: Sepolia manifest writer unit tests
         # script/sepolia/make_manifest.py builds the manifest's `safes` from the new genesis.
         run: python -m unittest discover -s script/sepolia -p "test_*.py"
@@ -272,10 +281,10 @@ jobs:
     # everything but the invariant tests, the economics invariants (the longest suite, in two
     # parts by test), the token, vault and signer invariants, the auction invariants, the
     # lifecycle invariants on the whole deployed stack, and the other invariants (the Medusa
-    # harnesses' Forge runners among them). 68 invariant tests on 22 November 2026. Each part builds
-    # incrementally from the cached compiler output. Recount when invariant suites are added:
-    #   forge test --list --match-test "^invariant" --json
-    # and check that each listed test matches exactly one filter below.
+    # harnesses' Forge runners among them). Each part builds incrementally from the cached
+    # compiler output. The Docs job runs tools/check_invariant_shards.py, which fails unless
+    # every invariant test in the sources matches exactly one filter below. Forge matches
+    # --match-test against the test's signature (`invariant_Name()`), not its bare name.
     strategy:
       fail-fast: false
       matrix:
@@ -439,10 +448,11 @@ jobs:
         run: bash script/local/walkthrough.sh
 
   contracts:
-    # The required check: green only when the build, the checks, every test part and the
-    # local walkthrough are.
+    # A required check: green only when every other job of this workflow is (the
+    # documentation checks, the build and its checks, every test part, the local walkthrough
+    # and static analysis).
     name: Contracts
-    needs: [checks, tests, walkthrough]
+    needs: [docs, checks, tests, walkthrough, static-analysis]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -450,19 +460,25 @@ jobs:
     steps:
       - name: Every part passed
         env:
+          DOCS: ${{ needs.docs.result }}
           CHECKS: ${{ needs.checks.result }}
           TESTS: ${{ needs.tests.result }}
           WALKTHROUGH: ${{ needs.walkthrough.result }}
+          STATIC: ${{ needs.static-analysis.result }}
         run: |
-          echo "Build and checks: $CHECKS; tests: $TESTS; local walkthrough: $WALKTHROUGH"
+          echo "Docs: $DOCS; build and checks: $CHECKS; tests: $TESTS"
+          echo "Local walkthrough: $WALKTHROUGH; static analysis: $STATIC"
+          test "$DOCS" = success
           test "$CHECKS" = success
           test "$TESTS" = success
           test "$WALKTHROUGH" = success
+          test "$STATIC" = success
 
   static-analysis:
     name: Static analysis
     runs-on: ubuntu-latest
-    # Runs in parallel with Contracts and counts against the same 15-minute CI budget.
+    # Runs in parallel with the other jobs and counts against the same 15-minute CI budget.
+    # Contracts waits for it; branch protection also requires it by name.
     timeout-minutes: 15
 
     steps:

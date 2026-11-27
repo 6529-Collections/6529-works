@@ -31,7 +31,7 @@ Start with the [three-page overview](overview.md).
 [`facts.json`](facts.json) is generated from these owners by
 [`tools/gen_facts.py`](../tools/gen_facts.py) for the 6529.io site.
 
-## Checks that keep the docs honest
+## Checks on the documentation
 
 `tools/check_markdown_links.py` (links and anchors), `tools/gen_role_matrix.py --check` (the role
 matrix matches the genesis configuration), `tools/check_docs_facts.py` (test names, interface
