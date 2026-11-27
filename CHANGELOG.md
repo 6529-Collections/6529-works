@@ -68,7 +68,7 @@
       (AUC-36, AUC-56). A rescued work found in custody is sent to the museum, so it is not
       left in the auction. The read costs about 9,800 gas on every `settle`
       ([ADR 0004's table](docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table)).
-    - **A rescued master sells no edition.** A rescued sale now ends `CANCELLED` instead of
+    - **A rescued 1/1 voids the edition sale that followed it.** A rescued sale now ends `CANCELLED` instead of
       `SETTLED` (`RescuedSaleClosed` is unchanged). Both edition auctions already read a
       cancelled 1/1 as void, so an edition sale that followed a rescued 1/1 refunds every bid
       in full, mints nothing and seals its edition at zero, and `open` opens no edition sale
