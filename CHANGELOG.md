@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+- **Audit pack.** The invariants page lists the three campaigns that run on the deployed stack
+  (a work's lifecycle, work and minter states, the edition auction) as rows with their tests
+  (INV-LIF-1 to INV-LIF-15, INV-EA-1 to INV-EA-13) and the Medusa harnesses' Forge runners;
+  what it called placeholders is now stated as what has no stateful campaign, with what covers
+  each in part, and Gaps is rewritten to match. LIM-REL-1 says what `VerifyCore.s.sol` does
+  (it deploys the build again from the fork block and compares runtime code) and what is
+  still missing. The overview no longer calls the split ledger, escrow and content store
+  free of assembly, and says that an Independent Stream artist chooses their token's
+  renderer. The README's first paragraph names the edition sale as a uniform-price auction.
+- **CI.** The `Contracts` check now also waits for the Docs and Static analysis jobs, so it is
+  green only when every job of `ci.yml` is. New `tools/check_invariant_shards.py`, run in the
+  Docs job: every invariant test in the sources must be selected by exactly one filter of the
+  Tests job and of the nightly Deep invariants job.
+- **Mutation report.** `tools/mutation.py report` gives the mutants that timed out in their own
+  column and counts the other kills apart from them, in the Markdown and
+  the JSON (`killed_without_timeout`; `timeouts` now includes a survivor whose re-check timed
+  out). The score and the floors are unchanged.
+- **Wording.** The pull request template asks for what changed, how it was checked and the
+  security consequence. `test_RemoveMinter_AgainBeforeTheNewWaitStillCountsAsOnceActive` is
+  renamed `test_RemoveMinter_ReaddedMinterRemovedDuringItsWaitKeepsWasActive`. The README,
+  overview, documentation index, auditor pack index, testing guide and contributing guide
+  are shortened, and internal labels are removed from the rc.3 entries below, which gain a
+  summary for a user of rc.2.
 - **Sale exits after a rescue or a cancellation; edition metadata after a master is burned; one
   editions contract per Independent Stream master.** One two-line change in the permanent
   token base (`StreamBase`, so `Stream6529` and `IndependentStream6529`); everything else is
@@ -48,12 +71,34 @@
       outcome before a work leaves it (AUC-57, pinned by tests), and a sale contract admitted
       later must do the same (the admission checklist in
       [Replacing a module](docs/operations/replacing-modules.md#sale-contracts-minters)).
+    - The edition auction's stateful campaign gains a rescue action (INV-EA-14).
     - Runtime sizes: `EnglishAuction` 21,805 bytes (margin 2,771), `IndependentEditionAuction`
       23,957 (619), `IndependentEditionAuctionLens` 24,014 (562), `Stream6529` 14,870 (9,706),
       `IndependentStream6529` 14,159 (10,417). A comment in `Splits` said the tokens'
       `royaltyInfo` shares its arithmetic; it uses `Math.mulDiv`, and the comment now says so.
 
 ## 1.0.0-rc.3 (2026-11-23)
+
+**For a user of rc.2.** Rebuild from this tag: every address, ABI and interface ID changed.
+
+- The contracts were restructured into a small permanent core and replaceable modules
+  ([ADR 0010](docs/adr/0010-plain-permanent-core.md)). `Stream`, `WorkRecords`, `Editions`,
+  `ArtistRegistry` and the English auction's lens are gone; read `Stream6529`,
+  `StreamEditions6529`, `StreamWorkFacts6529` and `StreamDirectory6529` instead
+  ([`abi/`](abi/), [integrator guide](docs/integrators/README.md)).
+- Sales are in ETH only. The ERC-20 and Permit2 payment paths of the sale contracts are removed.
+- Waiting periods in permanent contracts are network settings with launch values
+  (`moduleDelay` 7 days, `rescueDelay` 14 days, `rebindDelay` 14 days, `unclaimedPeriod` 180
+  days), not constants.
+- An artist or collaborator is a 6529 consolidated account, and any wallet of it signs
+  (`Accounts`). One network address holds every network role.
+- 6529 Independent Stream is new: an artist's own token pair
+  ([ADR 0008](docs/adr/0008-independent-stream.md)).
+- The products and token symbols have their final names (`6529STREAM`, `6529STREAMEDITIONS`).
+
+The entries under [History](#history-earlier-work-before-the-plain-core) describe work
+between rc.2 and the plain core. Much of what they name was later removed or replaced and is
+not in this tag.
 
 - Release candidate 3, pre-audit and not production-ready: the plain permanent core of
   [ADR 0010](docs/adr/0010-plain-permanent-core.md) with its replaceable modules, ETH only.
@@ -67,11 +112,10 @@
   from the README's status table and the docs index, and `docs/facts.json` names the release.
   There is no mainnet deployment and no external audit has started.
 - No `v1.0.0-rc.3` tag existed before this one. Where ADR 0004, ADR 0005 §13, ADR 0007 and the
-  entries under "Earlier work" say "rc.3", they mean work planned after rc.2 that was never
+  entries under "History" say "rc.3", they mean work planned after rc.2 that was never
   tagged and that the plain core later replaced in part.
-- The entries below are grouped by area, newest first in each group, and each is as merged: a
-  later entry can change what an earlier one describes. The plain core removed or replaced
-  contracts that the entries under "Earlier work, before the plain core" describe.
+- The entries below are grouped by area, newest first in each group. Each describes the change
+  when it was made: a later entry can change what an earlier one describes.
 
 ### The plain permanent core and its modules
 
@@ -165,7 +209,7 @@
   gas, the ETH increment floor, the VRF coordinator, request parameters and retry delay), and
   `VerifyCore.s.sol` requires the tokens' `MinterAdded` logs since the deployment to name exactly
   the two genesis minters, so a genesis minter outside the deployment is seen.
-- Review fixes and system tests on the plain core, integrated. A removed minter no longer seals
+- Fixes and system tests on the plain core. A removed minter no longer seals
   (an open edition waits for the rebind, `closeEdition` closes one with no sale); a sale contract
   is admitted for one token form (`setAdapter(adapter, form, admitted)`); `cancelModule`
   withdraws an announced module; the mint policy reads the accounts module from the Directory at
@@ -177,7 +221,7 @@
   escrow and the split ledger keep their token paths.
 - The renderer shows a collection name of at most 128 bytes; a longer one is not read and the
   work renders without it, so `tokenURI` stays inside its gas budget whatever a name holds.
-- Escrow credit expiry by windows (ECO-45, R12; `RevenueEscrow`, permanent): a credit opens a
+- Escrow credit expiry by windows (ECO-45; `RevenueEscrow`, permanent): a credit opens a
   180-day window or joins the open one, and a window's credits may move to the network 180 days
   after its last credit. Every amount waits at least 180 days from its own arrival and under 360
   in the worst case; no deposit, by anyone, shortens a wait or moves the due time of an amount
@@ -195,7 +239,8 @@
   `CompletenessAttested`; `isComplete` walks only past the prefix, so an attested file is one
   storage read and a 4,096-chunk file can be checked by `syncOnChain` and
   `DependencyRegistry.register` once attested. `IContentStore`'s interface ID changes.
-- The plain permanent core ([ADR 0010](docs/adr/0010-plain-permanent-core.md)), lane 7:
+- Documentation and deploy tooling for the plain permanent core
+  ([ADR 0010](docs/adr/0010-plain-permanent-core.md)):
   a three-page entry point, [docs/overview.md](docs/overview.md); the spec, integrator,
   governance and audit pages rewritten for the core and cut (about 12,700 lines of Markdown, net,
   removed); every waiting period in a permanent contract described as a network setting with a
@@ -367,9 +412,13 @@
   the manifest's `safes` from the new single-network genesis. The stale local deployment record
   `deployments/31337/1793486175.json` is removed (the folder is git-ignored).
 
-### Earlier work, before the plain core
+### History: earlier work, before the plain core
 
-- Second pass (owner decisions of 16 November 2026; not yet reviewed as a whole):
+These entries are kept as a record. They describe the code between rc.2 and the plain core
+(ADR 0010); contracts, functions and rules they name may not exist at the tag.
+
+- Changes decided on 16 November 2026
+  ([ADR 0009](docs/adr/0009-second-permanence-pass.md)):
   - Identity: an artist or collaborator is a 6529 consolidated account and every wallet of it
     acts (`IAccounts`, `isWallet`, `requireSigned`, `requireConsent`); an account signature is
     `abi.encodePacked(wallet, signature)`. Fixed timers: an own change waits 2 days, a network
@@ -383,9 +432,9 @@
     brake that can delay a scheduled action once by 7 days; guardians, seats, suspension and
     recovery are removed; the network grants and revokes operational keys and unpauses with no
     delay.
-  - Economics: every split-wallet release also pays the network fee vault its share (R11);
-    unclaimed marked shares and escrow credits go to the network after 180 days (R12); the
-    network moves its own escrow credits without consent (C19); no opening-bid price cap (R19);
+  - Economics: every split-wallet release also pays the network fee vault its share;
+    unclaimed marked shares and escrow credits go to the network after 180 days; the
+    network moves its own escrow credits without consent; no opening-bid price cap;
     `GovernedVault` takes no ledger and is deployed before the split ledger.
   - Stream, work records, Editions: the network lowers a fee share, never raises it
     (`lowerFeeShare`); a royalty rate may rise with every party's and the network's agreement;
@@ -398,10 +447,10 @@
     the edition when the master's sale settled; a dispute pause lasts at most 3 days and the
     network resumes or cancels with no wait; the Independent Stream refusal exit opens 2 days after
     the end; the currency-freeze exit and the delivery redirect wait 14 days; the network fee takes
-    the rounding and goes to the recipient read at settlement (R18); a credit unclaimed for 180 days
+    the rounding and goes to the recipient read at settlement; a credit unclaimed for 180 days
     may be sent to the network (`expireCredit`); EIP-2612 permit payments are refused; no edition
     base-price cap (`StepLadder.BASE_PRICE_BOUND`, a storage bound); opening an edition sale checks
-    the item's package is still approved (C23); new stateless `SaleStarter` starts a 1/1, deploys
+    the item's package is still approved; new stateless `SaleStarter` starts a 1/1, deploys
     its vaults and opens its record in one transaction.
   - Independent Stream: a joined Independent Stream contract stays in the Independent Stream (no
     exit, no artist-owned minters); any wallet of the artist's consolidated account acts for it;
@@ -421,15 +470,15 @@
     curated and Independent Stream draws have separate seed maps and tenures; Deploy and Verify
     refuse a genesis brake off anvil; `SaleStarter` refuses itself as payer; the deployment record
     no longer has `pendingLanes`. Gas: `startWithBid` hands its first bid the terms record the start
-    locked instead of reading it back (about 5,300 gas less; tightest start row 341,582). Owner, 17
+    locked instead of reading it back (about 5,300 gas less; tightest start row 341,582). Decided on 17
     November 2026: an edition is created for any completed 1/1, unbid included; collaborator consent
     has no expiry; declarations carry no intended renunciations.
-  - Documents: [ADR 0009](docs/adr/0009-second-permanence-pass.md) records the pass, with dated
+  - Documents: [ADR 0009](docs/adr/0009-second-permanence-pass.md) records these changes, with dated
     amendment notes on ADRs 0001, 0002, 0005, 0006, 0007 and 0008; the specs, audit pages,
     integrator pages, glossary, architecture and runbook describe the code as merged, with the
     network's duties as current practice; the control-proof tool reads the consolidation
     source's `isConsolidated`; `docs/facts.json` regenerated.
-- Independent Stream review fixes (reviews F and G; [ADR 0008](docs/adr/0008-independent-stream.md)
+- Independent Stream review fixes ([ADR 0008](docs/adr/0008-independent-stream.md)
   §1, §2, §8, §10, §12; IND-64 to IND-70, ID-41): a template version is its runtime code hash bound
   to an ownerless `IndependentStreamDeployer` (new; `IIndependentStreamDeployer` `0xf53f1196`),
   which holds the version's creation code in data contracts written at construction, deploys copies
@@ -447,7 +496,7 @@
   names the canonical content store (`contentStore()`, `ContentStoreSet`); a replaced registry
   answers as the current one; each genesis setter reaches only targets declaring its interface
   (`GovernanceConfig.genesisInterface`). The `IndependentStreamRegistry` constructor takes the
-  content store. The source-line budget is 16,500. Pass 3: an Independent Stream license text must
+  content store. The source-line budget is 16,500. Also: an Independent Stream license text must
   be a registered SHA-256 file of at most 16 chunks at the first mint and complete to finalize
   (`IIndependentStream.InvalidLicenseText`); the Independent Stream edition lens refuses a
   non-canonical split ledger; `setStatus` and `propagateRevocation` take at most `MAX_BATCH` (256)
@@ -476,11 +525,9 @@
   auction at it, admits both shared adapters and approves the two v1 template code hashes computed
   by `DeployV1.templateCodeHash` (`GovernanceConfig.isGenesisSelector` admits these three
   selectors); `VerifyV1.checkIndependentStream` reads them back. The source-line budget is 16,000.
-- Permanence ([ADR 0007](docs/adr/0007-permanence.md); owner instruction of 14 and 15 November
-  2026), two integration rounds and the fixes of four independent reviews. Pre-launch interface
-  reshaping:
-  - **Automated review fixes** (CodeRabbit and 6529bot, 16 November 2026; ADR 0007's review
-    table):
+- Permanence ([ADR 0007](docs/adr/0007-permanence.md), 14 and 15 November 2026) and the fixes
+  that followed its reviews. Pre-launch interface reshaping:
+  - **Fixes from automated review** (16 November 2026; ADR 0007's review table):
     - Renderer and content store: `tokenURI` reads no file with a chunk linked from more than
       3 parts (`IContentStore.maxParts`, new; `IContentStore` `0x943307d5`), serving it by
       locator until anyone writes the chunk whole, so the 8M budget holds whatever the part
@@ -499,12 +546,12 @@
       the previous value. `Typehashes.ARTIST_REGISTRATION` moves to the shared typehashes.
     - Rule texts follow ADR 0007's gas rule (AGENTS.md, CONTRIBUTING.md, `.coderabbit.yaml`):
       no gas number in permanent contracts or the renderer, return data always bounded.
-    - Later rounds: the manager's `execute` counts an active admin's immediate calls as
+    - Later fixes: the manager's `execute` counts an active admin's immediate calls as
       activity; the statement log's Stream check is the full ERC-165 check; every claim names
       at most 64 payees (`TooManyPayees`); the edition auction's payout gas only rises, at most
       doubling per change; WorkRecords requires a SHA-256 digest of a stored license text; the
       renderer reads at most 3 parts per chunk.
-    - Fourth round: a completed dead-admin recovery withdraws a pending successor proposal;
+    - Also: a completed dead-admin recovery withdraws a pending successor proposal;
       the slow and escalated lanes never schedule before the caller's own delay; every move of
       the admin-activity clock emits `AdminActivity(address indexed admin, uint48 at)`
       (`0xdc84c09e…`). WorkRecords: every license text a work selects has at most 16 chunks,
@@ -631,7 +678,7 @@
     the manager's functions and a new `open` group), the role matrix regenerated; `DeployV1`
     deploys the split ledger, both vaults (genesis addresses 0xa013 and 0xa014) and the edition
     auction's limits; `tools/size-margins.json` holds no exemption.
-  - **Budgets.** The source-line budget rises from 13,000 to 15,000 (owner decision, 15
+  - **Budgets.** The source-line budget rises from 13,000 to 15,000 (15
     November 2026; `tools/check_budgets.py`). ADR 0004's table is re-measured: the tightest
     start row is 344,968 and the suite's start margin stays 5,000; the re-rate (203,000), the
     bound `createEdition` (158,000), `authorize` (94,000, 0 new slots), the edition auction's
@@ -670,7 +717,7 @@
   - **Gas.** ADR 0004's table is re-measured: the re-rate, which now lowers the rate, rose by
     248 to 190,150; `tokenURI`'s worst case fell by 67 to 2,736,559; the start rows moved by at
     most 20 with the deployment addresses, and the binding start row is 338,273.
-- Review fixes of November 2026 (RFX-*), grouped by area:
+- Review fixes of November 2026, grouped by area:
   - **English auction.** With a bid, the winning bidder may send a pending delivery to any
     address at any time; the recipient its bid named may claim to itself at any time, and to
     another address only from 30 days after the auction's stored end (`InvalidRecipient`
@@ -733,7 +780,7 @@
     ADR 0002 amendment note), though they cannot stop live sales settling except 1/1 auctions
     in an ERC-20 they deprecate (LIM-SAL-15); LIM-GAS-2 covers the deployment's state gas; the trust assumptions,
     architecture, storage guide, audit scope and the module READMEs follow these changes.
-- Explicit Stream state machines (owner decision 28, rc.3):
+- Explicit Stream state machines:
   - `PrimaryOutcome` gains RESCUED (4, appended so earlier values keep their encodings).
     `rescueToMuseum` records it, in the one flag combination no adapter can produce, so no
     storage is added. It emits `PrimarySaleSettled(tokenId, RESCUED, 0, 0, 0)` beside

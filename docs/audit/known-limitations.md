@@ -204,7 +204,7 @@ are this page's.
 
 | ID | Type | Limitation | Consequence | Mitigation or procedure | Source |
 | --- | --- | --- | --- | --- | --- |
-| LIM-REL-1 | Gap | **No deployed-bytecode verifier.** `VerifyCore.s.sol` recomputes addresses and compares code hashes with the record, but does not rebuild the bytecode from source. | Nobody can yet reproduce a deployment's bytecode from the repository with one command. | CBOR metadata with an IPFS hash is on (`bytecode_hash = "ipfs"`), so Sourcify and Etherscan can report exact matches. | [script README](../../script/README.md); [`foundry.toml`](../../foundry.toml) |
+| LIM-REL-1 | Gap | **Bytecode verification is against the checkout's own build, for the genesis contracts only.** `VerifyCore.s.sol` deploys the checked-out build again, in the script's memory, from the state of the record's `forkBlock`, and compares every genesis contract's address and runtime code with the chain's. It needs the deployment's commit, the deploy's environment and an RPC that serves the state of `forkBlock`. It does not cover a contract created after genesis (an Independent Stream pair, a split vault), and nothing here checks that a second machine or toolchain produces the same build. | A reader without those inputs, or checking a later contract, relies on a block explorer's source match. | CBOR metadata with an IPFS hash is on (`bytecode_hash = "ipfs"`), so Sourcify and Etherscan can report exact matches. | [script README](../../script/README.md#4-after-the-broadcast); [`script/VerifyCore.s.sol`](../../script/VerifyCore.s.sol); [`foundry.toml`](../../foundry.toml) |
 
 ## Known, accepted (plain-core reviews)
 

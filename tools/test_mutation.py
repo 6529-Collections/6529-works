@@ -88,6 +88,18 @@ class ParseLogTest(unittest.TestCase):
         self.assertEqual(r.killed, 32)
         self.assertAlmostEqual(mt.kill_rate(r), 100.0 * 32 / 34)
 
+    def test_timeouts_are_counted_apart_from_the_other_kills(self) -> None:
+        r = mt.FileResult("src/x/Thing.sol")
+        mt.parse_log(LOG, r)
+        # One mutant timed out against its module's tests (LOG).
+        self.assertEqual((r.killed, r.timed_out, r.killed_without_timeout), (30, 1, 29))
+        # A survivor whose re-check timed out is a kill and a timeout; one the suite failed
+        # on is a kill without one. The score counts both, as before.
+        r.survivors[0].recheck = "killed"
+        r.survivors[1].recheck = "timeout"
+        self.assertEqual((r.killed, r.timed_out, r.killed_without_timeout), (32, 2, 30))
+        self.assertEqual(r.timeouts, 1)
+
 
 class ShardTest(unittest.TestCase):
     def test_every_file_with_code_has_its_shards_and_no_other_file_does(self) -> None:
@@ -547,8 +559,11 @@ class ReportTest(unittest.TestCase):
             results = mt.load_results([self._results(Path(d))])
         text = mt.markdown(results)
         self.assertIn(
-            "| `src/x/Thing.sol` | 34 | 31 | 3 | 91.2% | 3/4 | 9/10 | 18/20 | 0/0 |", text
+            "| `src/x/Thing.sol` | 34 | 31 | 1 | 3 | 91.2% | 3/4 | 9/10 | 18/20 | 0/0 |", text
         )
+        # The one timeout is a kill no failing test made, and the report says so.
+        self.assertIn("| **Total** | 34 | 31 | 1 | 3 | 91.2% | | | | |", text)
+        self.assertIn("Killed without a timeout: 30.", text)
         self.assertNotIn("total += amount", text)  # killed on re-check
         self.assertIn("`a < b` to `a <= b`", text)
 

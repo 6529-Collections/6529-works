@@ -292,7 +292,7 @@ contract ModulesTest is Test {
 
     /// A minter that was active, added again and removed before its new wait ended keeps its
     /// record: it counts as a minter that was active, though its new start never came.
-    function test_RemoveMinter_AgainBeforeTheNewWaitStillCountsAsOnceActive() public {
+    function test_RemoveMinter_ReaddedMinterRemovedDuringItsWaitKeepsWasActive() public {
         m.removeMinter(genesisMinter);
         m.addMinter(genesisMinter);
         assertFalse(m.wasActive(genesisMinter));

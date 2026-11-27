@@ -8,10 +8,10 @@ assertion, not the test's name; [Gaps](#gaps) lists what no campaign covers.
 
 **The plain core.** [ADR 0010](../adr/0010-plain-permanent-core.md) replaced `Stream6529`,
 `StreamEditions6529`, `WorkRecords` and the Independent Stream templates with a small permanent
-core. Its invariants come first, under [The permanent core](#the-permanent-core). Campaigns of the
-modules that were rewritten (the English auction, the edition auction on the whole stack, the
-records modules, Independent Stream sales) are being ported: until then their rows name the test
-they had, as placeholders, and `tools/check_rules.py` reports them.
+core. Its invariants come first, under [The permanent core](#the-permanent-core). Some invariants
+that campaigns checked on the earlier contracts have no stateful campaign on the current ones.
+Each is listed under its area as "no stateful campaign", outside the tables, with what does
+cover it; [Gaps](#gaps) has the summary.
 
 ## The permanent core
 
@@ -52,18 +52,76 @@ whose minters are the Independent Stream module's answer, with one more check:
 | --- | --- | --- | --- |
 | INV-CORE-11 | Media never change after open; `recordFileId` never changes after `finalized`; `finalized`, `licenseLocked`, `repinLocked` and `onChainComplete` never go back to false; a CC0 work stays CC0; `renderer` changes only by finalize or `repin`, never past the lock. | `invariant_TheFactsHold` | open, set record, set license, finalize, repin, lock |
 
-**Placeholders for campaigns being ported** (each becomes a row when its test exists):
+Non-vacuity of the Independent Stream campaign:
+`IndependentStreamInvariantTest.test_HandlerReachesEveryState`.
 
-- INV-CORE-7: Stream's state is rebuilt exactly from its logs (log replay).
+**No stateful campaign** checks these as stated (each becomes a row when its test exists):
+
+- INV-CORE-7: Stream's state is rebuilt exactly from its logs (log replay). The replay tests in
+  [`test/replay/`](../../test/replay) run scripted scenarios on the deployed stack, not random
+  call sequences.
 - INV-CORE-14: only the network changes `moduleDelay`, `rescueDelay`, `rebindDelay` and
   `unclaimedPeriod`; each change emits the old and new values; an action is refused before the
   period in force has elapsed; zero is allowed; an addition already announced keeps its time.
+  Campaigns check the waits while the settings change (INV-CORE-9, INV-LIF-6, INV-LIF-9,
+  INV-LIF-14, INV-LIF-15, INV-AUC-14); who may change a setting and the events are unit and fuzz
+  tests ([`StreamSettings.t.sol`](../../test/core/StreamSettings.t.sol)).
 - INV-CORE-15: expiry or forfeit never takes money that has waited less than the unclaimed period
   in force, and never money that arrived after a mark or after a credit aged (ledger, escrow and
-  both auctions, one `AgedCredits` rule in the auctions).
+  both auctions, one `AgedCredits` rule in the auctions). Campaigns check it in the English
+  auction (INV-AUC-14, INV-LIF-9) and for the ledger's marks (INV-ECO-14), whose handler also
+  predicts every escrow expiry; credit expiry in the edition auction has unit tests only.
 - INV-CORE-16: in every seam position (minter, TERMS, RENDERER, RECORDS, accounts, Independent
   Stream gate), a module that lies, reverts, burns all its gas or re-enters moves no token, changes
-  no fact and moves no balance; `ownerOf` and transfers still work.
+  no fact and moves no balance; `ownerOf` and transfers still work. Unit tests only
+  (`test/core/*Hostile*.t.sol`, `WorkRulesHostile.t.sol`, `IndependentHostile.t.sol`); the
+  lifecycle campaign's hostile party is a bidder and recipient, not a module.
+
+## The deployed stack
+
+Two campaigns run 6529 Stream on the whole stack as `script/DeployCore.sol` deploys it with the
+committed genesis ([`test/integration/invariant/`](../../test/integration/README.md#invariant-suites));
+the third, the edition auction's, is [below](#the-edition-auction-on-the-whole-stack). Each
+action predicts its outcome from the rules and records any disagreement, which the invariant
+function reports.
+
+**A work's lifecycle**
+([`StreamLifecycleInvariant.t.sol`](../../test/integration/invariant/StreamLifecycleInvariant.t.sol),
+handler [`StreamLifecycleHandler`](../../test/integration/invariant/StreamLifecycleHandler.sol)):
+the real token, package registry, `StreamWorkFacts6529` with `WorkRules`, delivery contract,
+English auction and accounts module; three artists with six works each, three bidders, and a
+contract that reverts, burns its gas or re-enters when it is paid or handed a work.
+
+| ID | Invariant | Test | Handler actions |
+| --- | --- | --- | --- |
+| INV-LIF-1 | Every live token has one owner, a known holder, and is in the auction's custody exactly while its sale is unsettled or its delivery pending; a burned token has no owner and its sale is cancelled. | `invariant_streamLifecycle` | `start`, `settle`, `resolveDispute`, `transfer`, `claimDelivery` |
+| INV-LIF-2 | Token IDs are assigned once, in order, one per item; supply is minted minus burned. | `invariant_streamLifecycle` | `start`, `resolveDispute` |
+| INV-LIF-3 | The facts fixed at mint never change, and the outcome is `NONE` until the sale records it, then `SOLD` or `UNSOLD` for good. | `invariant_streamLifecycle` | every action |
+| INV-LIF-4 | A content hash is held by at most one live work; a burned work holds it until it is released; a released item is barred, and only the release's beneficiary mints the content again. | `invariant_streamLifecycle` | `start`, `resolveDispute`, `releaseContent` |
+| INV-LIF-5 | A record's media never change; its record file is the opened one or the artist's last `setRecord` and never changes after finalize; a finalized work keeps its pinned renderer and code hash; a CC0 work stays CC0 with the pinned text; locators only append, within each side's quota. | `invariant_streamLifecycle`; handler check: `addLocator` | `openRecord`, `setRecord`, `finalize`, `relicense`, `addLocator` |
+| INV-LIF-6 | The RENDERER module is the one the network last activated; a pending module keeps the time it was given whatever the module delay becomes; a finalized work is drawn by its pinned renderer, an unfinalized one by the module. | `invariant_streamLifecycle` | `swapRenderer`, `finalize` |
+| INV-LIF-7 | An account has no active authority exactly while it is frozen or being replaced, and nothing its keys try as the artist goes through. | `invariant_streamLifecycle`; handler check: `restrainedAct` | `stageRecovery`, `endRecovery`, `freezeAccount`, `restrainedAct` |
+| INV-LIF-8 | The auction's ETH balance is what was paid in less what was paid out, and equals the live high bids plus the credits. | `invariant_streamLifecycle` | `bid`, `hostileBid`, `settle`, `claimCredit`, `hostileClaim`, `expireCredit` |
+| INV-LIF-9 | A credit is everything credited and not claimed or expired, and its expiry is due one unclaimed period, as it stands, after its waiting money started to wait; an expiry sends exactly that money to the network's fee recipient and never money younger than the period. | `invariant_streamLifecycle`; handler check: `expireCredit` | `expireCredit`, `setUnclaimedPeriod`, `claimCredit` |
+| INV-LIF-10 | A work settled without a bid is held by the museum, whatever its artist's standing, and the museum holds nothing else. | `invariant_streamLifecycle` | `settle` |
+
+Non-vacuity: `StreamLifecycleInvariantTest.test_EveryActionRuns`.
+
+**Work and minter states**
+([`StreamStatesInvariant.t.sol`](../../test/integration/invariant/StreamStatesInvariant.t.sol);
+the test contract is its own handler): works minted through the English auction and through a
+second minter the network adds; both minters removed and added again; the module and rescue
+delays changed; works reported, burned, transferred and rescued. One function checks all five.
+
+| ID | Invariant | Test | Handler actions |
+| --- | --- | --- | --- |
+| INV-LIF-11 | A work's state changes only along the table: never minted to in sale; in sale to out of custody, cancelled, sold, unsold or rescued; out of custody back to in sale; the rest are final. | `invariant_streamStatesFollowTheTables` | every action |
+| INV-LIF-12 | A recorded outcome never changes. | `invariant_streamStatesFollowTheTables` | every action |
+| INV-LIF-13 | A minter's state changes only along the table: never added to pending or active; pending to active or removed; active to removed; removed to pending or active; a change that would change nothing is refused. | `invariant_streamStatesFollowTheTables` | add and remove a minter |
+| INV-LIF-14 | An added minter is active from the time it was given when added, whatever the module delay becomes. | `invariant_streamStatesFollowTheTables` | add a minter, change the module delay, warp |
+| INV-LIF-15 | A report, burn or rescue goes through exactly when the rules allow it: a minter, active or removed, that holds a token with no outcome reports once or burns; the network rescues only a token a removed minter holds unsold, once the rescue delay, as it stands, has passed since the removal. | `invariant_streamStatesFollowTheTables` | `rescue`, report, burn, change the rescue delay |
+
+Non-vacuity: `StreamStatesInvariantTest.test_EveryTransitionIsReached`.
 
 ## Campaign settings
 
@@ -71,8 +129,10 @@ Every campaign runs with `[profile.default.invariant]` in [`foundry.toml`](../..
 `runs = 256`, `depth = 128` calls per run, `fail_on_revert = true`, `show_metrics = true`.
 Fuzz tests run 256 times (`[profile.default.fuzz] runs`). Two `/// forge-config:` comments under
 `test/` change fuzz runs: `testFuzz_Clear_MatchesTheBruteForceOverUnits` runs 10,000 times, and
-`testFuzz_Settlement_EqualsTheLibraryClearing` 10,000 under the `deep` profile; none changes
-an invariant campaign's runs or depth. Three campaigns check their invariant after every
+`testFuzz_Settlement_EqualsTheLibraryClearing` 10,000 under the `deep` profile. The four Forge
+runners of the Medusa harnesses ([below](#the-second-fuzzers-harnesses-under-forge)) run 64
+times at depth 64 (256 at depth 128 under `deep`); no other comment changes an invariant
+campaign's runs or depth. Three campaigns check their invariant after every
 fourth call (`check_interval = 4`; every call in the `deep` profile): the content store, the
 Stream lifecycle and the edition auction, whose checks read many contracts; each of their
 actions still checks its own effects.
@@ -100,14 +160,14 @@ actions still checks its own effects.
 
 ## Work records modules
 
-The RECORDS module `WorkRules`, the mint policy and the delivery contracts. Their campaigns are
-being ported to the plain core; until then each invariant is listed as a placeholder.
+The RECORDS module `WorkRules`, the mint policy and the delivery contracts. The lifecycle
+campaign runs all three on the deployed stack (INV-LIF-4 to INV-LIF-6). The invariants below are
+those of the campaigns on the earlier contracts; no stateful campaign checks them as stated,
+and each becomes a row when its test exists.
 
 ### Work powers
 
-The earlier campaign is being ported to the plain core.
-
-Placeholders for campaigns being ported (each becomes a row when its test exists):
+No stateful campaign; unit and fuzz tests in `test/records/WorkRules*.t.sol`.
 
 - INV-STR-12: A work's renounced mask only gains bits: it equals the OR of every applied renunciation and keeps every bit it held at the previous check.
 - INV-STR-13: No renounced power's function succeeds again, every call the rules allow succeeds, and the rate and license are the ones the handler applied.
@@ -115,27 +175,26 @@ Placeholders for campaigns being ported (each becomes a row when its test exists
 
 ### The mint policy
 
-The earlier campaign is being ported to the plain core.
-
-Placeholders for campaigns being ported (each becomes a row when its test exists):
+No stateful campaign runs a mint policy that answers arbitrarily. With the real package
+registry as the policy, INV-LIF-4 checks one live work per content hash, and INV-CUR-4 the
+registry's content record.
 
 - INV-STR-15: MP-1 ([AUC-38](../spec/stream-and-auctions.md#rules-and-invariants)): whatever the mint policy answers, no existing token's views change, and each stays held by the adapter that minted it.
 - INV-STR-16: No content mints twice ([AUC-44](../spec/stream-and-auctions.md#rules-and-invariants)): whatever the mint policy answers, Stream's content record (`consumedItemOf`) names the item of the one token that minted each content hash, and no second mint of a content hash succeeds.
 
 ### Work records under replaced delivery contracts and stores
 
-The earlier campaign is being ported to the plain core.
-
-Placeholders for campaigns being ported (each becomes a row when its test exists):
+No stateful campaign replaces a delivery contract or a store. INV-CORE-11, INV-LIF-5 and
+INV-LIF-6 check that a work's facts and pinned renderer hold while the RENDERER module is
+swapped; no campaign compares `tokenURI` output.
 
 - INV-STR-17: A complete, finalized work's `tokenURI` never changes.
 - INV-STR-18: A complete work's facts (record, media, license, rate, powers, pin, completeness and each file's store) never change.
 
 ### Delivery contracts
 
-The earlier campaign is being ported to the plain core.
-
-Placeholders for campaigns being ported (each becomes a row when its test exists):
+INV-LIF-5 checks that locators only append, within the quotas, on one delivery contract. No
+stateful campaign marks a locator dead, reads the preferred locator or installs a successor.
 
 - INV-WD-4: Every action has the predicted outcome: strangers, the artist after finalize, duplicate and malformed URIs, a full quota, a dead or missing index, an unknown collection, a stale compare-and-set value and a stranger's replacement are refused; all else succeeds.
 - INV-WD-1: In every real delivery contract ever installed, each file's locators are exactly those appended, in order, at most 16; the artist added at most 8 and only before finalize, the platform at most 8 before finalize and at most the artist's unused slots more after; counts, artist mask and dead mask match the model; a dead mark never clears ([WS-19, WS-20](../spec/works-and-storage.md#rules-and-invariants)).
@@ -238,7 +297,12 @@ money with the time each part arrived.
 | INV-AUC-1 | The auction's ETH balance equals its standing high bids plus every account's credits. | `invariant_BalanceIsStandingBidsPlusCredits` | all |
 | INV-AUC-14 | `expireCredit` never sends the network money that has waited less than the unclaimed period in force when the expiry is attempted, whatever credits arrived meanwhile and whatever the period was set to. | `invariant_NeverTakesMoneyYoungerThanThePeriod` | `expire`, `setPeriod`, `bid`, `cancel`, `withdraw` |
 
-Placeholders for the rest of the earlier campaign (each becomes a row when its test exists):
+The rest of the earlier campaign has no stateful campaign as stated (each becomes a row when
+its test exists). On the deployed stack the lifecycle and state campaigns check a sale's custody
+and single outcome (INV-AUC-3: INV-LIF-1, INV-LIF-3, INV-LIF-11, INV-LIF-12), the museum
+(INV-LIF-10) and, inside the handler, that a second dispute pause is refused; the money's path
+to the seller and the network, the minimum bid, liquidation and Independent Stream sales on a
+hostile token are unit and integration tests only.
 
 - INV-AUC-2: Every unit deposited as a bid is held by the auction, paid to the seller or network wallet, credited to one of them in the escrow, or claimed.
 - INV-AUC-3: Each sale has at most one outcome and exact custody: a cancelled sale's token is burned, with no bidder; a settled sale holds its token only while delivery is pending (base suite: marked primary-settled); an open sale holds it.
@@ -260,27 +324,44 @@ Placeholders for the rest of the earlier campaign (each becomes a row when its t
 
 ## Edition sales
 
-The edition auction runs on mocks in the unit suites; its campaign on the whole stack is below.
+The edition auction runs on mocks in the unit suites; its campaign on the deployed stack is below.
 
 ## The edition auction on the whole stack
 
-The campaign that ran the edition auction on the deployed stack is being ported to
-`script/DeployCore.sol`. Placeholders (each becomes a row when its test exists):
+[`EditionAuctionInvariant.t.sol`](../../test/integration/invariant/EditionAuctionInvariant.t.sol),
+handler [`EditionAuctionHandler`](../../test/integration/invariant/EditionAuctionHandler.sol).
+The stack `script/DeployCore.sol` deploys with the committed genesis: the real
+`StreamEditions6529`, the uniform-price edition auction and its lens, each sale beside its
+master's 1/1 in the real English auction. Six masters by one artist with creator caps of none,
+none, 4, none, 6 and 2; five edition bidders, two 1/1 collectors, two keepers and a settler
+that submits bad orders. The network also rescues the work of a 1/1 that is not settled, with
+the token's waits at zero. Clearing is compared with the per-unit brute-force reference
+[`UniformClearingReference`](../../test/helpers/UniformClearingReference.sol). One function
+asserts the state after every fourth call (`check_interval = 4`; every call in the `deep`
+profile); a handler check fails the campaign through the same function.
 
-- INV-EA-1: No unsold or extra copies: an edition's minted supply equals the units its claims minted, never exceeds the clearing count `k`, and equals `k` once every winning bid is claimed; the units every bid wins sum to `k`.
-- INV-EA-2: ETH conservation: the adapter's balance is what bidders paid in minus refunds, revenue and credits paid out, and equals exactly what it owes: every unclaimed bid's escrow, less its won units at the clearing price once settled, plus the credits.
-- INV-EA-3: Clearing optimality and the breadth rule: before settlement the live count, price and best revenue equal the per-unit reference's (so the count is the largest within the margin of `R*`); at settlement the stored result equals it too, and its revenue is within the margin of `R*`.
-- INV-EA-4: The cap: the count never exceeds a nonzero creator cap.
-- INV-EA-5: FIFO at the cut step: every claim mints exactly the reference's fill in arrival order of the units the clearing step sells, the marginal bid partly, and `bidOutcome` agrees with the claim; the departure order the handler sorts equals `settlementOrder` (a fresh settler's order), and a sweep completes.
-- INV-EA-6: The view equals settlement: the last live `clearing` before settling is the stored result, and the stored result never changes afterwards.
-- INV-EA-7: The clocks: `endTimes` reads the 1/1's end live, `closeAt` is that end plus 15 minutes, `endTime = max(closeAt, softEnd)` never before `closeAt` and never past the backstop, the soft end is the handler's model (a bid or raise in the window, none while the 1/1 is paused), and bidding is open exactly when the rules say.
-- INV-EA-8: No settlement before the end, before the 1/1 settles (the 1/1 sale the edition sale was opened in: once offered again, that sale is over, EA-17), or before the edition exists when copies sold; a cancelled 1/1's sale refuses a bid once the adapter reads the cancellation (LIM-EA-16 has the rest) and settles VOID; `abandon` from 21 days after the close voids a sale that paid nothing whose 1/1 was cancelled or gives no usable answer, and never one whose 1/1 is running, paused, ended or settled.
-- INV-EA-9: A void sale refunds every bid in full and mints nothing.
-- INV-EA-10: Firm bids and single claims: a withdrawal at any time (also during a 1/1 dispute pause), a stranger's raise, a payment one wei off, a second open, a second claim, all revert.
-- INV-EA-11: Beside the 1/1: a 1/1 bid in its anti-snipe window extends the 1/1 and never moves the edition end earlier; an unbid 1/1 settles to the museum.
-- INV-EA-12: Per-settler sweeps and completability: a settler's call moves only its own progress (`sweepOf`); an order that skips a departure is accepted but never finishes its sender's sweep; a reordered one reverts with `InvalidSettlementOrder`; after any of these, a keeper settling from its own address completes settlement within a bounded number of calls, and a later call by another settler returns true and changes nothing.
-- INV-EA-13: No claim while SETTLING: while a sale's scan or sweep is unfinished, its bidder's claim and a pushed claim both revert with `InvalidAuctionState`. A book wider than one call's scan (24 words) settles over calls: the first stores scan progress and no result; an early call may advance the scan before the edition exists, and the call that would finish it waits for the edition.
-- INV-EA-14: A rescued master: the network rescues the work of a 1/1 that is not settled, to a safe, to the auction itself, or to a safe that sends it straight back. The rescue changes nothing in the 1/1 sale; settling that sale closes it CANCELLED, with the standing bid credited once and the work with the rescue's recipient or, found in custody, in the museum (AUC-36, AUC-56); its edition sale then settles VOID with every bid refunded (EA-22).
+| ID | Invariant | Test | Handler actions |
+| --- | --- | --- | --- |
+| INV-EA-1 | No unsold or extra copies: an edition's minted supply equals the units its claims minted, never exceeds the clearing count `k`, and equals `k` once every winning bid is claimed; the units every bid wins sum to `k`; the edition is sealed at `k` by the clearing, at zero when the sale is void, and holds the creator's cap until then. | `invariant_editionAuction` | `open`, `settle`, `claim` |
+| INV-EA-2 | ETH conservation: the auction's balance is what bidders paid in minus refunds, revenue and credits paid out, and equals exactly what it owes: every unclaimed bid's escrow, less its won units at the clearing price once settled, plus the credits. | `invariant_editionAuction` | all |
+| INV-EA-3 | Clearing optimality and the breadth rule: before settlement the live count, price and best revenue equal the per-unit reference's; at settlement the stored count and price equal it too, and the revenue is within the margin of the best revenue. | `invariant_editionAuction`; handler check: `settle` | `bid`, `raise`, `settle` |
+| INV-EA-4 | The cap: the count never exceeds a nonzero creator cap. | `invariant_editionAuction`; handler check: `settle` | `bid`, `fifoHole`, `settle` |
+| INV-EA-5 | FIFO at the cut step: every claim mints exactly the reference's fill in arrival order of the units the clearing step sells, the marginal bid partly, and `bidOutcome` agrees with the claim; `settlementOrder` equals the departure order the handler sorts, and the sweep completes. | handler check: `claim`, `settle`; `invariant_editionAuction` | `fifoHole`, `raise`, `settle`, `claim` |
+| INV-EA-6 | The view equals settlement: the last live `clearing` before settling is the stored result, and the stored result never changes afterwards. | handler check: `settle`; `invariant_editionAuction` | `settle` |
+| INV-EA-7 | The clocks: `endTimes` reads the 1/1's end live, `closeAt` is that end plus 15 minutes, `endTime = max(closeAt, softEnd)` never before `closeAt` and never past the backstop, the soft end is the handler's model (a bid or raise in the window, none while the 1/1 is paused), and bidding is open exactly when the rules say. | `invariant_editionAuction` | `bid`, `raise`, `bidOneOfOne`, `disputePause`, `warp` |
+| INV-EA-8 | No settlement before the end or before the 1/1 settles; a cancelled 1/1's sale refuses a bid once the auction reads the cancellation (LIM-EA-16 has the rest) and settles VOID; `abandon` goes through exactly from 21 days after the close for a sale that paid nothing whose 1/1 was cancelled. | handler check: `settle`, `abandon` | `settle`, `abandon`, `resolveDispute` |
+| INV-EA-9 | A void sale refunds every bid in full, mints nothing and seals its edition at zero. | `invariant_editionAuction`; handler check: `claim` | `resolveDispute`, `settle`, `abandon`, `claim` |
+| INV-EA-10 | Firm bids and single claims: a withdrawal at any time (also during a 1/1 dispute pause), a stranger's raise, a payment one wei off, a late or second open and a second claim are all refused. | handler check: `withdraw`, `raise`, `bid`, `open`, `claim` | as named |
+| INV-EA-11 | Beside the 1/1: a 1/1 bid in its anti-snipe window extends the 1/1 and never moves the edition end earlier; an unbid 1/1 settles to the museum. | handler check: `bidOneOfOne`, `settleOneOfOne` | as named |
+| INV-EA-12 | Per-settler sweeps and completability: a settler's call moves only its own progress (`sweepOf`); an order that skips a departure is accepted but never finishes its sender's sweep; a reordered one reverts with `InvalidSettlementOrder`; after any of these, a keeper settling from its own address completes settlement, and a later call by another settler returns true. | handler check: `settle` | `fifoHole`, `raise`, `settle` |
+| INV-EA-13 | No claim while SETTLING: while a sale's scan or sweep is unfinished, its bidder's claim and a pushed claim both revert with `InvalidAuctionState`. A book wider than one call's scan (24 words) settles over calls: the first stores scan progress and no result, and does not seal the edition. | handler check: `settle` | `wideBook`, `settle` |
+| INV-EA-14 | A rescued master: the network rescues the work of a 1/1 that is not settled, to a safe, to the auction itself, or to a safe that sends it straight back. The rescue changes nothing in the 1/1 sale; settling that sale closes it CANCELLED, with the standing bid credited once and the work with the rescue's recipient or, found in custody, in the museum (AUC-36, AUC-56); its edition sale then settles VOID with every bid refunded (EA-22). | handler check: `rescueOneOfOne`, `settleOneOfOne`, `settle`; `invariant_editionAuction` | `rescueOneOfOne`, `settleOneOfOne`, `settle`, `claim` |
+
+Non-vacuity: `EditionAuctionInvariantTest.test_EveryActionRuns`.
+
+Not in this campaign, and unit and integration tests only: an edition sale whose 1/1 is offered
+again (EA-17), `abandon` for a 1/1 that gives no usable answer, and the expiry of an unclaimed
+credit.
 
 ## Identity and recovery
 
@@ -368,9 +449,13 @@ Non-vacuity: `ContentStoreInvariantTest.test_EveryActionRuns`.
 
 ## Independent Stream sales
 
-The earlier campaign is being ported to the plain core.
-
-Placeholders for campaigns being ported (each becomes a row when its test exists):
+An Independent Stream pair's tokens run the core campaigns
+([The permanent core](#the-permanent-core)). The English auction campaign starts Independent
+Stream sales on a stand-in token, so INV-AUC-1 covers the balance of INV-FSA-1. No stateful
+campaign checks the others (each becomes a row when its test exists); integration tests cover
+a pair's sales on the deployed stack
+([`IndependentPair.t.sol`](../../test/integration/IndependentPair.t.sol),
+[`IndependentEditionSale.t.sol`](../../test/integration/IndependentEditionSale.t.sol)).
 
 - INV-FSA-1: The auction's ETH balance equals every bidder's claimable credit plus the high bid of every unsettled sale.
 - INV-FSA-2: The network fee recipient receives exactly its locked share on every sold Independent
@@ -381,7 +466,15 @@ Placeholders for campaigns being ported (each becomes a row when its test exists
   or a curated artist's identity.
 - INV-FSA-5: Every sale ends: after each is refused, the auction owes only credits, and INV-FSA-1 and INV-FSA-2 still hold.
 
-Non-vacuity: `IndependentStreamInvariantTest.test_HandlerPathsReachState`.
+## The second fuzzer's harnesses under Forge
+
+The four Medusa harnesses in [`test/medusa/`](../../test/medusa) share no code with the handlers
+above and keep their own model of the rules ([Testing](../testing/README.md#second-fuzzer-medusa)).
+Forge runs each as a campaign too: `invariant_MedusaPropertiesHold` in `LedgerMedusaTest`,
+`StreamCoreMedusaTest`, `WorkFactsMedusaTest` and `LogMedusaTest` asserts every `property_*`
+function of its harness, at 64 runs of depth 64. They carry no ID of their own here; the
+properties restate INV-ECO, INV-CORE and INV-DSP rows against a second model. Non-vacuity:
+`test_HarnessActionsReachState` in each.
 
 ## Invariants removed or changed
 
@@ -468,16 +561,25 @@ Figures: [ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#the-table). Rul
 
 ## Gaps
 
-What no stateful campaign covers today, after the plain-core integration. Coverage, mutation
-testing and Halmos proofs are in [Testing](../testing/README.md).
+What no stateful campaign covers today. Coverage, mutation testing and Halmos proofs are in
+[Testing](../testing/README.md).
 
-- **The campaigns being ported.** The English auction, the edition auction on the whole stack,
-  the records modules (`WorkRules`, `WorkDelivery`), Independent Stream sales, log replay and the
-  settings and money rules of the core (INV-CORE-7, INV-CORE-14 to INV-CORE-16) have no campaign
-  on the new code yet; their rows above name the tests they had.
-- **The fully wired system.** The core campaigns run the real permanent contracts with stand-in
-  modules; scenario tests on the deployed stack (`script/DeployCore.sol`) are being ported to
-  [`test/integration/`](../../test/integration/README.md).
+- **Invariants of the earlier campaigns.** Listed under their areas as "no stateful campaign":
+  the core's log replay, settings and hostile modules (INV-CORE-7, INV-CORE-14 to INV-CORE-16;
+  campaigns cover INV-CORE-14 and INV-CORE-15 in part); the work powers, an arbitrary mint
+  policy, and replaced delivery contracts and stores (INV-STR-12 to INV-STR-18, INV-WD-1 to
+  INV-WD-4); the English auction beyond its balance, its credits' age and what the
+  deployed-stack campaigns check (INV-AUC-2 to INV-AUC-13); Independent Stream sales (INV-FSA-2
+  to INV-FSA-5).
+- **Edition sales outside the curated stack.** The edition campaign runs the curated pair. An
+  Independent Stream pair's edition auction, a sale whose 1/1 is offered again and the expiry
+  of an edition credit have unit and integration tests only.
+- **Money past the auctions.** No campaign on the deployed stack follows a settlement's
+  proceeds through the split vaults and the escrow; the economics campaign (INV-ECO-1 to
+  INV-ECO-14) runs the ledger, vaults and escrow with a payment harness in place of the sales.
+- **Stand-ins in the core campaigns.** The Stream, Editions and WorkFacts campaigns run the
+  real permanent contracts with stand-in modules; the deployed-stack campaigns run the genesis
+  modules, with a stand-in second minter and renderer, and never a hostile module.
 - **Execution-delay changes of a curation signer** (inactive but keeping its epoch) are unit
   tests only.
 - **`DependencyRegistry` and `Renderer`**: fuzz and unit tests only (PROP-RND-1). The content

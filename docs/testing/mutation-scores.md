@@ -239,7 +239,7 @@ this measurement are listed below; the others, and those of `EconomicsResolver` 
   - `test_SetRoyalty_AZeroReceiverWithAZeroRateClearsTheRoyalty` (EditionsBase L160)
   - `test_SupportsInterface_NothingBelowTheSupportedIds` (EditionsBase L234, StreamEditions6529 L46)
 - `test/core/Modules.t.sol`
-  - `test_RemoveMinter_AgainBeforeTheNewWaitStillCountsAsOnceActive (also test_RecordPrimarySale_AMinterRemovedTwiceStillSettlesItsSales in test/core/Stream.t.sol)` (Modules L143)
+  - `test_RemoveMinter_ReaddedMinterRemovedDuringItsWaitKeepsWasActive (also test_RecordPrimarySale_AMinterRemovedTwiceStillSettlesItsSales in test/core/Stream.t.sol)` (Modules L143)
 - `test/core/Stream.t.sol`
   - `test_EmitMetadataUpdate_ADescendingRangeIsLoggedAsARange` (StreamBase L229)
   - `test_SetRoyalty_AcceptsARateOfExactlyTheDenominator` (StreamBase L203)
@@ -461,7 +461,7 @@ the survivors new in the second measurement of two lenses.
 | 114 | SBR | equivalent | memory/storage on a read-only reference in a function that writes nothing through it (gas only) |
 | 122 | SBR | equivalent | memory/storage on a read-only reference in a function that writes nothing through it (gas only); `_addMinter` is called after the last read |
 | 142 | SBR | equivalent | memory/storage on a read-only reference in a function that writes nothing through it (gas only) |
-| 143 | ROR | killed | `test_RemoveMinter_AgainBeforeTheNewWaitStillCountsAsOnceActive (also test_RecordPrimarySale_AMinterRemovedTwiceStillSettlesItsSales in test/core/Stream.t.sol)`: a minter removed, added again and removed before its new start must still count as once active (settle its sales); no test reached that state |
+| 143 | ROR | killed | `test_RemoveMinter_ReaddedMinterRemovedDuringItsWaitKeepsWasActive (also test_RecordPrimarySale_AMinterRemovedTwiceStillSettlesItsSales in test/core/Stream.t.sol)`: a minter removed, added again and removed before its new start must still count as once active (settle its sales); no test reached that state |
 
 ### `src/core/Stream6529.sol`
 
