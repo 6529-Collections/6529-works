@@ -61,8 +61,9 @@ NOTES: dict[tuple[str, str], str] = {
     ("Stream6529", "setRescueDelay(uint48)"):
         "A setting of the network, at once, zero allowed; read when a rescue is attempted.",
     ("Stream6529", "rescue(uint256,address)"):
-        "Only a token a removed minter still holds with no outcome, once `rescueDelay()` has "
-        "passed since the removal. It can never reach a token a collector holds.",
+        "Only a token a removed minter still holds with no outcome ever recorded, once "
+        "`rescueDelay()` has passed since the removal. The English auction records the outcome "
+        "before a work leaves it, so no work it sold is within reach.",
     ("StreamEditions6529", "setRebindDelay(uint48)"):
         "A setting of the network, at once, zero allowed; read when a rebind is attempted.",
     ("StreamEditions6529", "rebind(uint256,address)"):

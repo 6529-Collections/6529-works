@@ -183,9 +183,9 @@ What each ceiling applies to (all are test gates in Prague gas, not chain code):
 | `startWithBid`, the auction's first bid (one-time) | 351,143 | 353,000 (regression) | 8 | 0 | 1,087,971 |
 | `SaleStarter.start`, steady state (start, vaults confirmed, record opened) | 575,413 | 579,000 (regression) | 13 | 0 | 1,745,955 |
 | `bid` that outbids | 74,192 | 76,000 (regression) | 1 | 0 | 169,824 |
-| `settle`, first payout to a seller vault | 152,306 | 400,000 | 1 | 1 | — |
-| `settle`, with a bid | 127,306 | 400,000 | 1 | 0 | 244,974 |
-| `settle`, no bid (to the museum, D140) | 81,436 | 400,000 | 0 | 0 | 112,448 |
+| `settle`, first payout to a seller vault | 162,097 | 400,000 | 1 | 1 | — |
+| `settle`, with a bid | 137,097 | 400,000 | 1 | 0 | 244,974 |
+| `settle`, no bid (to the museum, D140) | 91,226 | 400,000 | 0 | 0 | 112,448 |
 | `auction` (view, cold) | 32,425 | 34,000 (regression) | 0 | 0 | — |
 | `minimumBid` (view, cold) | 39,086 | 40,000 (regression) | 0 | 0 | — |
 | `auctionClock` (view, cold) | 28,787 | 30,000 (regression) | 0 | 0 | — |
@@ -216,6 +216,15 @@ Sepolia figures of the edition `open` row and of the two `restart` rows are r8's
 `restart` rows are new and measured by `test/integration/IndependentRestartGas.t.sol` in the same
 way as the rows of `test_Gas_Table`; the `restart` row of the earlier table below was measured
 before the plain core and is not comparable.
+
+**Amendment note, 27 November 2026 (settlement reads the recorded outcome).** The English
+auction's `settle` now reads the outcome the token recorded for the work (`workOf`, the work's
+stored words) before anything else, so the sale of a rescued work closes with refunds wherever
+the work is ([AUC-56](../spec/stream-and-auctions.md#rules-and-invariants)). The three `settle`
+rows above were re-measured with `test_Gas_Table`: each rose by 9,769 (9,768 with no bid) over
+the same test on the source before the change (152,328, 127,328 and 81,458), and stays under
+its unchanged 400,000 ceiling. No ceiling moved and no other row of the table changed. The
+Sepolia figures of the two rows that have one are r7's receipts, taken before this change.
 
 The other Independent Stream rows, the edition auction's worst-case rows and `tokenURI` are measured by
 their own tests (`IndependentStreamGas.t.sol`, `EditionAuctionGasReport.t.sol`,

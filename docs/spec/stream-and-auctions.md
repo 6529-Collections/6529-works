@@ -125,8 +125,19 @@ refusal gas and must not depend on a reentrancy guard a third party can hold.
 **Rescue.** If the network removes a minter that still holds a token with no outcome, the
 network may `rescue(tokenId, to)` once `rescueDelay` has passed since the removal. The outcome
 becomes `RESCUED`. Re-adding the minter clears its removal. A rescue can never reach a token
-whose outcome is set, or one held by anyone but that removed minter. A sale whose token was
-rescued closes with refunds only.
+whose outcome is set, or one held by anyone but that removed minter. The English auction mints
+every work to itself and records its outcome before the work leaves it (AUC-57), so no work it
+sold, sent to the museum or holds for a pending delivery can be rescued. `rescue` checks the
+token's own record and nothing else: it does not record who minted a token or where the token
+has been, so the rule for a later sale contract is in its admission
+([LIM-SAL-14](../audit/known-limitations.md#sales-and-auctions)).
+
+A sale whose work was rescued closes with refunds only. `settle` reads the outcome the token
+recorded, credits the standing bid back and ends the sale CANCELLED, so an edition sale that
+followed it is void with every bid refunded (EA-22). The work is usually with the rescue's
+recipient by then. If it is in the auction's custody instead, because the network named the
+auction as the recipient or the recipient sent it back, the sale closes the same way and the
+auction sends the work to the museum (AUC-56).
 
 **Royalties.** `royaltyInfo` is two storage reads of the token's receiver and rate; no module is
 asked. The receiver at mint is the split wallet for the seller and the network's fee share, or
@@ -171,7 +182,7 @@ the seller when the share is zero.
 | AUC-33 | An unsold 6529 Stream work is never a pending delivery: the auction moves it with a plain transfer, no receiver callback. | `test_Settle_AnUnsoldStreamWorkIsMovedWithoutAskingTheMuseum` |
 | AUC-34 | Retired: the auction's views are its own. | |
 | AUC-35 | The network may `rescue` a token only while a removed minter holds it with no outcome, once `rescueDelay` has passed since the removal; re-adding the minter clears the removal. | `test_Rescue_AfterFourteenDaysOnlyTheNetworkOnlyUnsold`, `testFuzz_Rescue_RefusedBeforeThePeriodInForce` |
-| AUC-36 | A sale whose token was rescued closes with refunds only. | `test_Settle_ARescuedWorkClosesWithRefunds`, `test_Museum_RescueOfAWorkARemovedMinterHoldsAndTheSaleCloses` |
+| AUC-36 | A sale whose work was rescued closes with refunds only, and ends CANCELLED: the standing bid is credited back once, and nothing is recorded, paid or delivered. A rescued sale that is still running takes bids until its end; each is credited back once. | `test_Settle_ARescuedWorkClosesWithRefunds`, `test_Museum_RescueOfAWorkARemovedMinterHoldsAndTheSaleCloses`, `test_RescuedSale_WorkWithItsRecipient_TheBidIsRefunded`, `test_RescuedIndependentSale_WorkWithItsRecipient_TheBidIsRefunded`, `test_Settle_ARescueDuringTheSaleRefundsEveryBidOnce`, `test_Settle_ARescuedSaleDoesNotRefundAWithdrawnBidAgain` |
 | AUC-37 | An outcome is NONE until recorded, then SOLD, UNSOLD or RESCUED for good. | `test_Sold_TheMinterCanDoNothingMore` |
 | AUC-38 | The mint policy decides new mints only; Stream never calls it, and no answer of it changes an existing token. | `test_MintPolicy_DecidesNewMintsOnlyAndIsNeverCalledForAnExistingToken`, `test_ModuleSwap_TheMintPolicyComesOnlyFromTheNewRegistry` |
 | AUC-39 | Retired: Stream holds no dependencies. | |
@@ -191,6 +202,8 @@ the seller when the share is zero.
 | AUC-53 | Removing a minter is immediate: it mints nothing new but still records outcomes and burns for tokens it holds. | `test_RemoveMinter_AtOnceKeepsItsRecord` |
 | AUC-54 | `moduleDelay` is the network's setting (7 days at launch), changed at once, zero allowed; a pending addition keeps its time. | `test_SetDelay_OnlyTheNetworkAtOnceWithOldAndNew`, `test_SetDelay_PendingAdditionsKeepTheirTime`, `test_SetDelay_ZeroIsAllowed` |
 | AUC-55 | An unsold Independent Stream work is offered again (`restart`) only from 15 minutes after its last sale's end (`RESTART_DELAY`, compiled in the auction; `RestartTooEarly` before), with no later limit. The 15 minutes are the time an edition sale stays open after its 1/1's end (EA-17), so a sale that followed the ended sale has closed before the work has a new sale and a new end. | `test_Restart_RefusedBeforeTheRestartDelay`, `test_Restart_RefusedUntilTheEditionCloseOffsetAfterTheEnd`, `test_Restart_OffersAnUnsoldWorkAgainAndSellsIt` |
+| AUC-56 | The auction knows a rescue by the outcome the token recorded, not only by where the work is. A rescued work that is in the auction's custody when its sale is settled (the network named the auction as the recipient, or the recipient sent the work back) closes the sale as AUC-36 says, and the auction sends the work to the museum the economics resolver names then, with a plain transfer. Adding the auction as a minter again changes nothing. A sale closed this way is never offered again. | `test_Settle_AWorkRescuedToTheAuctionItselfClosesWithRefunds`, `test_Settle_ARescuedWorkSentBackClosesWithRefunds`, `test_Settle_ARescuedWorkBackInCustodyWithNoBidGoesToTheMuseum`, `test_RescuedSale_RescuedToTheAuctionItself_TheBidIsRefundedAndTheWorkGoesToTheMuseum`, `test_RescuedSale_SentBackToTheAuction_TheBidIsRefundedAndTheWorkGoesToTheMuseum`, `test_RescuedSale_BackInCustodyWithNoBid_ClosesAndTheWorkGoesToTheMuseum`, `test_RescuedSale_ClosesTheSameAfterTheAuctionIsAddedAgain`, `test_Rescued_ToTheAuctionItselfClosesAtOnceAndNeverRestarts`, `test_Rescued_SentBackWithNoBidClosesAndGoesToTheMuseum`, `test_RescuedIndependentSale_RescuedToTheAuctionItself_ClosesAtTheEnd`, `test_RescuedIndependentSale_SentBackWithNoBid_ClosesAndGoesToTheMuseum` |
+| AUC-57 | The English auction mints every work to itself and records the work's outcome before the work leaves it: SOLD before the delivery, UNSOLD before the transfer to the museum; a work waiting for a pending delivery stays with SOLD recorded. So a rescue reaches no work the auction sold, sent to the museum or holds for a buyer, whatever the network does to the minter list. | `test_Rescue_NeverReachesAWorkTheAuctionSold`, `test_Rescue_NeverReachesAWorkTheAuctionSentToTheMuseum`, `test_Rescue_NeverReachesAWorkWaitingForItsDelivery` |
 
 ## Events
 
@@ -211,4 +224,5 @@ ERC-721 and ERC-4906.
 | A payout wallet refuses ETH | Credited in the escrow | Anyone flushes the escrow to the wallet. |
 | An Independent Stream token will not settle | `settle` reverts | `settleOrRefund` from 2 days after the end. |
 | The minter holding a work was removed | The work waits | The network re-adds the minter, or rescues after `rescueDelay`. |
+| The network rescued a work whose sale was not settled | `settle` closes the sale CANCELLED (`RescuedSaleClosed`): the bid is credited back, a rescued work in the auction's custody goes to the museum, and an edition sale that followed is void | Anyone calls `settle`; the bidders claim. |
 | `tokenURI`'s renderer is missing or fails | Reverts | Install a RENDERER module, or finalize to pin one. |

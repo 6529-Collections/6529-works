@@ -280,6 +280,7 @@ The campaign that ran the edition auction on the deployed stack is being ported 
 - INV-EA-11: Beside the 1/1: a 1/1 bid in its anti-snipe window extends the 1/1 and never moves the edition end earlier; an unbid 1/1 settles to the museum.
 - INV-EA-12: Per-settler sweeps and completability: a settler's call moves only its own progress (`sweepOf`); an order that skips a departure is accepted but never finishes its sender's sweep; a reordered one reverts with `InvalidSettlementOrder`; after any of these, a keeper settling from its own address completes settlement within a bounded number of calls, and a later call by another settler returns true and changes nothing.
 - INV-EA-13: No claim while SETTLING: while a sale's scan or sweep is unfinished, its bidder's claim and a pushed claim both revert with `InvalidAuctionState`. A book wider than one call's scan (24 words) settles over calls: the first stores scan progress and no result; an early call may advance the scan before the edition exists, and the call that would finish it waits for the edition.
+- INV-EA-14: A rescued master: the network rescues the work of a 1/1 that is not settled, to a safe, to the auction itself, or to a safe that sends it straight back. The rescue changes nothing in the 1/1 sale; settling that sale closes it CANCELLED, with the standing bid credited once and the work with the rescue's recipient or, found in custody, in the museum (AUC-36, AUC-56); its edition sale then settles VOID with every bid refunded (EA-22).
 
 ## Identity and recovery
 

@@ -69,7 +69,8 @@ The auction is replaceable; its numbers below are compiled or governed values of
 ### Timing: alongside the 1/1
 
 - **Timing.** The sale closes 15 minutes after the 1/1's final end, extended by a soft close up
-  to a backstop. Settlement waits for the 1/1 to settle or be cancelled.
+  to a backstop. Settlement waits for the 1/1 to settle or be cancelled. A 1/1 sale that
+  closed because the network rescued its work reads as cancelled (EA-22).
 ### Settlement, payouts and claims
 
 - **Settle and claim.** Settlement pays `count × price` once: the seller and the network, a
@@ -132,6 +133,7 @@ The auction is replaceable; its numbers below are compiled or governed values of
 | EA-19 | From 21 days after the close, anyone may abandon a sale that paid nothing and has nothing to settle against: its 1/1 was cancelled, or the 1/1's auction has no sale for it or gives no usable answer. It refunds every bid and seals the edition at zero. A sale whose 1/1 answers that it is running, paused, ended or settled is never abandoned, however late: anyone settles the ended 1/1 and then the sale (a 1/1 offered again since the sale opened counts as settled, EA-17, so anyone settles the sale). An adopted sale that runs on its own is never abandoned either: anyone settles it after its close. | `test_Abandon_TheFixedWaitThenVoidAndSealAtZero`, `test_Abandon_ACancelledMaster`, `test_Abandon_AMalformedAnswerCountsAsARefusal`, `test_Abandon_ABrokenEnglishAuction`, `test_Abandon_NeverWhileTheOneOfOneAnswersUsably`, `test_Abandon_NeverAPaidSale`, `test_Abandon_AScanInProgressWhoseOneOfOneStoppedAnswering`, `test_Abandon_TheAdapterRefusesALensThatAnswersEarly`, `test_Adopt_AfterRebind_RunsOnItsOwnAndSettlesWithoutTheOneOfOne` |
 | EA-20 | No payment reaches an undeployed wallet: `open` deploys the split wallets first. | `test_PayoutGas_IsTheGovernedFigure` |
 | EA-21 | After a network `rebind`, the network may have the new auction `adopt` an edition whose minter is that auction, with no copy minted and no seal, and open its sale. If the master's sale already has an outcome, the adopted sale runs on its own and settles without the 1/1. | `test_Adopt_AfterRebind_RunsOnItsOwnAndSettlesWithoutTheOneOfOne`, `test_Adopt_TheNetworkOnly`, `test_Adopt_RefusesAnEditionThatIsNotItsOwn`, `test_Rebind_TheNetworkMovesAnUnsoldEditionAndTheNewAdapterSellsIt` |
+| EA-22 | A 1/1 sale that closed because the network rescued its work reads as cancelled: an edition sale that followed it is void as EA-13 says, with every bid refunded in full, no copy minted and the edition sealed at zero, and no edition sale opens for that master afterwards. | `test_RescuedSale_WorkWithItsRecipient_TheEditionSaleIsVoid`, `test_RescuedSale_WorkWithItsRecipientAndNoBid_TheEditionSaleIsVoid`, `test_RescuedSale_RescuedToTheAuctionItself_TheEditionSaleIsVoid`, `test_RescuedSale_RescuedToTheAuctionItselfAndNoBid_TheEditionSaleIsVoid`, `test_RescuedSale_SentBackToTheAuction_TheEditionSaleIsVoid`, `test_RescuedSale_NoEditionSaleOpensAfterTheClose`, `test_RescuedIndependentSale_WorkWithItsRecipient_TheEditionSaleIsVoid`, `test_RescuedIndependentSale_RescuedToTheAuctionItself_TheEditionSaleIsVoid`, `test_RescuedIndependentSale_SentBackWithNoBid_TheEditionSaleIsVoid` |
 
 ## Events
 
@@ -147,5 +149,6 @@ The auction is replaceable; its numbers below are compiled or governed values of
 | The edition's sale contract was removed before it minted or sealed | The edition waits | The network rebinds it after `rebindDelay`; the new auction adopts it. |
 | The sale contract was removed after sealing | Winners still claim | None needed. |
 | The 1/1 is cancelled | The edition sale is void; bids refunded | None needed. |
+| The network rescued the master before its 1/1 was settled | The 1/1 closes as cancelled; the edition sale is void; bids refunded | Anyone settles the 1/1, then the edition sale. |
 | Nobody settles | The sale waits | Anyone settles the 1/1 and then the sale. |
 | The 1/1's auction has no sale for the master or stops answering | The sale cannot settle | From 21 days after the close anyone may abandon a sale that paid nothing: every bid is refunded. |
