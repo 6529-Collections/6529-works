@@ -992,6 +992,11 @@ contract DeployCoreSafetyTest is Test {
         assertEq(script.roleName(Roles.ADMIN), "ADMIN");
         assertEq(script.roleName(Roles.PLATFORM), "PLATFORM");
         assertEq(script.roleName(3), "3");
+        assertEq(script.roleName(type(uint64).max), "18446744073709551615");
+        // Every role ID the logs could name has a name: no ID reverts.
+        for (uint64 role; role <= Roles.COUNT + 1; ++role) {
+            assertGt(bytes(script.roleName(role)).length, 0);
+        }
     }
 
     // ------------------------------------------------------------------ delegation contract

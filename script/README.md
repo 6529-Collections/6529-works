@@ -197,8 +197,9 @@ existed.
    head). For an instance whose network changed holders or mappings on purpose,
    `ALLOW_GOVERNANCE_CHANGES=1` prints each difference found in the manager's logs and goes on;
    the genesis hashes must still match. What the logs show is as complete as the endpoint's
-   answer: the genesis comparison fails on a missing log, but a later grant left out by the
-   endpoint is not seen (LIM-REL-2 in the
+   answer: the genesis comparison fails on a missing log (an endpoint that has dropped old
+   logs answers an empty list, and the read-back then fails here), but a later grant left out
+   by the endpoint alone is not seen (LIM-REL-2 in the
    [known limitations](../docs/audit/known-limitations.md#release-evidence)).
    `forge script script/VerifyCore.s.sol --sig "holders()" --rpc-url <rpc>` with `DEPLOYMENT`
    alone prints who holds each role at the block it reads.

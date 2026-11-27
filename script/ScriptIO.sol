@@ -89,6 +89,7 @@ abstract contract ScriptIO is Script {
         if (expected == address(0)) return recorded;
         if (recorded != expected) revert DelegationMismatch(recorded, expected);
         if (expected.codehash != codehash) {
+            // The error carries the hash found on chain, not the pinned one.
             revert DelegationCodeMismatch(expected, expected.codehash);
         }
         return expected;

@@ -636,6 +636,9 @@ library VerifyCore {
         pure
         returns (Difference[] memory differences)
     {
+        // Room for every difference: a log yields at most one (a holder the file does not
+        // name, or the last state of a selector or target), and each grant of `cfg` at most
+        // one more. Twice the logs is a margin, not a need.
         Difference[] memory all = new Difference[](2 * logs.length + cfg.grants.length);
         uint256 n;
         GovernanceConfig.Grant[] memory held = holdersIn(logs);

@@ -267,8 +267,11 @@ contract VerifyCoreScript is ScriptIO {
         }
     }
 
-    /// @notice The name of `role`, or its number for a role `Roles` does not define.
+    /// @notice The name of `role`, or its number for a role `Roles` does not define. It never
+    ///         reverts: the logs may name any role ID.
     function roleName(uint64 role) public pure returns (string memory) {
+        // `Roles.label` has no label for ADMIN (OpenZeppelin does not let it be labelled) and
+        // reverts for it and for an unknown role, so both are answered here first.
         if (role == Roles.ADMIN) return "ADMIN";
         if (!Roles.isKnown(role)) return vm.toString(uint256(role));
         return Roles.label(role);
