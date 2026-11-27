@@ -268,20 +268,22 @@ abstract contract StreamBase is ERC721, IStream {
     }
 
     /// @inheritdoc IStream
-    /// @dev Zero when the work is not finalized and no RENDERER module is installed; `tokenURI`
-    ///      then reverts.
+    /// @dev Answers for every work ever minted, a burned one included (its record stays), so the
+    ///      editions of a burned master are still drawn. Zero when the work is not finalized and
+    ///      no RENDERER module is installed; `tokenURI` then reverts.
     function rendererOf(uint256 tokenId) public view returns (address renderer) {
-        _requireOwned(tokenId);
+        if (_works[tokenId].itemHash == 0) revert ERC721NonexistentToken(tokenId);
         renderer = IWorkFacts(facts).rendererOf(address(this), tokenId);
         if (renderer == address(0)) renderer = _moduleOf(Slots.RENDERER);
     }
 
     /// @notice The token's metadata, built by `rendererOf(tokenId)`.
-    /// @dev Reverts if the renderer is missing, reverts, runs out of gas, or (pinned) changed
-    ///      its code. Never falls back to another renderer.
+    /// @dev Reverts for a burned or unminted token, and if the renderer is missing, reverts, runs
+    ///      out of gas, or (pinned) changed its code. Never falls back to another renderer.
     /// @param tokenId A live token.
     /// @return The metadata URI.
     function tokenURI(uint256 tokenId) public view override returns (string memory) {
+        _requireOwned(tokenId);
         return IRenderer(rendererOf(tokenId)).tokenURI(address(this), tokenId);
     }
 

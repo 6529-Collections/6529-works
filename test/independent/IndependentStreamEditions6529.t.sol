@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { IERC721Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import { IERC1155 } from "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IndependentStreamEditions6529 } from "src/independent/IndependentStreamEditions6529.sol";
@@ -284,6 +285,22 @@ contract IndependentStreamEditionsTest is IndependentTokenFixture {
         assertEq(fe.uri(master), "data:,mock");
         vm.expectRevert(abi.encodeWithSelector(IEditions.UnknownEdition.selector, 7));
         fe.uri(7);
+    }
+
+    /// @dev A master burned in sale custody keeps its record: `uri` of the copies already held
+    ///      still answers, and the burned master has no `tokenURI`.
+    function test_Uri_StillDrawnAfterTheMasterIsBurned() public {
+        sale.createEdition(address(fe), master, 10, address(0xFEE), 700);
+        sale.mintEdition(address(fe), stranger, master, 2, 0.1 ether);
+        assertEq(fe.uri(master), "data:,mock");
+        sale.burn(address(fs), master);
+        assertEq(fe.uri(master), "data:,mock", "the copies still have metadata");
+        assertEq(fe.balanceOf(stranger, master), 2);
+        assertEq(fs.rendererOf(master), address(renderer));
+        vm.expectRevert(
+            abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, master)
+        );
+        fs.tokenURI(master);
     }
 
     function test_SupportsInterface() public view {
