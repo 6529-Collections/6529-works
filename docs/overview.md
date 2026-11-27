@@ -40,8 +40,10 @@ owed.
 | `RevenueEscrow` | Payments that failed, held for their owner |
 | `ContentStore` | Bytes put on-chain; never removed |
 
-Their code is plain: OpenZeppelin tokens, one struct per token, no assembly, no hand-written
-decoders, no gas numbers. What "permanent" promises, in the words of
+The four `src/core/` contracts are plain: OpenZeppelin tokens, one struct per token, no
+assembly, no hand-written decoders, no gas numbers. The ledger, the escrow and the content
+store do use assembly: for the ledger's transient lock, for low-level token calls and to
+read chunks from contract code. What "permanent" promises, in the words of
 [ADR 0010](adr/0010-plain-permanent-core.md):
 
 1. Your token is yours: once you hold it, nobody (not the network, not any module) can move,
@@ -75,13 +77,14 @@ holds unsold.
 | `IndependentStreamRegistry` (in `StreamDirectory6529`) | Independent Stream listings, delisting, which sale contracts may mint for an Independent Stream token |
 | `EconomicsResolver`, `StatementLog`, `DependencyRegistry`, entropy | Fee recipients and defaults; disputes and statements; libraries for generative works; VRF seeds |
 
-**Who changes them.** Only the network. It announces a module or adds a sale contract; anyone
+**Who changes them.** The network. It announces a module or adds a sale contract; anyone
 installs it once the waiting period has passed. It removes one at once. Each permanent contract
-counts the wait itself.
+counts the wait itself. One slot is not the network's: an Independent Stream artist chooses
+their own token's RENDERER module, after that token's `moduleDelay`, which the network sets.
 
-**Waiting periods are settings, not promises.** Every wait in a permanent contract is a stored
-value with a launch value, which the network changes at once (no floor, zero allowed), with an
-event carrying the old and the new value:
+**Waiting periods.** Every wait in a permanent contract is a stored value with a launch value,
+which the network changes at once (no floor, zero allowed), with an event carrying the old and
+the new value:
 
 | Setting | Where | Launch value | What a change does to what is already running |
 | --- | --- | --- | --- |
@@ -115,14 +118,14 @@ map is the [role matrix](audit/roles.md); what the network can do, to whom and h
 4. Anyone calls `settle` after the end. The auction records the sale on `Stream6529` (the price is
    logged), delivers the token, and pays the seller's split vault and the network. Unsold, the
    token goes to the museum the network names.
-5. Payees release their shares from the split vault whenever they like. Royalties on later
+5. Payees release their shares from the split vault. Royalties on later
    sales arrive at the receiver `Stream6529` stores.
 
 **An edition.** When the master's sale is open, the edition auction calls
 `StreamEditions6529.create` once with the maximum and royalty, takes bids at one clearing price,
 closes 15 minutes after the master, seals the supply and mints each winner's copies when they claim.
 
-**An Independent Stream work.** The artist's own token (the same plain code) mints only through sale
+**An Independent Stream work.** The artist's own token mints only through sale
 contracts the Independent Stream module allows. Collaborators consent to the item and its royalty
 rate. An unsold Independent Stream work waits in the network's sale contract and can be offered
 again there.
@@ -132,11 +135,6 @@ description and pins the renderer that draws it; a CC0 license never changes.
 
 ## Where next
 
-| You want | Read |
-| --- | --- |
-| The contracts and how they call each other | [Architecture](architecture.md) |
-| Every rule, by ID | [Specification](spec/README.md) |
-| Build, test and run locally | [Quickstart](quickstart.md) |
-| Integrate a marketplace, wallet or indexer | [Integrator guide](integrators/README.md) |
-| Review the code | [Auditor pack](audit/README.md) |
-| Why a decision was made | [ADRs](adr/README.md) |
+[Architecture](architecture.md) shows the contracts and how they call each other; the
+[specification](spec/README.md) has every rule by ID. The
+[documentation index](README.md) lists the rest.

@@ -1,34 +1,17 @@
-## Summary
+## What changed
 
-<!-- What changed and why. One focused change per PR. -->
+<!-- What changed and why. One focused change per PR. Name the ADR 0001 section if the change
+     touches scope; anything outside ADR 0001 needs a new ADR first. -->
 
-## ADR 0001 sections touched
+## How it was checked
 
-<!-- e.g. §5 Sales and auctions, §7 Economics. "None" for tooling or docs only.
-     Anything outside ADR 0001 needs a new ADR first. -->
+<!-- The commands you ran and what you looked at. CI publishes the test counts, sizes and
+     budget output, so do not paste them. For a contract change, name the tests added or
+     changed. -->
 
-## Validation
+## Security consequence
 
-```text
-forge fmt --check
-forge build
-forge test
-python tools/check_budgets.py --profile default
-# paste the results here: test counts and the budget gate output
-```
-
-- [ ] Tests added or updated: specific revert selectors, event assertions, fuzz and invariants where value moves.
-- [ ] EIP-170 holds: largest contract size is stated above.
-
-## Security notes
-
-<!-- External calls, value flows, signatures and replay, governed setters (compare-and-set),
-     roles and admin paths, storage layout. Write "none" if not applicable.
-     Do not describe an exploitable vulnerability here: see SECURITY.md. -->
-
-- [ ] No private keys, seed phrases, RPC credentials, tokens or unredacted broadcasts.
-- [ ] No claim of audit, beta or production readiness.
-
-## Known gaps
-
-<!-- What is deliberately left out, open questions, follow-ups. -->
+<!-- External calls, value flows, signatures and replay, roles, storage layout. "None" for
+     prose, tooling or tests. Do not describe an exploitable vulnerability here: see
+     SECURITY.md. No keys, RPC credentials or unredacted broadcasts, and no claim of audit,
+     beta or production readiness. -->

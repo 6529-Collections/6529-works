@@ -1,25 +1,20 @@
 # Testing
 
-How the 6529 Works test suite is organised, how to run each part, and what CI runs. The project
-is pre-audit: a strong suite is evidence for reviewers, not a substitute for an audit.
+How to run each part of the 6529 Works test suite, and what CI runs. The project is pre-audit:
+the suite is evidence for reviewers, not a substitute for an audit.
 [The test map](../../test/README.md) says where the tests for a contract live and how tests and
 mocks are named.
 
-Each layer catches a different kind of mistake. Unit tests pin the behaviour someone thought of.
-Fuzz and invariant tests find the inputs and call sequences nobody thought of. A second fuzzer
-with its own model of the rules catches a mistake the first one's handlers share with the code.
-Integration and fork tests catch two correct systems that disagree. Log replay catches state an
-indexer cannot rebuild. Symbolic proofs close the input space where it is small enough.
-Snapshots catch an interface or storage layout that moved, and traceability a rule nobody tests.
-Coverage shows what no test reaches; mutation testing shows what the tests reach but do not
-check. [What is not tested](#what-is-not-tested) says where the layers stop.
+Start with `forge build`, then `forge test --no-match-test "^invariant"`. It runs every unit,
+fuzz, integration, replay and example test and names each one that fails. The
+[validation record](validation-2026-11-23.md) has the counts of one pass of every layer over
+one commit; [What is not tested](#what-is-not-tested) says where the suite stops.
 
-> **After the plain-core restructuring** ([ADR 0010](../adr/0010-plain-permanent-core.md)) the
-> integration suites, the gas table, the fork suites and several invariant campaigns are being
-> ported to the new contracts. Until they land, the rows of the
-> [specification](../spec/README.md) and of [Invariants](../audit/invariants.md) that await them
-> name no test, and the coverage floors of the new files are placeholders. The mutation floors
-> were measured on the new contracts on 23 November 2026 ([Mutation scores](mutation-scores.md)).
+> Some invariants that campaigns checked on the contracts before
+> [ADR 0010](../adr/0010-plain-permanent-core.md) have no stateful campaign on the current
+> ones; [Invariants](../audit/invariants.md#gaps) lists them. The coverage floors of the new
+> files are placeholders. The mutation floors were measured on the current contracts on
+> 23 November 2026 ([Mutation scores](mutation-scores.md)).
 
 ## Run it
 
@@ -81,13 +76,14 @@ The workflows are in [`.github/workflows/`](../../.github/workflows).
 
 | Workflow | When | What |
 | --- | --- | --- |
-| CI (`ci.yml`) | every pull request and push to `main` | Format, build, the checks against the build (docs facts, snapshots, exported ABIs, vectors, budgets, genesis, NatSpec, comment codes), the tests in parallel parts whose filters select every test exactly once, the local walkthrough, Slither, and the documentation checks |
+| CI (`ci.yml`) | every pull request and push to `main` | Format, build, the checks against the build (docs facts, snapshots, exported ABIs, vectors, budgets, genesis, NatSpec, comment codes), the tests in parallel parts, the local walkthrough, Slither, and the documentation checks, among them `tools/check_invariant_shards.py`: every invariant test is selected by exactly one part |
 | Strength (`strength.yml`) | every push to `main`, daily, on demand | Coverage against the floors; one Halmos job per symbolic test contract |
 | Nightly (`nightly.yml`) | daily, on demand | The `deep` profile: invariant campaigns and fuzz tests; the Medusa harnesses |
 | Mutation (`mutation.yml`) | weekly, on demand | Every shard of `tools/mutation.py`, compared with the floors |
 
-The one required check, `Contracts`, is green only when the build, every test part and the
-walkthrough are.
+Branch protection requires two checks of `ci.yml`: `Contracts` and `Static analysis`.
+`Contracts` is green only when every other job of the workflow is: the documentation checks,
+the build and its checks, every test part, the walkthrough and static analysis.
 
 ## ABI and storage snapshots
 
@@ -166,7 +162,9 @@ base contract beside the concrete one would otherwise never be mutated). A group
 one job runs in parts that together make exactly the group's mutants: the statements group is
 cut by source line, because slither-mutate makes no comment mutant on a line whose revert
 mutant survived, and both have to run in the same part. A run of slither-mutate that stops
-before it has mutated its target fails its shard. The scores measured on
+before it has mutated its target fails its shard. A mutant whose tests run past the time
+limit counts as killed; the report gives those apart from the mutants a failing test killed.
+The scores measured on
 the current contracts, with their survivors triaged, are in
 [Mutation scores](mutation-scores.md); the figures measured on the contracts before ADR 0010 are
 kept as a historical record in [mutation-baseline.md](mutation-baseline.md).
@@ -194,9 +192,8 @@ A record of one pass of every layer over one commit, with the counts and what wa
 ## What is not tested
 
 - **No external audit.** The project is pre-audit ([SECURITY.md](../../SECURITY.md)).
-- **Stateful campaigns still to be ported.** The campaigns that
-  [Invariants](../audit/invariants.md#gaps) lists as gaps have no stateful campaign on the new
-  contracts yet; unit, fuzz and integration tests cover those rules meanwhile.
+- **Stateful campaigns.** [Invariants: Gaps](../audit/invariants.md#gaps) lists what no
+  stateful campaign covers; unit, fuzz and integration tests cover those rules.
 - **Mutation testing of every file.** The mutation floors are measured
   ([Mutation scores](mutation-scores.md)), except for any file that page lists as not finished.
 - **Bounded proofs only.** The Halmos proofs cover every input within their stated bounds. Not
@@ -206,7 +203,6 @@ A record of one pass of every layer over one commit, with the counts and what wa
   authority (no role matrix or delays) and stand in for the modules.
 - **Replay coverage.** Balances and chunk bytes are not in logs by design; the accounts module
   and the delivery module are not replayed.
-- **Campaign gaps.** Listed in [Invariants: Gaps](../audit/invariants.md#gaps).
 - **Rules without a test.** The rules that name no test are listed by
   `python tools/check_rules.py --uncovered`; the declaration rules are off-chain conventions.
 - **Live rehearsal.** The new contracts run on Sepolia only (rounds r6, r7 and r8,
