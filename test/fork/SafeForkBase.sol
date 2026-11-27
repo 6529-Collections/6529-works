@@ -58,6 +58,11 @@ interface ISafeProxyFactory {
         returns (address proxy);
 }
 
+/// @dev Safe 1.3.0's proxy factory answers the runtime code of the proxies it creates.
+interface ISafe130ProxyFactory {
+    function proxyRuntimeCode() external pure returns (bytes memory);
+}
+
 interface IMultiSendCallOnly {
     function multiSend(bytes memory transactions) external payable;
 }

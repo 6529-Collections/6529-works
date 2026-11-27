@@ -52,7 +52,8 @@ within reach of `rescue` ([LIM-SAL-14](known-limitations.md#sales-and-auctions))
 ### The network Safe and the brake
 
 The network is a canonical Safe with a threshold of at least 2, plain-key owners, no module and
-no guard (checked by the deploy and every readback). A brake, if the network sets one (none at
+no guard (checked by the deploy and by every readback against the genesis file: the wallet's own
+code must be a Safe 1.3.0 or 1.4.1 proxy and its singleton a canonical one, each by code hash). A brake, if the network sets one (none at
 launch), can delay a scheduled network action once by 7 days and do nothing else.
 
 ### Operational keys

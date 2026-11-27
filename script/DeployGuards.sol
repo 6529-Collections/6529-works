@@ -49,6 +49,22 @@ library DeployGuards {
         0x1fe2df852ba3299d6534ef416eefa406e56ced995bca886ab7a553e6d0c5e1c4;
     bytes32 internal constant SAFE_141_L2_CODEHASH =
         0xb1f926978a0f44a2c0ec8fe822418ae969bd8c3f18d61e5103100339894f81ff;
+    /// @notice The runtime code hashes of the Safe proxies a network Safe may be (the wallet's own
+    ///         code, 171 bytes each): the proxy the canonical Safe 1.3.0 factories create
+    ///         (`GnosisSafeProxyFactory` at 0xa6B71E26C5e0845f74c812102Ca7114b6a896AB2 and its
+    ///         EIP-155 deployment 0xC22834581EbC8527d974F8a1c97E1bEA4EF910BC) and the proxy the
+    ///         canonical Safe 1.4.1 factory creates (`SafeProxyFactory` at
+    ///         0x4e1DCf7AD4e460CfD30791CCC4F9c8a4f820ec67). The factory addresses are from
+    ///         safe-global/safe-deployments. Read on 27 November 2026 on mainnet and Sepolia
+    ///         (identical on both, two endpoints each): the 1.3.0 hash is
+    ///         `keccak256(proxyRuntimeCode())` of both factories and the code hash of proxies
+    ///         they created; the 1.4.1 hash is the code hash of proxies its factory created, and
+    ///         that code is the runtime part of the factory's `proxyCreationCode()`. The L1 and
+    ///         L2 singletons of a version share one proxy.
+    bytes32 internal constant SAFE_130_PROXY_CODEHASH =
+        0xb89c1b3bdf2cf8827818646bce9a8f6e372885f8c55e5c07acbd307cb133b000;
+    bytes32 internal constant SAFE_141_PROXY_CODEHASH =
+        0xd7d408ebcd99b2b70be43e20253d6d92a8ea8fab29bd3be7f55b10032331fb4c;
     /// @notice The 6529 delegation contract on Ethereum mainnet (`DelegationManagementContract`,
     ///         github.com/6529-Collections/nftdelegation).
     address internal constant CANONICAL_DELEGATION = 0x2202CB9c00487e7e8EF21e6d8E914B32e709f43d;
@@ -86,14 +102,19 @@ library DeployGuards {
     /// @notice A holder is a system contract, a precompile-range address, the CREATE2 deployer,
     ///         Permit2 or the delegation contract: no key can act for it.
     error ForbiddenHolder(string role, address account);
-    /// @notice The network address is not a deployed Safe: no code, an EIP-7702 delegated EOA,
-    ///         no nonzero `getThreshold()`, or no `getOwners()`.
+    /// @notice The network address is not a deployed Safe: no code (a Safe not deployed yet
+    ///         included), an EIP-7702 delegated EOA, no nonzero `getThreshold()`, or no
+    ///         `getOwners()`.
     error HolderNotASafe(string role, address account);
     /// @notice The network Safe needs fewer than `MIN_THRESHOLD` signatures.
     error ThresholdTooLow(string role, address safe, uint256 threshold);
     /// @notice The network Safe's proxy does not point to a canonical Safe singleton with its
     ///         pinned code (`canonicalSafeSingletons`).
     error NotACanonicalSafe(string role, address safe, address singleton);
+    /// @notice The network address's own runtime code is not a supported Safe proxy
+    ///         (`canonicalSafeProxies`), so its answers and its storage do not show who can act
+    ///         for it.
+    error NotASafeProxy(string role, address account, bytes32 codehash);
     /// @notice The network Safe has an enabled module, which can act without the owners'
     ///         signatures.
     error SafeHasModules(string role, address safe, address module);
@@ -158,7 +179,9 @@ library DeployGuards {
     /// @notice Off-anvil checks of the genesis file alone: not the example itself, and every
     ///         account reachable.
     ///         - The network address (the single authority; until the TDH bridge exists, one
-    ///           6529 Safe) must be a deployed Safe: code, not an EIP-7702 delegated EOA, a
+    ///           6529 Safe) must be a deployed Safe: code, not an EIP-7702 delegated EOA, its
+    ///           own runtime code one of `proxies` (a supported Safe proxy, checked before any
+    ///           of its answers is used), a
     ///           `getThreshold()` of at least `MIN_THRESHOLD`, a `getOwners()` list of keys
     ///           without code, a proxy pointing to one of `singletons` (a canonical Safe
     ///           singleton, with its code hash), no enabled module and no transaction guard.
@@ -170,13 +193,15 @@ library DeployGuards {
         string memory json,
         string memory example,
         address[] memory singletons,
-        bytes32[] memory codehashes
+        bytes32[] memory codehashes,
+        bytes32[] memory proxies
     ) internal view {
         if (keccak256(bytes(json)) == keccak256(bytes(example))) {
             revert ExampleGenesisOffAnvil();
         }
         address network = vm.parseJsonAddress(json, ".network");
         _requireReachable("NETWORK", network);
+        requireSafeProxy("NETWORK", network, proxies);
         requireSafe("NETWORK", network);
         requireBareSafe("NETWORK", network, singletons, codehashes);
         ownersOf("NETWORK", network);
@@ -220,6 +245,26 @@ library DeployGuards {
         }
     }
 
+    /// @notice Reverts unless `account`'s own runtime code is a supported Safe proxy: code that
+    ///         is not an EIP-7702 delegation (`HolderNotASafe` otherwise, as in `requireSafe`)
+    ///         and whose hash is one of `proxies` (`NotASafeProxy` otherwise). A Safe proxy only
+    ///         forwards every call to the singleton in its storage slot 0, so once the proxy is
+    ///         a known one, the singleton check of `requireBareSafe` decides what code runs. An
+    ///         address with no code yet (a Safe that is not deployed) is refused.
+    function requireSafeProxy(string memory role, address account, bytes32[] memory proxies)
+        internal
+        view
+    {
+        if (account.code.length == 0 || DelegatedEOA.isDelegated(account)) {
+            revert HolderNotASafe(role, account);
+        }
+        bytes32 codehash = account.codehash;
+        for (uint256 i; i < proxies.length; ++i) {
+            if (codehash == proxies[i]) return;
+        }
+        revert NotASafeProxy(role, account, codehash);
+    }
+
     /// @notice Reverts unless `account` looks like a deployed Safe: code that is not an EIP-7702
     ///         delegation, and `getThreshold()` returning one word of at least `MIN_THRESHOLD`.
     function requireSafe(string memory role, address account) internal view {
@@ -235,7 +280,9 @@ library DeployGuards {
 
     /// @notice Reverts unless the Safe `safe` runs a canonical singleton (`singletons`, with
     ///         the matching `codehashes`) and has no module and no guard: only its owners'
-    ///         signatures can act for it.
+    ///         signatures can act for it. It reads the wallet's storage and asks the wallet
+    ///         itself, so it means what it says only for a wallet whose own code passed
+    ///         `requireSafeProxy`.
     function requireBareSafe(
         string memory role,
         address safe,
@@ -272,6 +319,13 @@ library DeployGuards {
         (singletons[3], codehashes[3]) = (SAFE_130_L2_EIP155, SAFE_130_L2_CODEHASH);
         (singletons[4], codehashes[4]) = (SAFE_141_L1, SAFE_141_L1_CODEHASH);
         (singletons[5], codehashes[5]) = (SAFE_141_L2, SAFE_141_L2_CODEHASH);
+    }
+
+    /// @notice The runtime code hashes of the supported Safe proxies (Safe 1.3.0 and 1.4.1).
+    function canonicalSafeProxies() internal pure returns (bytes32[] memory proxies) {
+        proxies = new bytes32[](2);
+        proxies[0] = SAFE_130_PROXY_CODEHASH;
+        proxies[1] = SAFE_141_PROXY_CODEHASH;
     }
 
     /// @notice Addresses no key controls that a typo could still name: the system contracts

@@ -20,6 +20,10 @@
     whose sender is `safe:<address>` is a call that Safe makes: the driver signs the Safe
     transaction hash with the owner keystores in $SafeSigners (threshold many, sorted by owner
     address) and relays `execTransaction` from the `any` account.
+    The Safe transaction hash the owners sign is computed locally (SafeTx.ps1); the Safe's own
+    answer through the RPC is only compared with it, and a difference stops the step. Before the
+    first signature or transaction the driver also requires the RPC to report Sepolia's chain
+    ID (11155111).
 
     -ExpectRevert sends a transaction that must fail on chain (a refused bid, a refused
     withdrawal): the driver reads the revert with eth_call first, sends with a fixed gas limit
@@ -125,6 +129,8 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 Import-Module $SignerModule -Force
+# The Safe transaction digest, computed locally, and the Sepolia chain ID check.
+. (Join-Path $PSScriptRoot 'SafeTx.ps1')
 # .NET file calls resolve relative paths against the process directory, not PowerShell's.
 $State = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($State)
 
@@ -266,8 +272,18 @@ function Get-Info($Items, [string]$Name) {
     return $null
 }
 
+# Stops unless the RPC endpoint reports Sepolia's chain ID. Asked once per run, before the
+# first signature or transaction: this driver signs and sends for Sepolia only.
+$ChainConfirmed = $false
+function Confirm-Chain {
+    if ($script:ChainConfirmed) { return }
+    Assert-SepoliaChain (Invoke-Cli 'cast' @('chain-id', '--rpc-url', $Rpc))
+    $script:ChainConfirmed = $true
+}
+
 # Signs a digest from the plan with the role whose address the plan names.
 function New-Signature($Sign) {
+    Confirm-Chain
     $role = Get-Role $Sign[2]
     $sig = (Invoke-Signed $Accounts[$role] 'cast' @('wallet', 'sign', '--no-hash', $Sign[3])).Trim()
     if ($sig -notmatch '^0x[0-9a-fA-F]{130}$') { throw "bad signature for $($Sign[1])" }
@@ -307,6 +323,7 @@ function Add-Receipt([string]$Label, [string]$Role, $Receipt, [string]$Expected 
 # Sends one planned transaction. Calldata above Windows' command-line limit goes through
 # forge's broadcast instead (only the 24 KB chunk).
 function Send-Planned([string]$Label, [string]$Role, [string]$To, [string]$Value, [string]$Calldata) {
+    Confirm-Chain
     if ($Role -match '^0x') { $Role = Get-Role $Role }
     $account = $Accounts[$Role]
     $call = @('send', $To)
@@ -349,13 +366,22 @@ function Send-Planned([string]$Label, [string]$Role, [string]$To, [string]$Value
 # Relays a call `$Safe` makes: its owners sign the Safe transaction hash (EOA signatures,
 # sorted by owner address) and the `any` account sends `execTransaction`. The Safe reverts
 # (GS013) if the inner call fails, so a recorded success means the call succeeded.
+# The digest the owners sign is computed here from the transaction's fields and Sepolia's chain
+# ID (SafeTx.ps1, EIP-712). The Safe's own `getTransactionHash`, read through the RPC, is only
+# compared with it: a different answer stops the step before anything is signed. The nonce is
+# the one value still taken from the RPC; a wrong one yields signatures for the same call at
+# another nonce, which the Safe refuses.
 function Send-Safe([string]$Label, [string]$Safe, [string]$To, [string]$Value, [string]$Calldata) {
     $signers = $SafeSigners[$Safe.ToLower()]
     if (-not $signers) { throw "no signers for Safe $Safe" }
+    Confirm-Chain
     $nonce = (Invoke-Cli 'cast' @('call', $Safe, 'nonce()(uint256)', '--rpc-url', $Rpc)).Trim()
-    $hash = (Invoke-Cli 'cast' @('call', $Safe,
+    if ($nonce -notmatch '^[0-9]+$') { throw "bad Safe nonce '$nonce'" }
+    $digest = Get-SafeTxDigest $Safe $To $Value $Calldata $nonce
+    $remote = (Invoke-Cli 'cast' @('call', $Safe,
             'getTransactionHash(address,uint256,bytes,uint8,uint256,uint256,uint256,address,address,uint256)(bytes32)',
             $To, $Value, $Calldata, '0', '0', '0', '0', $Zero, $Zero, $nonce, '--rpc-url', $Rpc)).Trim()
+    Assert-SafeTxDigest $digest $remote
     $owned = @()
     foreach ($k in $signers) {
         $owner = (Invoke-Signed $k 'cast' @('wallet', 'address')).Trim()
@@ -364,18 +390,19 @@ function Send-Safe([string]$Label, [string]$Safe, [string]$To, [string]$Value, [
     $owned = $owned | Sort-Object { [System.Numerics.BigInteger]::Parse('0' + $_[0].Substring(2), 'AllowHexSpecifier') }
     $sigs = '0x'
     foreach ($o in $owned) {
-        $sig = (Invoke-Signed $o[1] 'cast' @('wallet', 'sign', '--no-hash', $hash)).Trim()
-        Invoke-Cli 'cast' @('wallet', 'verify', '--address', $o[0], '--no-hash', $hash, $sig) | Out-Null
+        $sig = (Invoke-Signed $o[1] 'cast' @('wallet', 'sign', '--no-hash', $digest)).Trim()
+        Invoke-Cli 'cast' @('wallet', 'verify', '--address', $o[0], '--no-hash', $digest, $sig) | Out-Null
         $sigs += $sig.Substring(2)
     }
     $exec = (Invoke-Cli 'cast' @('calldata',
             'execTransaction(address,uint256,bytes,uint8,uint256,uint256,uint256,address,address,bytes)',
             $To, $Value, $Calldata, '0', '0', '0', '0', $Zero, $Zero, $sigs)).Trim()
-    Write-Host "Safe $Safe nonce $nonce, tx hash $hash"
+    Write-Host "Safe $Safe nonce $nonce, tx hash $digest"
     return Send-Planned $Label 'any' $Safe '0' $exec
 }
 
 function Send-Broadcast([string]$Label, [string]$Sig, [string[]]$Arguments) {
+    Confirm-Chain
     $sender = Get-Address 'any'
     Push-Location $Repo
     try {

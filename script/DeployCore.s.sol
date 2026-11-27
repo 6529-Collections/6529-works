@@ -47,7 +47,9 @@ contract DeployCoreScript is ScriptIO {
         string memory json = _read(path);
         if (!local) {
             (address[] memory singletons, bytes32[] memory codehashes) = safeSingletons();
-            DeployGuards.checkHolders(json, _read(CORE_GENESIS), singletons, codehashes);
+            DeployGuards.checkHolders(
+                json, _read(CORE_GENESIS), singletons, codehashes, safeProxies()
+            );
             DeployGuards.checkNoBrake(json);
         }
         DeployCore.Params memory p = params(local);
@@ -76,20 +78,34 @@ contract DeployCoreScript is ScriptIO {
             d.manager.acceptNetwork();
         }
         VerifyCore.verify(p, d, cfg, json, accepted);
-        checkMinterLogs(d);
+        checkLogs(d, cfg, manifest, calls);
 
         log(p, d);
         if (vm.isContext(VmSafe.ForgeContext.ScriptBroadcast)) record(p, d, forkBlock);
     }
 
     /// @notice Reverts unless, among every log recorded in this run, the only minter each token
-    ///         added is its genesis minter (`VerifyCore.verifyMinterLogs`).
-    function checkMinterLogs(DeployCore.Deployment memory d) internal {
+    ///         added is its genesis minter (`VerifyCore.verifyMinterLogs`), the configurator
+    ///         logged the hashes of `cfg`, the manifest and `calls`
+    ///         (`VerifyCore.verifyConfigured`), and the manager's logs leave exactly the holders
+    ///         and the selector map of `cfg` (`VerifyCore.governanceDifferences`).
+    function checkLogs(
+        DeployCore.Deployment memory d,
+        GovernanceConfig.Config memory cfg,
+        DeployCore.Manifest memory manifest,
+        GovernanceConfig.Call[] memory calls
+    ) internal {
         Vm.Log[] memory logs = vm.getRecordedLogs();
         VerifyCore.verifyMinterLogs(
             d,
             VerifyCore.mintersAdded(logs, address(d.stream)),
             VerifyCore.mintersAdded(logs, address(d.editions))
+        );
+        VerifyCore.verifyConfigured(
+            d, cfg, manifest, calls, VerifyCore.entries(logs, address(d.configurator))
+        );
+        VerifyCore.requireNoDifference(
+            VerifyCore.governanceDifferences(cfg, VerifyCore.entries(logs, address(d.manager)))
         );
     }
 

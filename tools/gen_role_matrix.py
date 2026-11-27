@@ -172,7 +172,11 @@ NOTES: dict[tuple[str, str], str] = {
 # `manager` section of the configuration), where the matrix states the rule more precisely.
 MANAGER_NOTES: dict[str, str] = {
     "transferNetwork(address)": "Proposes the next network address (zero withdraws); it takes "
-    "effect when that address calls `acceptNetwork`, and the old address then holds nothing.",
+    "effect when that address calls `acceptNetwork`, and the old address then holds none of the "
+    "network roles.",
+    "acceptNetwork()": "Only the pending network: completes a handover. The old address then "
+    "holds none of the network roles; operational roles and the brake are unchanged until the "
+    "new network revokes or replaces them.",
 }
 
 # The AccessManager's own restricted functions (OpenZeppelin 5.7.0, `_getAdminRestrictions`),
@@ -319,7 +323,11 @@ def validate(config: dict) -> None:
     for call in config["wiring"]:
         if call["contract"] not in contracts:
             raise ConfigError(f"wiring call on unknown contract {call['contract']!r}")
-    manager = {f["signature"] for f in (config.get("manager") or {}).get("functions", [])}
+    manager = {
+        f["signature"]
+        for section in ("functions", "open")
+        for f in (config.get("manager") or {}).get(section, [])
+    }
     for sig in MANAGER_NOTES:
         if config.get("manager") is not None and sig not in manager:
             raise ConfigError(f"manager note for {sig} names no configured manager function")
@@ -527,8 +535,9 @@ def render(config: dict) -> str:
         w(f"| `{f['signature']}` | `{f['selector']}` | `{f['role']}` | "
           f"{format_delay(f['delay'])} | {cancel_rule(f['delay'])} | {note} |")
     for f in (config.get("manager") or {}).get("open", []):
+        note = MANAGER_NOTES.get(f["signature"], f.get("note", ""))
         w(f"| `{f['signature']}` | `{f['selector']}` | No role (checked in the function) | "
-          f"{format_delay(0)} | {cancel_rule(0)} | {f.get('note', '')} |")
+          f"{format_delay(0)} | {cancel_rule(0)} | {note} |")
     w("")
     w("`schedule`, `execute` and `cancel` are open to anyone and check the caller's permission")
     w("for the call they carry.")

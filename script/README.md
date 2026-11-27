@@ -10,8 +10,8 @@ deploy script refuses every other chain. 6529 Works is pre-audit and not deploye
 | [`DeployCore.sol`](DeployCore.sol) | The library: predicts every address, deploys, builds the governance configuration and the genesis wiring from the genesis JSON, installs it |
 | [`CoreFactory.sol`](CoreFactory.sol) | The deployer's factory: creates each contract at its predicted address in one call only the deployer may make |
 | [`DeployCore.s.sol`](DeployCore.s.sol) | The broadcast script (anvil or Sepolia). It deploys, installs, accepts on anvil, reads back, prints every address and writes `deployments/<chain>/core-<timestamp>.json` |
-| [`VerifyCore.sol`](VerifyCore.sol), [`VerifyCore.s.sol`](VerifyCore.s.sol) | The read-back, as a library and as a read-only script over a deployment record: every contract's runtime code against a fresh deployment of the build, the whole wiring, the configuration the constructors stored, and the tokens' minter logs |
-| [`DeployGuards.sol`](DeployGuards.sol) | The off-anvil checks run before anything is broadcast |
+| [`VerifyCore.sol`](VerifyCore.sol), [`VerifyCore.s.sol`](VerifyCore.s.sol) | The read-back, as a library and as a read-only script over a deployment record: every contract's runtime code against a fresh deployment of the build, the whole wiring, the configuration the constructors stored, the tokens' minter logs, the hashes genesis logged and the manager's role logs since. `--sig "holders()"` lists who holds each role |
+| [`DeployGuards.sol`](DeployGuards.sol) | The off-anvil checks run before anything is broadcast, and again by the read-back for the network Safe and the holders |
 | [`ScriptIO.sol`](ScriptIO.sol) | Everything the scripts read from outside the EVM: environment, files, chain ID, the deployment parameters |
 | [`local/`](local/README.md) | The local walkthrough: one command, a full sale end to end on anvil |
 | [`sepolia/`](sepolia/) | The Sepolia round tooling: genesis and manifest writers, deploy, record, flows, Sourcify |
@@ -79,7 +79,7 @@ Forge's `broadcast/` output is not committed; the deployment record is.
 | Account | What it does |
 | --- | --- |
 | Deployer | Sends every deploy transaction and `configure`; holds nothing afterwards |
-| Network | A Safe: canonical singleton, threshold at least 2, plain-key owners, no module, no guard. It calls `acceptNetwork()` after the deploy |
+| Network | A deployed Safe: its own code a Safe 1.3.0 or 1.4.1 proxy, canonical singleton, threshold at least 2, plain-key owners, no module, no guard. It calls `acceptNetwork()` after the deploy |
 | Pausers (3), curation signers (2), storage operator, platform, curator | The genesis file's holders. Curation signers sign off-chain only |
 | Network fee recipient, museum, marketplace owner | No role. Existing accounts, named in `deploy.env` |
 | Keeper | No role. Runs the permissionless steps ([`keeper/`](../keeper/README.md)) |
@@ -107,7 +107,11 @@ input to any address).
 
 `deploy.ps1` without `-Broadcast` simulates: it runs every check of `DeployGuards` (the
 network is a bare Safe, every holder reachable and none a contract of the deployment, the
-policy is the committed one, no brake) and prints every address. r6's simulation needed 37
+policy is the committed one, no brake) and prints every address. The Safe check starts with the
+wallet's own runtime code, which must be the proxy a canonical Safe 1.3.0 or 1.4.1 factory
+creates (two pinned code hashes); only then are its singleton, threshold, owners, modules and
+guard read. A wallet with any other code is refused whatever it answers, and so is an address
+with no code yet (deploy the Safe first) or an EIP-7702 delegated account. r6's simulation needed 37
 transactions (the factory, one per contract, the install) and forge estimated 147,288,593 gas in
 total (Prague pricing, with forge's 1.3 multiplier).
 
@@ -150,9 +154,16 @@ existed.
 
 1. **The network accepts.** The Safe calls `acceptNetwork()` on the manager
    (`flows.ps1 -Step safeCall -Safe <network> -To <manager> -Data 0xa503fb3e -Label acceptNetwork`).
+   The driver computes the Safe transaction hash itself, from the call and Sepolia's chain ID
+   ([`SafeTx.ps1`](sepolia/SafeTx.ps1)), and the owners sign that; the Safe's own answer through
+   the endpoint is only compared with it, and a difference stops the step. Before it signs or
+   sends anything the driver requires the endpoint to report chain ID 11155111.
 2. **Read back.** `DEPLOYMENT=deployments/11155111/core-<timestamp>.json` plus the `deploy.env`
    variables, then `forge script script/VerifyCore.s.sol --rpc-url <rpc>`, after the network has
-   accepted (it refuses before, off anvil). It checks the permanent wiring, the genesis modules
+   accepted (it refuses before, off anvil). It first runs the deploy's guards on the genesis
+   file's network and holders again (the network a bare Safe on a supported proxy), and on
+   Sepolia it requires the record's delegation contract to be the official one, with its pinned
+   code. It checks the permanent wiring, the genesis modules
    and minters (and that nothing else of the deployment mints), the four settings at their
    launch values, every module's manager and wiring, the effect of every genesis wiring call and
    the governance configuration. It also reads back the configuration the constructors stored and
@@ -167,14 +178,31 @@ existed.
    the check. It asks in the same way for the statement log's entries of the governance chain
    and requires exactly one, the epoch-0 manifest this run was given (`MANIFEST_PATH` or
    `MANIFEST_DIGEST`, and `MANIFEST_URI`): the entry's logged head must be the chain's stored
-   head and its statement the expected one. Then it deploys the same build again in memory from the
+   head and its statement the expected one. It asks for the configurator's
+   `GovernanceConfigured` log and requires exactly one, whose three hashes are the ones this
+   run's genesis file, manifest and wiring produce: a genesis that granted a key or made a
+   wiring call the file does not name fails here, although every value read from state matches.
+   It asks for every log of the manager since `forkBlock` and replays the grants, revocations
+   and selector mappings: a role with a holder the file does not name (a key granted later), a
+   configured holder that was revoked, a selector mapped outside the file, a closed target or a
+   target admin delay fails, naming it; scheduled operations still open are printed. Then it
+   deploys the same build again in memory from the
    record's `forkBlock` and compares every contract's address and runtime code with the chain's.
    The endpoint must serve the state of `forkBlock` (an archive endpoint such as
    `https://sepolia.gateway.tenderly.co`, or run it soon after the deploy). It reads the state
    genesis left, so it passes at the chain's head only while the instance's governance is as
-   installed: a module announced later, a changed setting or a new minter stops it (r6, whose
-   renderer proposal is pending, reads back at a block before the proposal; r7 and r8 are
-   kept unchanged and read back at the head).
+   installed: a module announced later, a changed setting, a new minter, or a key granted or
+   revoked since stops it (r6, whose renderer proposal is pending, reads back at a block before
+   the proposal, `--fork-block-number`; r7 and r8 are kept unchanged and read back at the
+   head). For an instance whose network changed holders or mappings on purpose,
+   `ALLOW_GOVERNANCE_CHANGES=1` prints each difference found in the manager's logs and goes on;
+   the genesis hashes must still match. What the logs show is as complete as the endpoint's
+   answer: the genesis comparison fails on a missing log (an endpoint that has dropped old
+   logs answers an empty list, and the read-back then fails here), but a later grant left out
+   by the endpoint alone is not seen (LIM-REL-2 in the
+   [known limitations](../docs/audit/known-limitations.md#release-evidence)).
+   `forge script script/VerifyCore.s.sol --sig "holders()" --rpc-url <rpc>` with `DEPLOYMENT`
+   alone prints who holds each role at the block it reads.
 3. **VRF.** The subscription owner adds the entropy module as a consumer and funds the
    subscription.
 4. **Complete the record.** `python script/sepolia/make_record.py <record> r6 <commit> --confirmed`
@@ -268,6 +296,14 @@ The launch values are in `config/genesis.core.example.json` (`settings`) and rea
   address does not resolve) can still be marked, and the share forfeited to the network after
   `unclaimedPeriod`.
 
+### Handing the network over
+
+`acceptNetwork` moves the network address and the five network roles. It does not revoke any
+operational role (a grant to the outgoing network's own address included) and does not change
+the brake: the incoming network lists the holders from the manager's logs
+(`VerifyCore.s.sol --sig "holders()"`), revokes what was not agreed and replaces the brake. The
+checklist is in [Handing the network over](../docs/operations/network-handover.md).
+
 ### Pauses and disputes
 
 - A pauser pauses at once; the network unpauses at once.
@@ -296,3 +332,4 @@ notice, deploys missing vaults, and sends credits that waited `unclaimedPeriod` 
 | `DELEGATION_CONTRACT` | A mock is deployed | Unused: the official Sepolia deployment |
 | `DEPLOYMENT` | (`VerifyCore.s.sol`) the record to read back | Same |
 | `LOG_BLOCK_RANGE` | (`VerifyCore.s.sol`) blocks per `eth_getLogs` request, 5,000 | Same; lower it for an endpoint with a smaller limit |
+| `ALLOW_GOVERNANCE_CHANGES` | (`VerifyCore.s.sol`) unset: a difference between the manager's logs and the genesis file fails | `1` prints each difference and goes on, for an instance changed on purpose |

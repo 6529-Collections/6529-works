@@ -400,9 +400,9 @@ delay applies if it is longer; genesis sets no target admin delay.
 | `setTargetClosed(address,bool)` | `0x167bd395` | ADMIN | 7 days (or the target's admin delay) | The network or the scheduler, during the delay; the brake may delay it once |  |
 | `updateAuthority(address,address)` | `0x18ff183c` | ADMIN | 7 days (or the target's admin delay) | The network or the scheduler, during the delay; the brake may delay it once | Moves one target to another authority; it checks nothing about the new authority. |
 | `setAuthority(address)` | `0x7a9e5e4b` | ADMIN, scheduled on the target itself | 7 days (or the target's admin delay) | The network or the scheduler, during the delay; the brake may delay it once |  |
-| `transferNetwork(address)` | `0x33c95bb5` | `ADMIN` | 7 days | The network or the scheduler, during the delay; the brake may delay it once | Proposes the next network address (zero withdraws); it takes effect when that address calls `acceptNetwork`, and the old address then holds nothing. |
+| `transferNetwork(address)` | `0x33c95bb5` | `ADMIN` | 7 days | The network or the scheduler, during the delay; the brake may delay it once | Proposes the next network address (zero withdraws); it takes effect when that address calls `acceptNetwork`, and the old address then holds none of the network roles. |
 | `setBrake(address)` | `0x8917bd43` | `ADMIN` | 7 days | The network or the scheduler, during the delay; the brake may delay it once | Sets or removes (zero) the brake; none is installed at launch |
-| `acceptNetwork()` | `0xa503fb3e` | No role (checked in the function) | immediate | No: executes at once | Only the pending network: completes a handover; the old address then holds nothing |
+| `acceptNetwork()` | `0xa503fb3e` | No role (checked in the function) | immediate | No: executes at once | Only the pending network: completes a handover. The old address then holds none of the network roles; operational roles and the brake are unchanged until the new network revokes or replaces them. |
 | `brakeOnce(bytes32)` | `0xb11f4f47` | No role (checked in the function) | immediate | No: executes at once | Only the brake: delays one scheduled operation by 7 days, once |
 
 `schedule`, `execute` and `cancel` are open to anyone and check the caller's permission
