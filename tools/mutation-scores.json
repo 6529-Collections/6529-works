@@ -990,7 +990,7 @@
         "line": 143,
         "rule": "ROR",
         "verdict": "killed",
-        "why": "`test_RemoveMinter_AgainBeforeTheNewWaitStillCountsAsOnceActive (also test_RecordPrimarySale_AMinterRemovedTwiceStillSettlesItsSales in test/core/Stream.t.sol)`: a minter removed, added again and removed before its new start must still count as once active (settle its sales); no test reached that state"
+        "why": "`test_RemoveMinter_ReaddedMinterRemovedDuringItsWaitKeepsWasActive (also test_RecordPrimarySale_AMinterRemovedTwiceStillSettlesItsSales in test/core/Stream.t.sol)`: a minter removed, added again and removed before its new start must still count as once active (settle its sales); no test reached that state"
       }
     ],
     "src/core/Stream6529.sol": [
@@ -3284,7 +3284,7 @@
       "file": "test/core/Modules.t.sol",
       "tests": [
         {
-          "name": "test_RemoveMinter_AgainBeforeTheNewWaitStillCountsAsOnceActive (also test_RecordPrimarySale_AMinterRemovedTwiceStillSettlesItsSales in test/core/Stream.t.sol)",
+          "name": "test_RemoveMinter_ReaddedMinterRemovedDuringItsWaitKeepsWasActive (also test_RecordPrimarySale_AMinterRemovedTwiceStillSettlesItsSales in test/core/Stream.t.sol)",
           "where": [
             "Modules L143"
           ]
