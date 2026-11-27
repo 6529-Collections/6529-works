@@ -3,7 +3,9 @@ pragma solidity 0.8.37;
 
 import { Vm } from "forge-std/Vm.sol";
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
+import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
+import { GovernanceConfigurator } from "src/governance/GovernanceConfigurator.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { VrfEntropyModule } from "src/entropy/VrfEntropyModule.sol";
 import { Minter, Slots } from "src/interfaces/core/CoreTypes.sol";
@@ -39,7 +41,13 @@ import { DeployCore } from "./DeployCore.sol";
 ///           does not know how to read back fails the check);
 ///         - that the genesis configuration was installed: the network accepted and every role,
 ///           holder and selector reads back, or, before acceptance, the configurator gone and
-///           the network pending.
+///           the network pending;
+///         - (`verifyConfigured`) that the hashes the configurator logged at genesis
+///           (`GovernanceConfigured`) are the ones the genesis file, the manifest and the wiring
+///           produce, so genesis installed nothing the file does not name;
+///         - (`governanceDifferences`) that the manager's logs since its deployment leave exactly
+///           the configured holders and selector map: a key granted later, or a selector mapped
+///           later, is named.
 /// @dev The settings are the network's to change at once; this check is for the state right
 ///      after genesis. A later readback of a live system compares against the network's
 ///      current values instead.
@@ -62,6 +70,30 @@ library VerifyCore {
     error UnverifiedWiring(bytes4 selector);
     /// @notice The genesis configuration was not installed (the configurator still holds it).
     error NotInstalled();
+    /// @notice The manager's logs differ from the expected configuration in `count` ways; the
+    ///         first is `what`, about `role`, `account` (a holder or a target) and `selector`.
+    error GovernanceDiffers(
+        string what, uint64 role, address account, bytes4 selector, uint256 count
+    );
+
+    /// @notice One log of one contract: its topics and its data.
+    struct Entry {
+        bytes32[] topics;
+        bytes data;
+    }
+
+    /// @notice One way the manager's logs differ from the expected configuration
+    ///         (`governanceDifferences`).
+    /// @param what What differs.
+    /// @param role The role held or mapped; zero when the difference is about a target alone.
+    /// @param account The holder, or the target.
+    /// @param selector The selector, or zero.
+    struct Difference {
+        string what;
+        uint64 role;
+        address account;
+        bytes4 selector;
+    }
 
     /// @notice A governance manifest entry as the statement log logged it
     ///         (`IStatementLog.StatementAppended`).
@@ -443,6 +475,310 @@ library VerifyCore {
             revert NotInstalled();
         }
         _eq(d.manager.pendingNetwork(), cfg.network, "WorksAccessManager.pendingNetwork");
+    }
+
+    // ------------------------------------------------------------------ governance logs
+
+    /// @notice The logs of `emitter` among `logs` (recorded with `vm.recordLogs`), in order.
+    function entries(Vm.Log[] memory logs, address emitter)
+        internal
+        pure
+        returns (Entry[] memory out)
+    {
+        uint256 n;
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].emitter == emitter) ++n;
+        }
+        out = new Entry[](n);
+        uint256 k;
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].emitter == emitter) out[k++] = Entry(logs[i].topics, logs[i].data);
+        }
+    }
+
+    /// @notice Reverts unless the configurator logged exactly one `GovernanceConfigured`, for
+    ///         this deployment's manager, whose three hashes are the ones the expected inputs
+    ///         produce: `keccak256(abi.encode(cfg))`, the manifest's digest and
+    ///         `keccak256(abi.encode(calls))`. The configurator is its manager's only installer
+    ///         and configures once, so equal hashes mean genesis installed exactly the holders,
+    ///         the selector map and the wiring calls of the genesis file, in its order, and
+    ///         nothing else: an added holder or an added wiring call changes a hash.
+    /// @param d The deployment.
+    /// @param cfg The expected configuration (`DeployCore.config` of the genesis file).
+    /// @param manifest The expected epoch-0 manifest.
+    /// @param calls The expected wiring (`DeployCore.wiring` of the genesis file and `manifest`).
+    /// @param logs Every log of the configurator, in order.
+    function verifyConfigured(
+        DeployCore.Deployment memory d,
+        GovernanceConfig.Config memory cfg,
+        DeployCore.Manifest memory manifest,
+        GovernanceConfig.Call[] memory calls,
+        Entry[] memory logs
+    ) internal pure {
+        address c = address(d.configurator);
+        uint256 n;
+        Entry memory found;
+        for (uint256 i; i < logs.length; ++i) {
+            if (
+                logs[i].topics.length == 4
+                    && logs[i].topics[0] == GovernanceConfigurator.GovernanceConfigured.selector
+            ) {
+                ++n;
+                found = logs[i];
+            }
+        }
+        _value(n, 1, "GovernanceConfigured logs", c);
+        if (found.topics[1] != bytes32(uint256(uint160(address(d.manager))))) {
+            revert Mismatch("GovernanceConfigured.manager", c);
+        }
+        if (found.topics[2] != keccak256(abi.encode(cfg))) {
+            revert Mismatch("GovernanceConfigured.configHash", c);
+        }
+        if (found.topics[3] != manifest.digest) {
+            revert Mismatch("GovernanceConfigured.manifestHash", c);
+        }
+        if (found.data.length != 32 || bytes32(found.data) != keccak256(abi.encode(calls))) {
+            revert Mismatch("GovernanceConfigured.wiringHash", c);
+        }
+    }
+
+    /// @notice Every (role, account) the manager's logs leave as a member: each `RoleGranted`
+    ///         adds one and each `RoleRevoked` (a revocation or a renouncement) removes it. The
+    ///         manager keeps no list of a role's members, so this is the only way to name them
+    ///         all. The network roles are not in it: they answer for `network()` and are never
+    ///         granted.
+    /// @param logs Every log of the manager since its deployment, in order.
+    /// @return held The members, in the order they were first granted.
+    function holdersIn(Entry[] memory logs)
+        internal
+        pure
+        returns (GovernanceConfig.Grant[] memory held)
+    {
+        GovernanceConfig.Grant[] memory all = new GovernanceConfig.Grant[](logs.length);
+        uint256 n;
+        for (uint256 i; i < logs.length; ++i) {
+            Entry memory e = logs[i];
+            if (e.topics.length != 3) continue;
+            bool granted = e.topics[0] == IAccessManager.RoleGranted.selector;
+            if (!granted && e.topics[0] != IAccessManager.RoleRevoked.selector) continue;
+            uint64 role = uint64(uint256(e.topics[1]));
+            address account = address(uint160(uint256(e.topics[2])));
+            uint256 at = n;
+            for (uint256 k; k < n; ++k) {
+                if (all[k].role == role && all[k].account == account) {
+                    at = k;
+                    break;
+                }
+            }
+            if (granted && at == n) {
+                all[n++] = GovernanceConfig.Grant(role, account);
+            } else if (!granted && at != n) {
+                for (uint256 k = at; k + 1 < n; ++k) {
+                    all[k] = all[k + 1];
+                }
+                --n;
+            }
+        }
+        held = new GovernanceConfig.Grant[](n);
+        for (uint256 i; i < n; ++i) {
+            held[i] = all[i];
+        }
+    }
+
+    /// @notice The scheduled operations the manager's logs leave open: scheduled, and neither
+    ///         executed nor cancelled since. One that expired is still listed; the manager's
+    ///         `getSchedule` answers zero for it.
+    /// @param logs Every log of the manager since its deployment, in order.
+    function openOperations(Entry[] memory logs) internal pure returns (bytes32[] memory open) {
+        bytes32[] memory all = new bytes32[](logs.length);
+        uint256 n;
+        for (uint256 i; i < logs.length; ++i) {
+            Entry memory e = logs[i];
+            if (e.topics.length != 3) continue;
+            if (e.topics[0] == IAccessManager.OperationScheduled.selector) {
+                all[n++] = e.topics[1];
+            } else if (
+                e.topics[0] == IAccessManager.OperationExecuted.selector
+                    || e.topics[0] == IAccessManager.OperationCanceled.selector
+            ) {
+                for (uint256 k; k < n; ++k) {
+                    if (all[k] != e.topics[1]) continue;
+                    for (uint256 j = k; j + 1 < n; ++j) {
+                        all[j] = all[j + 1];
+                    }
+                    --n;
+                    break;
+                }
+            }
+        }
+        open = new bytes32[](n);
+        for (uint256 i; i < n; ++i) {
+            open[i] = all[i];
+        }
+    }
+
+    /// @notice Every way the manager's logs differ from `cfg`, the expected configuration:
+    ///         - "holder not in the configuration": an account is a member of a role and `cfg`
+    ///           does not grant it (a key added at genesis or later);
+    ///         - "configured holder no longer a member": a grant of `cfg` was revoked or
+    ///           renounced;
+    ///         - "selector mapped outside the configuration": a selector `cfg` does not list is
+    ///           mapped to a role other than `ADMIN` (the role of every unmapped selector);
+    ///         - "configured selector mapped to another role";
+    ///         - "target closed" and "target admin delay set", which genesis never does.
+    ///         An empty answer means the holders and the selector map are exactly `cfg`'s at the
+    ///         block the logs reach. It is as complete as the logs: an endpoint that leaves a
+    ///         log out hides the change that log records.
+    /// @param cfg The expected configuration.
+    /// @param logs Every log of the manager since its deployment, in order.
+    function governanceDifferences(GovernanceConfig.Config memory cfg, Entry[] memory logs)
+        internal
+        pure
+        returns (Difference[] memory differences)
+    {
+        Difference[] memory all = new Difference[](2 * logs.length + cfg.grants.length);
+        uint256 n;
+        GovernanceConfig.Grant[] memory held = holdersIn(logs);
+        for (uint256 i; i < held.length; ++i) {
+            if (!_granted(cfg, held[i])) {
+                all[n++] = Difference(
+                    "holder not in the configuration", held[i].role, held[i].account, bytes4(0)
+                );
+            }
+        }
+        for (uint256 i; i < cfg.grants.length; ++i) {
+            bool member;
+            for (uint256 k; k < held.length && !member; ++k) {
+                member =
+                    held[k].role == cfg.grants[i].role && held[k].account == cfg.grants[i].account;
+            }
+            if (!member) {
+                all[n++] = Difference(
+                    "configured holder no longer a member",
+                    cfg.grants[i].role,
+                    cfg.grants[i].account,
+                    bytes4(0)
+                );
+            }
+        }
+        n = _targetDifferences(cfg, logs, all, n);
+        differences = new Difference[](n);
+        for (uint256 i; i < n; ++i) {
+            differences[i] = all[i];
+        }
+    }
+
+    /// @notice Reverts with the first of `differences` and their number, unless there is none.
+    function requireNoDifference(Difference[] memory differences) internal pure {
+        if (differences.length == 0) return;
+        Difference memory first = differences[0];
+        revert GovernanceDiffers(
+            first.what, first.role, first.account, first.selector, differences.length
+        );
+    }
+
+    /// @dev Appends to `all` (from index `n`) the differences in the selector map, the closed
+    ///      targets and the target admin delays; returns the new count.
+    function _targetDifferences(
+        GovernanceConfig.Config memory cfg,
+        Entry[] memory logs,
+        Difference[] memory all,
+        uint256 n
+    ) private pure returns (uint256) {
+        // The last state each log leaves: a selector's role, a target closed, a target's delay.
+        Difference[] memory last = new Difference[](logs.length);
+        uint256 m;
+        for (uint256 i; i < logs.length; ++i) {
+            Entry memory e = logs[i];
+            Difference memory now_;
+            if (
+                e.topics.length == 3
+                    && e.topics[0] == IAccessManager.TargetFunctionRoleUpdated.selector
+            ) {
+                now_ = Difference(
+                    "selector",
+                    uint64(uint256(e.topics[2])),
+                    address(uint160(uint256(e.topics[1]))),
+                    bytes4(abi.decode(e.data, (bytes32)))
+                );
+            } else if (e.topics.length == 2 && e.topics[0] == IAccessManager.TargetClosed.selector)
+            {
+                now_ = Difference(
+                    "target closed",
+                    abi.decode(e.data, (bool)) ? 1 : 0,
+                    address(uint160(uint256(e.topics[1]))),
+                    bytes4(0)
+                );
+            } else if (
+                e.topics.length == 2
+                    && e.topics[0] == IAccessManager.TargetAdminDelayUpdated.selector
+            ) {
+                (uint32 delay,) = abi.decode(e.data, (uint32, uint48));
+                now_ = Difference(
+                    "target admin delay set",
+                    delay,
+                    address(uint160(uint256(e.topics[1]))),
+                    bytes4(0)
+                );
+            } else {
+                continue;
+            }
+            uint256 at = m;
+            for (uint256 k; k < m; ++k) {
+                if (
+                    last[k].account == now_.account && last[k].selector == now_.selector
+                        && keccak256(bytes(last[k].what)) == keccak256(bytes(now_.what))
+                ) {
+                    at = k;
+                    break;
+                }
+            }
+            last[at] = now_;
+            if (at == m) ++m;
+        }
+        for (uint256 i; i < m; ++i) {
+            Difference memory s = last[i];
+            if (keccak256(bytes(s.what)) != keccak256("selector")) {
+                // A target that is open again, or whose admin delay is back to zero, is as genesis
+                // left it.
+                if (s.role != 0) all[n++] = Difference(s.what, 0, s.account, bytes4(0));
+                continue;
+            }
+            (bool listed, uint64 role) = _configuredRole(cfg, s.account, s.selector);
+            if (listed && role != s.role) {
+                s.what = "configured selector mapped to another role";
+                all[n++] = s;
+            } else if (!listed && s.role != Roles.ADMIN) {
+                s.what = "selector mapped outside the configuration";
+                all[n++] = s;
+            }
+        }
+        return n;
+    }
+
+    function _granted(GovernanceConfig.Config memory cfg, GovernanceConfig.Grant memory g)
+        private
+        pure
+        returns (bool)
+    {
+        for (uint256 i; i < cfg.grants.length; ++i) {
+            if (cfg.grants[i].role == g.role && cfg.grants[i].account == g.account) return true;
+        }
+        return false;
+    }
+
+    function _configuredRole(GovernanceConfig.Config memory cfg, address target, bytes4 selector)
+        private
+        pure
+        returns (bool listed, uint64 role)
+    {
+        for (uint256 i; i < cfg.targets.length; ++i) {
+            if (cfg.targets[i].target != target) continue;
+            GovernanceConfig.FunctionRole[] memory fns = cfg.targets[i].functions;
+            for (uint256 j; j < fns.length; ++j) {
+                if (fns[j].selector == selector) return (true, fns[j].role);
+            }
+        }
     }
 
     // ------------------------------------------------------------------ runtime code
