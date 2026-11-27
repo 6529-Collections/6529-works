@@ -11,7 +11,7 @@
 
 ## Security consequence
 
-<!-- External calls, value flows, signatures and replay, roles, storage layout. "None" for
-     prose, tooling or tests. Do not describe an exploitable vulnerability here: see
+<!-- External calls, value flows, signatures and replay, roles, storage layout, and any CI
+     check or gate the change weakens. "None" only when there is none. Do not describe an exploitable vulnerability here: see
      SECURITY.md. No keys, RPC credentials or unredacted broadcasts, and no claim of audit,
      beta or production readiness. -->

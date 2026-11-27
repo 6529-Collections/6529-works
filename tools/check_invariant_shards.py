@@ -14,20 +14,25 @@ Forge passes when a filter selects nothing, so neither shows up as a failure.
 What it does. It reads the Solidity sources (no build is needed), finds every invariant test
 Forge would run, and applies each part's filter as Forge does:
 
-- An invariant test is a function whose name starts with `invariant` or `statefulFuzz`, in a
-  contract that is not abstract or inherited by one that is not. A function a test contract
-  inherits from a base contract counts as that test contract's.
+- An invariant test is a public or external function whose name starts with `invariant` or
+  `statefulFuzz`, in a contract that is not abstract or inherited by one that is not. A
+  function a test contract inherits from a base contract counts as that test contract's; a
+  base imported under another name (`import { A as B }`) is followed to `A`.
 - `--match-test` and `--no-match-test` are regular expressions searched in the test's
   signature (`invariant_Name()`), not its bare name, so a pattern that ends in `$` after the
   name matches nothing. `--match-contract` and `--no-match-contract` are searched in the
   contract's name. `--match-path` and `--no-match-path` are globs over the source path.
+- The workflow runs `forge test $FILTER`, which splits the filter at spaces and removes no
+  quotes, so a filter is split the same way here and one that contains a quote is refused.
 - A filter with any other option is refused: this tool would not know what it selects.
 
 Every (contract, test) pair must be selected by exactly one part of each job in JOBS. A job
-that is missing, or that has no part with a filter, is a failure too.
+that is missing or has no `include:` list, and a part without a name or a filter (it would
+run every test), are failures too.
 
 Limits. Sources are scanned, not compiled: a contract is found by its `contract X is A, B {`
-header, and a base contract by name (the one in the same file first). Regular expressions are
+header, and a base contract by name: the one in the same file, else the first one scanned, so
+two base contracts of one name in other files are not told apart. Regular expressions are
 evaluated by Python's `re`, which agrees with Forge's for the patterns a filter needs
 (anchors, groups, alternation, classes).
 """
@@ -37,7 +42,6 @@ from __future__ import annotations
 import argparse
 import fnmatch
 import re
-import shlex
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -72,10 +76,14 @@ GLOB_OPTIONS = {
 CONTRACT = re.compile(
     r"\b(abstract\s+)?contract\s+([A-Za-z_$][\w$]*)\s*(?:\bis\b([^{]*))?\{"
 )
-FUNCTION = re.compile(r"\bfunction\s+([A-Za-z_$][\w$]*)\s*\(([^)]*)\)")
+# A function's name, parameters and what follows up to its body or semicolon (the visibility).
+FUNCTION = re.compile(r"\bfunction\s+([A-Za-z_$][\w$]*)\s*\(([^)]*)\)([^{;]*)")
+HIDDEN = re.compile(r"\b(?:internal|private)\b")
+IMPORT = re.compile(r"\bimport\b[^;]*;")
+ALIAS = re.compile(r"\b([A-Za-z_$][\w$]*)\s+as\s+([A-Za-z_$][\w$]*)")
 JOB_KEY = re.compile(r"^  ([A-Za-z0-9_-]+):\s*(?:#.*)?$")
-PART_NAME = re.compile(r"^\s*-\s+name:\s*(.+?)\s*$")
-PART_FILTER = re.compile(r"^\s*(?:-\s+)?filter:\s*(.+?)\s*$")
+INCLUDE = re.compile(r"^(\s*)include:\s*(?:#.*)?$")
+ENTRY_KEY = re.compile(r"^\s*(?:-\s+)?([A-Za-z0-9_-]+):\s*(.*?)\s*$")
 
 
 class ShardError(Exception):
@@ -103,6 +111,8 @@ class Contract:
     abstract: bool
     bases: list[str]
     functions: list[str] = field(default_factory=list)
+    # Names this contract's file imports under another name: alias to original.
+    aliases: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -192,17 +202,25 @@ def _base_names(clause: str | None) -> list[str]:
 def parse_contracts(source: str, path: str) -> list[Contract]:
     """Every contract `source` declares, with the test functions written in its own body."""
     text = strip_comments_and_strings(source)
+    aliases = {
+        alias: original
+        for statement in IMPORT.findall(text)
+        for original, alias in ALIAS.findall(statement)
+    }
     found = []
     for m in CONTRACT.finditer(text):
         body = text[m.end() - 1 : _body_end(text, m.end() - 1)]
-        contract = Contract(path, m.group(2), bool(m.group(1)), _base_names(m.group(3)))
+        contract = Contract(
+            path, m.group(2), bool(m.group(1)), _base_names(m.group(3)), aliases=aliases
+        )
         for f in FUNCTION.finditer(body):
-            if not TEST_PREFIX.match(f.group(1)):
+            # Forge finds tests in the ABI, which has no internal or private function.
+            if not TEST_PREFIX.match(f.group(1)) or HIDDEN.search(f.group(3)):
                 continue
             if f.group(2).strip():
                 raise ShardError(
                     f"{path}: {contract.name}.{f.group(1)} takes parameters; an invariant "
-                    "test takes none"
+                    "test takes none (make a helper internal or private)"
                 )
             contract.functions.append(f.group(1))
         found.append(contract)
@@ -228,7 +246,7 @@ def discover(contracts: list[Contract]) -> list[Test]:
         seen.add((c.path, c.name))
         names = list(c.functions)
         for base in c.bases:
-            parent = resolve(base, c.path)
+            parent = resolve(c.aliases.get(base, base), c.path)
             if parent:
                 names += [f for f in functions(parent, seen) if f not in names]
         return names
@@ -255,10 +273,12 @@ def scan(root: Path = ROOT) -> list[Test]:
 
 def parse_filter(name: str, text: str) -> Filter:
     """The filter of one part, from its `forge test` arguments."""
-    try:
-        words = shlex.split(text)
-    except ValueError as exc:
-        raise ShardError(f"part '{name}': cannot split the filter {text!r}: {exc}") from exc
+    if '"' in text or "'" in text:
+        raise ShardError(
+            f"part '{name}': the filter {text!r} contains a quote, which `forge test $FILTER` "
+            "would pass to Forge as part of the pattern"
+        )
+    words = text.split()
     result = Filter(name, text)
     i = 0
     while i < len(words):
@@ -292,10 +312,12 @@ def _unquote(value: str) -> str:
 
 
 def workflow_filters(text: str, job: str) -> list[Filter]:
-    """The matrix parts of `job` that have a `filter`, in order.
+    """The parts of `job`: the entries of its matrix `include:` list, in order.
 
     The workflow is read as text: the job's lines run from `  <job>:` to the next key at the
-    same indent, and a part is a `- name:` line with the `filter:` line that follows it.
+    same indent, and the list from `include:` to the next line indented no deeper. Every
+    entry must have a `name` and a `filter`: the job runs `forge test` with the filter, so an
+    entry without one would run every test.
     """
     lines = text.splitlines()
     start = next(
@@ -304,22 +326,39 @@ def workflow_filters(text: str, job: str) -> list[Filter]:
     )
     if start is None:
         raise ShardError(f"no job '{job}'")
-    filters: list[Filter] = []
-    name: str | None = None
+    entries: list[dict[str, str]] = []
+    indent: int | None = None
     for line in lines[start + 1 :]:
         if JOB_KEY.match(line):
             break
-        if line.lstrip().startswith("#"):
+        if not line.strip() or line.lstrip().startswith("#"):
             continue
-        if m := PART_NAME.match(line):
-            name = _unquote(m.group(1))
-        elif m := PART_FILTER.match(line):
-            if name is None:
-                raise ShardError(f"job '{job}': a filter has no part name before it")
-            filters.append(parse_filter(name, _unquote(m.group(1))))
-            name = None
-    if not filters:
-        raise ShardError(f"job '{job}' has no part with a filter")
+        if indent is None:
+            if m := INCLUDE.match(line):
+                indent = len(m.group(1))
+            continue
+        if len(line) - len(line.lstrip()) <= indent:
+            break
+        m = ENTRY_KEY.match(line)
+        if not m:
+            raise ShardError(f"job '{job}': cannot read the matrix line {line.strip()!r}")
+        if line.lstrip().startswith("-"):
+            entries.append({})
+        if not entries:
+            raise ShardError(f"job '{job}': a matrix value comes before the first entry")
+        entries[-1][m.group(1)] = _unquote(m.group(2))
+    if not entries:
+        raise ShardError(f"job '{job}' has no matrix `include:` entries")
+    filters = []
+    for n, entry in enumerate(entries, 1):
+        name = entry.get("name")
+        if not name:
+            raise ShardError(f"job '{job}': matrix entry {n} has no name")
+        if not entry.get("filter"):
+            raise ShardError(
+                f"job '{job}': part '{name}' has no filter, so it would run every test"
+            )
+        filters.append(parse_filter(name, entry["filter"]))
     return filters
 
 

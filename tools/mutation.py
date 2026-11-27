@@ -24,7 +24,7 @@ Subcommands:
                            a shard that runs longer, with status `timeout`
   report OUT [...]         merge results.json files into a Markdown report (--markdown) and a
                            JSON summary (--json), each giving the mutants that timed out
-                           apart from those a failing test killed (both count as killed in
+                           apart from the other kills (both count as killed in
                            the rate); --shards names the shards the run planned
                            and fails when one left no results; --floors FILE fails when a
                            contract did not finish, has no floor, or falls below its floor
@@ -278,8 +278,8 @@ class FileResult:
         return self.timeouts + sum(1 for s in self.survivors if s.recheck == "timeout")
 
     @property
-    def killed_by_assertion(self) -> int:
-        """Kills where a test failed: every kill that is not a timeout."""
+    def killed_without_timeout(self) -> int:
+        """Every kill that is not a timeout: the test command ended with a failure."""
         return self.killed - self.timed_out
 
 
@@ -1112,7 +1112,7 @@ def markdown(results: list[FileResult]) -> str:
         "Killed includes Timed out: a mutant whose tests ran past the time limit counts as"
     )
     lines.append(
-        f"killed, and no assertion failed for it. Killed by a failing test: {killed - timed_out}."
+        f"killed, though no test failed for it. Killed without a timeout: {killed - timed_out}."
     )
     lines.append("")
     lines.append(
@@ -1304,7 +1304,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.json:
             summary = {
                 r.path: {"mutants": r.mutants, "killed": r.killed, "kill_rate": kill_rate(r),
-                         "killed_by_assertion": r.killed_by_assertion,
+                         "killed_without_timeout": r.killed_without_timeout,
                          "timeouts": r.timed_out, "status": r.status, "shards": r.shards,
                          "missing_shards": r.missing, "not_rechecked": r.unrechecked}
                 for r in results

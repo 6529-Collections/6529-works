@@ -16,8 +16,8 @@
   Docs job: every invariant test in the sources must be selected by exactly one filter of the
   Tests job and of the nightly Deep invariants job.
 - **Mutation report.** `tools/mutation.py report` gives the mutants that timed out in their own
-  column and counts the kills made by a failing test apart from them, in the Markdown and
-  the JSON (`killed_by_assertion`; `timeouts` now includes a survivor whose re-check timed
+  column and counts the other kills apart from them, in the Markdown and
+  the JSON (`killed_without_timeout`; `timeouts` now includes a survivor whose re-check timed
   out). The score and the floors are unchanged.
 - **Wording.** The pull request template asks for what changed, how it was checked and the
   security consequence. `test_RemoveMinter_AgainBeforeTheNewWaitStillCountsAsOnceActive` is

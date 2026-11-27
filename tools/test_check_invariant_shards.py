@@ -33,6 +33,8 @@ contract LedgerInvariantTest is Base, Other(1, 2) {
 
     function test_NotAnInvariant() public {}
     function statefulFuzz_Ledger() public {}
+    function invariant_Helper(uint256 x) internal pure returns (uint256) { return x; }
+    function invariantPrivate() private {}
 }
 
 contract Handler {
@@ -105,9 +107,26 @@ class DiscoveryTest(unittest.TestCase):
         )
         self.assertEqual([t.name for t in cs.discover(contracts)], ["invariant_Here"])
 
-    def test_an_invariant_with_parameters_is_refused(self) -> None:
-        with self.assertRaises(cs.ShardError):
-            cs.parse_contracts("contract T { function invariant_X(uint256 a) public {} }", "t.sol")
+    def test_a_base_imported_under_another_name_is_followed(self) -> None:
+        contracts = cs.parse_contracts(
+            "abstract contract Shared { function invariant_Shared() public {} }", "test/S.sol"
+        ) + cs.parse_contracts(
+            'import { Other, Shared as Renamed } from "./S.sol";\ncontract T is Renamed { }',
+            "test/T.t.sol",
+        )
+        self.assertEqual(
+            [str(t) for t in cs.discover(contracts)], ["test/T.t.sol:T.invariant_Shared"]
+        )
+
+    def test_an_invariant_with_parameters_is_refused_unless_it_is_hidden(self) -> None:
+        for visibility in ("public", "external"):
+            with self.assertRaises(cs.ShardError):
+                cs.parse_contracts(
+                    f"contract T {{ function invariant_X(uint256 a) {visibility} {{}} }}", "t.sol"
+                )
+        for visibility in ("internal", "private", "internal pure"):
+            source = f"contract T {{ function invariant_X(uint256 a) {visibility} {{}} }}"
+            self.assertEqual(tests_of(source), [])
 
     def test_the_repository_has_invariant_tests(self) -> None:
         tests = cs.scan()
@@ -127,7 +146,7 @@ class FilterTest(unittest.TestCase):
         self.assertTrue(self.selects("--match-test ^invariant_(Ledger|Other)"))
         # The signature is `invariant_Ledger()`, so `$` right after the name matches nothing.
         self.assertFalse(self.selects("--match-test ^invariant_Ledger$"))
-        self.assertTrue(self.selects(r"--match-test '^invariant_Ledger\('"))
+        self.assertTrue(self.selects(r"--match-test ^invariant_Ledger\("))
         self.assertFalse(self.selects("--no-match-test ^invariant"))
 
     def test_the_contract_pattern_is_searched_in_the_name(self) -> None:
@@ -142,14 +161,21 @@ class FilterTest(unittest.TestCase):
         self.assertFalse(self.selects("--match-test ^invariant --no-match-contract ^Ledger"))
 
     def test_path_globs_and_short_and_inline_forms(self) -> None:
-        self.assertTrue(self.selects("--match-path 'test/economics/*'"))
-        self.assertFalse(self.selects("--no-match-path 'test/economics/*'"))
+        self.assertTrue(self.selects("--match-path test/economics/*"))
+        self.assertFalse(self.selects("--no-match-path test/economics/*"))
         self.assertTrue(self.selects("--mt ^invariant --mc ^Ledger"))
         self.assertTrue(self.selects("--match-test=^invariant"))
         self.assertFalse(self.selects("--nmc=^Ledger"))
 
     def test_an_option_the_tool_does_not_know_is_refused(self) -> None:
-        for text in ("--fuzz-runs 10", "--match-test", "--match-test '('", "-vv"):
+        for text in ("--fuzz-runs 10", "--match-test", "--match-test (", "-vv"):
+            with self.assertRaises(cs.ShardError, msg=text):
+                cs.parse_filter("part", text)
+
+    def test_a_quoted_pattern_is_refused(self) -> None:
+        # `forge test $FILTER` removes no quotes: Forge would get them inside the pattern
+        # and select nothing.
+        for text in ("--match-test '^invariant'", '--match-test "^invariant"'):
             with self.assertRaises(cs.ShardError, msg=text):
                 cs.parse_filter("part", text)
 
@@ -160,11 +186,22 @@ class WorkflowTest(unittest.TestCase):
         self.assertEqual([f.name for f in filters], ["unit", "ledger", "others"])
         self.assertEqual(filters[2].text, "--match-test ^invariant --no-match-contract ^Ledger")
 
-    def test_a_missing_job_or_a_job_without_filters_fails(self) -> None:
+    def test_a_missing_job_or_a_job_without_a_matrix_fails(self) -> None:
         with self.assertRaises(cs.ShardError):
             cs.workflow_filters(WORKFLOW, "absent")
         with self.assertRaises(cs.ShardError):
             cs.workflow_filters(WORKFLOW, "docs")
+
+    def test_a_part_without_a_filter_or_a_name_fails(self) -> None:
+        # GitHub reads a missing matrix value as empty, so the part would run every test.
+        unfiltered = WORKFLOW.replace(
+            "          - name: ledger\n", "          - name: everything\n          - name: ledger\n"
+        )
+        with self.assertRaisesRegex(cs.ShardError, "'everything' has no filter"):
+            cs.workflow_filters(unfiltered, "tests")
+        unnamed = WORKFLOW.replace("          - name: ledger\n            filter:", "          - filter:")
+        with self.assertRaisesRegex(cs.ShardError, "has no name"):
+            cs.workflow_filters(unnamed, "tests")
 
 
 class CheckTest(unittest.TestCase):

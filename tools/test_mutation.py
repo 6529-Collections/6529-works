@@ -88,16 +88,16 @@ class ParseLogTest(unittest.TestCase):
         self.assertEqual(r.killed, 32)
         self.assertAlmostEqual(mt.kill_rate(r), 100.0 * 32 / 34)
 
-    def test_timeouts_are_counted_apart_from_kills_by_assertion(self) -> None:
+    def test_timeouts_are_counted_apart_from_the_other_kills(self) -> None:
         r = mt.FileResult("src/x/Thing.sol")
         mt.parse_log(LOG, r)
         # One mutant timed out against its module's tests (LOG).
-        self.assertEqual((r.killed, r.timed_out, r.killed_by_assertion), (30, 1, 29))
+        self.assertEqual((r.killed, r.timed_out, r.killed_without_timeout), (30, 1, 29))
         # A survivor whose re-check timed out is a kill and a timeout; one the suite failed
-        # on is a kill by assertion. The score counts both, as before.
+        # on is a kill without one. The score counts both, as before.
         r.survivors[0].recheck = "killed"
         r.survivors[1].recheck = "timeout"
-        self.assertEqual((r.killed, r.timed_out, r.killed_by_assertion), (32, 2, 30))
+        self.assertEqual((r.killed, r.timed_out, r.killed_without_timeout), (32, 2, 30))
         self.assertEqual(r.timeouts, 1)
 
 
@@ -561,9 +561,9 @@ class ReportTest(unittest.TestCase):
         self.assertIn(
             "| `src/x/Thing.sol` | 34 | 31 | 1 | 3 | 91.2% | 3/4 | 9/10 | 18/20 | 0/0 |", text
         )
-        # The one timeout is a kill no assertion made, and the report says so.
+        # The one timeout is a kill no failing test made, and the report says so.
         self.assertIn("| **Total** | 34 | 31 | 1 | 3 | 91.2% | | | | |", text)
-        self.assertIn("Killed by a failing test: 30.", text)
+        self.assertIn("Killed without a timeout: 30.", text)
         self.assertNotIn("total += amount", text)  # killed on re-check
         self.assertIn("`a < b` to `a <= b`", text)
 

@@ -163,7 +163,7 @@ one job runs in parts that together make exactly the group's mutants: the statem
 cut by source line, because slither-mutate makes no comment mutant on a line whose revert
 mutant survived, and both have to run in the same part. A run of slither-mutate that stops
 before it has mutated its target fails its shard. A mutant whose tests run past the time
-limit counts as killed; the report gives those apart from the mutants a failing test killed.
+limit counts as killed; the report gives those apart from the other kills.
 The scores measured on
 the current contracts, with their survivors triaged, are in
 [Mutation scores](mutation-scores.md); the figures measured on the contracts before ADR 0010 are

@@ -53,7 +53,7 @@ whose minters are the Independent Stream module's answer, with one more check:
 | INV-CORE-11 | Media never change after open; `recordFileId` never changes after `finalized`; `finalized`, `licenseLocked`, `repinLocked` and `onChainComplete` never go back to false; a CC0 work stays CC0; `renderer` changes only by finalize or `repin`, never past the lock. | `invariant_TheFactsHold` | open, set record, set license, finalize, repin, lock |
 
 Non-vacuity of the Independent Stream campaign:
-`IndependentStreamInvariantTest.test_HandlerPathsReachState`.
+`IndependentStreamInvariantTest.test_HandlerReachesEveryState`.
 
 **No stateful campaign** checks these as stated (each becomes a row when its test exists):
 
