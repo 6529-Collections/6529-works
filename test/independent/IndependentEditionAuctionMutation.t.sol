@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { Vm } from "forge-std/Vm.sol";
+import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
 import { IUniformEditionAuctionLens } from "src/interfaces/IUniformEditionAuctionLens.sol";
@@ -142,7 +143,9 @@ contract IndependentEditionAuctionMutationTest is IndependentEditionAuctionTest 
         uint256 paid = fee.balance + seller.balance;
         assertEq(paid, 25 * ua.stepPrice(saleId, 10));
 
+        // Neither a delisting nor a cancelled 1/1 voids it now.
         gate.setActive(address(token), false);
+        english.set(address(master), ID, IEnglishAuction.AuctionState.CANCELLED, 0);
         vm.prank(bob);
         assertTrue(auction.settle(saleId, order));
         assertEq(_status(saleId), uint8(IUniformEditionAuction.AuctionStatus.SETTLED));

@@ -449,6 +449,130 @@ contract IndependentEditionRestartTest is IndependentIntegrationBase {
         _voidsAndRefunds(saleId, escrow);
     }
 
+    // ------------------------------------------------------------------ between settle calls
+
+    /// @dev Two bids far enough apart that the settlement scan takes more than one call; the
+    ///      1/1 ends unsold and the first settle call starts the scan. Nothing is paid yet.
+    function _startAScanInSeveralCalls() internal returns (uint256 saleId, uint256 escrow) {
+        saleId = _openEdition();
+        escrow = _bid(saleId, alice, 0, 5);
+        escrow += _bid(saleId, bob, 330, 1);
+        uint256 firstEnd = auction.auction(oneSaleId).endTime;
+        vm.warp(firstEnd);
+        auction.settle(oneSaleId);
+        vm.warp(firstEnd + CLOSE_OFFSET);
+        assertFalse(indAuction.settle(saleId, new uint256[](0)), "the scan needs another call");
+        assertEq(
+            uint8(ea.auction(saleId).status), uint8(IUniformEditionAuction.AuctionStatus.SETTLING)
+        );
+        assertFalse(fEditions.editionOf(tokenId).supplySealed, "not cleared yet");
+    }
+
+    /// @dev The sale is void: both bids come back in full, no copy is minted, the seller and the
+    ///      network are paid nothing, and the edition is sealed at zero.
+    function _voidsWithBothBidsRefunded(uint256 saleId, uint256 escrow) internal {
+        address fee = economics.networkFeeRecipient(PRODUCT_INDEPENDENT);
+        (uint256 sellerBefore, uint256 feeBefore) = (seller.balance, fee.balance);
+        vm.expectEmit(address(indAuction));
+        emit IUniformEditionAuction.AuctionVoided(saleId);
+        vm.prank(anyone);
+        assertTrue(indAuction.settle(saleId, new uint256[](0)));
+        assertEq(uint8(ea.auction(saleId).status), uint8(IUniformEditionAuction.AuctionStatus.VOID));
+        assertEq(_claim(saleId, 1, alice) + _claim(saleId, 2, bob), escrow, "refunded in full");
+        assertEq(fEditions.balanceOf(alice, tokenId) + fEditions.balanceOf(bob, tokenId), 0);
+        assertEq(address(indAuction).balance, 0, "nothing left behind");
+        assertEq(seller.balance, sellerBefore, "the seller is paid nothing");
+        assertEq(fee.balance, feeBefore, "the network is paid nothing");
+        Edition memory e = fEditions.editionOf(tokenId);
+        assertTrue(e.supplySealed && e.maxSupply == 0 && e.minted == 0, "sealed at zero");
+    }
+
+    /// @dev The restarted 1/1 is cancelled after an upheld dispute while the edition sale's
+    ///      scan is in progress, with nothing paid: the next settle call voids the sale, as the
+    ///      first call would have, instead of clearing it (IND-56, EA-19).
+    function test_Restart_ACancelBetweenUnpaidSettleCallsVoidsWithFullRefunds() public {
+        (uint256 saleId, uint256 escrow) = _startAScanInSeveralCalls();
+        _restartAt(block.timestamp);
+        _pause();
+        bytes32 outcome = _platformStatement(
+            address(fStream), tokenId, StatementKinds.DISPUTE_OUTCOME, "ipfs://outcome"
+        );
+        _asNetwork(address(auction), abi.encodeCall(auction.cancel, (oneSaleId, outcome)));
+        assertEq(
+            uint8(ea.endTimes(saleId).oneOfOneState), uint8(IEnglishAuction.AuctionState.CANCELLED)
+        );
+        _voidsWithBothBidsRefunded(saleId, escrow);
+    }
+
+    /// @dev The contract is delisted in the same window, after a restart: the sale voids too.
+    function test_Restart_ADelistingBetweenUnpaidSettleCallsVoidsWithFullRefunds() public {
+        (uint256 saleId, uint256 escrow) = _startAScanInSeveralCalls();
+        _restartAt(block.timestamp);
+        _asNetwork(
+            address(independentStream),
+            abi.encodeCall(
+                independentStream.setStatus,
+                (
+                    _asArray(address(fStream)),
+                    IIndependentStreamRegistry.Status.DELISTED,
+                    bytes32("delisted")
+                )
+            )
+        );
+        _voidsWithBothBidsRefunded(saleId, escrow);
+    }
+
+    /// @dev A restart alone, and a restarted 1/1 under a dispute pause that is not decided, do
+    ///      not void the sale: the scan keeps its progress and the next call clears and pays.
+    function test_Restart_APausedRestartBetweenSettleCallsKeepsTheScan() public {
+        (uint256 saleId, uint256 escrow) = _startAScanInSeveralCalls();
+        _restartAt(block.timestamp);
+        _pause();
+        assertEq(
+            uint8(auction.auction(oneSaleId).state), uint8(IEnglishAuction.AuctionState.PAUSED)
+        );
+        address fee = economics.networkFeeRecipient(PRODUCT_INDEPENDENT);
+        (uint256 sellerBefore, uint256 feeBefore) = (seller.balance, fee.balance);
+        assertTrue(indAuction.settle(saleId, new uint256[](0)), "finished during the pause");
+        IUniformEditionAuction.Clearing memory c = ea.clearing(saleId);
+        assertGt(c.count, 0);
+        assertEq(fee.balance - feeBefore, c.networkFee, "the network's share");
+        assertEq(seller.balance - sellerBefore, c.revenue - c.networkFee, "the seller's part");
+        assertEq(_claim(saleId, 1, alice) + _claim(saleId, 2, bob), escrow - c.revenue);
+        assertEq(address(indAuction).balance, 0);
+    }
+
+    /// @dev A clearing that already paid stands: the sale settles and pays, its 1/1 is then
+    ///      offered again and cancelled, and the winners still claim their copies and only the
+    ///      difference back; a later settle call changes nothing.
+    function test_Restart_ACancelAfterTheClearingPaidLeavesItStanding() public {
+        uint256 saleId = _openEdition();
+        uint256 escrow = _bid(saleId, alice, 100, 2);
+        uint256 firstEnd = auction.auction(oneSaleId).endTime;
+        vm.warp(firstEnd);
+        auction.settle(oneSaleId);
+        vm.warp(firstEnd + CLOSE_OFFSET);
+        IUniformEditionAuction.Clearing memory c = _settleAndCheckThePayout(saleId);
+        (uint256 sellerAfter, uint256 held) = (seller.balance, address(indAuction).balance);
+
+        _restartAt(block.timestamp);
+        _pause();
+        bytes32 outcome = _platformStatement(
+            address(fStream), tokenId, StatementKinds.DISPUTE_OUTCOME, "ipfs://outcome"
+        );
+        _asNetwork(address(auction), abi.encodeCall(auction.cancel, (oneSaleId, outcome)));
+
+        assertTrue(indAuction.settle(saleId, new uint256[](0)), "still settled");
+        assertEq(
+            uint8(ea.auction(saleId).status), uint8(IUniformEditionAuction.AuctionStatus.SETTLED)
+        );
+        assertEq(seller.balance, sellerAfter, "nothing taken back, nothing paid again");
+        assertEq(address(indAuction).balance, held);
+        assertEq(_claim(saleId, 1, alice), escrow - c.revenue, "the difference only");
+        assertEq(fEditions.balanceOf(alice, tokenId), 2, "the copies it won");
+        assertEq(address(indAuction).balance, 0);
+    }
+
     // ------------------------------------------------------------------ a sale opened later
 
     /// @dev An edition sale opened after the 1/1 was offered again, here in the same block as

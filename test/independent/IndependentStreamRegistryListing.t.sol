@@ -483,8 +483,8 @@ contract IndependentStreamRegistryListingTest is IndependentStreamFixture {
         next.register(address(t), j);
         assertTrue(next.isActive(address(t)));
         assertEq(accountsModule.artistIdOf(other), otherId);
-        // listing again through the old module is refused: it is no longer the Independent Stream
-        // module
+        // The replaced module still takes a listing of an artist it knows, and the successor
+        // inherits it by reading through.
         IndependentStream6529 t2 = _deployStream(fArtistId, keccak256("t2"));
         IIndependentStreamRegistry.Join memory j2 =
             _joinData(address(t2), artistKey, artistKey, address(streamDeployer));

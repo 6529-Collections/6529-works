@@ -20,15 +20,38 @@ import { PRODUCT_INDEPENDENT, WorkTerms } from "../interfaces/types/EconomicsTyp
 import { PackageItem } from "../interfaces/types/PackageTypes.sol";
 import { UniformEditionAuctionLensBase } from "../sales/UniformEditionAuctionLens.sol";
 
-/// @notice The one view of the Independent Stream module this lens reads besides
+/// @notice The views of the Independent Stream module this lens reads besides
 ///         `IIndependentStreamGate`: whether an Independent Stream contract is listed and served
-///         (`IIndependentStreamRegistry.isActive`).
+///         (`IIndependentStreamRegistry.isActive`), and a contract's entry, for its partner.
 interface IIndependentStreamListing {
     /// @notice Whether `token` is a listed Independent Stream contract the Independent Stream
     ///         module serves.
     /// @param token The Independent Stream contract.
     /// @return True while it is served.
     function isActive(address token) external view returns (bool);
+
+    /// @notice A contract's entry (`IIndependentStreamRegistry.entry`, field by field); all zero
+    ///         for a contract that is not listed.
+    /// @param token The Independent Stream contract.
+    /// @return form Its form.
+    /// @return partner The other half of its pair (an ERC-721's editions contract), or zero.
+    /// @return artistId The artist it is listed under.
+    /// @return templateVersion The version of the deployer that recorded it.
+    /// @return codeHash Its runtime code hash.
+    /// @return feeShare The network's share now.
+    /// @return status Its status.
+    function entry(address token)
+        external
+        view
+        returns (
+            uint8 form,
+            address partner,
+            uint256 artistId,
+            uint32 templateVersion,
+            bytes32 codeHash,
+            uint32 feeShare,
+            uint8 status
+        );
 }
 
 /// @title IndependentEditionAuctionLens
@@ -39,8 +62,10 @@ interface IIndependentStreamListing {
 ///      and, for the Independent Stream module, the directory's INDEPENDENT_STREAM slot, read live.
 ///      The fee share a sale locks is the Independent Stream module's answer for the token
 ///      (`IIndependentStreamGate.feeShareOf`), never the token's own; the recipient is the
-///      economics resolver's Independent Stream one. Every call out forwards all gas and reverts on
-///      any failure. `editions` and `stream` answer zero (there is no single one).
+///      economics resolver's Independent Stream one. A sale opens only for the editions contract
+///      its master's own entry names, so a master has one edition whichever module listed its
+///      editions contracts. Every call out forwards all gas and reverts on any failure. `editions`
+///      and `stream` answer zero (there is no single one).
 contract IndependentEditionAuctionLens is UniformEditionAuctionLensBase {
     uint256 private constant _SLOT_TOKENS = 13;
 
@@ -122,10 +147,16 @@ contract IndependentEditionAuctionLens is UniformEditionAuctionLensBase {
     }
 
     /// @dev The Independent Stream module lets the calling adapter mint `token` now
-    ///      (`IIndependentStreamGate.canMint`), so a suspended or delisted contract opens no sale.
+    ///      (`IIndependentStreamGate.canMint`), so a suspended or delisted contract opens no sale,
+    ///      and `token`'s master names `token` as its editions contract: a master has one editions
+    ///      contract, the one its own listing records, whichever module recorded the other.
     function _sells(address token) internal view override returns (bool) {
         address gate = independentStreamRegistry();
-        return gate != address(0) && IIndependentStreamGate(gate).canMint(token, msg.sender);
+        if (gate == address(0) || !IIndependentStreamGate(gate).canMint(token, msg.sender)) {
+            return false;
+        }
+        (, address partner,,,,,) = IIndependentStreamListing(gate).entry(IEditions(token).stream());
+        return partner == token;
     }
 
     /// @dev The seller's wallet for `payees`, the Independent Stream module's fee share for

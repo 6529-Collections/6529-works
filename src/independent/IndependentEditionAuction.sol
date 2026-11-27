@@ -23,7 +23,9 @@ import { IndependentEditionAuctionLens } from "./IndependentEditionAuctionLens.s
 ///      read at settlement; a sale of a contract the module stops serving (delisted) reads its 1/1
 ///      as cancelled, so the sale voids with full refunds, and every bid and raise checks it is
 ///      still served (6529 Stream Editions' read only near the close would leave a delisted sale
-///      taking bids until then), as does every settle call while the scan has paid nothing.
+///      taking bids until then); and every settle call of a sale that has paid nothing reads the
+///      1/1 again, because an Independent Stream 1/1 can be offered again and then cancelled, so
+///      a delisting or a cancellation between two calls of one settlement voids the sale.
 contract IndependentEditionAuction is UniformEditionAuctionBase {
     /// @dev Storage slot 13 (the lens reads it): each sale's edition contract.
     mapping(uint256 saleId => address) private _tokens;
@@ -73,23 +75,34 @@ contract IndependentEditionAuction is UniformEditionAuctionBase {
 
     /// @inheritdoc UniformEditionAuctionBase
     /// @dev A sale whose scan is still in progress has paid nothing (the clearing call pays), so
-    ///      a later call re-checks the registry first: a contract delisted since the first call
-    ///      voids the sale with full refunds, as the first call would have. Once the clearing
-    ///      call has paid, the clearing stands. An adopted sale that runs on its own does not
-    ///      read the 1/1's clock, which is where the first call learns of a delisting, so it is
-    ///      checked here while it is still OPEN.
+    ///      a later call first reads the 1/1 again, as the first call did: a contract delisted or
+    ///      a 1/1 cancelled since then voids the sale with full refunds. A 1/1 offered again
+    ///      (`restart`) is not cancelled, so the scan goes on. Once the clearing call has paid,
+    ///      the clearing stands. An adopted sale that runs on its own never reads the 1/1, which
+    ///      is where the first call learns of a delisting, so it is checked against the registry
+    ///      alone, also while it is still OPEN.
     function settle(uint256 saleId, uint256[] calldata order) public override returns (bool) {
         SaleWord storage stored = _sales[saleId];
         IUniformEditionAuction.AuctionStatus status = stored.status;
+        bool alone = _payouts[saleId].runsOnItsOwn;
         bool unpaid = status == IUniformEditionAuction.AuctionStatus.OPEN
-            ? _payouts[saleId].runsOnItsOwn
+            ? alone
             : status == IUniformEditionAuction.AuctionStatus.SETTLING && _scans[saleId] != 0;
-        if (unpaid && !IndependentEditionAuctionLens(lens).isTarget(_tokens[saleId])) {
+        if (unpaid && _over(saleId, alone)) {
             if (_reentrancyGuardEntered()) revert ReentrancyGuardReentrantCall();
             _void(saleId, stored);
             return true;
         }
         return super.settle(saleId, order);
+    }
+
+    /// @dev Whether a sale that has paid nothing is void now: its contract is no longer served
+    ///      or, for a sale that follows a 1/1, that 1/1 was cancelled (the lens's clock answers
+    ///      CANCELLED for both).
+    function _over(uint256 saleId, bool alone) private view returns (bool) {
+        if (alone) return !_served(_tokens[saleId]);
+        (IEnglishAuction.AuctionState one,,) = _liveClock(saleId);
+        return one == IEnglishAuction.AuctionState.CANCELLED;
     }
 
     /// @notice Lists nothing: the Independent Stream module decides (`TargetNotAllowed`).
@@ -116,9 +129,15 @@ contract IndependentEditionAuction is UniformEditionAuctionBase {
     ///      module no longer serves; an unknown sale is left to the shared state check.
     function _requireServed(uint256 saleId) private view {
         address token = _tokens[saleId];
-        if (token != address(0) && !IndependentEditionAuctionLens(lens).isTarget(token)) {
+        if (token != address(0) && !_served(token)) {
             revert IUniformEditionAuction.BiddingClosed(saleId, 0);
         }
+    }
+
+    /// @dev Whether the Independent Stream module still serves `token` and its master contract
+    ///      (the lens's `isTarget`).
+    function _served(address token) private view returns (bool) {
+        return IndependentEditionAuctionLens(lens).isTarget(token);
     }
 
     /// @dev The lens's `clock`: the 1/1's state, end and latest restart, or cancelled once the
