@@ -23,9 +23,11 @@ jobs:
     name: Deep invariants (${{ matrix.name }})
     runs-on: ubuntu-latest
     timeout-minutes: 180
-    # Six parts with the same filters as the Tests job of ci.yml, so together they run every
-    # invariant exactly once. On 22 November 2026 the single economics part took 2 h 05 and
-    # 2 h 32 and the single others part 2 h 50 and then over the 3-hour limit; each is now two.
+    # Five parts that together run every invariant exactly once (tools/check_invariant_shards.py
+    # checks it in CI). The filters are those of the Tests job of ci.yml, except that the
+    # lifecycle campaigns run in the others part here. On 22 November 2026 the single
+    # economics part took 2 h 05 and 2 h 32 and the single others part 2 h 50 and then over
+    # the 3-hour limit; each is now two.
     strategy:
       fail-fast: false
       matrix:
