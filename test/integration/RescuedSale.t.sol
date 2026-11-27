@@ -155,7 +155,11 @@ contract RescuedSaleStreamTest is EditionAuctionStack {
         Edition memory e = editions.editionOf(tokenId);
         assertTrue(e.supplySealed && e.maxSupply == 0 && e.minted == 0, "sealed at zero");
         vm.prank(fan);
-        vm.expectRevert();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IUniformEditionAuction.UnknownBid.selector, editionSaleId, editionBidId
+            )
+        );
         editionAuction.claimBid(editionSaleId, editionBidId, fan);
     }
 

@@ -40,24 +40,28 @@
     - **A rescued master sells no edition.** A rescued sale now ends `CANCELLED` instead of
       `SETTLED` (`RescuedSaleClosed` is unchanged). Both edition auctions already read a
       cancelled 1/1 as void, so an edition sale that followed a rescued 1/1 refunds every bid
-      in full, mints nothing and seals its edition at zero, and no edition sale opens for that
-      master afterwards (EA-22). The edition auctions did not change for this. Indexers: a
+      in full, mints nothing and seals its edition at zero, and `open` opens no edition sale
+      for that master afterwards (EA-22). The network's `adopt` after a rebind is unchanged:
+      an adopted sale of a master whose outcome is recorded runs on its own (EA-21). The
+      edition auctions did not change for this. Indexers: a
       sale that emitted `RescuedSaleClosed` reads `CANCELLED`, with no `AuctionCancelled` and
       no burn.
     - **Edition copies keep their metadata after their master is burned** (permanent,
       `StreamBase`). `rendererOf` answers for every work that was minted, a burned one
       included, instead of for live tokens only; `tokenURI` keeps refusing a burned token. So
-      `uri` of copies already held keeps answering when a master is burned later (an
-      Independent Stream work offered again and then cancelled after a dispute): the renderer
-      draws them from the record the master keeps, with the dispute statement (RND-29). The
-      pin and its code check are unchanged. A record that nobody opened before the burn can
+      a later burn of the master (an Independent Stream work offered again and then cancelled
+      after a dispute) no longer stops `uri` of copies already held: the renderer draws them
+      from the record the master keeps, with the dispute statement its statement log holds
+      (RND-29). `uri` still reverts where it would for a live master: no renderer, a failing
+      one, or a pinned one whose code changed. A record that nobody opened before the burn can
       never be opened, so such copies render the core facts only (LIM-CNT-24).
     - **A cancellation between two calls of an Independent Stream edition settlement voids
       the sale.** A settlement whose scan takes several calls pays nothing until the call
       that clears. `IndependentEditionAuction.settle` now reads the 1/1 again on every call
       before that, as the first call did: a 1/1 offered again and then cancelled, like a
       delisting, voids the sale with full refunds. A restart alone voids nothing, and a
-      clearing that has paid stands (IND-56).
+      clearing that has paid stands (IND-56). An adopted sale that runs on its own never
+      reads the 1/1, as before: only a delisting voids it.
     - **One editions contract per Independent Stream master where editions are sold.** A
       replaced Independent Stream module still takes listings and its successor reads them
       through, so two editions contracts could be listed for one master after a replacement.

@@ -199,6 +199,48 @@ contract IndependentOnePairTest is IndependentIntegrationBase {
         _sells(a, oneSaleId, tokenId, item);
     }
 
+    /// @dev The same retirement for a version that is not approved: each pair of calls in the
+    ///      successor leaves the status as it was and makes it the successor's own, so what the
+    ///      replaced module records afterwards no longer reaches the successor.
+    function test_OnePair_RetiringKeepsASuspendedAndARevokedVersionAsTheyWere() public {
+        address d = address(editionsDeployer);
+        uint256 snapshot = vm.snapshotState();
+
+        // Suspended: resumed and suspended again in the successor, revoked in the replaced one.
+        _asNetwork(address(r1), abi.encodeCall(r1.suspendTemplate, (d)));
+        _replaceTheModule();
+        _asNetwork(address(r2), abi.encodeCall(r2.resumeTemplate, (d)));
+        _asNetwork(address(r2), abi.encodeCall(r2.suspendTemplate, (d)));
+        _asNetwork(address(r1), abi.encodeCall(r1.revokeTemplate, (d)));
+        assertEq(
+            uint8(r2.templateOf(d).status),
+            uint8(IIndependentStreamRegistry.TemplateStatus.SUSPENDED),
+            "suspended, as it was"
+        );
+        assertEq(
+            uint8(r1.templateOf(d).status), uint8(IIndependentStreamRegistry.TemplateStatus.REVOKED)
+        );
+        assertTrue(r2.isActive(address(master)), "served as before");
+
+        // Revoked: reinstated and revoked again in the successor; nothing to do in the replaced
+        // module, and a later reinstatement there does not reach the successor.
+        vm.revertToState(snapshot);
+        _asNetwork(address(r1), abi.encodeCall(r1.revokeTemplate, (d)));
+        _replaceTheModule();
+        _asNetwork(address(r2), abi.encodeCall(r2.reinstateTemplate, (d)));
+        _asNetwork(address(r2), abi.encodeCall(r2.revokeTemplate, (d)));
+        _asNetwork(address(r1), abi.encodeCall(r1.reinstateTemplate, (d)));
+        assertEq(
+            uint8(r2.templateOf(d).status),
+            uint8(IIndependentStreamRegistry.TemplateStatus.REVOKED),
+            "revoked, as it was"
+        );
+        assertEq(
+            uint8(r1.templateOf(d).status),
+            uint8(IIndependentStreamRegistry.TemplateStatus.APPROVED)
+        );
+    }
+
     // ------------------------------------------------------------------ pairs that still sell
 
     /// @dev The ordinary pair, with no replacement.

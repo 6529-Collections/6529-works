@@ -6,6 +6,7 @@ import { IndependentEditionAuction } from "src/independent/IndependentEditionAuc
 import { IndependentStream6529 } from "src/independent/IndependentStream6529.sol";
 import { IndependentStreamEditions6529 } from "src/independent/IndependentStreamEditions6529.sol";
 import { Facts, MintFacts, Outcome } from "src/interfaces/core/CoreTypes.sol";
+import { IWorkFacts } from "src/interfaces/core/IWorkFacts.sol";
 import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
 import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
 import { MockSale } from "test/mocks/core/CoreMocks.sol";
@@ -138,7 +139,9 @@ contract BurnedMasterIndependentTest is IndependentIntegrationBase {
         assertTrue(f.finalized && f.rendererCodeHash == address(renderer).codehash, "pinned");
         // A pinned renderer whose code changed draws nothing, burned master or not.
         vm.etch(address(renderer), hex"00");
-        vm.expectRevert();
+        vm.expectRevert(
+            abi.encodeWithSelector(IWorkFacts.RendererCodeChanged.selector, address(renderer))
+        );
         fEditions.uri(tokenId);
     }
 

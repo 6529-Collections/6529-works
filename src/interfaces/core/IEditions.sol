@@ -125,8 +125,10 @@ interface IEditions is IERC1155, IERC2981 {
     /// @notice Mints copies within the maximum. The edition's minter only; a removed minter
     ///         mints only an edition it sealed before its removal. The master is not read here:
     ///         an edition whose master was burned (its sale cancelled) can still be minted by its
-    ///         minter. Its `uri` keeps answering, drawn by the burned master's renderer from the
-    ///         record the master keeps.
+    ///         minter. Burning the master does not by itself stop `uri`: the burned master's
+    ///         renderer draws the edition from the record the master keeps, and `uri` reverts
+    ///         only where it would for a live master (no renderer, a failing one, or a pinned one
+    ///         whose code changed).
     /// @param to The buyer.
     /// @param editionId The edition.
     /// @param amount The copies.
