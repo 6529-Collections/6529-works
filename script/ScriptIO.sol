@@ -11,7 +11,8 @@ import { DeployCore } from "./DeployCore.sol";
 /// @title ScriptIO
 /// @notice What the deploy and verify scripts read from outside the EVM: environment
 ///         variables, files under ./config and ./deployments, the RPC's chain ID, the pinned
-///         CC0 digest and the canonical Safe singletons. Each read is one virtual function, so the tests run the scripts with
+///         CC0 digest, the canonical Safe singletons and proxies and the official delegation
+///         contract. Each read is one virtual function, so the tests run the scripts with
 ///         their own inputs instead of the process environment.
 abstract contract ScriptIO is Script {
     /// @notice The committed genesis policy: the default on anvil, and the reference off anvil.
@@ -23,6 +24,11 @@ abstract contract ScriptIO is Script {
     error ChainIdMismatch(uint256 evm, uint256 rpc);
     /// @notice A required environment variable is unset off anvil.
     error MissingParameter(string name);
+    /// @notice The deployment record names a delegation contract that is not this chain's
+    ///         official one.
+    error DelegationMismatch(address recorded, address expected);
+    /// @notice This chain's official delegation contract does not have the pinned code.
+    error DelegationCodeMismatch(address delegation, bytes32 codehash);
     /// @notice The CC0 fixture is not the pinned legal code.
     error Cc0TextMismatch(bytes32 actual);
 
@@ -54,6 +60,39 @@ abstract contract ScriptIO is Script {
         returns (address[] memory singletons, bytes32[] memory codehashes)
     {
         return DeployGuards.canonicalSafeSingletons();
+    }
+
+    /// @notice The runtime code hashes the off-anvil network Safe's own code may have: the
+    ///         Safe 1.3.0 and 1.4.1 proxies.
+    function safeProxies() public view virtual returns (bytes32[] memory) {
+        return DeployGuards.canonicalSafeProxies();
+    }
+
+    /// @notice The delegation contract this chain's deployments are built on, with its runtime
+    ///         code hash: the official 6529 deployment on mainnet and on Sepolia (the same
+    ///         code), or zero on a chain that has none (anvil, where the record names a mock).
+    function canonicalDelegation() public view virtual returns (address account, bytes32 codehash) {
+        if (block.chainid == DeployGuards.MAINNET_CHAIN_ID) {
+            return (DeployGuards.CANONICAL_DELEGATION, DeployGuards.CANONICAL_DELEGATION_CODEHASH);
+        }
+        if (block.chainid == DeployGuards.SEPOLIA_CHAIN_ID) {
+            return (DeployGuards.SEPOLIA_DELEGATION, DeployGuards.CANONICAL_DELEGATION_CODEHASH);
+        }
+    }
+
+    /// @notice The delegation contract a deployment record may be read back against: on a
+    ///         chain with an official deployment, that contract and no other, with its pinned
+    ///         code; elsewhere, the one the record names.
+    /// @param recorded The record's `delegation`.
+    function checkedDelegation(address recorded) public view returns (address) {
+        (address expected, bytes32 codehash) = canonicalDelegation();
+        if (expected == address(0)) return recorded;
+        if (recorded != expected) revert DelegationMismatch(recorded, expected);
+        if (expected.codehash != codehash) {
+            // The error carries the hash found on chain, not the pinned one.
+            revert DelegationCodeMismatch(expected, expected.codehash);
+        }
+        return expected;
     }
 
     /// @dev An environment variable; unset and empty are the same.

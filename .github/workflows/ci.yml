@@ -234,6 +234,12 @@ jobs:
       - name: NatSpec checker unit tests
         run: python -m tools.test_check_natspec
 
+      - name: Sepolia flow driver, Safe transaction digest
+        # script/sepolia/SafeTx.ps1 computes the digest a Safe's owners sign with `cast`,
+        # offline; this job has Foundry and the runner has PowerShell, so the test that runs it
+        # against the reference vectors is not skipped here. Nothing is signed or sent.
+        run: python -m unittest discover -s script/sepolia -p "test_safe_tx.py" -v
+
       - name: Edition auction reference model
         # tools/edition_auction_ref.py (ADR 0005): the ladder, the clearing rule against brute
         # force, the FIFO sweep, and the committed golden vectors in test/fixtures/edition-auction/

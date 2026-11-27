@@ -155,7 +155,14 @@ contract DeploySimulationSepoliaForkTest is Test {
     function test_DeploySimulation_TheR5AccountsPassTheHolderGuards() public {
         (address[] memory singletons, bytes32[] memory codehashes) =
             DeployGuards.canonicalSafeSingletons();
-        DeployGuards.checkHolders(genesis, vm.readFile(EXAMPLE), singletons, codehashes);
+        assertEq(R5_NETWORK.codehash, DeployGuards.SAFE_141_PROXY_CODEHASH, "r5's Safe proxy");
+        DeployGuards.checkHolders(
+            genesis,
+            vm.readFile(EXAMPLE),
+            singletons,
+            codehashes,
+            DeployGuards.canonicalSafeProxies()
+        );
         DeployGuards.checkNoBrake(genesis);
         assertEq(vm.parseJsonAddress(genesis, ".network"), R5_NETWORK);
         string memory example = vm.readFile(EXAMPLE);
@@ -169,7 +176,9 @@ contract DeploySimulationSepoliaForkTest is Test {
         address[] memory singletons,
         bytes32[] memory codehashes
     ) external view {
-        DeployGuards.checkHolders(json, example, singletons, codehashes);
+        DeployGuards.checkHolders(
+            json, example, singletons, codehashes, DeployGuards.canonicalSafeProxies()
+        );
     }
 
     /// @notice The whole run, simulated: the guards, `deploy`, the policy and deployment-holder

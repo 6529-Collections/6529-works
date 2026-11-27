@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+- **Deployment read-back, wallet guard and handover documents: hardening.** Scripts, tests,
+  tools and documents only; no contract under `src/` changed, so the build is still
+  `v1.0.0-rc.3`'s.
+    - **The read-back compares what genesis logged and replays the manager's role logs.**
+      `script/VerifyCore.s.sol` now requires the configurator's one `GovernanceConfigured` log
+      to carry the hashes the genesis file, the manifest and the wiring produce, so a genesis
+      that granted a key or made a wiring call the file does not name fails although every
+      value read from state matches. It then replays every log of the manager since the
+      deployment and fails, naming the account, when a role has a holder the file does not
+      name, a configured holder was revoked, or a selector is mapped outside the file.
+      `ALLOW_GOVERNANCE_CHANGES=1` reports such later changes instead of failing, for an
+      instance changed on purpose. `--sig "holders()"` lists who holds each role at a block.
+      The deploy script makes the same comparisons on its own run's logs before it records.
+      What the replay sees is as complete as the endpoint's logs (LIM-REL-2).
+    - **The network wallet's own code is checked.** Before the deploy guards read a Safe's
+      singleton, threshold, owners, modules or guard, the wallet's runtime code must be the
+      proxy a canonical Safe 1.3.0 or 1.4.1 factory creates (two code hashes, read on mainnet
+      and Sepolia). The read-back runs the same guards again, and on Sepolia and mainnet it
+      requires the record's delegation contract to be the official one with its pinned code
+      instead of taking the address from the record.
+    - **What a network handover moves.** GV-4, the handover section of the governance
+      specification, LIM-GV-26, the role matrix and an amendment note to ADR 0009 now say that
+      `acceptNetwork` moves the network address and the five network roles only: operational
+      roles, whoever holds them, and the brake stay until the new network revokes or replaces
+      them (new LIM-GV-33). New checklist:
+      [Handing the network over](docs/operations/network-handover.md). The behaviour is
+      unchanged and is now stated by `test/integration/NetworkHandover.t.sol`.
+    - **The Sepolia flow driver signs a digest it computed.** `flows.ps1` computes the Safe
+      transaction hash locally (`script/sepolia/SafeTx.ps1`, EIP-712 with Sepolia's chain ID),
+      compares the Safe's own answer through the endpoint with it and stops on a difference,
+      and requires the endpoint to report chain ID 11155111 before it signs or sends anything.
 - **Audit pack.** The invariants page lists the three campaigns that run on the deployed stack
   (a work's lifecycle, work and minter states, the edition auction) as rows with their tests
   (INV-LIF-1 to INV-LIF-15, INV-EA-1 to INV-EA-13) and the Medusa harnesses' Forge runners;

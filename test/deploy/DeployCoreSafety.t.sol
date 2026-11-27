@@ -7,13 +7,14 @@ import { CoreFactory } from "script/CoreFactory.sol";
 import { DeployCore } from "script/DeployCore.sol";
 import { DeployGuards } from "script/DeployGuards.sol";
 import { ScriptIO } from "script/ScriptIO.sol";
-import { VerifyCore } from "script/VerifyCore.sol";
+import { IRegistryWiring, VerifyCore } from "script/VerifyCore.sol";
 import { VerifyCoreScript } from "script/VerifyCore.s.sol";
 import { StreamEditions6529 } from "src/core/StreamEditions6529.sol";
 import { Stream6529 } from "src/core/Stream6529.sol";
 import { VrfEntropyModule } from "src/entropy/VrfEntropyModule.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { Roles } from "src/governance/Roles.sol";
+import { WorksAccessManager } from "src/governance/WorksAccessManager.sol";
 import { IModuleSlots } from "src/interfaces/core/IModules.sol";
 import { Slots } from "src/interfaces/core/CoreTypes.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
@@ -35,16 +36,60 @@ contract ParamsHarness is ScriptIO {
     }
 }
 
-/// @notice The verification script with the environment set by the test.
+/// @notice The verification script with the environment, the files, the endpoint's chain ID and
+///         the logs it asks the endpoint for set by the test.
 contract VerifyHarness is VerifyCoreScript {
     mapping(string name => string) internal _envs;
+    mapping(string path => string) internal _files;
+    mapping(address emitter => VerifyCore.Entry[]) internal _logs;
+    address internal _delegation;
+    bytes32 internal _delegationCodehash;
 
     function setEnv(string memory name, string memory value) external {
         _envs[name] = value;
     }
 
+    function setFile(string memory path, string memory content) external {
+        _files[path] = content;
+    }
+
+    function setLogs(address emitter, VerifyCore.Entry[] memory logs) external {
+        delete _logs[emitter];
+        for (uint256 i; i < logs.length; ++i) {
+            _logs[emitter].push(logs[i]);
+        }
+    }
+
+    /// @dev Stands in for a chain's official delegation contract and its pinned code hash.
+    function setDelegation(address account, bytes32 codehash) external {
+        (_delegation, _delegationCodehash) = (account, codehash);
+    }
+
+    function canonicalDelegation() public view override returns (address, bytes32) {
+        if (_delegation != address(0)) return (_delegation, _delegationCodehash);
+        return super.canonicalDelegation();
+    }
+
+    function rpcChainId() public view override returns (uint256) {
+        return block.chainid;
+    }
+
+    function entriesSince(address emitter, uint256)
+        public
+        view
+        override
+        returns (VerifyCore.Entry[] memory)
+    {
+        return _logs[emitter];
+    }
+
     function _env(string memory name) internal view override returns (string memory) {
         return _envs[name];
+    }
+
+    function _read(string memory path) internal view override returns (string memory) {
+        if (bytes(_files[path]).length != 0) return _files[path];
+        return super._read(path);
     }
 }
 
@@ -57,6 +102,8 @@ contract VerifyHarness is VerifyCoreScript {
 ///         the constructors stored (each auction value, the ETH increment floor, each VRF
 ///         setting) against what it is told the deployment was given, and the tokens'
 ///         `MinterAdded` logs show a genesis minter that is not a contract of the deployment.
+///         The hashes the configurator logged at genesis show a holder or a wiring call the
+///         genesis file does not name, and the manager's logs name every key granted since.
 contract DeployCoreSafetyTest is Test {
     string internal constant GENESIS = "config/genesis.core.example.json";
     string internal constant CC0_FIXTURE = "test/fixtures/cc0-legalcode.txt";
@@ -627,6 +674,370 @@ contract DeployCoreSafetyTest is Test {
         this.verifyManifestExternal(d, _manifest(), entries);
     }
 
+    // ------------------------------------------------------------------ governance logs
+
+    /// @dev The honest deployment: the configurator logged the hashes the genesis file, the
+    ///      manifest and the wiring produce, and the manager's logs leave exactly the file's
+    ///      holders, in its order, with no other difference and no open operation.
+    function test_TheGovernanceLogsOfTheBuildMatchTheGenesisFile() public {
+        DeployCore.Params memory p = _params("governance logs");
+        vm.recordLogs();
+        (DeployCore.Deployment memory d, GovernanceConfig.Config memory cfg) = _deploy(p);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        this.verifyConfiguredExternal(
+            d, cfg, _manifest(), _calls(d), VerifyCore.entries(logs, address(d.configurator))
+        );
+        VerifyCore.Entry[] memory managerLogs = VerifyCore.entries(logs, address(d.manager));
+        assertEq(VerifyCore.governanceDifferences(cfg, managerLogs).length, 0);
+        this.requireNoDifferenceExternal(cfg, managerLogs);
+        GovernanceConfig.Grant[] memory held = VerifyCore.holdersIn(managerLogs);
+        assertEq(held.length, cfg.grants.length);
+        for (uint256 i; i < held.length; ++i) {
+            assertEq(held[i].role, cfg.grants[i].role);
+            assertEq(held[i].account, cfg.grants[i].account);
+        }
+        assertEq(VerifyCore.openOperations(managerLogs).length, 0);
+    }
+
+    /// @dev A genesis that installed one more pauser than the genesis file names: every readback
+    ///      of state passes (the manager lists no members), the hash the configurator logged is
+    ///      not the file's, and the manager's logs name the extra key.
+    function test_AnExtraPauserAtGenesisFailsTheLogChecks() public {
+        _extraGenesisHolder("extra genesis pauser", Roles.PAUSER);
+    }
+
+    /// @dev The same for one more curation signer.
+    function test_AnExtraCurationSignerAtGenesisFailsTheLogChecks() public {
+        _extraGenesisHolder("extra genesis signer", Roles.CURATION_SIGNER);
+    }
+
+    function _extraGenesisHolder(string memory namespace, uint64 role) internal {
+        DeployCore.Params memory p = _params(namespace);
+        DeployCore.Deployment memory d = DeployCore.deploy(p, address(this));
+        GovernanceConfig.Config memory expected = _config(d);
+        GovernanceConfig.Config memory installed = _config(d);
+        installed.grants = _withGrant(expected.grants, role, outsider);
+        vm.recordLogs();
+        vm.prank(deployer);
+        DeployCore.install(d, installed, _manifest(), _calls(d));
+        vm.prank(network);
+        d.manager.acceptNetwork();
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        (bool member,) = d.manager.hasRole(role, outsider);
+        assertTrue(member, "the extra key holds the role");
+        this.verifyExternal(p, d, expected);
+        VerifyCore.Entry[] memory configured = VerifyCore.entries(logs, address(d.configurator));
+        this.verifyConfiguredExternal(d, installed, _manifest(), _calls(d), configured);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                VerifyCore.Mismatch.selector,
+                "GovernanceConfigured.configHash",
+                address(d.configurator)
+            )
+        );
+        this.verifyConfiguredExternal(d, expected, _manifest(), _calls(d), configured);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                VerifyCore.GovernanceDiffers.selector,
+                "holder not in the configuration",
+                role,
+                outsider,
+                bytes4(0),
+                1
+            )
+        );
+        this.requireNoDifferenceExternal(expected, VerifyCore.entries(logs, address(d.manager)));
+    }
+
+    /// @dev Keys the network grants after genesis (a pauser and a curation signer): genesis was
+    ///      the file's, every readback of state still passes, and the script's log check fails
+    ///      naming the first, or, told the changes are deliberate, reports both and passes.
+    function test_KeysGrantedAfterGenesisFailTheLogCheckUnlessAllowed() public {
+        DeployCore.Params memory p = _params("later keys");
+        address laterSigner = makeAddr("later signer");
+        vm.recordLogs();
+        (DeployCore.Deployment memory d, GovernanceConfig.Config memory cfg) = _deploy(p);
+        vm.startPrank(network);
+        d.manager.grantRole(Roles.PAUSER, outsider, 0);
+        d.manager.grantRole(Roles.CURATION_SIGNER, laterSigner, 0);
+        vm.stopPrank();
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        this.verifyExternal(p, d, cfg);
+
+        VerifyHarness script = new VerifyHarness();
+        script.setLogs(address(d.configurator), VerifyCore.entries(logs, address(d.configurator)));
+        script.setLogs(address(d.manager), VerifyCore.entries(logs, address(d.manager)));
+        script.checkConfigured(d, cfg, _manifest(), _calls(d), 0);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                VerifyCore.GovernanceDiffers.selector,
+                "holder not in the configuration",
+                Roles.PAUSER,
+                outsider,
+                bytes4(0),
+                2
+            )
+        );
+        script.checkGovernanceLogs(d, cfg, 0);
+        script.setEnv("ALLOW_GOVERNANCE_CHANGES", "1");
+        assertEq(script.checkGovernanceLogs(d, cfg, 0), 2);
+        VerifyCore.Difference[] memory differences =
+            VerifyCore.governanceDifferences(cfg, VerifyCore.entries(logs, address(d.manager)));
+        assertEq(differences[1].role, Roles.CURATION_SIGNER);
+        assertEq(differences[1].account, laterSigner);
+    }
+
+    /// @dev A genesis that made one more wiring call than the genesis file names (one more sale
+    ///      contract admitted to the Independent Stream module): each expected call reads back,
+    ///      so the readback of state passes; the wiring hash the configurator logged is not the
+    ///      file's.
+    function test_AnExtraGenesisWiringCallFailsTheWiringHash() public {
+        DeployCore.Params memory p = _params("extra wiring");
+        DeployCore.Deployment memory d = DeployCore.deploy(p, address(this));
+        GovernanceConfig.Call[] memory expected = _calls(d);
+        address extraAdapter = address(new DelegationManagementMock());
+        GovernanceConfig.Call[] memory installed = new GovernanceConfig.Call[](expected.length + 1);
+        uint8 form;
+        for (uint256 i; i < expected.length; ++i) {
+            installed[i] = expected[i];
+            if (bytes4(expected[i].data) == IRegistryWiring.setAdapter.selector) {
+                (, form,) = abi.decode(_args(expected[i].data), (address, uint8, bool));
+            }
+        }
+        installed[expected.length] = GovernanceConfig.Call(
+            d.independentStreamRegistry,
+            abi.encodeCall(IRegistryWiring.setAdapter, (extraAdapter, form, true))
+        );
+        vm.recordLogs();
+        GovernanceConfig.Config memory cfg = _install(d, installed);
+        VerifyCore.Entry[] memory configured =
+            VerifyCore.entries(vm.getRecordedLogs(), address(d.configurator));
+        assertGt(
+            IRegistryWiring(d.independentStreamRegistry).saleContractOf(extraAdapter).addedAt,
+            0,
+            "the extra sale contract is admitted"
+        );
+        this.verifyExternal(p, d, cfg);
+        this.verifyConfiguredExternal(d, cfg, _manifest(), installed, configured);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                VerifyCore.Mismatch.selector,
+                "GovernanceConfigured.wiringHash",
+                address(d.configurator)
+            )
+        );
+        this.verifyConfiguredExternal(d, cfg, _manifest(), expected, configured);
+    }
+
+    /// @dev The genesis log must be the one log of this genesis: none, two, another manifest
+    ///      digest, or the same grants in another order all fail.
+    function test_AGenesisLogThatIsMissingRepeatedOrOfOtherInputsFails() public {
+        DeployCore.Params memory p = _params("configured log");
+        vm.recordLogs();
+        (DeployCore.Deployment memory d, GovernanceConfig.Config memory cfg) = _deploy(p);
+        VerifyCore.Entry[] memory one =
+            VerifyCore.entries(vm.getRecordedLogs(), address(d.configurator));
+        assertEq(one.length, 1);
+        address c = address(d.configurator);
+        _expectValue("GovernanceConfigured logs", c, 1, 0);
+        this.verifyConfiguredExternal(d, cfg, _manifest(), _calls(d), new VerifyCore.Entry[](0));
+        VerifyCore.Entry[] memory two = new VerifyCore.Entry[](2);
+        (two[0], two[1]) = (one[0], one[0]);
+        _expectValue("GovernanceConfigured logs", c, 1, 2);
+        this.verifyConfiguredExternal(d, cfg, _manifest(), _calls(d), two);
+
+        DeployCore.Manifest memory other = _manifest();
+        other.digest = keccak256("the manifest that was reviewed");
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                VerifyCore.Mismatch.selector, "GovernanceConfigured.manifestHash", c
+            )
+        );
+        this.verifyConfiguredExternal(d, cfg, other, _calls(d), one);
+
+        GovernanceConfig.Config memory reordered = _config(d);
+        (reordered.grants[0], reordered.grants[1]) = (reordered.grants[1], reordered.grants[0]);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                VerifyCore.Mismatch.selector, "GovernanceConfigured.configHash", c
+            )
+        );
+        this.verifyConfiguredExternal(d, reordered, _manifest(), _calls(d), one);
+
+        DeployCore.Deployment memory elsewhere = d;
+        elsewhere.manager = WorksAccessManager(outsider);
+        vm.expectRevert(
+            abi.encodeWithSelector(VerifyCore.Mismatch.selector, "GovernanceConfigured.manager", c)
+        );
+        this.verifyConfiguredExternal(elsewhere, cfg, _manifest(), _calls(d), one);
+    }
+
+    /// @dev An operation the network scheduled and has not run is listed as open; one that was
+    ///      cancelled is not.
+    function test_AScheduledOperationIsOpenUntilItRunsOrIsCancelled() public {
+        DeployCore.Params memory p = _params("open operation");
+        vm.recordLogs();
+        (DeployCore.Deployment memory d, GovernanceConfig.Config memory cfg) = _deploy(p);
+        bytes4[] memory selectors = new bytes4[](1);
+        selectors[0] = 0xdeadbeef;
+        bytes memory first = abi.encodeCall(
+            d.manager.setTargetFunctionRole, (cfg.targets[0].target, selectors, Roles.PAUSER)
+        );
+        bytes memory second =
+            abi.encodeCall(d.manager.setTargetClosed, (cfg.targets[0].target, true));
+        vm.startPrank(network);
+        (bytes32 kept,) = d.manager.schedule(address(d.manager), first, 0);
+        d.manager.schedule(address(d.manager), second, 0);
+        d.manager.cancel(network, address(d.manager), second);
+        vm.stopPrank();
+        VerifyCore.Entry[] memory logs =
+            VerifyCore.entries(vm.getRecordedLogs(), address(d.manager));
+        bytes32[] memory open = VerifyCore.openOperations(logs);
+        assertEq(open.length, 1, "scheduled, not yet run");
+        assertEq(open[0], kept);
+        assertEq(VerifyCore.governanceDifferences(cfg, logs).length, 0, "nothing changed yet");
+    }
+
+    /// @dev What the network changes after genesis shows in the manager's logs, one difference
+    ///      each: a configured key revoked, then the targets' in the order each selector or
+    ///      target first appeared in the logs (a configured selector mapped to another role, a
+    ///      selector the file does not list mapped to a role, a target closed).
+    function test_EachLaterGovernanceChangeIsOneDifference() public {
+        DeployCore.Params memory p = _params("each later change");
+        vm.recordLogs();
+        (DeployCore.Deployment memory d, GovernanceConfig.Config memory cfg) = _deploy(p);
+        address target = cfg.targets[0].target;
+        GovernanceConfig.FunctionRole memory listed = cfg.targets[0].functions[0];
+        uint64 otherRole = listed.role == Roles.PLATFORM ? Roles.CURATOR : Roles.PLATFORM;
+        bytes4[] memory selectors = new bytes4[](1);
+
+        vm.prank(network);
+        d.manager.revokeRole(cfg.grants[0].role, cfg.grants[0].account);
+        selectors[0] = 0xdeadbeef;
+        _sevenDay(
+            d, abi.encodeCall(d.manager.setTargetFunctionRole, (target, selectors, Roles.PAUSER))
+        );
+        selectors[0] = listed.selector;
+        _sevenDay(
+            d, abi.encodeCall(d.manager.setTargetFunctionRole, (target, selectors, otherRole))
+        );
+        _sevenDay(d, abi.encodeCall(d.manager.setTargetClosed, (target, true)));
+
+        VerifyCore.Entry[] memory logs =
+            VerifyCore.entries(vm.getRecordedLogs(), address(d.manager));
+        assertEq(VerifyCore.openOperations(logs).length, 0, "every operation ran");
+        VerifyCore.Difference[] memory differences = VerifyCore.governanceDifferences(cfg, logs);
+        assertEq(differences.length, 4);
+        assertEq(differences[0].what, "configured holder no longer a member");
+        assertEq(differences[0].role, cfg.grants[0].role);
+        assertEq(differences[0].account, cfg.grants[0].account);
+        assertEq(differences[1].what, "configured selector mapped to another role");
+        assertEq(differences[1].role, otherRole);
+        assertEq(differences[1].account, target);
+        assertEq(differences[1].selector, listed.selector);
+        assertEq(differences[2].what, "selector mapped outside the configuration");
+        assertEq(differences[2].role, Roles.PAUSER);
+        assertEq(differences[2].account, target);
+        assertEq(differences[2].selector, bytes4(0xdeadbeef));
+        assertEq(differences[3].what, "target closed");
+        assertEq(differences[3].account, target);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                VerifyCore.GovernanceDiffers.selector,
+                "configured holder no longer a member",
+                cfg.grants[0].role,
+                cfg.grants[0].account,
+                bytes4(0),
+                4
+            )
+        );
+        this.requireNoDifferenceExternal(cfg, logs);
+    }
+
+    /// @dev `holders()`, the list a handover works from: after the network grants itself
+    ///      PLATFORM and a second pauser, and revokes a genesis key, the script names exactly
+    ///      the members left, from the manager's logs.
+    function test_TheHoldersListNamesEveryMemberFromTheLogs() public {
+        DeployCore.Params memory p = _params("holders list");
+        vm.recordLogs();
+        (DeployCore.Deployment memory d, GovernanceConfig.Config memory cfg) = _deploy(p);
+        vm.startPrank(network);
+        d.manager.grantRole(Roles.PLATFORM, network, 0);
+        d.manager.grantRole(Roles.PAUSER, outsider, 0);
+        d.manager.revokeRole(cfg.grants[0].role, cfg.grants[0].account);
+        vm.stopPrank();
+        VerifyHarness script = new VerifyHarness();
+        script.setLogs(
+            address(d.manager), VerifyCore.entries(vm.getRecordedLogs(), address(d.manager))
+        );
+        script.setEnv("DEPLOYMENT", "record.json");
+        script.setFile(
+            "record.json",
+            string.concat(
+                "{\"GovernanceConfigurator\":\"",
+                vm.toString(address(d.configurator)),
+                "\",\"forkBlock\":1}"
+            )
+        );
+        GovernanceConfig.Grant[] memory held = script.holders();
+        assertEq(held.length, cfg.grants.length + 1);
+        for (uint256 i; i + 1 < cfg.grants.length; ++i) {
+            assertEq(held[i].role, cfg.grants[i + 1].role);
+            assertEq(held[i].account, cfg.grants[i + 1].account);
+        }
+        assertEq(held[held.length - 2].role, Roles.PLATFORM);
+        assertEq(held[held.length - 2].account, network);
+        assertEq(held[held.length - 1].role, Roles.PAUSER);
+        assertEq(held[held.length - 1].account, outsider);
+        assertEq(script.roleName(Roles.ADMIN), "ADMIN");
+        assertEq(script.roleName(Roles.PLATFORM), "PLATFORM");
+        assertEq(script.roleName(3), "3");
+        assertEq(script.roleName(type(uint64).max), "18446744073709551615");
+        // Every role ID the logs could name has a name: no ID reverts.
+        for (uint64 role; role <= Roles.COUNT + 1; ++role) {
+            assertGt(bytes(script.roleName(role)).length, 0);
+        }
+    }
+
+    // ------------------------------------------------------------------ delegation contract
+
+    /// @dev On a chain with an official delegation contract (Sepolia here), a record that names
+    ///      another one is refused before anything is read back against it, and the official
+    ///      address must hold the pinned code. On anvil the record's contract is used.
+    function test_ARecordNamingAnotherDelegationContractIsRefused() public {
+        VerifyHarness script = new VerifyHarness();
+        assertEq(script.checkedDelegation(delegation), delegation, "anvil: the record's");
+
+        vm.chainId(DeployGuards.SEPOLIA_CHAIN_ID);
+        (address official, bytes32 pinned) = script.canonicalDelegation();
+        assertEq(official, DeployGuards.SEPOLIA_DELEGATION);
+        assertEq(pinned, DeployGuards.CANONICAL_DELEGATION_CODEHASH);
+        vm.expectRevert(
+            abi.encodeWithSelector(ScriptIO.DelegationMismatch.selector, delegation, official)
+        );
+        script.checkedDelegation(delegation);
+        // The official address with other code (here: none) is refused too.
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ScriptIO.DelegationCodeMismatch.selector, official, official.codehash
+            )
+        );
+        script.checkedDelegation(official);
+        // With the pinned code in place (a stand-in and its hash), the official address passes.
+        vm.etch(official, delegation.code);
+        script.setDelegation(official, delegation.codehash);
+        assertEq(script.checkedDelegation(official), official);
+        vm.expectRevert(
+            abi.encodeWithSelector(ScriptIO.DelegationMismatch.selector, delegation, official)
+        );
+        script.checkedDelegation(delegation);
+
+        vm.chainId(DeployGuards.MAINNET_CHAIN_ID);
+        script.setDelegation(address(0), bytes32(0));
+        (official,) = script.canonicalDelegation();
+        assertEq(official, DeployGuards.CANONICAL_DELEGATION);
+    }
+
     // ------------------------------------------------------------------ script guards
 
     /// @dev `ScriptIO.params` refuses a `VRF_NATIVE_PAYMENT` that is neither 0 nor 1, and reads
@@ -733,6 +1144,23 @@ contract DeployCoreSafetyTest is Test {
 
     // ------------------------------------------------------------------ external wrappers
 
+    function verifyConfiguredExternal(
+        DeployCore.Deployment memory d,
+        GovernanceConfig.Config memory cfg,
+        DeployCore.Manifest memory expected,
+        GovernanceConfig.Call[] memory calls,
+        VerifyCore.Entry[] memory logs
+    ) external pure {
+        VerifyCore.verifyConfigured(d, cfg, expected, calls, logs);
+    }
+
+    function requireNoDifferenceExternal(
+        GovernanceConfig.Config memory cfg,
+        VerifyCore.Entry[] memory logs
+    ) external pure {
+        VerifyCore.requireNoDifference(VerifyCore.governanceDifferences(cfg, logs));
+    }
+
     function verifyManifestExternal(
         DeployCore.Deployment memory d,
         DeployCore.Manifest memory expected,
@@ -793,6 +1221,36 @@ contract DeployCoreSafetyTest is Test {
     }
 
     // ------------------------------------------------------------------ helpers
+
+    /// @dev `grants` with one more: `account` in `role`.
+    function _withGrant(GovernanceConfig.Grant[] memory grants, uint64 role, address account)
+        internal
+        pure
+        returns (GovernanceConfig.Grant[] memory more)
+    {
+        more = new GovernanceConfig.Grant[](grants.length + 1);
+        for (uint256 i; i < grants.length; ++i) {
+            more[i] = grants[i];
+        }
+        more[grants.length] = GovernanceConfig.Grant(role, account);
+    }
+
+    /// @dev The network runs a 7-day action on the manager: schedule, wait, execute.
+    function _sevenDay(DeployCore.Deployment memory d, bytes memory data) internal {
+        vm.prank(network);
+        d.manager.schedule(address(d.manager), data, 0);
+        vm.warp(block.timestamp + 7 days);
+        vm.prank(network);
+        d.manager.execute(address(d.manager), data);
+    }
+
+    /// @dev Calldata without its selector.
+    function _args(bytes memory data) internal pure returns (bytes memory out) {
+        out = new bytes(data.length - 4);
+        for (uint256 i; i < out.length; ++i) {
+            out[i] = data[i + 4];
+        }
+    }
 
     function _params(string memory namespace) internal returns (DeployCore.Params memory p) {
         p.deployer = deployer;

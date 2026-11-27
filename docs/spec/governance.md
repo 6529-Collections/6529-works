@@ -71,8 +71,10 @@ work's artist need `PLATFORM` with no delay. A revoked key fails all of them in 
 ### Configuration epochs and governance manifests
 
 Each epoch (roles, holders, delays and mappings in force) has a JSON manifest. Genesis emits its
-hash in `GovernanceConfigured` and records it in the statement log; a later epoch's hash is
-recorded (7 days) before its operations take effect.
+hash in `GovernanceConfigured`, beside the hash of the installed configuration and the hash of
+the wiring calls, and records it in the statement log; a later epoch's hash is recorded (7 days)
+before its operations take effect. The deployment read-back (`script/VerifyCore.s.sol`)
+recomputes the three hashes from the genesis file and compares them with the log.
 
 ## A scheduled network action
 
@@ -107,8 +109,16 @@ arguments, so wiring no longer binds them; it only sets the modules' own genesis
 ## Handing the network over
 
 The network schedules `transferNetwork(next)` (7 days); `next` takes over only by calling
-`acceptNetwork`. From that block the former network holds nothing and its scheduled operations
-cannot run.
+`acceptNetwork`. That call moves the network address and, with it, the five network roles: from
+that block the former network holds none of them and its scheduled operations cannot run.
+
+It moves nothing else. Operational roles (`PAUSER`, `CURATION_SIGNER`, `STORAGE_OPERATOR`,
+`PLATFORM`, `CURATOR`) are ordinary grants: every holder, the former network's own address
+included if it granted itself one, keeps its role until the new network revokes it, which takes
+one call with no delay. A brake stays the brake until the new network replaces or removes it
+(`setBrake`, 7 days). The manager keeps no list of a role's members; they are read from its
+`RoleGranted` and `RoleRevoked` logs (`script/VerifyCore.s.sol --sig "holders()"`). The
+procedure is [Handing the network over](../operations/network-handover.md).
 
 ## Rules and invariants
 
@@ -119,7 +129,7 @@ Rule IDs use the prefix `GV`.
 | GV-1 | Only `network()` holds the network roles; nobody can be granted one; the installer holds them only until it renounces. | `WorksAccessManager.hasRole`, `_grantRole` | `test_NobodyCanBeGrantedANetworkRole`, `testFuzz_OnlyTheNetworkHoldsTheNetworkRoles`, `test_NoNetworkBeforeAcceptance`, `test_ConfiguratorDeploysAndOwnsAWorksAccessManager` |
 | GV-2 | The network acts through each class at the class's configured delay (genesis: none, 24 hours, 3 days, 7 days); nothing runs before the delay in force. The classes are the network's to remap with one 7-day action. | `Roles.executionDelay`, OpenZeppelin `schedule` | `test_EachClassRunsAtItsDelayAndNotBefore`, `test_ManagerAdministrationIsTheSevenDayClass`, `test_TheNetworkActsAtOnceThroughTheNetworkRole`, `test_UnmappedSelectorFallsBackToTheSevenDayClass` |
 | GV-3 | Operational keys act with no delay; the network grants and revokes them at once; a key may renounce its role. | `GovernanceConfig.install` | `test_OperationalKeysAreGrantedAndRevokedAtOnce`, `test_EveryRoleIsLabelledAndOperationalKeysAnswerToTheNetworkAtOnce` |
-| GV-4 | `transferNetwork(next)` only proposes; `next` takes over by `acceptNetwork`; afterwards the former network holds nothing. | `WorksAccessManager.transferNetwork`, `acceptNetwork` | `test_TransferNetworkTakesEffectOnlyOnAccept`, `test_TransferCanBeWithdrawnOrReplaced`, `test_OnlyTheNetworkCanStartATransfer` |
+| GV-4 | `transferNetwork(next)` only proposes; `next` takes over by `acceptNetwork`; afterwards the former network holds none of the network roles. Operational roles, whoever holds them, and the brake are unchanged by the handover and last until the new network revokes or replaces them. | `WorksAccessManager.transferNetwork`, `acceptNetwork` | `test_TransferNetworkTakesEffectOnlyOnAccept`, `test_TransferCanBeWithdrawnOrReplaced`, `test_OnlyTheNetworkCanStartATransfer`, `test_Handover_AnOperationalRoleOfTheFormerNetworkLastsUntilTheNewNetworkRevokesIt`, `test_Handover_KeysTheFormerNetworkGrantedToOthersStayUntilRevoked`, `test_Handover_TheBrakeStaysUntilTheNewNetworkReplacesIt`, `test_Handover_TheLogsNameEveryKeyTheNewNetworkMustReview` |
 | GV-5 | `setBrake` is the network at the 7-day class; zero means no brake. | `WorksAccessManager.setBrake` | `test_OnlyTheBrakeCanBrake`, `test_TheBrakeCanDelayItsOwnRemovalOnce`, `test_NoBrakeIsAllowed` |
 | GV-6 | Only the brake brakes, once per scheduled operation until it runs; the operation then cannot run before its ready time plus 7 days. | `WorksAccessManager.brakeOnce` | `test_TheBrakeDelaysAnOperationOnce`, `test_TheBrakeAlsoHoldsADirectDelayedCall`, `test_CancelAndRescheduleDoesNotEscapeTheBrake`, `test_AnActionWithNoDelayCannotBeBraked` |
 | GV-7 | A scheduled operation expires 14 days after its ready time. | `WorksAccessManager.expiration` | `test_ABrakedOperationDoesNotExpireBeforeItCanRun` |
@@ -153,7 +163,7 @@ The manager adds `NetworkTransferStarted`, `NetworkTransferred`, `BrakeSet` and
 
 | Failure | Recovery |
 | --- | --- |
-| The network's key is compromised | Its holders replace the address with `transferNetwork`; the brake, if any, can add 7 days once per scheduled action |
+| The network's key is compromised | Its holders replace the address with `transferNetwork`; the brake, if any, can add 7 days once per scheduled action. The new network then reviews every operational holder and the brake, which the handover leaves in place ([checklist](../operations/network-handover.md#if-the-outgoing-key-is-not-trusted)) |
 | The network address is lost | None on chain; today the network is a Safe whose signers can rotate |
 | The brake is compromised | The network replaces or removes it with `setBrake` |
 | An operational key is compromised | The network revokes it at once |

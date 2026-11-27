@@ -12,7 +12,7 @@ import { IMintPolicy } from "src/interfaces/core/IMintPolicy.sol";
 import { IModuleSlots, IModules } from "src/interfaces/core/IModules.sol";
 import { IStream } from "src/interfaces/core/IStream.sol";
 import { MockRenderer } from "../mocks/core/CoreMocks.sol";
-import { ISafe, SafeForkBase } from "./SafeForkBase.sol";
+import { ISafe, ISafe130ProxyFactory, ISafeProxyFactory, SafeForkBase } from "./SafeForkBase.sol";
 
 /// @notice The network as a real 2-of-3 Safe v1.4.1 on a mainnet fork, governing the deployed
 ///         plain-core stack by Safe transactions: it proposes a module and anyone activates it
@@ -45,6 +45,11 @@ contract SafeNetworkForkTest is SafeForkBase {
         assertEq(delay, 0, "core functions: no role delay");
         (address[] memory singletons, bytes32[] memory codehashes) =
             DeployGuards.canonicalSafeSingletons();
+        // The proxy the canonical 1.4.1 factory just created has the pinned runtime code.
+        assertEq(address(networkSafe).codehash, DeployGuards.SAFE_141_PROXY_CODEHASH, "1.4.1 proxy");
+        DeployGuards.requireSafeProxy(
+            "network", address(networkSafe), DeployGuards.canonicalSafeProxies()
+        );
         DeployGuards.requireBareSafe("network", address(networkSafe), singletons, codehashes);
         DeployGuards.requireSafe("network", address(networkSafe));
         address[] memory owners = networkSafe.getOwners();
@@ -261,5 +266,76 @@ contract SafeNetworkForkTest is SafeForkBase {
         );
         _safeCall(successor, address(stream), setting);
         assertEq(stream.rescueDelay(), 1 days);
+    }
+
+    /// @notice Safe 1.3.0: both canonical proxy factories answer the pinned proxy runtime code,
+    ///         and a 2-of-3 Safe the first one creates on the 1.3.0 singleton has that code and
+    ///         passes the deploy guards.
+    function test_SafeNetwork_ASafe130ProxyHasThePinnedCodeAndPassesTheGuards() public {
+        address[2] memory factories = [
+            0xa6B71E26C5e0845f74c812102Ca7114b6a896AB2, 0xC22834581EbC8527d974F8a1c97E1bEA4EF910BC
+        ];
+        for (uint256 i; i < factories.length; ++i) {
+            assertEq(
+                keccak256(ISafe130ProxyFactory(factories[i]).proxyRuntimeCode()),
+                DeployGuards.SAFE_130_PROXY_CODEHASH,
+                "1.3.0 factory's proxy runtime code"
+            );
+        }
+        address[] memory owners = new address[](3);
+        for (uint256 i; i < 3; ++i) {
+            owners[i] = makeAddr(string.concat("1.3.0 owner ", vm.toString(i)));
+        }
+        bytes memory init = abi.encodeCall(
+            ISafe.setup,
+            (owners, THRESHOLD, address(0), "", address(0), address(0), 0, payable(address(0)))
+        );
+        address safe = ISafeProxyFactory(factories[0])
+            .createProxyWithNonce(DeployGuards.SAFE_130_L1, init, uint256(keccak256("1.3.0")));
+        assertEq(safe.codehash, DeployGuards.SAFE_130_PROXY_CODEHASH, "1.3.0 proxy");
+        (address[] memory singletons, bytes32[] memory codehashes) =
+            DeployGuards.canonicalSafeSingletons();
+        DeployGuards.requireSafeProxy("network", safe, DeployGuards.canonicalSafeProxies());
+        DeployGuards.requireSafe("network", safe);
+        DeployGuards.requireBareSafe("network", safe, singletons, codehashes);
+        assertEq(DeployGuards.ownersOf("network", safe).length, 3);
+    }
+
+    /// @notice A Safe's transaction hash is the EIP-712 digest of its `SafeTx` under the domain
+    ///         of the chain ID and the Safe's address, with the two type hashes
+    ///         `script/sepolia/flows.ps1` computes it from before its owners sign.
+    function test_SafeNetwork_TheTransactionHashIsTheEip712DigestComputedLocally() public view {
+        bytes32 domainTypehash =
+            keccak256("EIP712Domain(uint256 chainId,address verifyingContract)");
+        bytes32 safeTxTypehash = keccak256(
+            "SafeTx(address to,uint256 value,bytes data,uint8 operation,uint256 safeTxGas,uint256 baseGas,uint256 gasPrice,address gasToken,address refundReceiver,uint256 nonce)"
+        );
+        assertEq(domainTypehash, 0x47e79534a245952e8b16893a336b85a3d9ea9fa8c573f3d803afb92a79469218);
+        assertEq(safeTxTypehash, 0xbb8310d486368db6bd6f849402fdd73ad53d316b5a4b2644ad6efe0f941286d8);
+        bytes memory data = abi.encodeCall(manager.acceptNetwork, ());
+        uint256 nonce = networkSafe.nonce();
+        bytes32 domain = keccak256(abi.encode(domainTypehash, block.chainid, address(networkSafe)));
+        assertEq(domain, networkSafe.domainSeparator());
+        bytes32 structHash = keccak256(
+            abi.encode(
+                safeTxTypehash,
+                address(manager),
+                uint256(0),
+                keccak256(data),
+                CALL,
+                uint256(0),
+                uint256(0),
+                uint256(0),
+                address(0),
+                address(0),
+                nonce
+            )
+        );
+        assertEq(
+            keccak256(abi.encodePacked(bytes2(0x1901), domain, structHash)),
+            networkSafe.getTransactionHash(
+                address(manager), 0, data, CALL, 0, 0, 0, address(0), address(0), nonce
+            )
+        );
     }
 }

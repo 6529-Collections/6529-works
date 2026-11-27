@@ -150,9 +150,19 @@ class RenderTest(unittest.TestCase):
         config = copy.deepcopy(committed_config())
         entry = {"signature": "transferNetwork(address)", "selector": "0x33c95bb5",
                  "role": "ADMIN", "class": "7d", "delay": 604_800, "note": "A note."}
-        config["manager"] = {"functions": [entry]}
+        accept = {"signature": "acceptNetwork()", "selector": "0xa503fb3e", "note": "A note."}
+        config["manager"] = {"functions": [entry], "open": [accept]}
         text = gm.render(config)
         self.assertIn("| `transferNetwork(address)` | `0x33c95bb5` | `ADMIN` | 7 days |", text)
+        # The matrix's own notes replace the configuration's for both manager sections.
+        row = next(line for line in text.splitlines() if line.startswith("| `acceptNetwork()` |"))
+        self.assertIn("No role (checked in the function)", row)
+        self.assertIn("operational roles and the brake are unchanged", row)
+        self.assertNotIn("A note.", row)
+        del config["manager"]["open"]
+        with self.assertRaisesRegex(gm.ConfigError, "manager note for acceptNetwork"):
+            gm.render(config)
+        config["manager"]["open"] = [accept]
         entry["selector"] = "0x00000000"
         with self.assertRaisesRegex(gm.ConfigError, "manager.transferNetwork"):
             gm.render(config)
