@@ -212,6 +212,18 @@ consent has no expiry (LIM-ID-24); declarations carry no intended renunciations.
 - Whether `abandon` should also settle in the same call.
 - The interim authority against D67/D98, for the owner.
 
+## Amendment note (27 November 2026: what a handover moves)
+
+Decision 2 under "Governance" says that after `acceptNetwork` "the old address holds nothing".
+That is true of the network address and the five network roles, which is what the handover
+moves. It is not true of anything else: an operational role (PAUSER, CURATION_SIGNER,
+STORAGE_OPERATOR, PLATFORM, CURATOR) the old network granted, to its own address or to any
+other, stays with its holder until the new network revokes it, and a brake stays the brake until
+the new network replaces it. The code is unchanged; the manager keeps no list of a role's
+members and so cannot revoke them at a handover. The rule as it stands is GV-4 of the
+[governance specification](../spec/governance.md#handing-the-network-over), the limitation is
+LIM-GV-33, and the procedure is [Handing the network over](../operations/network-handover.md).
+
 ## Amendment note (22 November 2026, [ADR 0010](0010-plain-permanent-core.md))
 
 The waits this ADR compiled into permanent contracts (the wait before an added minter or module
