@@ -532,6 +532,125 @@ contract EnglishAuctionTest is AuctionFixture {
         assertEq(seller.balance, 0);
         assertEq(stream.ownerOf(1), museum);
         assertEq(uint256(stream.workOf(1).outcome), uint256(Outcome.RESCUED));
+        // Closed as CANCELLED: a sale that follows this one (an edition sale) is void.
+        assertEq(uint8(_state(saleId)), uint8(IEnglishAuction.AuctionState.CANCELLED));
+    }
+
+    /// @dev Removes the auction as a minter, waits `rescueDelay` and rescues work 1 to `to`.
+    function _rescueTo(address to) internal {
+        stream.removeMinter(address(auction));
+        vm.warp(block.timestamp + stream.rescueDelay());
+        stream.rescue(1, to);
+        assertEq(uint256(stream.workOf(1).outcome), uint256(Outcome.RESCUED));
+    }
+
+    /// @dev The rescued sale of work 1, whose work is in the auction's custody again, closes:
+    ///      the standing bid is credited once, nothing is recorded or paid, the work goes to the
+    ///      museum, and the sale is closed for good.
+    function _checkRescuedInCustodyCloses(uint256 saleId) internal {
+        assertEq(stream.ownerOf(1), address(auction), "in custody again");
+        assertEq(uint8(_state(saleId)), uint8(IEnglishAuction.AuctionState.ENDED));
+        vm.expectEmit(address(auction));
+        emit IEnglishAuction.Credited(alice, address(0), saleId, 1 ether);
+        vm.expectEmit(address(auction));
+        emit IEnglishAuction.RescuedSaleClosed(saleId);
+        vm.expectEmit(address(stream));
+        emit IERC721.Transfer(address(auction), museum, 1);
+        auction.settle(saleId);
+        assertEq(uint8(_state(saleId)), uint8(IEnglishAuction.AuctionState.CANCELLED));
+        assertEq(stream.ownerOf(1), museum, "the work is not left in the auction");
+        assertEq(uint256(stream.workOf(1).outcome), uint256(Outcome.RESCUED));
+        assertEq(seller.balance + feeRecipient.balance, 0, "nothing paid");
+        assertEq(auction.claimable(alice), 1 ether, "credited once");
+        assertEq(address(auction).balance, 1 ether);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IEnglishAuction.InvalidAuctionState.selector,
+                saleId,
+                IEnglishAuction.AuctionState.CANCELLED
+            )
+        );
+        auction.settle(saleId);
+        uint256 before = alice.balance;
+        vm.prank(alice);
+        auction.claim(alice);
+        assertEq(alice.balance - before, 1 ether);
+        assertEq(address(auction).balance, 0, "nothing is held and nothing was paid twice");
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(IEnglishAuction.NothingToClaim.selector, alice));
+        auction.claim(alice);
+    }
+
+    /// @dev The network rescues a work to the auction itself: the token does not move, and only
+    ///      its recorded outcome says it was rescued. The sale still closes with refunds.
+    function test_Settle_AWorkRescuedToTheAuctionItselfClosesWithRefunds() public {
+        uint256 saleId = _start(1);
+        _bid(alice, saleId, 1 ether);
+        _rescueTo(address(auction));
+        _checkRescuedInCustodyCloses(saleId);
+    }
+
+    /// @dev The rescue's recipient sends the work back before anyone settled: the same close.
+    function test_Settle_ARescuedWorkSentBackClosesWithRefunds() public {
+        uint256 saleId = _start(1);
+        _bid(alice, saleId, 1 ether);
+        _rescueTo(carol);
+        vm.prank(carol);
+        stream.transferFrom(carol, address(auction), 1);
+        _checkRescuedInCustodyCloses(saleId);
+    }
+
+    /// @dev The same with no bid: nothing is credited, and the work still goes to the museum.
+    function test_Settle_ARescuedWorkBackInCustodyWithNoBidGoesToTheMuseum() public {
+        uint256 saleId = _start(1);
+        _rescueTo(address(auction));
+        vm.recordLogs();
+        auction.settle(saleId);
+        assertEq(vm.getRecordedLogs().length, 2, "RescuedSaleClosed and the transfer only");
+        assertEq(uint8(_state(saleId)), uint8(IEnglishAuction.AuctionState.CANCELLED));
+        assertEq(stream.ownerOf(1), museum);
+        assertEq(address(auction).balance, 0);
+        assertEq(auction.claimable(alice), 0);
+    }
+
+    /// @dev A work rescued while its sale is still running (the delay set to zero) keeps taking
+    ///      bids until the end; an outbid bidder is credited as usual, the last high bid at the
+    ///      close, and each exactly once.
+    function test_Settle_ARescueDuringTheSaleRefundsEveryBidOnce() public {
+        uint256 saleId = _start(1);
+        _bid(alice, saleId, 1 ether);
+        stream.removeMinter(address(auction));
+        stream.setRescueDelay(0);
+        stream.rescue(1, address(auction));
+        _bid(bob, saleId, 2 ether);
+        assertEq(auction.claimable(alice), 1 ether, "outbid: credited as usual");
+        _end(saleId);
+        auction.settle(saleId);
+        assertEq(auction.claimable(alice), 1 ether);
+        assertEq(auction.claimable(bob), 2 ether);
+        assertEq(address(auction).balance, 3 ether, "exactly the two credits");
+        assertEq(stream.ownerOf(1), museum);
+    }
+
+    /// @dev A high bidder who withdrew during a dispute pause of a rescued sale is not credited
+    ///      again when the sale closes.
+    function test_Settle_ARescuedSaleDoesNotRefundAWithdrawnBidAgain() public {
+        uint256 saleId = _start(1);
+        _bid(alice, saleId, 1 ether);
+        stream.removeMinter(address(auction));
+        stream.setRescueDelay(0);
+        stream.rescue(1, address(auction));
+        auction.pause(saleId, bytes32("dispute"));
+        vm.prank(alice);
+        auction.withdrawBid(saleId);
+        assertEq(auction.claimable(alice), 1 ether);
+        vm.warp(block.timestamp + auction.MAX_PAUSE() + 1);
+        _end(saleId);
+        auction.settle(saleId);
+        assertEq(auction.claimable(alice), 1 ether, "not credited twice");
+        assertEq(address(auction).balance, 1 ether);
+        assertEq(uint8(_state(saleId)), uint8(IEnglishAuction.AuctionState.CANCELLED));
     }
 
     function test_Settle_ARemovedMinterStillSettlesWhatItStarted() public {

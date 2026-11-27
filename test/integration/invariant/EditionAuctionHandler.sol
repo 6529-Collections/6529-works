@@ -68,6 +68,10 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         bool opened;
         bool pauseUsed;
         bool cancelled;
+        /// @dev The network rescued the work before its 1/1 was settled; where the work is
+        ///      expected once that sale is closed (the rescue's recipient, or the museum).
+        bool rescued;
+        address rescueHolder;
         bool masterSettled;
         bool settled;
         bool voided;
@@ -92,6 +96,8 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
     address internal griefer;
     /// @dev Starts a wide book's settlement with no order: its first call only scans.
     address internal scanner;
+    /// @dev The recipient the network names when it rescues a work.
+    address internal rescueSafe;
     uint256 internal wideBooks;
     bytes32 internal root;
     Piece[MASTERS] internal pieces;
@@ -123,6 +129,11 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         keepers = [makeAddr("eaKeeper0"), makeAddr("eaKeeper1")];
         griefer = makeAddr("eaGriefer");
         scanner = makeAddr("eaScanner");
+        rescueSafe = makeAddr("eaRescueSafe");
+        // The network's waits at zero, so `rescueOneOfOne` can remove the English auction,
+        // rescue a work and add the auction again in one call.
+        _asNetwork(address(stream), abi.encodeCall(stream.setModuleDelay, (0)));
+        _asNetwork(address(stream), abi.encodeCall(stream.setRescueDelay, (0)));
         Work[] memory works = new Work[](MASTERS);
         for (uint256 i; i < MASTERS; ++i) {
             works[i] = _masterWork(artist, caps[i]);
@@ -190,7 +201,25 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         if (!found) return;
         Piece storage p = pieces[i];
         IEnglishAuction.Auction memory a = auction.auction(p.saleId);
+        uint256 credit = auction.claimable(a.bidder);
         auction.settle(p.saleId);
+        if (p.rescued) {
+            // A rescued work's sale closes with refunds: cancelled, the bid credited back once,
+            // the work with the rescue's recipient or (found in custody) in the museum. Its
+            // edition sale is void from here.
+            if (_state1of1(i) != IEnglishAuction.AuctionState.CANCELLED) {
+                _violation("a rescued 1/1 did not close as cancelled");
+            }
+            if (stream.ownerOf(p.tokenId) != p.rescueHolder) {
+                _violation("a rescued work is neither with its recipient nor in the museum");
+            }
+            if (a.bidder != address(0) && auction.claimable(a.bidder) != credit + a.bid) {
+                _violation("a rescued 1/1 did not credit its standing bid once");
+            }
+            p.cancelled = true;
+            ++hits["rescuedClose"];
+            return;
+        }
         address holder = a.bidder != address(0) ? a.recipient : museum;
         if (stream.ownerOf(p.tokenId) != holder) _violation("the 1/1 went to the wrong holder");
         p.masterSettled = true;
@@ -227,7 +256,8 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         (bool found, uint256 i) = _pieceWith1of1(seed, IEnglishAuction.AuctionState.PAUSED);
         if (!found) return;
         Piece storage p = pieces[i];
-        if (mode % 3 == 0) {
+        // A rescued work is no longer the auction's to burn: its dispute is only resumed.
+        if (mode % 3 == 0 && !p.rescued) {
             bytes32 outcome = _platformStatement(
                 address(stream), p.tokenId, StatementKinds.DISPUTE_OUTCOME, "ar://ea-outcome"
             );
@@ -238,6 +268,40 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         }
         _asNetwork(address(auction), abi.encodeCall(auction.resume, (p.saleId)));
         ++hits["resume"];
+    }
+
+    /// @notice The network rescues the work of a 1/1 that is not settled (a quarter of the
+    ///         calls): it removes the English auction as a minter, rescues, and adds the auction
+    ///         again, all at once with the waits at zero. The recipient is a safe, the auction
+    ///         itself (the token does not move), or a safe that sends the work straight back.
+    ///         The 1/1 goes on until it is settled, which closes it with refunds
+    ///         (`settleOneOfOne`) and voids its edition sale.
+    function rescueOneOfOne(uint256 seed, uint256 mode) external {
+        if (mode % 4 != 0) return;
+        for (uint256 k; k < MASTERS; ++k) {
+            uint256 i = (seed % MASTERS + k) % MASTERS;
+            Piece storage p = pieces[i];
+            if (!p.started || p.rescued || p.cancelled) continue;
+            IEnglishAuction.AuctionState s = _state1of1(i);
+            if (
+                s != IEnglishAuction.AuctionState.ACTIVE && s != IEnglishAuction.AuctionState.PAUSED
+                    && s != IEnglishAuction.AuctionState.ENDED
+            ) continue;
+            uint256 where = (mode >> 8) % 3;
+            address to = where == 1 ? address(auction) : rescueSafe;
+            _asNetwork(address(stream), abi.encodeCall(stream.removeMinter, (address(auction))));
+            _asNetwork(address(stream), abi.encodeCall(stream.rescue, (p.tokenId, to)));
+            _asNetwork(address(stream), abi.encodeCall(stream.addMinter, (address(auction))));
+            if (where == 2) {
+                vm.prank(rescueSafe);
+                stream.transferFrom(rescueSafe, address(auction), p.tokenId);
+            }
+            if (_state1of1(i) != s) _violation("a rescue changed its 1/1 sale");
+            p.rescued = true;
+            p.rescueHolder = where == 0 ? rescueSafe : museum;
+            ++hits[where == 0 ? bytes32("rescue") : bytes32("rescueBackInCustody")];
+            return;
+        }
     }
 
     // ------------------------------------------------------------------ actions: editions
@@ -786,6 +850,7 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         }
         p.voided = true;
         ++hits["void"];
+        if (p.rescued) ++hits["rescuedVoid"];
     }
 
     function _claim(uint256 i, uint256 index, uint256 mode) internal {

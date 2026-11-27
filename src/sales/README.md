@@ -68,7 +68,9 @@ events and their ordering: [Events and indexing](../../docs/integrators/events-a
   the resolver names then. An unsold Independent Stream work gets no outcome and stays in custody;
   anyone may offer it again (`restart`) while the Independent Stream module still serves the
   token (`isActive`), whether or not the auction may still mint new works. A work the
-  network rescued (`IStream.rescue`) closes its sale with the standing bid credited back.
+  network rescued (`IStream.rescue`) closes its sale with the standing bid credited back: the
+  sale ends CANCELLED, an edition sale that followed it is void, and a rescued work that is in
+  the auction's custody at that moment goes to the museum.
 - **Edition auction storage.** Per sale, a state word (written by every bid), a payout word at
   open and a result word at settlement; live units eight steps to a word; one word per bid;
   departure logs only in capped sales.

@@ -12,7 +12,10 @@ import { EditionAuctionHandler } from "./EditionAuctionHandler.sol";
 ///         edition auctions (which creates each edition), bids (sometimes in the soft-close
 ///         window), raises, bids on the 1/1 in its anti-snipe window, pauses a 1/1 for a dispute
 ///         and tries to take edition bids back (bids are firm, R21), cancels the 1/1 (voiding its
-///         editions) or resumes it, settles the 1/1 (an unbid one goes to the museum), spreads a
+///         editions) or resumes it, has the network rescue the work of a 1/1 that is not settled
+///         (to a safe, to the auction itself, or sent straight back: settling that 1/1 closes it
+///         with refunds and voids its editions), settles the 1/1 (an unbid one goes to the
+///         museum), spreads a
 ///         few books wider than one settle call scans, settles edition auctions with the
 ///         departure hint (and tries to settle them early, and to claim while they are
 ///         SETTLING), abandons them, and claims bids directly or by `claimBidFor`, on capped and
@@ -33,10 +36,10 @@ import { EditionAuctionHandler } from "./EditionAuctionHandler.sol";
 ///         9. No claim while SETTLING.
 ///         Every action also predicts its outcome; any disagreement fails the campaign.
 contract EditionAuctionInvariantTest is EditionAuctionHandler {
-    uint256 internal constant ACTIONS = 22;
+    uint256 internal constant ACTIONS = 23;
     /// @dev Actions `test_EveryActionRuns` replays: every one but `abandon`, whose 21-day jumps
     ///      the campaign exercises (its outcome is predicted and checked on every call).
-    uint256 internal constant STEP_ACTIONS = 21;
+    uint256 internal constant STEP_ACTIONS = 22;
     /// @dev Replayed sequences in `test_EveryActionRuns`.
     uint256 internal constant RUNS = 128;
 
@@ -70,6 +73,7 @@ contract EditionAuctionInvariantTest is EditionAuctionHandler {
         s[19] = this.settleOneOfOne.selector;
         s[20] = this.fifoHole.selector;
         s[21] = this.abandon.selector;
+        s[22] = this.rescueOneOfOne.selector;
     }
 
     /// @notice Every invariant above. The state is asserted every fourth call and after the
@@ -87,7 +91,7 @@ contract EditionAuctionInvariantTest is EditionAuctionHandler {
     function test_EveryActionRuns() public {
         // The campaign-shaped runs exceed the test gas limit; the metering is not what is tested.
         vm.pauseGasMetering();
-        string[39] memory paths = [
+        string[43] memory paths = [
             "startOneOfOne",
             "bidOneOfOne",
             "oneOfOneSnipe",
@@ -126,9 +130,13 @@ contract EditionAuctionInvariantTest is EditionAuctionHandler {
             "claimFor",
             "partFilled",
             "claimTwiceRefused",
-            "withdrawCredit"
+            "withdrawCredit",
+            "rescue",
+            "rescueBackInCustody",
+            "rescuedClose",
+            "rescuedVoid"
         ];
-        uint256[39] memory totals;
+        uint256[43] memory totals;
         for (uint256 run; run < RUNS; ++run) {
             uint256 snapshot = vm.snapshotState();
             for (uint256 depth; depth < 128; ++depth) {
@@ -178,6 +186,7 @@ contract EditionAuctionInvariantTest is EditionAuctionHandler {
         else if (which == 11 || which == 17) this.claim(a, b, c);
         else if (which == 12) this.withdrawCredit(a);
         else if (which == 20) this.fifoHole(a);
+        else if (which == 21) this.rescueOneOfOne(a, b);
         else this.warp(a);
     }
 }

@@ -63,7 +63,8 @@ import { ISaleAdapter } from "./ISaleAdapter.sol";
 ///      a hard close. While the 1/1 is PAUSED for a dispute, bids and raises are accepted
 ///      whatever the time and do not move `softEnd`; a resumed 1/1 runs at least its governed
 ///      duration, and the edition close follows it. Bids stay firm during the pause. A
-///      CANCELLED 1/1 (an upheld dispute) voids the sale: nothing is minted or paid, and every
+///      CANCELLED 1/1 (an upheld dispute, or a work the network rescued from its sale) voids the
+///      sale: nothing is minted or paid, and every
 ///      bid is refunded in full. A bid reads the 1/1 live only within `softWindow` of the close (or
 ///      later), so a bid placed earlier, after the cancel but before the sale is voided, can
 ///      still be accepted; it is refunded in full with every other, and `EndTimes.biddingOpen`
