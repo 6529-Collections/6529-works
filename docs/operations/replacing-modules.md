@@ -53,10 +53,11 @@ the module it replaces (`Wiring.previous`), and:
   on the new module alone answers for that account, and nothing done in the old module
   reaches it. What the new module recorded comes first: an address it already maps to an
   account keeps that account, and a pending change whose new root a change pending in the
-  new module reserves cannot be copied until one of the two ends (`AccountTaken`). So after activation, act in the new module. A change is signed in the new
-  module's EIP-712 domain, at the account's nonce there (zero until its first change there).
-  A contested replacement that was copied is resolved by a DISPUTE_OUTCOME recorded for the
-  new module's address after the copy.
+  new module reserves cannot be copied until one of the two ends (`AccountTaken`). So after
+  activation, act in the new module. A change is signed in the new module's EIP-712 domain,
+  at the account's nonce there (zero until its first change there). A contested replacement
+  that was copied is resolved by a DISPUTE_OUTCOME recorded for the new module's address
+  after the copy.
 - **What it does not inherit.** Used replacement acceptances and the change nonce (both are
   bound to the old module's domain, so they cannot be replayed in the new one). The list of
   contracts refused as a payout by address (`notPayouts`) is a constructor argument: pass
@@ -126,7 +127,8 @@ registry on the same verifier would therefore take any attestation the first too
 inherits nothing. It is safe only on a new `Eip712CurationVerifier` instance: its domain is
 new, so no earlier attestation verifies, and the curation signers attest again every root
 that is to carry over, including the roots of edition masters whose 1/1 is running. Use it
-when the old policy itself is what must be left behind. Never deploy a policy with no
+when the old policy itself is what must be left behind, or does not declare `IRevokedRoots`
+(an instance of earlier code cannot be named as `previous`). Never deploy a policy with no
 predecessor on a verifier that has attested before.
 
 Before switching the sale contracts to a new mint policy, run

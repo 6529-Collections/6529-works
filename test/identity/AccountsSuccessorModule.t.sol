@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { Vm } from "forge-std/Vm.sol";
 import { Accounts } from "src/identity/Accounts.sol";
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
 import { IAccounts } from "src/interfaces/core/IAccounts.sol";
@@ -658,6 +659,67 @@ contract AccountsSuccessorModuleTest is AccountsFixture, GasRuleAssertions {
         assertEq(next.payoutAddress(artistId), payout);
         (ArtistIdentity memory seen,) = next.artist(artistId);
         assertEq(seen.payout, payout);
+    }
+
+    /// @dev Each inherited account is copied on its own: copying one with nothing pending
+    ///      leaves no pending change and no reservation behind, so the next copies too.
+    function test_Successor_CopiesEachAccountOnItsOwn() public {
+        uint256 second = _register(outsider);
+        vm.recordLogs();
+        vm.startPrank(network);
+        next.freeze(artistId);
+        next.freeze(second);
+        vm.stopPrank();
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        uint256 inherited;
+        for (uint256 i; i < logs.length; ++i) {
+            assertTrue(
+                logs[i].topics[0] != IArtistRegistry.ChangeStaged.selector, "nothing was pending"
+            );
+            if (logs[i].topics[0] == Accounts.AccountInherited.selector) ++inherited;
+        }
+        assertEq(inherited, 2);
+        assertEq(next.authorityOf(artistId), artist);
+        assertEq(next.authorityOf(second), outsider);
+        assertEq(uint8(next.pendingChange(artistId).kind), uint8(ChangeKind.NONE));
+        assertEq(next.reservedFor(address(0)), 0);
+        vm.prank(network);
+        next.unfreeze(second);
+        assertTrue(next.isWallet(second, outsider));
+    }
+
+    /// @dev An own change pending in the replaced module is copied as an own change: the
+    ///      account still acts while it waits, and a change that keeps the root reserves
+    ///      nothing.
+    function test_Successor_ACopiedOwnChangeLeavesTheAccountActing() public {
+        _use(first);
+        _stage(artistKey, _identity(artist, payout));
+        vm.prank(wallet);
+        next.revokeNonce(artistId);
+        assertEq(uint8(next.pendingChange(artistId).kind), uint8(ChangeKind.OWN));
+        assertTrue(next.isWallet(artistId, artist), "an own change does not stop the account");
+        assertTrue(next.isWallet(artistId, wallet));
+        assertEq(next.activeAuthorityOf(artistId), artist);
+        assertEq(next.reservedFor(artist), 0, "the root is kept: nothing is reserved");
+        assertEq(next.payoutAddress(artistId), address(0), "held while the payout would move");
+        vm.warp(block.timestamp + 2 days);
+        next.executeChange(artistId);
+        assertEq(next.payoutAddress(artistId), payout);
+    }
+
+    /// @dev An ID wider than an address names no account and is never copied, whatever the
+    ///      replaced module answers for it.
+    function test_Successor_AnIdWiderThanAnAddressIsNeverCopied() public {
+        uint256 wide = uint256(1) << 160 | artistId;
+        replaced.setRecord(wide, ArtistIdentity(artist, payout, PROFILE, PROFILE_DOC));
+        assertEq(next.authorityOf(wide), artist, "read through as the replaced module answers");
+        assertFalse(next.isWallet(wide, artist), "but nobody acts for it");
+        vm.prank(network);
+        vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.UnknownArtist.selector, wide));
+        next.freeze(wide);
+        // The account the low bits name is untouched and still read through.
+        assertEq(next.changeNonce(artistId), 0);
+        assertTrue(next.isWallet(artistId, artist));
     }
 
     // ------------------------------------------------------------------ the gas rule
