@@ -21,7 +21,7 @@ How to build and run the tests: the [quickstart](../quickstart.md) and
 
 ## Where to start
 
-The permanent contracts are small and are the part that can never be fixed after launch:
+The permanent contracts are the part that can never be fixed after launch:
 [`src/core/`](../../src/core/) (`Stream6529`, `StreamEditions6529`, `StreamWorkFacts6529`,
 `StreamDirectory6529`, `Modules`), the split ledger and vaults, the escrow and the content store.
 The most useful review tries to break one sentence of the promise in
@@ -39,9 +39,9 @@ seed, 395,000 and 9; asserted in the gas report).
 
 ## Existing evidence
 
-- **Tests.** Unit, fuzz, invariant, integration, symbolic, log-replay and fork suites in
-  [`test/`](../../test/) ([map](../../test/README.md)); coverage and mutation floors in
-  [Testing](../testing/README.md).
+- **Tests.** Suites in [`test/`](../../test/) ([map](../../test/README.md)); counts of one
+  full pass in the [validation record](../testing/validation-2026-11-23.md); commands, floors
+  and gaps in [Testing](../testing/README.md).
 - **Static analysis.** Slither runs in CI; every High or Medium finding has a reviewed row in
   the [triage record](../security/slither-triage.md).
 - **Sepolia.** Earlier rehearsals ran the code before this restructuring
