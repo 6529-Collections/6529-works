@@ -48,6 +48,14 @@ contract IndependentEditionAuctionMutationTest is IndependentEditionAuctionTest 
         assertEq(found, 1, "one AuctionOpened");
     }
 
+    /// @dev The Independent Stream auction sells many pairs, so its lens names no single
+    ///      editions contract and no single master contract.
+    function test_Views_NoSingleEditionsContractOrMaster() public view {
+        IUniformEditionAuctionLens views = IUniformEditionAuctionLens(address(auction));
+        assertEq(views.editions(), address(0));
+        assertEq(views.stream(), address(0));
+    }
+
     /// @dev The Independent Stream lens reads its module from the directory and accepts no other.
     function test_SetIndependentStreamRegistry_TheLensRefusesAnyModule() public {
         address next = makeAddr("next");
