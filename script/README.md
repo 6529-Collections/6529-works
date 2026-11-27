@@ -12,6 +12,7 @@ deploy script refuses every other chain. 6529 Works is pre-audit and not deploye
 | [`DeployCore.s.sol`](DeployCore.s.sol) | The broadcast script (anvil or Sepolia). It deploys, installs, accepts on anvil, reads back, prints every address and writes `deployments/<chain>/core-<timestamp>.json` |
 | [`VerifyCore.sol`](VerifyCore.sol), [`VerifyCore.s.sol`](VerifyCore.s.sol) | The read-back, as a library and as a read-only script over a deployment record: every contract's runtime code against a fresh deployment of the build, the whole wiring, the configuration the constructors stored, the tokens' minter logs, the hashes genesis logged and the manager's role logs since. `--sig "holders()"` lists who holds each role |
 | [`DeployGuards.sol`](DeployGuards.sol) | The off-anvil checks run before anything is broadcast, and again by the read-back for the network Safe and the holders |
+| [`CheckReplacement.sol`](CheckReplacement.sol), [`CheckReplacement.s.sol`](CheckReplacement.s.sol) | The comparison run before a replacement accounts module or mint policy is announced, as a library and as a read-only script: the candidate answers as the module in force for a list of accounts, addresses and package roots |
 | [`ScriptIO.sol`](ScriptIO.sol) | Everything the scripts read from outside the EVM: environment, files, chain ID, the deployment parameters |
 | [`local/`](local/README.md) | The local walkthrough: one command, a full sale end to end on anvil |
 | [`sepolia/`](sepolia/) | The Sepolia round tooling: genesis and manifest writers, deploy, record, flows, Sourcify |

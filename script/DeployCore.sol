@@ -150,6 +150,17 @@ library DeployCore {
         address saleStarter;
     }
 
+    /// @notice The constructor wiring of `Accounts` (`Accounts.Wiring`, field for field).
+    struct AccountsWiring {
+        address directory;
+        address stream;
+        address editions;
+        address splitFactory;
+        address statementLog;
+        address packageRegistry;
+        address previous;
+    }
+
     /// @notice The epoch-0 governance manifest.
     struct Manifest {
         bytes32 digest;
@@ -328,6 +339,23 @@ library DeployCore {
         list[k] = "SaleStarter";
     }
 
+    /// @notice The contracts of the deployment the accounts module refuses as a payout by
+    ///         address: the ones that neither declare a network interface (ERC-165) nor are
+    ///         governed by the AccessManager, so no rule of the module recognises them.
+    function notPayouts(Deployment memory d) internal pure returns (address[] memory list) {
+        list = new address[](10);
+        list[0] = d.coreFactory;
+        list[1] = address(d.configurator);
+        list[2] = address(d.contentStore);
+        list[3] = address(d.workFacts);
+        list[4] = d.renderer;
+        list[5] = d.editionAuctionLens;
+        list[6] = d.independentStream721Deployer;
+        list[7] = d.independentStreamEditionsDeployer;
+        list[8] = d.independentEditionAuctionLens;
+        list[9] = d.saleStarter;
+    }
+
     /// @notice The creation code and constructor arguments of contract `name`, given every
     ///         predicted address in `d`. Code hashes a constructor pins are read from the chain,
     ///         so `deploy` must have created the dependency first (as `order` does).
@@ -408,21 +436,21 @@ library DeployCore {
         if (n == keccak256("Accounts")) {
             // The consolidation source is pinned by code hash; the rest of the wiring is plain
             // addresses (directory, Stream, Editions, split ledger, statement log, package
-            // registry), several of them deployed after this module.
+            // registry), several of them deployed after this module. The first accounts
+            // module replaces none (`previous` is zero), and it is given the contracts of the
+            // deployment it must refuse as a payout by address.
             address adapter = d.consolidationAdapter;
+            AccountsWiring memory w = AccountsWiring(
+                address(d.directory),
+                address(d.stream),
+                address(d.editions),
+                address(d.splitLedger),
+                d.statementLog,
+                d.packageRegistry,
+                address(0)
+            );
             return _artifact(
-                "Accounts.sol:Accounts",
-                abi.encode(
-                    m,
-                    adapter,
-                    adapter.codehash,
-                    d.directory,
-                    d.stream,
-                    d.editions,
-                    d.splitLedger,
-                    d.statementLog,
-                    d.packageRegistry
-                )
+                "Accounts.sol:Accounts", abi.encode(m, adapter, adapter.codehash, w, notPayouts(d))
             );
         }
         if (n == keccak256("AssetAllowlist")) {
@@ -449,7 +477,7 @@ library DeployCore {
             // The accounts module and the curation verifier are pinned by code hash. It starts
             // with no entropy module (the module pins this registry's code hash, so it is
             // deployed after it); the genesis wiring sets it (`setEntropyModule`) and binds
-            // Stream (`bindStream`).
+            // Stream (`bindStream`). The first mint policy replaces none (`previous` is zero).
             address verifier = d.curationVerifier;
             return _artifact(
                 "PackageRegistry.sol:PackageRegistry",
@@ -460,7 +488,8 @@ library DeployCore {
                     d.directory,
                     d.economicsResolver,
                     address(0),
-                    d.cc0TextFileId
+                    d.cc0TextFileId,
+                    address(0)
                 )
             );
         }

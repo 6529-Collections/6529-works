@@ -107,8 +107,10 @@ abstract contract AccountsFixture is Test {
                 editionsAddr,
                 address(factory),
                 statementLog,
-                packageRegistry
-            )
+                packageRegistry,
+                address(0)
+            ),
+            new address[](0)
         );
     }
 

@@ -31,7 +31,20 @@ artist ID.
   wallet leaves the account. Wallets may be contracts (ERC-1271) or EIP-7702 accounts.
 - **Payout.** `payoutAddress(artistId)` is where split vaults pay the artist's share. It reads
   zero while the account is frozen or a pending change would move it; the money then stays in
-  the vault. A payout that cannot pull is refused when set.
+  the vault. A payout that cannot pull is refused when set and again when the change takes
+  effect: no contract of the network can call `release` for an artist, so none is accepted
+  (the module's wiring, its AccessManager and consolidation source, the contracts listed
+  at its deployment, the split ledger's vaults, every contract that declares a protocol
+  interface and every contract the AccessManager governs). An account with no code, a smart
+  account, a multi-signature wallet and an artist's own split contract outside the network
+  are accepted. `isPayoutAllowed(address)` answers the check.
+- **Replacing the module.** A new `Accounts` is deployed naming the module it replaces
+  (`previous`). It answers every account it has not recorded from that module's record, so
+  an account keeps its ID, root, wallets, payout address, freeze and pending change, and the
+  address a moved account's ID was made from has no power. It never registers an address the
+  replaced module knows. Its first change to an inherited account copies the record, and from
+  then on it alone answers for it. See
+  [Replacing a module](../operations/replacing-modules.md#accounts-accounts-on-streamdirectory6529).
 - **Which works are the artist's.** `isArtist(token, id, account)` reads
   `IStream(token).workOf(id).artistId`, for 6529 Stream and Independent Stream tokens alike.
 
@@ -74,11 +87,15 @@ promises of a permanent contract.
 | ID-7 | A wallet contests a replacement only during its notice; a contested replacement runs only if upheld within 90 days, otherwise it lapses. | `test_Contest_*` |
 | ID-8 | A freeze lasts 14 days per placement, stops every wallet, zeroes the payout and holds pending changes. It blocks a contest, and the network can end it and place it again. An upheld contested replacement still executes during a freeze. | `test_Freeze_*`, `test_Freeze_AnUpheldContestedReplacementStillExecutes` |
 | ID-9 | Reads of other contracts forward all gas; a shortfall reverts, never "no". | `test_GasRule_*` |
-| ID-10 | A payout that cannot pull is refused; `payoutAddress` is zero while frozen or while a pending change would move it. | `test_PayoutValidation_*` |
+| ID-10 | A payout that cannot pull is refused when a change is staged, when it executes and at registration: the module's wiring, its AccessManager and consolidation source, the contracts listed at its deployment, the split ledger's vaults, every contract declaring a protocol interface (ERC-165) and every contract governed by the same AccessManager. Every contract of a deployment is refused; an account with no code, a smart account, a multi-signature wallet and a contract outside the network are accepted. `payoutAddress` is zero while frozen or while a pending change would move it. | `test_PayoutValidation_*`, `test_Payout_RefusesEveryContractOfTheDeployment`, `test_Payout_AcceptsAccountsThatCanPull`, `test_Payout_AGovernedContractDeployedWhileTheChangeWaitsIsCaughtAtExecution`, `test_GasRule_TheGovernedProbeNeverAnswersForGas` |
 | ID-11 | `isArtist` is true only for a wallet of the work's lead account. | `test_IsArtist_AStreamWorkAnswersForEveryWalletOfTheLead`, `test_IsArtist_AnEditionAnswersThroughItsMaster`, `test_IsArtist_AFrozenAccountIsNo`, `test_IsArtist_AnythingElseIsNo` |
 | ID-15 | The network swaps the consolidation source, compare-and-set, to a checked target. | `test_SetConsolidationSource_SwapsTheSourceWithItsPin` |
 | ID-16 | A wallet can be any account `SignatureVerifier` verifies, including ERC-1271 and EIP-7702 accounts. | `test_ContractRoot_StagesByPreApproval`, `test_7702Account_PreApprovalAndECDSABothWork` |
 | ID-17 | `StreamDirectory6529.payoutAddress` forwards to the ACCOUNTS module; a missing, reverting or gas-burning module reverts and never answers a default. | `testFuzz_PayoutAddress_ForwardsToTheAccountsModule`, `test_PayoutAddress_RevertsWithoutAModule`, `test_PayoutAddress_RevertsWhenTheModuleReverts`, `testFuzz_PayoutAddress_RevertsWhenTheModuleBurnsItsGas` |
+| ID-42 | A module deployed with `previous` answers an account it has not recorded from the replaced module's record, read at each use: root, acting root (none while frozen or a replacement is pending), payout address, freeze and pending change, through any number of replacements. Consolidated wallets are its own source's answer, and a payout address it refuses is answered as none. The address a moved account's ID was made from has no power. | `test_Successor_AnswersAnAccountItHasNotRecordedFromThePredecessor`, `test_Successor_AMovedAccountsFirstAddressHasNoWallet`, `test_Successor_AFreezeOrAPendingReplacementInThePredecessorStopsTheAccount`, `test_Successor_AnInheritedAccountUsesThisModulesConsolidationSource`, `test_Successor_APayoutThisModuleRefusesIsNotCarried`, `test_Successor_AnAllowedPayoutIsCarried`, `test_AccountsSuccessor_*`, `invariant_ASuccessorAnswersAsTheModuleItReplaces`, `test_ModuleSwap_ANewAccountsModuleKeepsEveryAccountAndFreeze` |
+| ID-43 | A module never registers an address the module it replaces knows as a root, a former root or a reserved root, and takes no such address as a new root; an address no module of the chain knows is its own single-wallet account and registers with the ID its address gives. | `test_Successor_NeverRegistersAnAddressThePredecessorKnows`, `test_Successor_ANewRootMustBeFreeInThePredecessorToo`, `test_Successor_AnAddressNobodyKnowsIsItsOwnAccountAndRegistersHere`, `test_AccountsSuccessor_TheFirstAddressOfAMovedAccountCannotRegisterOrBePaid`, `test_Successor_TheFirstModuleReplacesNone` |
+| ID-44 | The first change a module makes to an inherited account copies its record, freeze and pending change (`AccountInherited`); from then on the module alone answers for it, and a call that changes nothing copies nothing. A change there is signed in that module's domain. A copied contest is resolved only by an outcome recorded for that module after the copy. What the module recorded comes first: a copy never moves an address it already maps, and never takes a root a change pending there reserves. | `test_Successor_AFreezeHereCopiesTheAccountAndThisModuleAnswersAlone`, `test_Successor_AnOwnChangeHereIsSignedInThisModulesDomain`, `test_Successor_APendingOwnChangeIsCopiedAndCancelledHere`, `test_Successor_APendingReplacementIsCopiedAndExecutedHere`, `test_Successor_APendingReplacementIsCopiedAndWithdrawnHere`, `test_Successor_AContestedReplacementNeedsAnOutcomeRecordedAfterTheCopy`, `test_Successor_ACallThatChangesNothingCopiesNothing`, `test_Successor_AWalletRevokesItsNonceHere`, `test_Successor_ACopyNeverRemapsAnAddressRecordedHere`, `test_Successor_ACopiedChangeCannotTakeARootReservedHere` |
+| ID-45 | A replaced module that does not answer (a revert, no data, the wrong size) leaves the accounts only it holds with nobody acting and their payout zero, and nothing is registered or copied; an account the successor recorded never reads it; a read that runs short of gas reverts; an address it claims for an account the successor recorded gains nothing. The replaced module must declare the accounts interface. | `test_Successor_APredecessorThatStopsAnsweringStopsOnlyItsOwnAccounts`, `test_Successor_AClaimByThePredecessorGivesNoPowerOverAnAccountRecordedHere`, `test_Successor_ThePredecessorMustBeAnAccountsModule`, `test_GasRule_AReadOfThePredecessorNeverAnswersForGas`, `test_GasRule_AnAccountRecordedHereNeverReadsThePredecessor` |
 
 The Independent Stream directory rules (ID-12 to ID-14) are on the
 [Independent Stream page](independent-stream.md).
@@ -90,3 +107,4 @@ The Independent Stream directory rules (ID-12 to ID-14) are on the
 | A root key is stolen | The network freezes the account at once, then replaces the root | Any wallet can cancel the thief's own change meanwhile. |
 | The consolidation source fails | Only roots act | The network replaces the source. |
 | The accounts module is missing or fails | Vault releases to artists revert; the money stays in the vaults | The network installs a module in `StreamDirectory6529` (after `moduleDelay`). |
+| A replaced accounts module stops answering its successor | The accounts only it holds have nobody acting and their payout held; no new artist registers; accounts the successor recorded are unaffected | The network installs another module (after `moduleDelay`). |

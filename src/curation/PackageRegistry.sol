@@ -15,6 +15,7 @@ import { IEconomicsResolver } from "../interfaces/IEconomicsResolver.sol";
 import { IEntropyModule } from "../interfaces/IEntropyModule.sol";
 import { IItemApprovals } from "../interfaces/IItemApprovals.sol";
 import { IPackageRegistry } from "../interfaces/IPackageRegistry.sol";
+import { IRevokedRoots } from "../interfaces/IRevokedRoots.sol";
 import { MintFacts, MintTerms, Slots } from "../interfaces/core/CoreTypes.sol";
 import { IDirectory } from "../interfaces/core/IDirectory.sol";
 import { IMintPolicy } from "../interfaces/core/IMintPolicy.sol";
@@ -42,6 +43,7 @@ import {
 } from "../interfaces/types/PackageTypes.sol";
 import { Typehashes } from "../interfaces/types/Typehashes.sol";
 import { WorksHashing } from "../interfaces/types/WorksHashing.sol";
+import { BoundedCall } from "../libraries/BoundedCall.sol";
 import { Dependency } from "../libraries/Dependency.sol";
 import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 import { SpdxId } from "../stream/SpdxId.sol";
@@ -71,11 +73,17 @@ import { SpdxId } from "../stream/SpdxId.sol";
 ///      asks the accounts module the directory's ACCOUNTS slot names at that moment, so the
 ///      network's swap of that module reaches this registry at once.
 ///
-///      Replacement. A replacement mint policy starts with no releases and no barred items:
-///      content uniqueness still holds through `IStream.tokenOfContent`, so a burned work's
-///      content stays unmintable until the network releases it again in the replacement
-///      (`releaseContent`), which bars the burned item there too; a release made here and not
-///      yet used must be made again.
+///      Replacement. A mint policy that replaces another is deployed naming it as `previous`
+///      (zero for the first). A root the replaced policy reports as revoked (`isRevoked`:
+///      revoked there, revoked in advance, its signer's approvals killed, or revoked in a
+///      policy that one replaced) is never registered here and is not live here, whenever
+///      the revocation was made. The read forwards all gas, a shortfall reverts, and a
+///      replaced policy that does not answer leaves every root refused. Nothing else is
+///      inherited: approvals, acceptances and move nonces are this policy's own, and it
+///      starts with no releases and no barred items. Content uniqueness still holds through
+///      `IStream.tokenOfContent`, so a burned work's content stays unmintable until the
+///      network releases it again in the replacement (`releaseContent`), which bars the
+///      burned item there too; a release made here and not yet used must be made again.
 ///
 ///      Approvals are per root: revoking a root stops only that root. Disabling a curation
 ///      signer in the verifier stops future registrations; `killSignerApprovals` also stops
@@ -87,7 +95,14 @@ import { SpdxId } from "../stream/SpdxId.sol";
 ///      when the share is zero, else the split wallet of `Splits.royaltyPayees(seller,
 ///      feeRecipient, feeShare)`, salt zero) and the royalty rate. The rate is the network's
 ///      default at the start; no party signs it.
-contract PackageRegistry is IPackageRegistry, IMintPolicy, IItemApprovals, AccessManaged, EIP712 {
+contract PackageRegistry is
+    IPackageRegistry,
+    IMintPolicy,
+    IItemApprovals,
+    IRevokedRoots,
+    AccessManaged,
+    EIP712
+{
     /// @dev Move nonces per bitmap word; bit 255 of every written word is set.
     uint256 private constant NONCES_PER_WORD = 255;
     uint256 private constant SENTINEL = 1 << 255;
@@ -120,6 +135,9 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, IItemApprovals, Acces
     ///         does not read it from `StreamWorkFacts6529` each time; `bindStream` checks it is the
     ///         same.
     bytes32 public immutable cc0TextFileId;
+    /// @notice The mint policy this one replaces (zero for the first): a root it reports as
+    ///         revoked is refused here.
+    address public immutable previous;
     /// @inheritdoc IPackageRegistry
     ICurationVerifier public verifier;
     /// @inheritdoc IPackageRegistry
@@ -150,6 +168,8 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, IItemApprovals, Acces
     /// @param economics_ The economics resolver (immutable): the terms of new works.
     /// @param entropyModule_ The VRF entropy module, or zero (VRF items are then refused).
     /// @param cc0TextFileId_ The deployment's CC0 text file (`IWorkFacts.cc0TextFileId`).
+    /// @param previous_ The mint policy this one replaces, or zero for the first. It must
+    ///        declare `IRevokedRoots` (ERC-165).
     constructor(
         address authority_,
         ICurationVerifier verifier_,
@@ -157,7 +177,8 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, IItemApprovals, Acces
         address directory_,
         IEconomicsResolver economics_,
         address entropyModule_,
-        bytes32 cc0TextFileId_
+        bytes32 cc0TextFileId_,
+        address previous_
     )
         AccessManaged(authority_)
         EIP712(Typehashes.PACKAGE_REGISTRY_NAME, Typehashes.DOMAIN_VERSION)
@@ -167,6 +188,10 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, IItemApprovals, Acces
         directory = directory_;
         economics = economics_;
         cc0TextFileId = cc0TextFileId_;
+        previous = previous_;
+        if (previous_ != address(0)) {
+            Dependency.check(previous_, type(IRevokedRoots).interfaceId);
+        }
         _setVerifier(verifier_, verifierCodeHash);
         _setEntropyModule(entropyModule_);
     }
@@ -193,11 +218,13 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, IItemApprovals, Acces
     // ----------------------------------------------------------------------------- packages
 
     /// @inheritdoc IPackageRegistry
+    /// @dev A root a replaced policy reports as revoked reverts with `PackageNotApproved`.
     function registerPackage(bytes32 packageRoot, bytes32 evidenceHash, bytes calldata attestation)
         external
     {
         Package storage p = _packages[packageRoot];
         if (p.status != PackageStatus.NONE) revert PackageExists(packageRoot);
+        if (_revokedBefore(packageRoot)) revert PackageNotApproved(packageRoot);
         ICurationVerifier v = verifier;
         Dependency.checkUnchanged(address(v), _verifierCodeHash);
         (bool approved, address signer) = v.isApproved(packageRoot, evidenceHash, attestation);
@@ -395,7 +422,16 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, IItemApprovals, Acces
         return interfaceId == type(IERC165).interfaceId
             || interfaceId == type(IPackageRegistry).interfaceId
             || interfaceId == type(IItemApprovals).interfaceId
+            || interfaceId == type(IRevokedRoots).interfaceId
             || interfaceId == type(IMintPolicy).interfaceId;
+    }
+
+    /// @inheritdoc IRevokedRoots
+    function isRevoked(bytes32 packageRoot) public view returns (bool) {
+        Package storage p = _packages[packageRoot];
+        PackageStatus status = p.status;
+        return status == PackageStatus.REVOKED || (status == PackageStatus.APPROVED && _killed(p))
+            || _revokedBefore(packageRoot);
     }
 
     /// @inheritdoc IPackageRegistry
@@ -410,10 +446,7 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, IItemApprovals, Acces
         returns (PackageStatus status, bytes32 evidenceHash, address signer)
     {
         Package storage p = _packages[packageRoot];
-        status = p.status;
-        if (status == PackageStatus.APPROVED && !_isLiveRoot(packageRoot)) {
-            status = PackageStatus.REVOKED;
-        }
+        status = isRevoked(packageRoot) ? PackageStatus.REVOKED : p.status;
         return (status, p.evidenceHash, p.signer);
     }
 
@@ -606,12 +639,30 @@ contract PackageRegistry is IPackageRegistry, IMintPolicy, IItemApprovals, Acces
         if (!_isLiveRoot(packageRoot)) revert PackageNotApproved(packageRoot);
     }
 
-    /// @dev Approved, and its signer's approvals not killed since it was registered.
+    /// @dev Approved here, its signer's approvals not killed since it was registered, and not
+    ///      reported as revoked by a replaced policy.
     function _isLiveRoot(bytes32 packageRoot) private view returns (bool) {
         Package storage p = _packages[packageRoot];
-        if (p.status != PackageStatus.APPROVED) return false;
+        return p.status == PackageStatus.APPROVED && !_killed(p) && !_revokedBefore(packageRoot);
+    }
+
+    /// @dev Whether the approvals of the package's signer were killed after it was registered.
+    function _killed(Package storage p) private view returns (bool) {
         uint64 epoch = p.epoch;
-        return epoch == _killEpoch || _killedAt[p.signer] <= epoch;
+        return epoch != _killEpoch && _killedAt[p.signer] > epoch;
+    }
+
+    /// @dev Whether the policy this one replaces reports the root as revoked (`isRevoked`,
+    ///      which asks the policy it replaced in turn). The read forwards all gas
+    ///      (`BoundedCall.tryReadWordAll`): a shortfall reverts, and a policy that does not
+    ///      answer exactly one word counts as "revoked".
+    function _revokedBefore(bytes32 packageRoot) private view returns (bool) {
+        address replaced = previous;
+        if (replaced == address(0)) return false;
+        (bool ok, bytes32 word) = BoundedCall.tryReadWordAll(
+            replaced, abi.encodeCall(IRevokedRoots.isRevoked, (packageRoot))
+        );
+        return !ok || word != 0;
     }
 
     /// @dev Content, seed and edition fields: a nonzero content hash; an artist seed exactly

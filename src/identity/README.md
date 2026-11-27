@@ -49,8 +49,23 @@ no bind step.
   and every Independent Stream token), or of an edition through `IEditions.stream()` and the same
   ID. A token that answers neither, or answers malformed data, is "false".
 - **Payout refusals.** A payout may not be this module, the directory, 6529 Stream or Editions,
-  the split ledger or one of its vaults, the statement log, the package registry, or any
-  contract declaring (ERC-165) the interface of a network contract that cannot pull money.
+  the split ledger or one of its vaults, the statement log, the package registry, the
+  AccessManager, the consolidation source, a contract listed at deployment (`notPayouts`: the
+  deployment's contracts no rule recognises), any contract declaring (ERC-165) a protocol
+  interface (`ProtocolContracts`, plus a module host, the directory, the record contract, a
+  mint policy and an Independent Stream gate), or any contract whose `authority()` is this
+  module's AccessManager. Checked at staging, at execution and at registration;
+  `isPayoutAllowed(address)` answers it. An account with no code and a contract that is
+  none of the above are accepted.
+- **Replacing the module.** `previous` names the module this one replaces (zero for the
+  first). An account not recorded here is answered from that module's record (`artistIdOf`,
+  `activeAuthorityOf`, `authorityOf`, `payoutAddress`, `frozenUntil`, `artist`,
+  `pendingChange`, `reservedFor`), each read forwarding all gas; consolidation is this
+  module's own source's answer. `register` refuses an address that module knows. The first
+  function here that changes an inherited account copies its record, freeze and pending
+  change (`AccountInherited`); `changeNonce` counts from zero here. A replaced module that
+  does not answer stops only the accounts it still holds
+  ([Replacing a module](../../docs/operations/replacing-modules.md)).
 - **The live read.** A non-root wallet costs one call to the consolidation source, forwarding
   all gas (`BoundedCall.tryReadWordAll`): a shortfall reverts, anything else but `true` is "no".
 - **Compiled waits.** `OWN_CHANGE_DELAY` 2 days, `REPLACEMENT_NOTICE` 14 days, `CONTEST_LAPSE`

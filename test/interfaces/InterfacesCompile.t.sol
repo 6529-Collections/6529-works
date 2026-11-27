@@ -7,6 +7,7 @@ import { IArtistPayoutResolver } from "../../src/economics/interfaces/IArtistPay
 import { IAccounts } from "../../src/interfaces/core/IAccounts.sol";
 import { IArtistRegistry, IConsolidationSource } from "../../src/interfaces/IArtistRegistry.sol";
 import { IItemApprovals } from "../../src/interfaces/IItemApprovals.sol";
+import { IRevokedRoots } from "../../src/interfaces/IRevokedRoots.sol";
 import { IArtistRoleResolver } from "../../src/interfaces/IArtistRoleResolver.sol";
 import { IContentStore } from "../../src/interfaces/IContentStore.sol";
 import {
@@ -69,6 +70,7 @@ contract InterfacesCompileTest is Test {
         assertEq(type(IArtistRegistry).interfaceId, bytes4(0x1bec3945), "IArtistRegistry");
         assertEq(type(IAccounts).interfaceId, bytes4(0xc27b4543), "IAccounts");
         assertEq(type(IItemApprovals).interfaceId, bytes4(0x881b19aa), "IItemApprovals");
+        assertEq(type(IRevokedRoots).interfaceId, bytes4(0x4294857f), "IRevokedRoots");
         assertEq(type(IConsolidationSource).interfaceId, bytes4(0x42129132), "IConsolidationSource");
         assertEq(type(IEntropyModule).interfaceId, bytes4(0x549d75c9), "IEntropyModule");
         assertEq(

@@ -264,7 +264,8 @@ contract CurationSignerInvariantTest is CurationHelpers {
             ),
             IEconomicsResolver(address(_policyStub)),
             address(0),
-            keccak256("cc0 text file")
+            keccak256("cc0 text file"),
+            address(0)
         );
         artists.bindPackageRegistry(address(registry));
         vm.startPrank(admin);

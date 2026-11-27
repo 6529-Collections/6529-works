@@ -112,14 +112,17 @@ contract AccountsWiringTest is AccountsFixture {
             editionsAddr,
             address(factory),
             address(0),
-            packageRegistry
+            packageRegistry,
+            address(0)
         );
         vm.expectRevert(
             abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(adapter))
         );
-        new Accounts(address(manager), adapter, keccak256("other code"), w);
+        new Accounts(address(manager), adapter, keccak256("other code"), w, new address[](0));
         vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, stranger));
-        new Accounts(address(manager), IConsolidationSource(stranger), bytes32(0), w);
+        new Accounts(
+            address(manager), IConsolidationSource(stranger), bytes32(0), w, new address[](0)
+        );
     }
 
     /// @dev The network replaces the package registry, compare-and-set; the new one alone

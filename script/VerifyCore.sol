@@ -281,6 +281,17 @@ library VerifyCore {
             "Accounts.independentStreamRegistry"
         );
         _eq(IAccountsWiring(d.accounts).directory(), address(d.directory), "Accounts.directory");
+        // The first accounts module and the first mint policy replace none, and no contract
+        // of the deployment is accepted as an artist's payout address.
+        _eq(IAccountsWiring(d.accounts).previous(), address(0), "Accounts.previous");
+        _eq(IPackageWiring(d.packageRegistry).previous(), address(0), "PackageRegistry.previous");
+        string[] memory names = codeNames(p);
+        for (uint256 i; i < names.length; ++i) {
+            address a = DeployCore.addressOf(d, names[i]);
+            if (IAccountsWiring(d.accounts).isPayoutAllowed(a)) {
+                revert Mismatch("Accounts.isPayoutAllowed", a);
+            }
+        }
         _eq(IRulesWiring(d.workRules).delivery(), d.workDelivery, "WorkRules.delivery");
         _eq(IRulesWiring(d.workRules).facts(), address(d.workFacts), "WorkRules.facts");
         _eq(IDeliveryWiring(d.workDelivery).records(), d.workRules, "WorkDelivery.records");
@@ -1036,6 +1047,7 @@ interface IUniformWiring {
 }
 
 interface IPackageWiring {
+    function previous() external view returns (address);
     function verifier() external view returns (address);
     function stream() external view returns (address);
     function entropyModule() external view returns (address);
@@ -1065,6 +1077,8 @@ interface IAllowlistWiring {
 }
 
 interface IAccountsWiring {
+    function previous() external view returns (address);
+    function isPayoutAllowed(address account) external view returns (bool);
     function packageRegistry() external view returns (address);
     function independentStreamRegistry() external view returns (address);
     function directory() external view returns (address);

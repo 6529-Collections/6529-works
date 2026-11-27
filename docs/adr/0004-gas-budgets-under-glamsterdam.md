@@ -222,6 +222,43 @@ their own tests (`IndependentStreamGas.t.sol`, `EditionAuctionGasReport.t.sol`,
 `TokenUriBudget.t.sol`) and were not re-measured for this amendment; their last figures are in
 the earlier table below.
 
+**Amendment note, 27 November 2026 (the accounts module and the mint policy name the module
+they replace).** `Accounts` and `PackageRegistry` take the module they replace as a constructor
+argument. With no predecessor, as at genesis, the paths below pay for one comparison and for
+the functions added to the two modules; a module that does replace another pays one read of
+it per account it has not recorded, or per package root, on these paths. Re-measured with
+`test_Gas_Table` at genesis: no ceiling moved and no slot or account count changed. The table
+above keeps the figures of `961bc956`, which the Sepolia comparisons below are made against.
+The rows that moved:
+
+| Operation | Before | After | Change | Ceiling |
+| --- | ---: | ---: | ---: | ---: |
+| start, steady state | 320,904 | 320,993 | +89 | 370,000 |
+| startWithBid, steady state | 351,143 | 351,232 | +89 | 370,000 |
+| start, steady state, move signed by a consolidated wallet | 368,117 | 368,018 | -99 | 370,000 |
+| start, steady state, two-party work | 329,634 | 329,723 | +89 | 370,000 |
+| startWithBid, steady state, two-party work | 359,873 | 359,962 | +89 | 370,000 |
+| start, steady state, VRF work | 353,855 | 353,944 | +89 | 370,000 |
+| startWithBid, steady state, VRF work | 384,094 | 384,183 | +89 | 395,000 |
+| start, steady state, edition master | 320,995 | 321,084 | +89 | 370,000 |
+| start, edition master, params at the bound | 322,097 | 322,186 | +89 | 370,000 |
+| start, first work in a new collection | 320,947 | 321,036 | +89 | 370,000 |
+| start, an artist's first work | 320,915 | 321,004 | +89 | 370,000 |
+| startWithBid, an artist's first work | 351,154 | 351,243 | +89 | 370,000 |
+| startWithBid, an artist's first work, two-party | 359,861 | 359,950 | +89 | 370,000 |
+| startWithBid, an artist's first work, two-party, VRF | 392,818 | 392,907 | +89 | 395,000 |
+| startWithBid, an artist's first work, two-party, VRF, edition master, params at the bound | 393,933 | 394,022 | +89 | 395,000 |
+| start, first work ever (one-time) | 355,116 | 355,205 | +89 | 357,000 |
+| startWithBid, the auction's first bid (one-time) | 351,143 | 351,232 | +89 | 353,000 |
+| SaleStarter.start, steady state (start, vaults, record) | 575,413 | 575,587 | +174 | 579,000 |
+| authorize (the mint policy's share of start, as a call) | 115,937 | 116,026 | +89 | 119,000 |
+| edition open, steady state (creates the edition) | 257,207 | 257,389 | +182 | 260,000 |
+| edition open, an artist's first sale (deploys both vaults) | 396,779 | 396,961 | +182 | 402,000 |
+| re-rate a work (governed execute) | 225,603 | 225,415 | -188 | 231,000 |
+| release, the artist's first ETH release | 101,456 | 101,636 | +180 | 104,000 |
+| claimSigned, the artist's first signed release (relayed) | 146,964 | 147,144 | +180 | 150,000 |
+| claimSigned, a later signed release (the next nonce) | 95,696 | 95,876 | +180 | 98,000 |
+
 **Sepolia r8 against the `restart` and edition rows.** r8 (`961bc956`) is the first instance
 with the clock change. Its transactions, replayed on their parent block's state at Prague
 prices, beside the row each is an instance of:
