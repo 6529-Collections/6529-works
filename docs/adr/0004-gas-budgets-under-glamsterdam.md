@@ -259,6 +259,29 @@ The rows that moved:
 | claimSigned, the artist's first signed release (relayed) | 146,964 | 147,144 | +180 | 150,000 |
 | claimSigned, a later signed release (the next nonce) | 95,696 | 95,876 | +180 | 98,000 |
 
+**After a replacement.** The table is the budget of a first deployment. A second accounts
+module answers an account it has not copied by reading the module it replaces, and a second
+mint policy reads the policy it replaces once for every root; both are paid by a start.
+`test/integration/SuccessorStartGas.t.sol` measures whole starts the way `test_Gas_Table`
+does, one per test, on the same fixture (its first-deployment figures differ from the
+table's by the fixture, so compare within these rows):
+
+| Steady-state `start` | Move signed by the root | Move signed by a consolidated wallet |
+| --- | ---: | ---: |
+| First accounts module and mint policy | 318,513 | 365,418 |
+| Second accounts module, account not copied | 324,149 (+5,636) | 378,203 (+12,785) |
+| Second accounts module, account copied (`copyAccounts`) | 318,481 | 365,406 |
+| Second mint policy | 326,550 (+8,037) | 373,444 (+8,026) |
+
+The rule that goes with them: the 370,000 ceiling holds after a replacement for a copied
+account under a first mint policy. A start signed by a consolidated wallet passes it for an
+account not yet copied, and under a second mint policy, where the read is made at every
+start because that is how a revocation in the replaced policy keeps reaching the new one. A
+root-signed start stays inside it in every case. The network copies the accounts after an
+accounts replacement ([Replacing a module](../operations/replacing-modules.md)); a third
+generation adds the same reads again. The suite holds each figure under a regression
+ceiling.
+
 **Sepolia r8 against the `restart` and edition rows.** r8 (`961bc956`) is the first instance
 with the clock change. Its transactions, replayed on their parent block's state at Prague
 prices, beside the row each is an instance of:

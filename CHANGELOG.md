@@ -16,11 +16,15 @@
       root is never registered again; an address no module knows still registers with the ID
       its address gives. The first change the new module makes to an inherited account
       copies its record, freeze and pending change (`AccountInherited`), and from then on it
-      alone answers; what it recorded comes first (an address it already maps keeps its
-      account, and a payout address it refuses is not carried: the share is held until the
-      account names another). A replaced module that does not answer leaves only the
+      alone answers; `copyAccounts` copies a list, for anyone. What it recorded comes first
+      (an address it already maps keeps its account, and a payout address it refuses by
+      address is not carried: the share is held until the account names another), and a
+      copy calls no address the account chose. Only the module the directory names creates
+      or changes an account: a module that waits for activation and one that has been
+      replaced refuse every such call, so nothing is copied early and the record a
+      successor reads stands still. A replaced module that does not answer leaves only the
       accounts it still holds without an acting wallet and with their payout held; a read
-      that runs short of gas reverts (ID-42 to ID-45). `artistIdOf` and `reservedFor` are functions
+      that runs short of gas reverts (ID-42 to ID-46). `artistIdOf` and `reservedFor` are functions
       now, with the same signatures.
     - **A new mint policy names the one it replaces.** `PackageRegistry` takes `previous`
       (zero for the first) and declares `IRevokedRoots`: `isRevoked(root)` is true for a root
@@ -52,16 +56,22 @@
       `AccountsSuccessorModule`, `AccountsPayoutCheck`, `PackageRegistrySuccessor`,
       `MintPolicySuccessor` and `ReplacementCheck`; `RecipientValidationPorted` tries every
       contract of the deployment as a payout, one at a time. `ModuleSwap.t.sol` now asserts
-      that a freeze and every account survive a replacement. `replacing-modules.md` says
-      what each replacement inherits and what it does not, and gives the alternative of a
+      that a freeze and every account survive a replacement, and
+      `SuccessorStartGas.t.sol` measures a start after each kind of replacement.
+      `replacing-modules.md` says what each replacement inherits and what it does not, and gives the alternative of a
       new verifier with no predecessor; LIM-GV-32, LIM-ID-12, LIM-ID-19 and LIM-ID-26 are
       corrected.
-    - Size and gas. `Accounts` grows from 15,623 to 19,387 bytes (5,189 below the EIP-170
+    - Size and gas. `Accounts` grows from 15,623 to 19,836 bytes (4,740 below the EIP-170
       limit) and `PackageRegistry` from 19,906 to 20,308 (4,268 below); the runtime code of
       every other contract is unchanged. At genesis a start costs 89 gas more, an edition
       `open` 182, an artist's release 180; a start signed by a consolidated wallet costs 99
       less; no ceiling of the gas table moved
-      ([ADR 0004](docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table)).
+      ([ADR 0004](docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table)). After a
+      replacement a start pays for the reads of the replaced module: about 5,600 gas
+      (root-signed) or 12,800 (signed by a consolidated wallet) while a second accounts
+      module has not copied the account, nothing once it has (`copyAccounts`), and about
+      8,000 under a second mint policy; the wallet-signed start then passes the 370,000
+      ceiling. `test/integration/SuccessorStartGas.t.sol` holds these rows.
 - **Deployment read-back, wallet guard and handover documents: hardening.** Scripts, tests,
   tools and documents only; no contract under `src/` changed, so the build is still
   `v1.0.0-rc.3`'s.

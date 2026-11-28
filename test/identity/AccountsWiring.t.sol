@@ -156,6 +156,7 @@ contract AccountsWiringTest is AccountsFixture {
     ///      it: it can only lapse.
     function test_NoStatementLog_AContestCanOnlyLapse() public {
         registry = _deploy(address(0));
+        directory.setModule(ACCOUNTS_SLOT, address(registry));
         _configureRoles(address(registry));
         artistId = _register(artist);
         _stageReplacement(_identity(newRoot, newRoot), newKey);

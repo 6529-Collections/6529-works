@@ -2,12 +2,12 @@
   "contracts": [
     {
       "abi": "Accounts.json",
-      "errors": 26,
+      "errors": 27,
       "events": 16,
-      "functions": 52,
+      "functions": 53,
       "kind": "contract",
       "name": "Accounts",
-      "sha256": "08d697760f0dd5509e81a637adbba2b1f4d00ba520851ce5b8f250903facf862",
+      "sha256": "c20389c188d1b736c60b360f251f5fc0af85e0b750e4631c6381a005174939ef",
       "solc": "0.8.37+commit.f401782d",
       "source": "src/identity/Accounts.sol"
     },

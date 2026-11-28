@@ -3,16 +3,35 @@ pragma solidity ^0.8.24;
 
 import { Vm } from "forge-std/Vm.sol";
 import { Accounts } from "src/identity/Accounts.sol";
-import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
+import { IArtistRegistry, IConsolidationSource } from "src/interfaces/IArtistRegistry.sol";
+import { Slots } from "src/interfaces/core/CoreTypes.sol";
+import { IModuleSlots } from "src/interfaces/core/IModules.sol";
 import { IAccounts } from "src/interfaces/core/IAccounts.sol";
 import { ArtistIdentity, ChangeKind, PendingChange } from "src/interfaces/types/IdentityTypes.sol";
 import { BoundedCall } from "src/libraries/BoundedCall.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
 import { SignatureVerifier } from "src/libraries/SignatureVerifier.sol";
 import { Burner, GasRuleAssertions } from "../helpers/GasRule.sol";
-import { InterfaceStub } from "../mocks/identity/IdentityWorksMocks.sol";
+import { ConsolidationSourceMock, InterfaceStub } from "../mocks/identity/IdentityWorksMocks.sol";
 import { PredecessorMock } from "../mocks/identity/PredecessorMock.sol";
 import { AccountsFixture } from "./AccountsFixture.sol";
+
+/// @dev A payout contract that refuses every call until flipped, then burns all the gas it
+///      is given.
+contract GasBurningPayout {
+    bool public hostile;
+
+    function flip() external {
+        hostile = true;
+    }
+
+    fallback() external {
+        if (hostile) {
+            while (true) { }
+        }
+        revert();
+    }
+}
 
 /// @notice An accounts module that replaces another (`previous`). For an account it has not
 ///         recorded it answers from the replaced module's record; it never registers an address
@@ -66,9 +85,20 @@ contract AccountsSuccessorModuleTest is AccountsFixture, GasRuleAssertions {
         manager.setTargetFunctionRole(address(module), s, NETWORK);
     }
 
-    /// @dev Runs `fn`-style helpers of the fixture against `module`.
+    /// @dev Points the fixture's helpers at `module` (they sign in its domain).
     function _use(Accounts module) internal {
         registry = module;
+    }
+
+    /// @dev Puts `module` in the directory's ACCOUNTS slot, as an activation does: from now on
+    ///      it is the only module that writes. Also points the fixture's helpers at it.
+    function _force(Accounts module) internal {
+        directory.setModule(Slots.ACCOUNTS, address(module));
+        registry = module;
+    }
+
+    function _notInForce(Accounts module) internal pure returns (bytes memory) {
+        return abi.encodeWithSelector(IModuleSlots.NotModule.selector, Slots.ACCOUNTS, module);
     }
 
     /// @dev Moves the account to `newRoot` in the first module: staged, waited out, executed.
@@ -144,6 +174,24 @@ contract AccountsSuccessorModuleTest is AccountsFixture, GasRuleAssertions {
         assertTrue(next.isWallet(artistId, artist));
     }
 
+    /// @dev With a source of its own that disagrees with the replaced module's, this module's
+    ///      source decides who is consolidated with an inherited account's root.
+    function test_Successor_ADifferentSourceHereDecidesTheWalletsOfAnInheritedAccount() public {
+        ConsolidationSourceMock other = new ConsolidationSourceMock();
+        other.set(artist, outsider, true);
+        vm.prank(network);
+        next.setConsolidationSource(
+            adapter, IConsolidationSource(address(other)), address(other).codehash
+        );
+        assertTrue(first.isWallet(artistId, wallet), "by the replaced module's source");
+        assertFalse(first.isWallet(artistId, outsider));
+        assertFalse(next.isWallet(artistId, wallet), "not by this module's");
+        assertTrue(next.isWallet(artistId, outsider));
+        assertTrue(next.isWallet(artistId, artist), "the root needs no source");
+        bytes32 digest = keccak256("message");
+        assertEq(next.requireSigned(artistId, digest, _proof(outsiderKey, digest)), outsider);
+    }
+
     function test_Successor_AMovedAccountsFirstAddressHasNoWallet() public {
         _moveInFirst();
         assertEq(next.authorityOf(artistId), newRoot);
@@ -201,6 +249,7 @@ contract AccountsSuccessorModuleTest is AccountsFixture, GasRuleAssertions {
         bytes32 digest = keccak256("first acceptance");
         assertEq(next.requireSigned(outsiderId, digest, _proof(outsiderKey, digest)), outsider);
 
+        _force(next);
         vm.expectEmit(address(next));
         emit IArtistRegistry.ArtistRegistered(
             outsiderId, ArtistIdentity(outsider, outsider, PROFILE, PROFILE_DOC)
@@ -228,6 +277,7 @@ contract AccountsSuccessorModuleTest is AccountsFixture, GasRuleAssertions {
 
         address[3] memory taken = [artist, newRoot, outsider];
         for (uint256 i; i < taken.length; ++i) {
+            _force(next);
             vm.prank(packageRegistry);
             vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.AccountTaken.selector, taken[i]));
             next.register(taken[i], PROFILE, PROFILE_DOC);
@@ -238,6 +288,7 @@ contract AccountsSuccessorModuleTest is AccountsFixture, GasRuleAssertions {
 
     /// @dev A root named in this module must be free in the replaced one too.
     function test_Successor_ANewRootMustBeFreeInThePredecessorToo() public {
+        _force(next);
         vm.prank(packageRegistry);
         next.register(outsider, PROFILE, PROFILE_DOC);
         _use(next);
@@ -259,6 +310,7 @@ contract AccountsSuccessorModuleTest is AccountsFixture, GasRuleAssertions {
 
     function test_Successor_AFreezeHereCopiesTheAccountAndThisModuleAnswersAlone() public {
         (ArtistIdentity memory identity,) = first.artist(artistId);
+        _force(next);
         vm.expectEmit(address(next));
         emit Accounts.AccountInherited(artistId, address(replaced), identity, 0);
         vm.prank(network);
@@ -269,17 +321,14 @@ contract AccountsSuccessorModuleTest is AccountsFixture, GasRuleAssertions {
         assertFalse(next.isWallet(artistId, artist));
         assertEq(next.payoutAddress(artistId), address(0));
 
-        // What the replaced module does from now on does not reach the account.
-        _moveInFirst();
-        assertEq(next.authorityOf(artistId), artist);
         vm.prank(network);
         next.unfreeze(artistId);
         assertTrue(next.isWallet(artistId, artist));
         assertTrue(next.isWallet(artistId, wallet));
-        assertFalse(next.isWallet(artistId, newRoot));
         assertEq(next.payoutAddress(artistId), artist);
 
-        // Nor does its silence: the root and the ID's address are mapped here.
+        // The replaced module's silence does not reach it: the root and the ID's address are
+        // mapped here.
         replaced.setMode(PredecessorMock.Mode.SILENT);
         assertEq(next.artistIdOf(artist), artistId);
         assertTrue(next.isWallet(uint256(uint160(artist)), artist));
@@ -290,6 +339,7 @@ contract AccountsSuccessorModuleTest is AccountsFixture, GasRuleAssertions {
         ArtistIdentity memory change = _identity(artist, payout);
         _use(first);
         bytes memory signedForFirst = _changeCall(walletKey, change);
+        _force(next);
         vm.prank(stranger);
         (bool ok, bytes memory data) = address(next).call(signedForFirst);
         assertFalse(ok, "a signature for the replaced module");
@@ -324,13 +374,15 @@ contract AccountsSuccessorModuleTest is AccountsFixture, GasRuleAssertions {
     }
 
     /// @dev An own change pending in the replaced module is copied with its reservation when
-    ///      a wallet cancels it here; executing the stale copy there changes nothing here.
+    ///      a wallet cancels it here. It can no longer run in the replaced module, which
+    ///      writes nothing once it is replaced.
     function test_Successor_APendingOwnChangeIsCopiedAndCancelledHere() public {
         _use(first);
         _stage(artistKey, _identity(wallet, payout));
         PendingChange memory pending = first.pendingChange(artistId);
         assertEq(next.reservedFor(wallet), artistId);
 
+        _force(next);
         vm.expectEmit(address(next));
         emit IArtistRegistry.ChangeStaged(artistId, pending);
         vm.expectEmit(address(next));
@@ -341,9 +393,9 @@ contract AccountsSuccessorModuleTest is AccountsFixture, GasRuleAssertions {
         assertEq(next.authorityOf(artistId), artist);
 
         vm.warp(block.timestamp + 2 days);
+        vm.expectRevert(_notInForce(first));
         first.executeChange(artistId);
-        assertEq(first.authorityOf(artistId), wallet);
-        assertEq(next.authorityOf(artistId), artist);
+        assertEq(first.authorityOf(artistId), artist);
         assertEq(next.payoutAddress(artistId), artist);
         vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.NoPendingChange.selector, artistId));
         next.executeChange(artistId);
@@ -355,6 +407,7 @@ contract AccountsSuccessorModuleTest is AccountsFixture, GasRuleAssertions {
         _use(first);
         _stageReplacement(_identity(newRoot, newRoot), newKey);
         uint48 due = first.pendingChange(artistId).executableAt;
+        _force(next);
         vm.expectRevert(
             abi.encodeWithSelector(IArtistRegistry.ChangeNotDue.selector, artistId, due)
         );
@@ -379,6 +432,7 @@ contract AccountsSuccessorModuleTest is AccountsFixture, GasRuleAssertions {
         _use(first);
         _stageReplacement(_identity(newRoot, newRoot), newKey);
         assertFalse(next.isWallet(artistId, artist));
+        _force(next);
         vm.prank(network);
         next.cancelReplacement(artistId);
         assertTrue(next.isWallet(artistId, artist));
@@ -399,6 +453,7 @@ contract AccountsSuccessorModuleTest is AccountsFixture, GasRuleAssertions {
         outcomes.setOutcome(address(next), artistId, early);
         vm.warp(block.timestamp + 14 days);
 
+        _force(next);
         vm.prank(network);
         vm.expectRevert(
             abi.encodeWithSelector(IArtistRegistry.OutcomePredatesContest.selector, artistId, early)
@@ -428,7 +483,10 @@ contract AccountsSuccessorModuleTest is AccountsFixture, GasRuleAssertions {
         assertTrue(next.isWallet(artistId, newRoot));
     }
 
-    function test_Successor_ACallThatChangesNothingCopiesNothing() public {
+    function test_Successor_ARefusedCallCopiesNothing() public {
+        vm.prank(network);
+        first.freeze(artistId);
+        _force(next);
         vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.NoPendingChange.selector, artistId));
         next.executeChange(artistId);
         vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.NoPendingChange.selector, artistId));
@@ -440,10 +498,9 @@ contract AccountsSuccessorModuleTest is AccountsFixture, GasRuleAssertions {
             abi.encodeWithSelector(IArtistRegistry.NotAuthorized.selector, artistId, stranger)
         );
         next.revokeNonce(artistId);
-        // Still read through: a freeze in the replaced module is served.
-        vm.prank(network);
-        first.freeze(artistId);
+        // Still read through: the freeze placed in the replaced module is served.
         assertFalse(next.isWallet(artistId, artist));
+        assertEq(next.frozenUntil(artistId), first.frozenUntil(artistId));
 
         // An account nobody knows is not created by a change.
         vm.prank(network);
@@ -456,6 +513,7 @@ contract AccountsSuccessorModuleTest is AccountsFixture, GasRuleAssertions {
     }
 
     function test_Successor_AWalletRevokesItsNonceHere() public {
+        _force(next);
         vm.expectEmit(address(next));
         emit IArtistRegistry.NonceRevoked(artistId, 0);
         vm.prank(wallet);
@@ -471,6 +529,7 @@ contract AccountsSuccessorModuleTest is AccountsFixture, GasRuleAssertions {
     ///      cannot be copied or registered again; nothing is registered, because whether an
     ///      address is known cannot be told. An account recorded here is unaffected.
     function test_Successor_APredecessorThatStopsAnsweringStopsOnlyItsOwnAccounts() public {
+        _force(next);
         vm.prank(packageRegistry);
         next.register(outsider, PROFILE, PROFILE_DOC);
         bytes32 digest = keccak256("message");
@@ -550,6 +609,7 @@ contract AccountsSuccessorModuleTest is AccountsFixture, GasRuleAssertions {
     /// @dev A replaced module that names an address as a root of an account recorded here
     ///      gives that address nothing: it is only refused an account of its own.
     function test_Successor_AClaimByThePredecessorGivesNoPowerOverAnAccountRecordedHere() public {
+        _force(next);
         vm.prank(packageRegistry);
         next.register(outsider, PROFILE, PROFILE_DOC);
         replaced.claim(stranger, outsiderId);
@@ -570,6 +630,7 @@ contract AccountsSuccessorModuleTest is AccountsFixture, GasRuleAssertions {
     ///      record naming, as an inherited account's root, the root of an account recorded
     ///      here does not move that address to the inherited account.
     function test_Successor_ACopyNeverRemapsAnAddressRecordedHere() public {
+        _force(next);
         vm.prank(packageRegistry);
         next.register(outsider, PROFILE, PROFILE_DOC);
         replaced.setRecord(artistId, ArtistIdentity(outsider, payout, PROFILE, PROFILE_DOC));
@@ -586,13 +647,14 @@ contract AccountsSuccessorModuleTest is AccountsFixture, GasRuleAssertions {
         assertEq(next.payoutAddress(outsiderId), outsider);
     }
 
-    /// @dev A pending change handed over whose new root a change pending here reserves stops
-    ///      the copy; with a free root the copy goes through and reserves it.
-    function test_Successor_ACopiedChangeCannotTakeARootReservedHere() public {
+    /// @dev A pending change handed over whose new root a change pending here reserves is
+    ///      left behind: the account is copied without it, so a freeze is never held up. With
+    ///      a free root the change is copied and reserves it.
+    function test_Successor_ACopyLeavesBehindAChangeWhoseRootIsReservedHere() public {
+        _force(next);
         vm.prank(packageRegistry);
         next.register(outsider, PROFILE, PROFILE_DOC);
         uint256 inherited = artistId;
-        _use(next);
         artistId = outsiderId;
         _stageReplacement(_identity(newRoot, newRoot), newKey);
         artistId = inherited;
@@ -604,11 +666,16 @@ contract AccountsSuccessorModuleTest is AccountsFixture, GasRuleAssertions {
         p.next = ArtistIdentity(newRoot, newRoot, PROFILE, PROFILE_DOC);
         p.evidenceHash = EVIDENCE;
         replaced.setPending(inherited, p);
+        uint256 snapshot = vm.snapshotState();
         vm.prank(network);
-        vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.AccountTaken.selector, newRoot));
         next.freeze(inherited);
+        assertGt(next.frozenUntil(inherited), block.timestamp, "the freeze was placed");
         assertEq(next.reservedFor(newRoot), outsiderId, "the reservation made here stands");
-        assertEq(next.changeNonce(inherited), 0);
+        assertEq(uint8(next.pendingChange(inherited).kind), uint8(ChangeKind.NONE));
+        vm.prank(network);
+        next.unfreeze(inherited);
+        assertTrue(next.isWallet(inherited, artist), "no replacement is pending here");
+        vm.revertToState(snapshot);
 
         p.next.root = wallet2;
         replaced.setPending(inherited, p);
@@ -621,9 +688,9 @@ contract AccountsSuccessorModuleTest is AccountsFixture, GasRuleAssertions {
         assertEq(next.reservedFor(artist), 0);
     }
 
-    /// @dev A payout address the replaced module holds and this module refuses is not paid:
-    ///      read through, the payout is none; copied, the account has none until it names
-    ///      another.
+    /// @dev A payout address the replaced module holds and this module refuses by address is
+    ///      not paid: read through, the payout is none; copied, the account has none until it
+    ///      names another.
     function test_Successor_APayoutThisModuleRefusesIsNotCarried() public {
         address refused = address(directory);
         assertFalse(next.isPayoutAllowed(refused));
@@ -632,6 +699,7 @@ contract AccountsSuccessorModuleTest is AccountsFixture, GasRuleAssertions {
         (ArtistIdentity memory seen,) = next.artist(artistId);
         assertEq(seen.payout, refused, "the replaced module's record as it is");
 
+        _force(next);
         vm.expectEmit(address(next));
         emit Accounts.AccountInherited(
             artistId, address(replaced), ArtistIdentity(artist, address(0), PROFILE, PROFILE_DOC), 0
@@ -643,7 +711,6 @@ contract AccountsSuccessorModuleTest is AccountsFixture, GasRuleAssertions {
         assertEq(next.payoutAddress(artistId), address(0));
         assertTrue(next.isWallet(artistId, artist), "the account acts");
 
-        _use(next);
         _stage(walletKey, ArtistIdentity(artist, payout, PROFILE, PROFILE_DOC));
         vm.warp(block.timestamp + 2 days);
         next.executeChange(artistId);
@@ -654,6 +721,7 @@ contract AccountsSuccessorModuleTest is AccountsFixture, GasRuleAssertions {
     function test_Successor_AnAllowedPayoutIsCarried() public {
         replaced.setRecord(artistId, ArtistIdentity(artist, payout, PROFILE, PROFILE_DOC));
         assertEq(next.payoutAddress(artistId), payout);
+        _force(next);
         vm.prank(wallet);
         next.revokeNonce(artistId);
         assertEq(next.payoutAddress(artistId), payout);
@@ -665,6 +733,7 @@ contract AccountsSuccessorModuleTest is AccountsFixture, GasRuleAssertions {
     ///      leaves no pending change and no reservation behind, so the next copies too.
     function test_Successor_CopiesEachAccountOnItsOwn() public {
         uint256 second = _register(outsider);
+        _force(next);
         vm.recordLogs();
         vm.startPrank(network);
         next.freeze(artistId);
@@ -694,6 +763,7 @@ contract AccountsSuccessorModuleTest is AccountsFixture, GasRuleAssertions {
     function test_Successor_ACopiedOwnChangeLeavesTheAccountActing() public {
         _use(first);
         _stage(artistKey, _identity(artist, payout));
+        _force(next);
         vm.prank(wallet);
         next.revokeNonce(artistId);
         assertEq(uint8(next.pendingChange(artistId).kind), uint8(ChangeKind.OWN));
@@ -714,12 +784,200 @@ contract AccountsSuccessorModuleTest is AccountsFixture, GasRuleAssertions {
         replaced.setRecord(wide, ArtistIdentity(artist, payout, PROFILE, PROFILE_DOC));
         assertEq(next.authorityOf(wide), artist, "read through as the replaced module answers");
         assertFalse(next.isWallet(wide, artist), "but nobody acts for it");
+        _force(next);
         vm.prank(network);
         vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.UnknownArtist.selector, wide));
         next.freeze(wide);
         // The account the low bits name is untouched and still read through.
         assertEq(next.changeNonce(artistId), 0);
         assertTrue(next.isWallet(artistId, artist));
+    }
+
+    // ------------------------------------------------------------------ one module writes
+
+    /// @dev A module announced and not yet in force changes nothing: every function that
+    ///      creates or changes an account is refused, by a wallet of the account, by the
+    ///      network and by anyone, so no record is copied before activation.
+    function test_Successor_WritesNothingBeforeItIsInForce() public {
+        bytes memory refused = _notInForce(next);
+        vm.prank(wallet);
+        vm.expectRevert(refused);
+        next.revokeNonce(artistId);
+        vm.startPrank(network);
+        vm.expectRevert(refused);
+        next.freeze(artistId);
+        vm.expectRevert(refused);
+        next.unfreeze(artistId);
+        vm.expectRevert(refused);
+        next.cancelReplacement(artistId);
+        vm.expectRevert(refused);
+        next.cancelOwnChange(artistId);
+        vm.expectRevert(refused);
+        next.resolveContested(artistId, true, keccak256("vote"));
+        vm.stopPrank();
+        vm.expectRevert(refused);
+        next.executeChange(artistId);
+        vm.expectRevert(refused);
+        next.expireContest(artistId);
+        vm.prank(artist);
+        vm.expectRevert(refused);
+        next.cancelChange(artistId);
+        uint256[] memory ids = new uint256[](1);
+        ids[0] = artistId;
+        vm.expectRevert(refused);
+        next.copyAccounts(ids);
+        vm.prank(packageRegistry);
+        vm.expectRevert(refused);
+        next.register(outsider, PROFILE, PROFILE_DOC);
+
+        bytes memory change = _changeCallFor(next, stranger, walletKey, _identity(artist, payout));
+        (bool ok, bytes memory data) = address(next).call(change);
+        assertFalse(ok);
+        assertEq(data, refused);
+        _use(next);
+        bytes memory replacement = _replacementCall(_identity(newRoot, newRoot), newKey);
+        vm.prank(network);
+        (ok, data) = address(next).call(replacement);
+        assertFalse(ok);
+        assertEq(data, refused);
+        assertEq(next.changeNonce(artistId), 0);
+    }
+
+    /// @dev What happens in the module in force while its successor waits reaches the
+    ///      successor, whatever a wallet of the account tried there first: the account is
+    ///      frozen and its root replaced in the module in force, and the successor, once in
+    ///      force, answers with the new root and the freeze.
+    function test_Successor_AFreezeAndAReplacementDuringTheWaitReachIt() public {
+        vm.prank(wallet);
+        vm.expectRevert(_notInForce(next));
+        next.revokeNonce(artistId);
+
+        vm.prank(network);
+        first.freeze(artistId);
+        assertFalse(next.isWallet(artistId, artist), "the successor sees the freeze");
+        assertFalse(next.isWallet(artistId, wallet));
+        _moveInFirst();
+        assertEq(first.authorityOf(artistId), newRoot);
+
+        _force(next);
+        assertEq(next.authorityOf(artistId), newRoot);
+        assertEq(next.activeAuthorityOf(artistId), newRoot);
+        assertTrue(next.isWallet(artistId, newRoot));
+        assertFalse(next.isWallet(artistId, artist), "the old root lost the account");
+        assertFalse(next.isWallet(artistId, wallet));
+        assertEq(next.payoutAddress(artistId), newRoot);
+        vm.prank(newRoot);
+        next.revokeNonce(artistId);
+        assertEq(next.authorityOf(artistId), newRoot, "copied as it stood at activation");
+        vm.prank(artist);
+        vm.expectRevert(
+            abi.encodeWithSelector(IArtistRegistry.NotAuthorized.selector, artistId, artist)
+        );
+        next.revokeNonce(artistId);
+    }
+
+    /// @dev A module that has been replaced changes no more, so the record its successor
+    ///      reads stands still: nothing staged, executed, frozen or registered there after
+    ///      the replacement, by the network or by a wallet. Its reads still answer.
+    function test_Successor_AReplacedModuleWritesNothing() public {
+        _use(first);
+        _stage(artistKey, _identity(wallet, payout));
+        _force(next);
+        bytes memory refused = _notInForce(first);
+        vm.warp(block.timestamp + 2 days);
+        vm.expectRevert(refused);
+        first.executeChange(artistId);
+        vm.prank(wallet);
+        vm.expectRevert(refused);
+        first.cancelChange(artistId);
+        vm.startPrank(network);
+        vm.expectRevert(refused);
+        first.freeze(artistId);
+        vm.expectRevert(refused);
+        first.cancelOwnChange(artistId);
+        vm.stopPrank();
+        vm.prank(packageRegistry);
+        vm.expectRevert(refused);
+        first.register(outsider, PROFILE, PROFILE_DOC);
+        assertEq(first.authorityOf(artistId), artist);
+        assertEq(uint8(first.pendingChange(artistId).kind), uint8(ChangeKind.OWN));
+
+        // The change it left pending runs in the module in force.
+        next.executeChange(artistId);
+        assertEq(next.authorityOf(artistId), wallet);
+        assertEq(next.payoutAddress(artistId), payout);
+        // Back in force (the network names it again), it writes again.
+        _force(first);
+        vm.prank(network);
+        first.freeze(artistId);
+    }
+
+    /// @dev Anyone copies a list of accounts into the module in force. The answers do not
+    ///      change, an account already recorded or unknown is skipped, and a copied account
+    ///      no longer reads the replaced module.
+    function test_Successor_CopyAccountsCopiesAListForAnyone() public {
+        uint256 second = _register(outsider);
+        _force(next);
+        uint256[] memory ids = new uint256[](4);
+        (ids[0], ids[1], ids[2], ids[3]) = (artistId, second, uint256(uint160(stranger)), artistId);
+        vm.recordLogs();
+        vm.prank(stranger);
+        next.copyAccounts(ids);
+        uint256 inherited;
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].topics[0] == Accounts.AccountInherited.selector) ++inherited;
+        }
+        assertEq(inherited, 2, "each known account once");
+        assertEq(next.authorityOf(artistId), artist);
+        assertEq(next.authorityOf(second), outsider);
+        assertTrue(next.isWallet(artistId, wallet));
+        assertEq(next.payoutAddress(second), outsider);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IArtistRegistry.UnknownArtist.selector, uint256(uint160(stranger))
+            )
+        );
+        next.authorityOf(uint256(uint160(stranger)));
+
+        replaced.setMode(PredecessorMock.Mode.SILENT);
+        assertTrue(next.isWallet(artistId, artist));
+        assertEq(next.payoutAddress(artistId), artist);
+        assertEq(next.activeAuthorityOf(second), outsider);
+    }
+
+    /// @dev A payout contract the account chose is never called by a copy or by the read of
+    ///      an inherited payout address, so it cannot stop either, whatever gas it burns: the
+    ///      network freezes, lifts and replaces in the module in force, at an ordinary gas
+    ///      limit.
+    function test_Successor_APayoutContractCannotStopACopyOrAFreeze() public {
+        GasBurningPayout burning = new GasBurningPayout();
+        _use(first);
+        _stage(artistKey, ArtistIdentity(artist, address(burning), PROFILE, PROFILE_DOC));
+        vm.warp(block.timestamp + 2 days);
+        first.executeChange(artistId);
+        assertEq(first.payoutAddress(artistId), address(burning));
+        burning.flip();
+
+        _force(next);
+        assertEq(next.payoutAddress{ gas: 200_000 }(artistId), address(burning));
+        bytes memory replacement = _replacementCall(_identity(newRoot, newRoot), newKey);
+        uint256 snapshot = vm.snapshotState();
+        vm.prank(network);
+        next.freeze{ gas: 500_000 }(artistId);
+        assertFalse(next.isWallet(artistId, artist));
+        vm.prank(network);
+        next.unfreeze{ gas: 200_000 }(artistId);
+        assertEq(next.payoutAddress{ gas: 200_000 }(artistId), address(burning));
+        vm.revertToState(snapshot);
+
+        vm.prank(network);
+        (bool ok,) = address(next).call{ gas: 1_000_000 }(replacement);
+        assertTrue(ok, "the replacement is staged");
+        vm.warp(block.timestamp + 14 days);
+        next.executeChange{ gas: 1_000_000 }(artistId);
+        assertEq(next.authorityOf(artistId), newRoot);
+        assertEq(next.payoutAddress(artistId), newRoot);
     }
 
     // ------------------------------------------------------------------ the gas rule
@@ -740,6 +998,7 @@ contract AccountsSuccessorModuleTest is AccountsFixture, GasRuleAssertions {
         (o,) = _assertShortfallNeverAnswers(slow, stranger, address(module), data);
         assertEq(abi.decode(o.data, (address)), artist);
 
+        directory.setModule(Slots.ACCOUNTS, address(module));
         data = abi.encodeCall(Accounts.register, (outsider, PROFILE, PROFILE_DOC));
         (o,) = _assertShortfallNeverAnswers(slow, packageRegistry, address(module), data);
         assertTrue(o.ok, "registered with ample gas");
@@ -755,6 +1014,7 @@ contract AccountsSuccessorModuleTest is AccountsFixture, GasRuleAssertions {
     function test_GasRule_AnAccountRecordedHereNeverReadsThePredecessor() public {
         Burner slow = new Burner(address(first), 20_000);
         Accounts module = _successor(address(slow));
+        directory.setModule(Slots.ACCOUNTS, address(module));
         vm.prank(packageRegistry);
         module.register(outsider, PROFILE, PROFILE_DOC);
         slow.burnerSetBase(30_000_000);

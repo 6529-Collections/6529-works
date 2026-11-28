@@ -61,10 +61,17 @@ no bind step.
   first). An account not recorded here is answered from that module's record (`artistIdOf`,
   `activeAuthorityOf`, `authorityOf`, `payoutAddress`, `frozenUntil`, `artist`,
   `pendingChange`, `reservedFor`), each read forwarding all gas; consolidation is this
-  module's own source's answer. `register` refuses an address that module knows. The first
-  function here that changes an inherited account copies its record, freeze and pending
-  change (`AccountInherited`); `changeNonce` counts from zero here. A replaced module that
-  does not answer stops only the accounts it still holds
+  module's own source's answer. `register` refuses an address that module knows. Every
+  function that creates or changes an account requires this module to be the one the
+  directory names (`NotModule`), so a module that waits and a module that was replaced write
+  nothing. The first function here that changes an inherited account copies its record,
+  freeze and pending change (`AccountInherited`), `copyAccounts` copies a list for anyone,
+  and no copy calls an address the account chose; `changeNonce` counts from zero here.
+  While a replaced module does not answer: the accounts it still holds have nobody acting
+  and their payout held, and cannot be copied; no address registers; no account, recorded
+  here or not, can name a new root (the address must be known to be free); an address that
+  was a root before a copy, other than the root and the ID's address, is not resolved. An
+  account recorded here still acts, signs, is paid, changes its payout and is frozen
   ([Replacing a module](../../docs/operations/replacing-modules.md)).
 - **The live read.** A non-root wallet costs one call to the consolidation source, forwarding
   all gas (`BoundedCall.tryReadWordAll`): a shortfall reverts, anything else but `true` is "no".

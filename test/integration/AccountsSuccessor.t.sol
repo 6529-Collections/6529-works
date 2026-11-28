@@ -397,17 +397,34 @@ contract AccountsSuccessorTest is AccountsSuccessorBase {
         _setRecordAs(second, tokenId, _record("By a consolidated wallet"));
     }
 
-    function test_AccountsSuccessor_AFreezeInTheOldModuleIsServedAndLifted() public {
+    /// @dev While the new module waits, only the module in force writes: a wallet's call to
+    ///      the new module is refused, and the freeze the network places in the module in
+    ///      force is what the new module serves once it is activated. From then on the old
+    ///      module writes nothing, and the network lifts the freeze in the new one.
+    function test_AccountsSuccessor_AFreezePlacedDuringTheWaitIsServedAndLiftedInTheNewModule()
+        public
+    {
         (uint256 tokenId, address vault) = _sold(root, 0, lead, 0);
         uint256 owed = vault.balance;
         _moveAccount();
-        Accounts next = _installSuccessor();
+        Accounts next = _newSuccessor(accounts);
+        _asNetwork(
+            address(directory),
+            abi.encodeCall(IModuleSlots.proposeModule, (Slots.ACCOUNTS, address(next)))
+        );
 
-        // A freeze placed in the old module for an account the new one has not recorded is
-        // served at once.
+        vm.prank(newRoot);
+        vm.expectRevert(
+            abi.encodeWithSelector(IModuleSlots.NotModule.selector, Slots.ACCOUNTS, next)
+        );
+        next.revokeNonce(artistId);
         _asNetwork(address(accounts), abi.encodeCall(accounts.freeze, (artistId)));
         uint48 until = accounts.frozenUntil(artistId);
-        assertGt(until, block.timestamp);
+        _wait(directory.moduleDelay());
+        directory.activateModule(Slots.ACCOUNTS);
+        assertEq(directory.moduleOf(Slots.ACCOUNTS), address(next));
+        assertGt(until, block.timestamp, "the freeze has not run out");
+
         assertEq(next.frozenUntil(artistId), until);
         assertFalse(next.isWallet(artistId, newRoot));
         assertEq(next.activeAuthorityOf(artistId), address(0));
@@ -418,7 +435,13 @@ contract AccountsSuccessorTest is AccountsSuccessorBase {
         _expectNotArtist(newRoot, tokenId);
         assertEq(vault.balance, owed, "held, not lost");
 
-        _asNetwork(address(accounts), abi.encodeCall(accounts.unfreeze, (artistId)));
+        // The replaced module changes no more.
+        vm.prank(network);
+        vm.expectRevert(
+            abi.encodeWithSelector(IModuleSlots.NotModule.selector, Slots.ACCOUNTS, accounts)
+        );
+        accounts.unfreeze(artistId);
+        _asNetwork(address(next), abi.encodeCall(next.unfreeze, (artistId)));
         assertEq(next.frozenUntil(artistId), 0);
         _setRecordAs(newRoot, tokenId, _record("After the freeze"));
         vm.prank(newRoot);
@@ -446,9 +469,12 @@ contract AccountsSuccessorTest is AccountsSuccessorBase {
         _expectNotArtist(newRoot, tokenId);
         _expectNotArtist(lead, tokenId);
 
-        // Nothing done in the old module reaches the account any more.
-        _asNetwork(address(accounts), abi.encodeCall(accounts.freeze, (artistId)));
-        _asNetwork(address(accounts), abi.encodeCall(accounts.unfreeze, (artistId)));
+        // The old module changes no more: the record the new one copied cannot go stale.
+        vm.prank(network);
+        vm.expectRevert(
+            abi.encodeWithSelector(IModuleSlots.NotModule.selector, Slots.ACCOUNTS, accounts)
+        );
+        accounts.unfreeze(artistId);
         assertFalse(next.isWallet(artistId, newRoot), "still frozen where it is recorded");
 
         _asNetwork(address(next), abi.encodeCall(next.unfreeze, (artistId)));
@@ -462,7 +488,7 @@ contract AccountsSuccessorTest is AccountsSuccessorBase {
 
     /// @dev The old module keeps changing while the successor waits: a replacement staged after
     ///      the announcement is pending at activation (nobody acts, the payout is held) and,
-    ///      once executed in the old module, is what the stack serves.
+    ///      once executed in the new module, is what the stack serves.
     function test_AccountsSuccessor_AChangeInTheOldModuleDuringTheWaitIsCarried() public {
         (uint256 tokenId, address vault) = _sold(root, 0, lead, 0);
         uint256 owed = vault.balance;
@@ -477,8 +503,14 @@ contract AccountsSuccessorTest is AccountsSuccessorBase {
         ledger.release(payees, bytes32(0), address(0), 0);
         _expectNotArtist(lead, tokenId);
 
+        // It no longer runs in the old module, which writes nothing once replaced; anyone
+        // runs it in the new one.
         vm.warp(due);
+        vm.expectRevert(
+            abi.encodeWithSelector(IModuleSlots.NotModule.selector, Slots.ACCOUNTS, accounts)
+        );
         accounts.executeChange(artistId);
+        next.executeChange(artistId);
         assertEq(directory.payoutAddress(artistId), newRoot);
         assertTrue(next.isWallet(artistId, newRoot));
         assertFalse(next.isWallet(artistId, lead));

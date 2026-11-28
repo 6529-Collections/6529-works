@@ -32,42 +32,65 @@ with. A module that knew nothing of an artist would treat that first address as 
 even after the account had moved to another address. So a new `Accounts` is deployed naming
 the module it replaces (`Wiring.previous`), and:
 
+- **One module writes.** Every function that creates or changes an account works only in
+  the module the directory names (`NotModule` otherwise). A module that is announced and
+  not yet activated changes nothing and copies nothing: it only reads the module in force,
+  so a freeze, a replacement or an account's own change made during the wait is what it
+  serves at activation. A module that has been replaced changes no more, for the network
+  and for every wallet, so the record its successor reads stands still. During the wait,
+  act in the module in force; after activation, act in the new one.
 - **What it inherits.** For an account it has not recorded, the new module answers from the
   record of the module it replaces, read at each use: the root, whether anybody may act
   (a freeze, a pending replacement), the payout address and the pending change. Every address
   that has been a root still names its account. An account that moved keeps its ID, its new
-  root and its payout address; the address its ID was made from has no power. Changes made
-  in the old module during the wait and after it are served, for as long as the new module
-  has not recorded the account itself.
+  root and its payout address; the address its ID was made from has no power.
 - **What it decides itself.** Which wallets are consolidated with a root is the new module's
-  own consolidation source's answer, also for inherited accounts. The payout check is the
-  new module's: a payout address the old module holds and the new one refuses is not paid
-  (the share is held), and the account names another in the new module.
+  own consolidation source's answer, also for inherited accounts; the old module's source
+  no longer decides anything once it is replaced. A payout address the old module holds
+  and the new one refuses by address (a contract of the deployment, a vault of the split
+  ledger) is not paid: the share is held, and the account names another in the new module.
+  The payout contract itself is not called for this, so it cannot stand in the way.
 - **What it never does.** It never creates an account for an address the old module knows as
   a root or a former root, or reserves for a pending change (`AccountTaken`). Only an address
   no module of the chain knows registers as a new artist, with the ID its address gives.
 - **The first change copies the account.** The first time a function of the new module changes
   an inherited account (`freeze`, `unfreeze`, `stageReplacement`, `stageChange`, `revokeNonce`,
   a cancel, a contest, an execution), it copies the record there, with its freeze and its
-  pending change (`AccountInherited`, and `ChangeStaged` for the pending change). From then
-  on the new module alone answers for that account, and nothing done in the old module
-  reaches it. What the new module recorded comes first: an address it already maps to an
-  account keeps that account, and a pending change whose new root a change pending in the
-  new module reserves cannot be copied until one of the two ends (`AccountTaken`). So after
-  activation, act in the new module. A change is signed in the new module's EIP-712 domain,
-  at the account's nonce there (zero until its first change there). A contested replacement
-  that was copied is resolved by a DISPUTE_OUTCOME recorded for the new module's address
-  after the copy.
-- **What it does not inherit.** Used replacement acceptances and the change nonce (both are
-  bound to the old module's domain, so they cannot be replayed in the new one). The list of
-  contracts refused as a payout by address (`notPayouts`) is a constructor argument: pass
-  the old list and add what was deployed since.
+  pending change (`AccountInherited`, and `ChangeStaged` for the pending change).
+  `copyAccounts(ids)` does the same for a list, and anyone may call it. From then on the new
+  module alone answers for that account. A copy calls only the old module and the statement
+  log, never an address the account chose, so nothing an account does can hold up a freeze
+  or a replacement. What the new module recorded comes first: an address it already maps to
+  an account keeps that account, and a pending change whose new root a change pending in
+  the new module reserves is left behind (the account is copied without it). A change is
+  signed in the new module's EIP-712 domain, at the account's nonce there (zero until its
+  first change there). A contested replacement that was copied is resolved by a
+  DISPUTE_OUTCOME recorded for the new module's address after the copy: copy the account
+  first, then record the outcome. The copy maps the root and the address the ID is made
+  from; any other address that was a root before the copy is still looked up in the old
+  module.
+- **What it does not inherit.** Nothing signed for the old module verifies in the new one:
+  used replacement acceptances, the change nonce, and every consent (`requireConsent`: a
+  collaborator's consent to an Independent Stream work, a consent to a relicense or a
+  renunciation) are bound to the old module's EIP-712 domain. Consents not yet used are
+  signed again for the new module. The list of contracts refused as a payout by address
+  (`notPayouts`) is a constructor argument: pass the old list and add what was deployed
+  since.
+- **What a read of the old module costs.** A start whose artist the new module has not
+  copied pays for those reads: about 5,600 gas more when the root signed the move and
+  about 12,800 more when another wallet did (measured, a whole start, one replacement back). A
+  copied account starts for what it cost before the replacement. The ceilings of the
+  [gas table](../adr/0004-gas-budgets-under-glamsterdam.md#the-table) hold for copied
+  accounts; a start signed by a consolidated wallet of an account not yet copied passes
+  the 370,000 ceiling. So copy the accounts after activation (below).
 - **A chain of replacements** works the same way: each module asks the one it replaced. Each
   generation adds reads for accounts no later module recorded.
 - **If the old module stops answering** (it cannot, with the current code, short of running out
-  of gas), its accounts have nobody acting and their payout held, no new artist registers,
-  and the accounts the new module recorded are unaffected. A read that runs short of gas
-  reverts. The remedy is another replacement.
+  of gas), its accounts have nobody acting and their payout held, and no new artist
+  registers. The accounts the new module recorded keep acting, being paid and being frozen;
+  naming a new root for one of them still needs the old module's answer, because the
+  address must be known to be free. A read that runs short of gas reverts. The remedy is
+  another replacement.
 
 Before announcing a new accounts module:
 
@@ -77,26 +100,32 @@ Before announcing a new accounts module:
    would wait 7 days.
 3. **Compare it with the module in force.** Run
    [`script/CheckReplacement.s.sol`](../../script/CheckReplacement.s.sol) with every artist
-   ID (`ArtistRegistered`) and every address that was ever a root (`ChangeExecuted`): the
-   candidate must answer alike for the root, the acting root, the payout address, the
-   freeze, the pending change and each wallet. The check covers only what is on its
-   lists: build them from the whole event history of the module in force, since a list
-   that leaves an account out says nothing about it. Run it again right before activation.
+   ID (`ArtistRegistered`, `AccountInherited`) and every address that was ever a root
+   (`ChangeExecuted`, `AccountInherited`): the candidate must answer alike for the root, the
+   acting root, the payout address, the freeze, the pending change and each wallet. The
+   check covers only what is on its lists. Build them from the whole event history of the
+   module in force and of every module before it (follow `previous()` back to the first):
+   a module emits nothing for an account it only reads from the one it replaced, so its
+   own events leave such accounts out. Run it again right before activation.
    [`AccountsSuccessor.t.sol`](../../test/integration/AccountsSuccessor.t.sol) shows the
    whole replacement on the deployed stack, a moved account included.
 4. **Bind the package registry** as the new module's `register` caller (a constructor
    argument), so new artists can still accept a package.
-5. **Keep the old module's roles mapped** until every account it holds has been copied or
-   no longer matters: its record is still read.
+
+After it takes effect:
+
+1. **Copy the accounts**: `copyAccounts` with every artist ID, in batches, starting with the
+   artists who have a sale coming. Run the comparison again afterwards.
+2. Check `payoutAddress` for a sample of artists with money waiting, including every artist
+   whose account has moved.
+3. Set the statement log's artist resolver (below).
+4. Tell artists and collaborators that consents and changes signed for the old module must
+   be signed again.
 
 A module with other code must do the same by its own means: serve every existing account
 under its existing ID, with the same wallets, payout address, pending change and freeze,
 and give no power to an address that lost it. A module that cannot must not be activated
 while any artist has money waiting or a work that can still be edited.
-
-After it takes effect, check `payoutAddress` for a sample of artists with money waiting,
-including every artist whose account has moved, and set the statement log's artist resolver
-(below).
 
 ## Mint policy (`PackageRegistry`)
 
@@ -107,9 +136,13 @@ registry on the same verifier would therefore take any attestation the first too
 - **What it inherits: revocations.** A root the old policy reports as revoked (`isRevoked`)
   is never registered in the new one and is not live there: a root revoked after
   registration, a root revoked in advance, and every root a signer registered before its
-  approvals were killed. The new policy asks the old one at each use, so a revocation or a
-  kill made in the old policy after the replacement still stops the root in the new one. A
-  chain of replacements works the same way.
+  approvals were killed. The new policy asks the old one at each use, so a revocation made
+  in the old policy after the replacement still stops the root in the new one. A kill made
+  in the old policy stops only the roots that signer registered in the old policy; a root
+  it registered only in the new policy needs the kill there. A chain of replacements works
+  the same way. The read costs each start under the new policy about 8,000 gas, which takes
+  a start signed by a consolidated wallet past the gas table's 370,000 ceiling (a
+  root-signed start stays well inside).
 - **What it does not inherit.** Approvals: a root that was approved and never revoked is
   registered again in the new policy by anyone, with the attestation it already has.
   Acceptances and move signatures: they are signed in the registry's own domain, so every
@@ -119,9 +152,12 @@ registry on the same verifier would therefore take any attestation the first too
   `Stream6529.tokenOfContent`, so the content of a burned work stays unmintable until the
   network releases it again in the new policy (`releaseContent`), which bars the burned
   item there too. A release made in the old policy and not yet used must be made again.
-- **Revoke in the new policy from now on.** A revocation made in the new policy does not
-  reach the old one, which a sale contract may still be reading during the transition:
-  until every sale contract reads the new policy, revoke in both.
+- **Revoke and kill in both until the transition is over.** A revocation or a kill made in
+  the new policy does not reach the old one, which a sale contract may still be reading
+  during the transition, and a kill made in the old one does not reach roots registered
+  only in the new one: until every sale contract reads the new policy, do both in both.
+  A root registered in the new policy before the sale contracts switch is covered by the
+  same rule: the new policy never copies anything from the old one, it asks at each use.
 - **If the old policy stops answering**, every root is refused in the new one. A read that
   runs short of gas reverts.
 
@@ -135,9 +171,10 @@ predecessor on a verifier that has attested before.
 
 Before switching the sale contracts to a new mint policy, run
 [`script/CheckReplacement.s.sol`](../../script/CheckReplacement.s.sol) with every root of
-`PackageRevoked` and every root registered by a signer named in `SignerApprovalsKilled`:
-each one the old policy reports as revoked must be revoked in the candidate. A root left off
-the list is not checked.
+`PackageRevoked` and every root registered by a signer named in `SignerApprovalsKilled`,
+from the events of the old policy and of every policy before it: each one the old policy
+reports as revoked must be revoked in the candidate. A root left off the list is not
+checked.
 [`MintPolicySuccessor.t.sol`](../../test/integration/MintPolicySuccessor.t.sol) shows both
 ways on the deployed stack.
 

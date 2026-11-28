@@ -38,6 +38,8 @@ abstract contract AccountsFixture is Test {
     uint256 internal constant FAR = type(uint64).max;
     address internal constant ALL = 0x8888888888888888888888888888888888888888;
     uint256 internal constant CONSOLIDATION = 999;
+    /// @dev `Slots.ACCOUNTS`: the fixture's module is the one in force.
+    bytes32 internal constant ACCOUNTS_SLOT = "ACCOUNTS";
 
     AccessManager internal manager;
     DelegationManagementMock internal delegation;
@@ -89,6 +91,7 @@ abstract contract AccountsFixture is Test {
         outcomes = new DisputeOutcomeLogMock(predicted);
         registry = _deploy(address(outcomes));
         assertEq(address(registry), predicted, "predicted accounts address");
+        directory.setModule(ACCOUNTS_SLOT, address(registry));
         _configureRoles(address(registry));
 
         _consolidate(artist, wallet);

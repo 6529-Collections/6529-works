@@ -91,6 +91,7 @@ contract AccountsPayoutCheckTest is AccountsFixture, GasRuleAssertions {
             ),
             list
         );
+        directory.setModule(ACCOUNTS_SLOT, address(registry));
         artistId = _register(artist);
         _refused(listed);
         _refused(alsoListed);
@@ -171,7 +172,9 @@ contract AccountsPayoutCheckTest is AccountsFixture, GasRuleAssertions {
 
     /// @dev What the check costs for a contract that is none of the network's (it declares
     ///      ERC-165 and no network interface, and answers no `authority()`): every probe
-    ///      runs, cold. An account with no code costs one call, to the split factory.
+    ///      runs. An account with no code costs one call, to the split factory. Regression
+    ///      ceilings on two samples taken in one transaction, not cold costs: the contract
+    ///      was created in it, and the second sample follows the first.
     function test_PayoutValidation_TheWholeCheckOfAnOutsideContractIsCheap() public {
         address outside = address(new InterfaceStub(0x12345678));
         address plain = makeAddr("an account with no code");

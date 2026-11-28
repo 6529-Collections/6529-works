@@ -12,10 +12,13 @@ import { ArtistIdentity } from "src/interfaces/types/IdentityTypes.sol";
 ///         force answers now. Read-only. It compares answers and assumes nothing about how the
 ///         candidate produces them, so it also fits a candidate that imports state instead of
 ///         reading the module it replaces.
-/// @dev The lists are the operator's: every artist ID of the module in force (its
-///      `ArtistRegistered` events) with every address that was ever a root (`ChangeExecuted`),
-///      and every root of `PackageRevoked` and of the `PackageRegistered` events of a signer
-///      named in `SignerApprovalsKilled`. The check says nothing about an account, an address
+/// @dev The lists are the operator's, built from the events of the module in force and of
+///      every module before it (follow `previous()` to the first): a module emits nothing for
+///      an account it only reads from the one it replaced. Every artist ID
+///      (`ArtistRegistered`, `AccountInherited`) with every address that was ever a root
+///      (`ChangeExecuted`, `AccountInherited`), and every root of `PackageRevoked` and of the
+///      `PackageRegistered` events of a signer named in `SignerApprovalsKilled`, in every
+///      policy of the chain. The check says nothing about an account, an address
 ///      or a root that is not on its lists, so an incomplete list can pass where the full one
 ///      would not. A check passes only for the block it is run at: run it again right before
 ///      the announcement and before the activation.

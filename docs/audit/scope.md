@@ -15,7 +15,7 @@ with `--artifacts out --update` to refresh them. No audit has taken place.
 | --- | --- |
 | Language and compiler | Solidity 0.8.37, EVM `prague`, optimizer on (200 runs), `via_ir` off ([`foundry.toml`](../../foundry.toml)) |
 | Dependencies | OpenZeppelin Contracts 5.7.0 and forge-std 1.17.0, as git submodules in `lib/` |
-| Source lines | 14,107 non-blank, non-comment lines in 121 files under `src/` (budget: 17,000) |
+| Source lines | 14,120 non-blank, non-comment lines in 121 files under `src/` (budget: 17,000) |
 | Deployed contracts | Every contract `script/DeployCore.sol` deploys: the permanent core, the money contracts, the modules, the governance pair and the two Independent Stream deployers (the deploy order is in the [runbook](../../script/README.md#how-a-deployment-is-built)) |
 | Linked libraries | None: every library function is `internal` |
 | Proxies and `delegatecall` | None in `src/`. The one exception is OpenZeppelin `Multicall` inside `AccessManager` ([ADR 0002](../adr/0002-access-manager-hardening.md)) |
@@ -69,7 +69,7 @@ Deployed once and never replaced ([ADR 0010](../adr/0010-plain-permanent-core.md
 | `WorkRules` (RECORDS) | [`src/records/WorkRules.sol`](../../src/records/WorkRules.sol) | 388 | 15,757 | 16,700 | 8,819 |
 | `WorkDelivery` | [`src/stream/WorkDelivery.sol`](../../src/stream/WorkDelivery.sol) | 253 | 10,172 | 10,541 | 14,404 |
 | `Renderer` (RENDERER) | [`src/content/Renderer.sol`](../../src/content/Renderer.sol) | 724 | 24,057 | 24,372 | 519 |
-| `Accounts` (ACCOUNTS) | [`src/identity/Accounts.sol`](../../src/identity/Accounts.sol) | 666 | 19,387 | 21,654 | 5,189 |
+| `Accounts` (ACCOUNTS) | [`src/identity/Accounts.sol`](../../src/identity/Accounts.sol) | 679 | 19,836 | 22,110 | 4,740 |
 | `ConsolidationAdapter` | [`src/identity/ConsolidationAdapter.sol`](../../src/identity/ConsolidationAdapter.sol) | 52 | 1,335 | 1,646 | 23,241 |
 | `IndependentStreamRegistry` (INDEPENDENT_STREAM) | [`src/independent/IndependentStreamRegistry.sol`](../../src/independent/IndependentStreamRegistry.sol) | 510 | 24,064 | 24,888 | 512 |
 | `IndependentStreamDeployer` (one per template, ownerless) | [`src/independent/IndependentStreamDeployer.sol`](../../src/independent/IndependentStreamDeployer.sol) | 49 | 1,425 | 2,398 | 23,151 |

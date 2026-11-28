@@ -54,10 +54,20 @@ import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 ///      nobody knows is created here; an address the replaced module knows as a root or a
 ///      former root, or reserves, is never registered again. The first time a function of
 ///      this module changes an inherited account it copies the record here (identity, freeze
-///      and pending change, `AccountInherited`), and from then on this module alone answers
-///      for it. A read of `previous` forwards all gas: a shortfall reverts, and a module that
-///      does not answer leaves its accounts with nobody acting and their payout held, while
-///      the accounts recorded here are unaffected.
+///      and pending change, `AccountInherited`), and from then on this module answers for
+///      it from its own record; `copyAccounts` does the same for a list, for anyone. The copy
+///      maps the root and the address the ID is made from; any other address that was a
+///      root before the copy is still looked up in the replaced module. A read of `previous`
+///      forwards all gas: a shortfall reverts, and a module that does not answer leaves its
+///      accounts with nobody acting and their payout held, while the accounts recorded here
+///      keep acting, being paid and being frozen (naming a new root for one still needs the
+///      answer, because the address must be known to be free).
+///
+///      One module writes. Every function that creates or changes an account reverts with
+///      `IModuleSlots.NotModule(Slots.ACCOUNTS, this module)` unless the directory's ACCOUNTS
+///      slot names this module. A module announced and not yet activated only reads the
+///      module in force, so nothing done there in the meantime is missed; a module that has
+///      been replaced changes no more, so the record its successor reads stands still.
 ///
 ///      The waits (an account's own change 2 days, a replacement's notice 14 days, a contest's
 ///      lapse 90 days, a freeze 14 days) are compiled into this module. The module is
@@ -245,6 +255,18 @@ contract Accounts is IArtistRegistry, AccessManaged, EIP712 {
         return _create(account, profileId, profileDocHash);
     }
 
+    /// @notice Copies here the records of accounts this module answers from the module it
+    ///         replaces, as its first change to each would. Anyone may call it while this
+    ///         module is in force: the replaced module changes no more, so a copy answers as
+    ///         the read did, and the account's reads then cost what they cost a first module.
+    ///         An account recorded here, or unknown to the replaced module, is skipped.
+    /// @param artistIds The accounts to copy.
+    function copyAccounts(uint256[] calldata artistIds) external {
+        for (uint256 i; i < artistIds.length; ++i) {
+            _own(artistIds[i]);
+        }
+    }
+
     /// @inheritdoc IArtistRegistry
     /// @dev Consumes the nonce. The signature is checked through {requireSigned}, so any wallet
     ///      of the account may sign and a frozen or replacing account cannot.
@@ -254,7 +276,7 @@ contract Accounts is IArtistRegistry, AccessManaged, EIP712 {
         uint64 deadline,
         bytes calldata proof
     ) external {
-        _inherit(artistId);
+        _own(artistId);
         Artist storage a = _artist(artistId);
         if (_pending[artistId].kind != ChangeKind.NONE) revert ChangePending(artistId);
         _checkNext(artistId, next);
@@ -272,7 +294,7 @@ contract Accounts is IArtistRegistry, AccessManaged, EIP712 {
         uint64 deadline,
         bytes calldata rootAcceptance
     ) external restricted {
-        _inherit(artistId);
+        _own(artistId);
         Artist storage a = _artist(artistId);
         if (evidenceHash == bytes32(0) || next.root == a.root) revert InvalidIdentity();
         _checkNext(artistId, next);
@@ -293,7 +315,7 @@ contract Accounts is IArtistRegistry, AccessManaged, EIP712 {
     ///      pending replacement, which blocks {isWallet}, does not stop its own contest. A freeze
     ///      does: `_requireUnfrozen` runs first, so nobody contests while the account is frozen.
     function cancelChange(uint256 artistId) external {
-        _inherit(artistId);
+        _own(artistId);
         PendingChange storage p = _pendingOf(artistId);
         Artist storage a = _artists[artistId];
         _requireUnfrozen(artistId, a);
@@ -316,14 +338,14 @@ contract Accounts is IArtistRegistry, AccessManaged, EIP712 {
 
     /// @inheritdoc IArtistRegistry
     function cancelReplacement(uint256 artistId) external restricted {
-        _inherit(artistId);
+        _own(artistId);
         if (_pending[artistId].kind != ChangeKind.REPLACEMENT) revert NoPendingChange(artistId);
         _clear(artistId, msg.sender, true);
     }
 
     /// @inheritdoc IArtistRegistry
     function cancelOwnChange(uint256 artistId) external restricted {
-        _inherit(artistId);
+        _own(artistId);
         if (_pending[artistId].kind != ChangeKind.OWN) revert NoPendingChange(artistId);
         _clear(artistId, msg.sender, true);
     }
@@ -333,7 +355,7 @@ contract Accounts is IArtistRegistry, AccessManaged, EIP712 {
         external
         restricted
     {
-        _inherit(artistId);
+        _own(artistId);
         PendingChange storage p = _pending[artistId];
         if (p.contestedAt == 0 || _lapsed(p)) revert NotContested(artistId);
         if (outcomeRef == bytes32(0) || outcomeRef != _latestOutcome(artistId)) {
@@ -351,7 +373,7 @@ contract Accounts is IArtistRegistry, AccessManaged, EIP712 {
 
     /// @inheritdoc IArtistRegistry
     function expireContest(uint256 artistId) external {
-        _inherit(artistId);
+        _own(artistId);
         PendingChange storage p = _pending[artistId];
         if (p.contestedAt == 0) revert NotContested(artistId);
         if (!_lapsed(p)) revert ContestNotExpired(artistId, p.contestedAt + CONTEST_LAPSE);
@@ -361,7 +383,7 @@ contract Accounts is IArtistRegistry, AccessManaged, EIP712 {
 
     /// @inheritdoc IArtistRegistry
     function executeChange(uint256 artistId) external {
-        _inherit(artistId);
+        _own(artistId);
         PendingChange storage p = _pendingOf(artistId);
         if (p.contestedAt != 0) revert ReplacementContested(artistId);
         // forge-lint: disable-next-line(block-timestamp)
@@ -372,7 +394,7 @@ contract Accounts is IArtistRegistry, AccessManaged, EIP712 {
 
     /// @inheritdoc IArtistRegistry
     function revokeNonce(uint256 artistId) external {
-        _inherit(artistId);
+        _own(artistId);
         Artist storage a = _artist(artistId);
         if (!isWallet(artistId, msg.sender)) revert NotAuthorized(artistId, msg.sender);
         emit NonceRevoked(artistId, a.nonce++);
@@ -381,7 +403,7 @@ contract Accounts is IArtistRegistry, AccessManaged, EIP712 {
     /// @inheritdoc IArtistRegistry
     /// @dev Refused while a freeze runs; once it ended or was lifted it may be placed again.
     function freeze(uint256 artistId) external restricted {
-        _inherit(artistId);
+        _own(artistId);
         Artist storage a = _artist(artistId);
         _requireUnfrozen(artistId, a);
         uint48 until = _now() + FREEZE_PERIOD;
@@ -391,7 +413,7 @@ contract Accounts is IArtistRegistry, AccessManaged, EIP712 {
 
     /// @inheritdoc IArtistRegistry
     function unfreeze(uint256 artistId) external restricted {
-        _inherit(artistId);
+        _own(artistId);
         _artist(artistId).frozenUntil = 0;
         emit AccountUnfrozen(artistId);
     }
@@ -466,7 +488,8 @@ contract Accounts is IArtistRegistry, AccessManaged, EIP712 {
     /// @dev Zero for an unknown artist, while the account is frozen, and while a pending change
     ///      would move the payout (a lapsed contest no longer counts). For an account recorded
     ///      only in the replaced module it is that module's answer, and zero when it does not
-    ///      answer or names a payout this module refuses.
+    ///      answer or names an address this module refuses by address (the payout contract
+    ///      itself is not called here).
     function payoutAddress(uint256 artistId)
         external
         view
@@ -477,7 +500,7 @@ contract Accounts is IArtistRegistry, AccessManaged, EIP712 {
         if (a.root == address(0)) {
             (, uint256 word) = _ask(abi.encodeCall(IAccounts.payoutAddress, (artistId)));
             address inherited = address(uint160(word));
-            return _payoutAllowed(inherited) ? inherited : address(0);
+            return _refusedByAddress(inherited) ? address(0) : inherited;
         }
         // forge-lint: disable-next-line(block-timestamp)
         if (a.frozenUntil > block.timestamp) return address(0);
@@ -686,6 +709,7 @@ contract Accounts is IArtistRegistry, AccessManaged, EIP712 {
         private
         returns (uint256 artistId)
     {
+        _requireInForce();
         if (root == address(0) || !_payoutAllowed(root)) revert InvalidIdentity();
         if (artistIdOf(root) != 0 || reservedFor(root) != 0) revert AccountTaken(root);
         artistId = uint256(uint160(root));
@@ -777,36 +801,46 @@ contract Accounts is IArtistRegistry, AccessManaged, EIP712 {
         return abi.decode(data, (PendingChange));
     }
 
-    /// @dev Copies here the record of an account this module has none of, from the module it
-    ///      replaces: identity, freeze and pending change (with its reservation), and maps the
-    ///      root and the address the ID is made from to the account. Does nothing when the
-    ///      account is recorded here or the replaced module does not know it. What is recorded
-    ///      here comes first: a payout this module refuses is copied as none (the share is held
-    ///      until the account names another), an address already mapped here keeps its
-    ///      account, and a pending change whose new root a change pending here reserves stops
-    ///      the copy (`AccountTaken`). A contest copied with a replacement is resolved only by
-    ///      an outcome recorded for this module after the copy.
-    function _inherit(uint256 artistId) private {
+    /// @dev Reverts unless the directory's ACCOUNTS slot names this module: only the module
+    ///      in force creates or changes an account.
+    function _requireInForce() private view {
+        if (IModuleSlots(directory).moduleOf(Slots.ACCOUNTS) != address(this)) {
+            revert IModuleSlots.NotModule(Slots.ACCOUNTS, address(this));
+        }
+    }
+
+    /// @dev The first step of every change to an account. Requires this module to be the one
+    ///      in force, then copies here the record of an account this module has none of, from
+    ///      the module it replaces: identity, freeze and pending change (with its
+    ///      reservation), and maps the root and the address the ID is made from to the
+    ///      account. Copies nothing when the account is recorded here or the replaced module
+    ///      does not know it. The copy calls only the replaced module and the statement log,
+    ///      never an address the account chose, so the account cannot stop it. What is
+    ///      recorded here comes first: a payout this module refuses by address is copied as
+    ///      none (the share is held until the account names another), an address already
+    ///      mapped here keeps its account, and a pending change whose new root a change
+    ///      pending here reserves is not copied. A contest copied with a replacement is
+    ///      resolved only by an outcome recorded for this module after the copy.
+    function _own(uint256 artistId) private {
+        _requireInForce();
         Artist storage a = _artists[artistId];
         if (a.root != address(0) || previous == address(0) || artistId >> 160 != 0) return;
         (bool known, ArtistIdentity memory identity, uint48 frozenUntil_) = _inherited(artistId);
         if (!known || identity.root == address(0)) return;
         PendingChange memory p = _inheritedChange(artistId);
-        if (!_payoutAllowed(identity.payout)) identity.payout = address(0);
+        if (_refusedByAddress(identity.payout)) identity.payout = address(0);
         (a.root, a.frozenUntil, a.payout) = (identity.root, frozenUntil_, identity.payout);
         (a.profileId, a.profileDocHash) = (identity.profileId, identity.profileDocHash);
         _mapIfFree(identity.root, artistId);
         _mapIfFree(address(uint160(artistId)), artistId);
         emit AccountInherited(artistId, previous, identity, frozenUntil_);
-        if (p.kind == ChangeKind.NONE) return;
+        address nextRoot = p.next.root;
+        bool keepsRoot = nextRoot == identity.root;
+        if (p.kind == ChangeKind.NONE || (!keepsRoot && _reservedFor[nextRoot] != 0)) return;
         a.replacing = p.kind == ChangeKind.REPLACEMENT;
         if (p.contestedAt != 0) p.priorOutcome = _latestOutcome(artistId);
         _pending[artistId] = p;
-        address nextRoot = p.next.root;
-        if (nextRoot != identity.root) {
-            if (_reservedFor[nextRoot] != 0) revert AccountTaken(nextRoot);
-            _reservedFor[nextRoot] = artistId;
-        }
+        if (!keepsRoot) _reservedFor[nextRoot] = artistId;
         emit ChangeStaged(artistId, p);
     }
 
@@ -876,17 +910,23 @@ contract Accounts is IArtistRegistry, AccessManaged, EIP712 {
     ///      any contract governed by this module's AccessManager. Every probe forwards all
     ///      gas, and a shortfall reverts.
     function _payoutAllowed(address account) private view returns (bool) {
+        if (_refusedByAddress(account)) return false;
+        if (account.code.length == 0) return true;
+        return !ProtocolContracts.isProtocolContract(account) && !_isNetworkContract(account)
+            && !_isGoverned(account);
+    }
+
+    /// @dev The part of the payout check that never calls `account`: zero, the contracts
+    ///      this module knows by address, and the split factory's vaults.
+    function _refusedByAddress(address account) private view returns (bool) {
         if (
             account == address(0) || account == address(this) || account == directory
                 || account == stream || account == editions || account == splitFactory
                 || account == statementLog || account == packageRegistry || account == authority()
                 || account == address(consolidationSource) || _notPayout[account]
-        ) return false;
+        ) return true;
         address factory = splitFactory;
-        if (factory.code.length != 0 && ISplitFactory(factory).isWallet(account)) return false;
-        if (account.code.length == 0) return true;
-        return !ProtocolContracts.isProtocolContract(account) && !_isNetworkContract(account)
-            && !_isGoverned(account);
+        return factory.code.length != 0 && ISplitFactory(factory).isWallet(account);
     }
 
     /// @dev Whether `account` declares (ERC-165) the interface of a network contract that

@@ -400,6 +400,19 @@
     "type": "function"
   },
   {
+    "inputs": [
+      {
+        "internalType": "uint256[]",
+        "name": "artistIds",
+        "type": "uint256[]"
+      }
+    ],
+    "name": "copyAccounts",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
     "inputs": [],
     "name": "directory",
     "outputs": [
@@ -1925,6 +1938,22 @@
       }
     ],
     "name": "NotContested",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "slot",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "address",
+        "name": "caller",
+        "type": "address"
+      }
+    ],
+    "name": "NotModule",
     "type": "error"
   },
   {

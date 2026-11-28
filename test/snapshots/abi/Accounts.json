@@ -327,6 +327,24 @@
     "type": "error"
   },
   {
+    "id": "0x40343cbc",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "slot",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "address",
+        "name": "caller",
+        "type": "address"
+      }
+    ],
+    "name": "NotModule",
+    "signature": "NotModule(bytes32,address)",
+    "type": "error"
+  },
+  {
     "id": "0x659d4d84",
     "inputs": [
       {
@@ -1286,6 +1304,21 @@
     ],
     "signature": "consolidationSourceCodeHash()",
     "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x6bc87442",
+    "inputs": [
+      {
+        "internalType": "uint256[]",
+        "name": "artistIds",
+        "type": "uint256[]"
+      }
+    ],
+    "name": "copyAccounts",
+    "outputs": [],
+    "signature": "copyAccounts(uint256[])",
+    "stateMutability": "nonpayable",
     "type": "function"
   },
   {
