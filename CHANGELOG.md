@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Tests: a validation record of `main` at `c6d49658`, and one fork test corrected.** A
+  [validation record](docs/testing/validation-2026-11-28-freeze-candidate.md) of every test
+  layer over the commit after the rename and the pre-freeze cleanups below: the build with its
+  size margins, the whole suite (3,403 tests), the invariant campaigns at both profiles, the
+  deep fuzz run, the Halmos proofs, the Medusa harnesses, coverage, Slither, the gas ceilings,
+  the walkthrough, the keeper and the generators' checks. One row failed:
+  `test_ReadbackLogs_AreTheSameWhateverTheBlockRange`, a fork test no workflow runs, read the
+  r8 deployment record under the contract's new name, which a record written before the
+  rename does not have. The test now reads the name the record uses. No contract changes.
 - **Pre-freeze cleanups for integrators: unused constants removed, the package registry's
   preview made complete, NatSpec and guide corrected.** The one behaviour change is in
   `PackageRegistry.preview`, a view of a replaceable module; no permanent contract's code
