@@ -11,6 +11,20 @@
   zero royalty receiver with a non-zero rate, which `mint` refuses by design. The test now
   gives a zero receiver a zero rate, and the row passed on the corrected files. No contract
   changed.
+- **Sepolia r9, the current instance, with an open gate for test pages.** r9 was deployed on
+  28 November 2026 from `main` at `355a7a71` (blocks 12,227,835 to 12,227,871, the Safe and
+  holders of r8, the committed policy), read back by `VerifyCore`, and verified on Sourcify
+  ([record](deployments/11155111/README.md#sepolia-r9-28-november-2026-current-instance-with-an-open-gate),
+  [flows](deployments/11155111/flows-r9.md)). The network then granted `CURATION_SIGNER` and
+  `PLATFORM` to `SepoliaOpenGate` (`script/sepolia/`, at
+  `0x843d8DCdD279215225f39AFCA33a5Fd4E84370Ac`), a test-only contract that lets any wallet try
+  the curated path: it approves every package root through ERC-1271 and forwards
+  `createCollection`. **The gate removes curation on this test instance.** It refuses every
+  chain but Sepolia and a local development chain and must never be deployed on mainnet.
+  Nothing under `src/` changed. `flows.ps1` gained the `gate*` steps
+  (`script/sepolia/OpenGate.s.sol` plans them; `gateRevoke` closes the gate); the calls a test
+  page makes are in [The open gate](script/sepolia/open-gate.md); tests in `test/sepolia/`.
+  r8 stays as deployed and is listed as the earlier instance.
 - **Module replacement keeps identities and revocations; the payout address check covers every
   protocol contract.** Three changes in replaceable modules (`Accounts`, `PackageRegistry`);
   no permanent contract changed. Both constructors take new arguments, so both modules have a
@@ -390,7 +404,7 @@ not in this tag.
   `961bc956`, so that a live instance carries the three module fixes above; its governance is
   kept as genesis installed it, `VerifyCore` passes at the chain's head and Sourcify holds an
   exact match for its 35 contracts
-  ([record](deployments/11155111/README.md#sepolia-r8-23-november-2026-current-instance),
+  ([record](deployments/11155111/README.md#sepolia-r8-23-november-2026-earlier-instance),
   [flows](deployments/11155111/flows-r8.md)). r6 (the module-swap test) and r7 (the reference
   at `5de6abaa`, without the fixes) stay as deployed. r8's flows show an unsold Independent
   Stream work offered again beside its edition sales: a restart at once refused

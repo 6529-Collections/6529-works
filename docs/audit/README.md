@@ -45,14 +45,16 @@ seed, 395,000 and 9; asserted in the gas report).
 - **Static analysis.** Slither runs in CI; every High or Medium finding has a reviewed row in
   the [triage record](../security/slither-triage.md).
 - **Sepolia.** Earlier rehearsals ran the code before this restructuring
-  ([flows](../../deployments/11155111/flows.md)); rounds r6, r7 and r8 run the plain core
+  ([flows](../../deployments/11155111/flows.md)); rounds r6 to r9 run the plain core
   (r6: [record](../../deployments/11155111/README.md#sepolia-r6-23-november-2026-module-swap-test-instance),
   [flows](../../deployments/11155111/flows-r6.md); r7:
   [record](../../deployments/11155111/README.md#sepolia-r7-23-november-2026-clean-reference-instance),
-  [flows](../../deployments/11155111/flows-r7.md); r8, the current instance, from `main` at
-  `961bc956`:
-  [record](../../deployments/11155111/README.md#sepolia-r8-23-november-2026-current-instance),
-  [flows](../../deployments/11155111/flows-r8.md)). The flows are rehearsals with throwaway
+  [flows](../../deployments/11155111/flows-r7.md); r8, from `main` at `961bc956`:
+  [record](../../deployments/11155111/README.md#sepolia-r8-23-november-2026-earlier-instance),
+  [flows](../../deployments/11155111/flows-r8.md); r9, the current instance, from `main` at
+  `355a7a71`, opened to any wallet by a test-only gate that is never deployed on mainnet:
+  [record](../../deployments/11155111/README.md#sepolia-r9-28-november-2026-current-instance-with-an-open-gate),
+  [flows](../../deployments/11155111/flows-r9.md)). The flows are rehearsals with throwaway
   keys, not an audit.
 
 ## Reporting
