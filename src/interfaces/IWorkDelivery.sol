@@ -111,6 +111,10 @@ interface IWorkDelivery {
     /// @notice The locator kind is NONE or ONCHAIN, the URI is not a content address of its kind
     ///         or is already registered for the file, or the caller's quota for the file is used
     ///         up; or an index names no locator, or a dead one.
+    /// @dev A content address must be canonical to its last character: the last character of
+    ///      an Arweave transaction ID (base64url) or of a CID (base32) carries two padding bits,
+    ///      and a URI whose last character has either of them set is refused (an Arweave ID
+    ///      must end in one of `AEIMQUYcgkosw048`, a CID in one of `aeimquy4`).
     error InvalidLocator();
     /// @notice The work has no open record in `IWorkFacts`.
     error RecordNotOpen(address token, uint256 tokenId);

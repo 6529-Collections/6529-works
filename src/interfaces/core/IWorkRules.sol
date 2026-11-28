@@ -85,7 +85,7 @@ interface IWorkRules {
     /// @param next The new license.
     /// @param item The token's item (names the parties).
     /// @param expectedStateHash The state the signers saw.
-    /// @param deadline The signatures' deadline.
+    /// @param deadline The signatures' deadline: one value, which every party signs.
     /// @param partySignatures One proof per party, in order.
     function relicense(
         address token,
@@ -104,7 +104,7 @@ interface IWorkRules {
     /// @param rate The new rate, out of 100,000.
     /// @param item The token's item.
     /// @param expectedStateHash The state the signers saw.
-    /// @param deadline The signatures' deadline.
+    /// @param deadline The signatures' deadline: one value, which every party signs.
     /// @param partySignatures One proof per party, in order.
     function setRoyaltyRate(
         address token,

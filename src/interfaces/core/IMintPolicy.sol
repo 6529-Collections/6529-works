@@ -41,6 +41,10 @@ interface IMintPolicy {
         returns (MintFacts memory facts, MintTerms memory terms);
 
     /// @notice What `authorize` would answer, unverified and consuming nothing.
+    /// @dev The check to run on an item before anyone signs it, since a signed package cannot
+    ///      be corrected: it refuses an item for the reasons `authorize` would, apart from what
+    ///      only exists once the package is signed (the genesis policy: an approved root, the
+    ///      proof, the acceptances and the move).
     /// @param token The token contract.
     /// @param request As for `authorize`.
     /// @return facts The facts.

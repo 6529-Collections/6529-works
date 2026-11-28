@@ -186,6 +186,8 @@ interface IStream is IERC4906, IERC2981 {
     // --------------------------------------------------------------------------------- views
 
     /// @notice A token's stored work. A burned token keeps its record; an unminted ID is empty.
+    /// @dev Its `outcome` is the `Outcome` enum of `CoreTypes.sol`: NONE (0) until the first
+    ///      sale is recorded, then SOLD (1), UNSOLD (2) or RESCUED (3).
     /// @param tokenId The token.
     /// @return The work.
     function workOf(uint256 tokenId) external view returns (Work memory);

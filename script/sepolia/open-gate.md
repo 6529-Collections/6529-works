@@ -13,6 +13,9 @@ replaceable contracts are the ones `main` builds.
 > curated: every package anyone submits is approved. The contract refuses to deploy or answer on
 > any chain but Sepolia (11155111) and a local development chain (31337). The code is pre-audit.
 
+Its ABI is exported with the protocol's, as [`abi/SepoliaOpenGate.json`](../../abi/SepoliaOpenGate.json);
+the [ABI manifest](../../abi/manifest.json) marks the entry `"testOnly": true`.
+
 ## On r9
 
 r9 was deployed before 28 November 2026, when the protocol was renamed from "6529 Works" to

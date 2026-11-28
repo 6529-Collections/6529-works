@@ -2,6 +2,45 @@
 
 ## Unreleased
 
+- **Pre-freeze cleanups for integrators: unused constants removed, the package registry's
+  preview made complete, NatSpec and guide corrected.** The one behaviour change is in
+  `PackageRegistry.preview`, a view of a replaceable module; no permanent contract's code
+  changes.
+  - `Typehashes` no longer holds five constants that no contract used: `WORK_RECORDS_NAME`,
+    `RELICENSE`, `ROYALTY_RATE_CHANGE`, `RENOUNCE_POWERS` and `INDEPENDENT_LISTING`. Three of
+    them stated type strings other than the ones `WorkRules` checks. The values in force are
+    `WorkRules.NAME` (`6529 Stream Rules`) and its `RELICENSE_TYPEHASH`,
+    `ROYALTY_RATE_TYPEHASH` and `RENOUNCE_POWERS_TYPEHASH`, which bind the token contract; a
+    listing is a `Consent` to `IndependentStreamRegistry.listingSubject`. The integrator page
+    listed the removed values and now lists the ones in force.
+  - The unused enum `PrimaryOutcome` is removed; the stored outcome is `Outcome`, which the
+    NatSpec of `IStream.workOf` now names.
+  - NatSpec states facts it left out: `EnglishAuction.auction` keeps a returned bid's amount
+    in `bid` as the reserve while `bidder` is zero; `artistIdOf` answers for a root wallet
+    only; every party of a relicense or royalty-rate change signs the same deadline;
+    `WorkRules.refreshMetadata` is for the delivery contract only; a locator whose last
+    character has padding bits set is refused.
+  - **`PackageRegistry.preview` is the check to run before anyone signs** (a change in a
+    replaceable module; `authorize` checks what it checked before). It ran only part of the
+    item rules: an item whose payee was not a party, whose lead was a fixed payee or that had
+    more payees than parties passed the preview and was refused, with `InvalidItem`, only
+    when its sale started. It now runs every item check of `authorize` with the same errors
+    (the content, seed and edition fields and the party and payee rules included) and leaves
+    out only what exists once the package is signed: the approved root, the proof, the
+    acceptances and the move. It also answers before the lead artist's first acceptance,
+    where it reverted with `InvalidLeadArtist`: a party with no identity counts as the artist
+    its acceptance will create.
+  - NatSpec of two permanent contracts, with no change to their code: `SplitLedger.release`
+    says that a payee named by artist ID is released only by the account's payout address,
+    and any other wallet uses `releaseWithAuthorization`; `editionOf(id).maxSupply` is the
+    creator's cap while the sale runs and the final supply once sealed, the cap itself staying
+    in the `EditionCreated` event.
+  - The open gate's ABI is exported with the others, as `abi/SepoliaOpenGate.json`, and the
+    ABI manifest marks it `"testOnly": true`: a Sepolia test contract, never deployed on
+    mainnet.
+  - `StreamHashing` says exactly what the contracts accept as a package root (any tree of
+    sorted-pair hashes whose proof `MerkleProof.verify` accepts) and names the one layout
+    tools use (OpenZeppelin's `StandardMerkleTree`).
 - **The protocol is named 6529 Stream, and the code is licensed under Apache 2.0.** By the
   owner's decisions of 28 November 2026 the protocol and its family of contracts are called
   "6529 Stream"; the name "6529 Works" is no longer used. The shared ERC-721 `Stream6529` is

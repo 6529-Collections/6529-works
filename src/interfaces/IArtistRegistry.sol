@@ -297,6 +297,10 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver, IAccoun
         view
         returns (ArtistIdentity memory identity, uint48 frozenUntil_);
     /// @notice The artist ID of an address that is or was an account's root, or zero.
+    /// @dev A root lookup only: another wallet of the account (one consolidated with its root)
+    ///      answers zero. The module stores no wallet-to-account index; membership is asked of
+    ///      the consolidation source at the time, so to test a wallet against a known account
+    ///      use `IAccounts.isWallet(artistId, wallet)`.
     /// @param account The address to look up.
     /// @return The artist ID, or zero.
     function artistIdOf(address account) external view returns (uint256);

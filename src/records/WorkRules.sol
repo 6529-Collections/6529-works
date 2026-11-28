@@ -242,6 +242,7 @@ contract WorkRules is AccessManaged, EIP712, IWorkRules, IWorkPowers, IDeliveryH
     /// @inheritdoc IWorkRules
     /// @dev A license with the current key and text is a no-op. `IWorkFacts` refuses to leave
     ///      CC0, a CC0 license naming another text, an invalid identifier and an unusable text.
+    ///      Every party signs the same digest, so the same `deadline` value.
     function relicense(
         address token,
         uint256 tokenId,
@@ -261,7 +262,8 @@ contract WorkRules is AccessManaged, EIP712, IWorkRules, IWorkPowers, IDeliveryH
 
     /// @inheritdoc IWorkRules
     /// @dev Up or down, at most 100,000 (the token refuses more). The current rate is a
-    ///      no-op. The TERMS module writes the rate to the work and to its edition.
+    ///      no-op. The TERMS module writes the rate to the work and to its edition. Every party
+    ///      signs the same digest, so the same `deadline` value.
     function setRoyaltyRate(
         address token,
         uint256 tokenId,
@@ -393,6 +395,8 @@ contract WorkRules is AccessManaged, EIP712, IWorkRules, IWorkPowers, IDeliveryH
     // ---------------------------------------------------------------------- delivery
 
     /// @inheritdoc IDeliveryHost
+    /// @dev Callable only by the delivery contract this module names (`delivery`); any other
+    ///      caller reverts with `NotDelivery`. It is not a public refresh.
     function refreshMetadata(address token, uint256 tokenId) external {
         if (msg.sender != delivery) revert NotDelivery(msg.sender);
         _refresh(token, tokenId);

@@ -2,18 +2,20 @@
 pragma solidity 0.8.37;
 
 /// @title Typehashes
-/// @notice The EIP-712 domain names and typehashes of the package registry, curation verifier,
-///         work records and artist registry.
-///         Implementations use these constants; golden tests in `test/interfaces/` pin their
-///         values (ADR 0001 section 17 "golden typehash tests"). The statement log and the
-///         release verifier keep their own domains and typehashes beside their code
-///         (`StatementLog`, `ReleaseVerifier.RELEASE_TYPEHASH`), pinned by their own golden
-///         tests.
+/// @notice The EIP-712 domain names and typehashes of the package registry, the curation
+///         verifier and the accounts module (the artist registry). Those three contracts use
+///         every constant here; golden tests in `test/interfaces/` pin the values (ADR 0001
+///         section 17 "golden typehash tests"). The RECORDS module, the statement log and the
+///         split ledger keep their own domain names and typehashes beside their code
+///         (`WorkRules.NAME` and its `*_TYPEHASH` constants, `StatementLog`,
+///         `SplitLedger.RELEASE_TYPEHASH`), pinned by their own golden tests. An Independent
+///         Stream listing is an `ACCOUNT_CONSENT` to
+///         `IIndependentStreamRegistry.listingSubject`; it has no typehash of its own.
 /// @dev Each signing contract uses the EIP-712 domain `(name, DOMAIN_VERSION, chainid, itself)`.
-///      Every artist or party signature binds a deadline and either a single-use nonce or a
-///      work's state hash, except `ACCOUNT_CONSENT`: a collaborator's consent binds only the
-///      contract and what it consents to (for an Independent Stream item, the item hash, used
-///      once), and has no deadline. Constants only; nothing here is linked bytecode.
+///      Every signature here binds a deadline, and a move also a single-use nonce, except
+///      `ACCOUNT_CONSENT`: a consent binds only the contract and what it consents to (for an
+///      Independent Stream item, the item hash, used once), and has no deadline. Constants
+///      only; nothing here is linked bytecode.
 library Typehashes {
     /// @notice The EIP-712 domain version of every v1 contract.
     string internal constant DOMAIN_VERSION = "1";
@@ -21,8 +23,6 @@ library Typehashes {
     string internal constant PACKAGE_REGISTRY_NAME = "6529 Stream Package Registry";
     /// @notice Domain name of the v1 curation verifier.
     string internal constant CURATION_VERIFIER_NAME = "6529 Stream Curation Verifier";
-    /// @notice Domain name of the work records satellite.
-    string internal constant WORK_RECORDS_NAME = "6529 Stream Records";
     /// @notice Domain name of the artist registry.
     string internal constant ARTIST_REGISTRY_NAME = "6529 Stream Artist Registry";
 
@@ -39,20 +39,6 @@ library Typehashes {
     ///         domain).
     bytes32 internal constant PACKAGE_APPROVAL = keccak256(
         "PackageApproval(bytes32 packageRoot,bytes32 evidenceHash,uint256 signerEpoch)"
-    );
-    /// @notice Every party agrees to relicense a work (work records domain).
-    bytes32 internal constant RELICENSE = keccak256(
-        "Relicense(uint256 tokenId,bytes32 licenseKey,bytes32 textFileId,bytes32 stateHash,"
-        "uint64 deadline)"
-    );
-    /// @notice Every party agrees to change a work's royalty rate (work records domain).
-    bytes32 internal constant ROYALTY_RATE_CHANGE = keccak256(
-        "RoyaltyRateChange(uint256 tokenId,uint32 rate,bytes32 stateHash,uint64 deadline)"
-    );
-    /// @notice The lead artist renounces powers over a work for good (work records domain;
-    ///         `powers` is a mask of `WorkPowers` bits).
-    bytes32 internal constant RENOUNCE_POWERS = keccak256(
-        "RenouncePowers(uint256 tokenId,uint16 powers,bytes32 stateHash,uint64 deadline)"
     );
     /// @notice An account's own identity change, signed by any wallet of the account (artist
     ///         registry domain).
@@ -74,11 +60,5 @@ library Typehashes {
     ///         (artist registry domain, `registerIndependent`).
     bytes32 internal constant ARTIST_REGISTRATION = keccak256(
         "ArtistRegistration(address account,bytes32 profileId,bytes32 profileDocHash,uint64 deadline)"
-    );
-    /// @notice A wallet of the artist's account consents to one Independent Stream directory entry
-    ///         (artist registry domain, `listIndependentContract`).
-    bytes32 internal constant INDEPENDENT_LISTING = keccak256(
-        "IndependentListing(uint256 artistId,address token,uint8 form,address partner,"
-        "uint32 feeShare,address feeRecipient,uint64 deadline)"
     );
 }

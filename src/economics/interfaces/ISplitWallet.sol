@@ -143,6 +143,10 @@ interface ISplitWallet {
     /// @notice Pays payee `index` of the wallet for `payees` and `salt` everything releasable in
     ///         `asset`, at its payout address. Anyone may call for a fixed payee; only the current
     ///         payout address may call for an artist-resolved payee.
+    /// @dev For a payee named by artist ID the caller must be the account's payout address
+    ///      itself: the account's root and its other wallets are refused. Any other wallet, a
+    ///      relayer included, releases with the payout address's signature through
+    ///      `ISplitLedger.releaseWithAuthorization`.
     /// @param payees The wallet's payee list.
     /// @param salt The wallet's salt (zero for the wallets sale adapters pay).
     /// @param asset The asset to release (ETH is `address(0)`).

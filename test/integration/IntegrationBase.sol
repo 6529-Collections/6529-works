@@ -207,7 +207,10 @@ abstract contract IntegrationBase is CoreIntegrationBase {
         return a < b ? keccak256(abi.encode(a, b)) : keccak256(abi.encode(b, a));
     }
 
-    /// @dev A sorted-pair Merkle root; an odd node is carried up unchanged.
+    /// @dev A sorted-pair Merkle root; an odd node is carried up unchanged. This is a test
+    ///      layout, not the `StandardMerkleTree` layout tools use (`StreamHashing`): leaves stay
+    ///      in package order. The contracts accept it because they only verify proofs
+    ///      (`MerkleProof.verify`) and never rebuild a tree.
     function _root(bytes32[] memory level) internal pure returns (bytes32) {
         while (level.length > 1) {
             bytes32[] memory next = new bytes32[]((level.length + 1) / 2);

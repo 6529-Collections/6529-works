@@ -835,6 +835,18 @@
       "source": "src/sales/SaleStarter.sol"
     },
     {
+      "abi": "SepoliaOpenGate.json",
+      "errors": 2,
+      "events": 1,
+      "functions": 10,
+      "kind": "contract",
+      "name": "SepoliaOpenGate",
+      "sha256": "aaa0dbdc3b0f94b3d8063ea70f063ec97dcc402d9b198beca072b13773f83b6e",
+      "solc": "0.8.37+commit.f401782d",
+      "source": "script/sepolia/SepoliaOpenGate.sol",
+      "testOnly": true
+    },
+    {
       "abi": "SplitLedger.json",
       "errors": 32,
       "events": 6,

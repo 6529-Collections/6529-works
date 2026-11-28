@@ -339,7 +339,7 @@ contract PackageRegistry is
                 || !MerkleProof.verifyCalldata(req.proof, root, StreamHashing.leaf(itemHash))
         ) revert ItemNotInPackage(root, itemHash);
         _checkTerms(item, itemHash);
-        uint256 artistId = _checkParties(root, item, itemHash);
+        uint256 artistId = _checkParties(root, item, itemHash, true);
         terms.creator = _useMove(root, itemHash, artistId, req.move);
         _checkContent(token, item.contentHash, itemHash, artistId);
         _fill(facts, terms, item, itemHash, artistId, root);
@@ -347,10 +347,17 @@ contract PackageRegistry is
     }
 
     /// @inheritdoc IMintPolicy
-    /// @dev Checks the item rules only (no root, proof, consent, signature or content check)
-    ///      and resolves the lead artist through `artistIdOf`, so it reverts while the lead
-    ///      artist has no identity. The creator is the lead's active authority now. A VRF item's
-    ///      seed reads zero until it is delivered.
+    /// @dev The check to run on an item before anyone signs: an item that breaks a rule can be
+    ///      approved and accepted, and is refused only when its sale starts. It runs every item
+    ///      check of `authorize`, with the same errors: the item rules, the content, seed and
+    ///      edition fields, and the party and payee rules. It does not ask for what comes with
+    ///      the signatures: an approved root, a proof, the parties' acceptances, the move, the
+    ///      content rules after a burn, or a VRF item's delivered seed (the seed reads zero
+    ///      until it is delivered). A party that has not accepted the root counts as the artist
+    ///      it would be accepted as: its artist ID, or its own address as a number while it has
+    ///      none, so the item of a new artist can be checked before any acceptance. The creator
+    ///      is the lead's active authority now, or the lead's own address while it has no
+    ///      identity.
     function preview(address token, bytes calldata request)
         external
         view
@@ -360,10 +367,16 @@ contract PackageRegistry is
         StreamMintRequest calldata req = _request(request);
         PackageItem calldata item = req.item;
         _checkItem(item);
-        uint256 artistId = _artists().artistIdOf(item.parties[0].account);
-        if (artistId == 0) revert InvalidLeadArtist();
-        _fill(facts, terms, item, StreamHashing.itemHashCalldata(item), artistId, req.packageRoot);
-        terms.creator = _artists().activeAuthorityOf(artistId);
+        bytes32 itemHash = StreamHashing.itemHashCalldata(item);
+        _checkTerms(item, itemHash);
+        uint256 artistId = _checkParties(req.packageRoot, item, itemHash, false);
+        _fill(facts, terms, item, itemHash, artistId, req.packageRoot);
+        // A lead that accepted this root has an identity; for any other the accounts module says.
+        IArtistRegistry artists = _artists();
+        address lead = item.parties[0].account;
+        terms.creator = _acceptedAs[req.packageRoot][lead] == 0 && artists.artistIdOf(lead) == 0
+            ? lead
+            : artists.activeAuthorityOf(artistId);
         if (item.seedPolicy == uint8(SeedPolicy.ARTIST)) {
             facts.seed = item.seed;
         } else if (item.seedPolicy == uint8(SeedPolicy.VRF)) {
@@ -686,13 +699,17 @@ contract PackageRegistry is
     ///      payee list is canonical (strictly increasing `(artistId, account)`, exactly one of the
     ///      two set, nonzero shares summing to `Splits.DENOMINATOR`, no more payees than parties)
     ///      and every payee is a party by account or by artist ID. The lead is paid only through
-    ///      its account (artist-resolved), never as a fixed payee.
+    ///      its account (artist-resolved), never as a fixed payee. With `acceptances` false (a
+    ///      preview) a party that has not accepted the root is not refused: it counts as the
+    ///      artist it would be accepted as (`acceptPackage`): its artist ID, or its own address
+    ///      as a number while it has none.
     /// @return leadId The lead artist's ID.
-    function _checkParties(bytes32 packageRoot, PackageItem calldata item, bytes32 itemHash)
-        private
-        view
-        returns (uint256 leadId)
-    {
+    function _checkParties(
+        bytes32 packageRoot,
+        PackageItem calldata item,
+        bytes32 itemHash,
+        bool acceptances
+    ) private view returns (uint256 leadId) {
         Party[] calldata parties = item.parties;
         ISplitWallet.Payee[] calldata payees = item.payees;
         uint256 n = parties.length;
@@ -704,8 +721,13 @@ contract PackageRegistry is
         uint256[] memory ids = new uint256[](n);
         for (uint256 i; i < n; ++i) {
             if (parties[i].role > uint8(PartyRole.COLLABORATOR)) revert InvalidItem(itemHash);
-            uint256 id = accepted[parties[i].account];
-            if (id == 0) revert PartyNotAccepted(packageRoot, parties[i].account);
+            address account = parties[i].account;
+            uint256 id = accepted[account];
+            if (id == 0) {
+                if (acceptances) revert PartyNotAccepted(packageRoot, account);
+                id = _artists().artistIdOf(account);
+                if (id == 0) id = uint256(uint160(account));
+            }
             for (uint256 j; j < i; ++j) {
                 if (ids[j] == id) revert InvalidItem(itemHash);
             }

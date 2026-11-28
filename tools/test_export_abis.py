@@ -321,6 +321,38 @@ class ExportTest(unittest.TestCase):
         (self.repo.root / "out" / "IParent.sol" / "IParent.json").unlink()
         self._assert_export_refused("missing from the build: IParent")
 
+    def _open_gate(self, built: bool = True) -> None:
+        rel = "script/sepolia/SepoliaOpenGate.sol"
+        self.repo.source(
+            rel,
+            "interface IGateTarget { function t() external; }\n"
+            "contract SepoliaOpenGate { function open() external {} }\n",
+        )
+        self.repo.source("script/Other.s.sol", "contract Other { function x() external {} }\n")
+        self.repo.artifact("script/Other.s.sol", "Other", [_fn("x")], {"x()": "88888888"})
+        self.repo.artifact(rel, "IGateTarget", [_fn("t")], {"t()": "99999999"})
+        if built:
+            self.repo.artifact(rel, "SepoliaOpenGate", [_fn("open")], {"open()": "aaaaaaaa"})
+
+    def test_TheTestOnlyOpenGateIsExportedAndMarked(self) -> None:
+        self._open_gate()
+        self.assertEqual(self._run()[0], 0)
+        manifest = self._manifest()
+        gate = manifest["SepoliaOpenGate"]
+        self.assertIs(gate["testOnly"], True)
+        self.assertEqual(gate["source"], "script/sepolia/SepoliaOpenGate.sol")
+        self.assertEqual((gate["kind"], gate["functions"]), ("contract", 1))
+        self.assertTrue((self.repo.root / "abi" / "SepoliaOpenGate.json").is_file())
+        # Nothing else outside src/ is exported, and no protocol contract is marked.
+        self.assertNotIn("Other", manifest)
+        self.assertNotIn("IGateTarget", manifest)
+        self.assertNotIn("testOnly", manifest["Thing"])
+        self.assertEqual(self._run("--check")[0], 0)
+
+    def test_ATestOnlyContractMissingFromTheBuildFails(self) -> None:
+        self._open_gate(built=False)
+        self._assert_export_refused("missing from the build: SepoliaOpenGate")
+
     def test_NoBuildFailsClearly(self) -> None:
         import shutil
 
