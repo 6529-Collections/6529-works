@@ -109,7 +109,7 @@ Source: [`src/core/Stream6529.sol`](../../src/core/Stream6529.sol).
 | `addMinter(address)` | `0x983b2d56` | `NETWORK` | No delay | immediate | No: executes at once | Active once `moduleDelay()` has passed. |
 | `removeMinter(address)` | `0x3092afd5` | `NETWORK` | No delay | immediate | No: executes at once | At once: it mints nothing new and still finishes what it started. |
 | `setRescueDelay(uint48)` | `0x1d2c9862` | `NETWORK` | No delay | immediate | No: executes at once | A setting of the network, at once, zero allowed; read when a rescue is attempted. |
-| `rescue(uint256,address)` | `0xa923625c` | `NETWORK` | No delay | immediate | No: executes at once | Only a token a removed minter still holds with no outcome, once `rescueDelay()` has passed since the removal. It can never reach a token a collector holds. |
+| `rescue(uint256,address)` | `0xa923625c` | `NETWORK` | No delay | immediate | No: executes at once | Only a token a removed minter still holds with no outcome ever recorded, once `rescueDelay()` has passed since the removal. The English auction records the outcome before a work leaves it, so no work it sold is within reach. |
 
 ### StreamEditions6529
 

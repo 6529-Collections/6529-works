@@ -56,6 +56,62 @@
   overview, documentation index, auditor pack index, testing guide and contributing guide
   are shortened, and internal labels are removed from the rc.3 entries below, which gain a
   summary for a user of rc.2.
+- **Sale exits after a rescue or a cancellation; edition metadata after a master is burned; one
+  editions contract per Independent Stream master.** One two-line change in the permanent
+  token base (`StreamBase`, so `Stream6529` and `IndependentStream6529`); everything else is
+  in replaceable sale contracts and in documents.
+    - **A rescued sale closes wherever the work is.** `EnglishAuction.settle` knew a rescue
+      only by the work having left its custody. It now also reads the outcome the token
+      recorded, so the sale of a rescued work that is in the auction again (the network named
+      the auction as the recipient, or the recipient sent the work back) closes like any
+      rescued sale: the standing bid is credited back once and nothing is recorded or paid
+      (AUC-36, AUC-56). A rescued work found in custody is sent to the museum, so it is not
+      left in the auction; one that reaches the auction after its sale closed is sent there
+      by anyone with the new `sendRescuedToMuseum(saleId)` (AUC-58). The read costs about 9,800 gas on every `settle`
+      ([ADR 0004's table](docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table)).
+    - **A rescued 1/1 voids the edition sale that followed it.** A rescued sale now ends `CANCELLED` instead of
+      `SETTLED` (`RescuedSaleClosed` is unchanged). Both edition auctions already read a
+      cancelled 1/1 as void, so an edition sale that followed a rescued 1/1 refunds every bid
+      in full, mints nothing and seals its edition at zero, and `open` opens no edition sale
+      for that master afterwards (EA-22). The network's `adopt` after a rebind is unchanged:
+      an adopted sale of a master whose outcome is recorded runs on its own (EA-21). The
+      edition auctions did not change for this. Indexers: a
+      sale that emitted `RescuedSaleClosed` reads `CANCELLED`, with no `AuctionCancelled` and
+      no burn.
+    - **Edition copies keep their metadata after their master is burned** (permanent,
+      `StreamBase`). `rendererOf` answers for every work that was minted, a burned one
+      included, instead of for live tokens only; `tokenURI` keeps refusing a burned token. So
+      a later burn of the master (an Independent Stream work offered again and then cancelled
+      after a dispute) no longer stops `uri` of copies already held: the renderer draws them
+      from the record the master keeps, with the dispute statement its statement log holds
+      (RND-29). `uri` still reverts where it would for a live master: no renderer, a failing
+      one, or a pinned one whose code changed. A record that nobody opened before the burn can
+      never be opened, so such copies render the core facts only (LIM-CNT-24).
+    - **A cancellation between two calls of an Independent Stream edition settlement voids
+      the sale.** A settlement whose scan takes several calls pays nothing until the call
+      that clears. `IndependentEditionAuction.settle` now reads the 1/1 again on every call
+      before that, as the first call did: a 1/1 offered again and then cancelled, like a
+      delisting, voids the sale with full refunds. A restart alone voids nothing, and a
+      clearing that has paid stands (IND-56). An adopted sale that runs on its own never
+      reads the 1/1, as before: only a delisting voids it.
+    - **One editions contract per Independent Stream master where editions are sold.** A
+      replaced Independent Stream module still takes listings and its successor reads them
+      through, so two editions contracts could be listed for one master after a replacement.
+      `IndependentEditionAuctionLens` now opens a sale only for the editions contract the
+      master's own entry names (IND-78, LIM-IND-10). The replacement checklist says how to
+      retire a replaced module as a writer.
+    - **What a rescue reaches, stated exactly** (documents only). `rescue` reaches a token
+      that a removed minter holds with no sale outcome ever recorded, and the token keeps no
+      custody history. The trust assumptions, the role matrix, the glossary and LIM-SAL-14
+      now say that, in place of "never a collector's": the English auction records the
+      outcome before a work leaves it (AUC-57, pinned by tests), and a sale contract admitted
+      later must do the same (the admission checklist in
+      [Replacing a module](docs/operations/replacing-modules.md#sale-contracts-minters)).
+    - The edition auction's stateful campaign gains a rescue action (INV-EA-14).
+    - Runtime sizes: `EnglishAuction` 22,354 bytes (margin 2,222), `IndependentEditionAuction`
+      23,957 (619), `IndependentEditionAuctionLens` 24,014 (562), `Stream6529` 14,870 (9,706),
+      `IndependentStream6529` 14,159 (10,417). A comment in `Splits` said the tokens'
+      `royaltyInfo` shares its arithmetic; it uses `Math.mulDiv`, and the comment now says so.
 
 ## 1.0.0-rc.3 (2026-11-23)
 

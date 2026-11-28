@@ -289,7 +289,8 @@ contract Renderer is IRenderer {
     /// @dev Finds the work behind `c.token`/`c.id` and loads it through plain views. An
     ///      ERC-1155 token is an editions token: the edition's ID is its master's token ID in
     ///      `IEditions.stream()`, which supplies the work. `workOf` (a work that was never minted
-    ///      fails the read; a burned master keeps its record, so its editions still render),
+    ///      fails the read; a burned master keeps its record, and its `rendererOf` still answers,
+    ///      so the burn does not stop its editions from rendering),
     ///      the collection's name from `collectionOf` (a name over `MAX_NAME_BYTES`, which is
     ///      refused by its length before anything is checked, or one that is not UTF-8, is no
     ///      name: the work still renders), and the permanent record

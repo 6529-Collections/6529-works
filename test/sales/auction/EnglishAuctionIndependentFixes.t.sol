@@ -147,6 +147,130 @@ contract EnglishAuctionIndependentFixesTest is IndependentStreamFixture {
         auction.restart(saleId);
     }
 
+    /// @dev A running sale's work is rescued to the auction itself. `settle` closes the sale at
+    ///      once (no wait for the refusal exit): the bid is credited back, nothing is recorded or
+    ///      paid, the work goes to the museum, and the closed sale is never offered again.
+    function test_Rescued_ToTheAuctionItselfClosesAtOnceAndNeverRestarts() public {
+        uint256 saleId = _start();
+        _bid(alice, saleId, 1 ether);
+        uint256 id = _tokenId(saleId);
+        registry.setAdapter(address(auction), IIndependentStreamRegistry.Form.ERC721, false);
+        skip(fStream.rescueDelay());
+        fStream.rescue(id, address(auction));
+        assertEq(fStream.ownerOf(id), address(auction));
+        uint256 feeBefore = _fee().balance;
+
+        vm.expectEmit(address(auction));
+        emit IEnglishAuction.RescuedSaleClosed(saleId);
+        auction.settle(saleId);
+        bytes memory closed = abi.encodeWithSelector(
+            IEnglishAuction.InvalidAuctionState.selector,
+            saleId,
+            IEnglishAuction.AuctionState.CANCELLED
+        );
+        assertEq(
+            uint8(auction.auction(saleId).state), uint8(IEnglishAuction.AuctionState.CANCELLED)
+        );
+        assertEq(auction.claimable(alice), 1 ether, "credited back");
+        assertEq(address(auction).balance, 1 ether, "only the credit is held");
+        assertEq(_fee().balance, feeBefore, "nothing paid");
+        assertEq(address(escrow).balance, 0);
+        assertEq(fStream.ownerOf(id), makeAddr("museum"), "not left in the auction");
+        assertEq(uint8(fStream.workOf(id).outcome), uint8(Outcome.RESCUED));
+
+        skip(auction.REFUSAL_DELAY());
+        vm.expectRevert(closed);
+        auction.restart(saleId);
+        vm.expectRevert(closed);
+        auction.settleOrRefund(saleId);
+        vm.expectRevert(closed);
+        auction.settle(saleId);
+    }
+
+    /// @dev The rescue's recipient sends the work back before anyone settled, and the sale has
+    ///      no bid: it closes with nothing credited and the work goes to the museum.
+    function test_Rescued_SentBackWithNoBidClosesAndGoesToTheMuseum() public {
+        uint256 saleId = _start();
+        uint256 id = _tokenId(saleId);
+        registry.setAdapter(address(auction), IIndependentStreamRegistry.Form.ERC721, false);
+        skip(fStream.rescueDelay());
+        address vault = makeAddr("networkVault");
+        fStream.rescue(id, vault);
+        vm.prank(vault);
+        fStream.transferFrom(vault, address(auction), id);
+
+        vm.expectEmit(address(auction));
+        emit IEnglishAuction.RescuedSaleClosed(saleId);
+        auction.settle(saleId);
+        assertEq(
+            uint8(auction.auction(saleId).state), uint8(IEnglishAuction.AuctionState.CANCELLED)
+        );
+        assertEq(fStream.ownerOf(id), makeAddr("museum"));
+        assertEq(address(auction).balance, 0);
+    }
+
+    /// @dev An unsold work waits in the auction with its sale SETTLED. The network then rescues
+    ///      it to the auction itself: no settlement is left to forward it and it can never be
+    ///      offered again, so anyone sends it to the museum. A work that was not rescued, an
+    ///      unknown sale and a work the auction does not hold are refused.
+    function test_SendRescuedToMuseum_AWorkRescuedIntoTheAuctionAfterItsSaleClosed() public {
+        uint256 saleId = _start();
+        _end(saleId);
+        auction.settle(saleId);
+        uint256 id = _tokenId(saleId);
+        bytes memory settled = abi.encodeWithSelector(
+            IEnglishAuction.InvalidAuctionState.selector,
+            saleId,
+            IEnglishAuction.AuctionState.SETTLED
+        );
+        // Unsold and waiting for a restart: not rescued, so it stays.
+        vm.expectRevert(settled);
+        auction.sendRescuedToMuseum(saleId);
+        vm.expectRevert(abi.encodeWithSelector(IEnglishAuction.UnknownSale.selector, 77));
+        auction.sendRescuedToMuseum(77);
+
+        registry.setAdapter(address(auction), IIndependentStreamRegistry.Form.ERC721, false);
+        skip(fStream.rescueDelay());
+        fStream.rescue(id, address(auction));
+        assertEq(fStream.ownerOf(id), address(auction));
+        vm.expectRevert(settled);
+        auction.settle(saleId);
+        vm.expectRevert(settled);
+        auction.restart(saleId);
+
+        vm.expectEmit(address(fStream));
+        emit IERC721.Transfer(address(auction), makeAddr("museum"), id);
+        vm.prank(alice);
+        auction.sendRescuedToMuseum(saleId);
+        assertEq(fStream.ownerOf(id), makeAddr("museum"));
+        assertEq(uint8(auction.auction(saleId).state), uint8(IEnglishAuction.AuctionState.SETTLED));
+        // Gone: a second call finds nothing to send.
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IERC721Errors.ERC721InsufficientApproval.selector, address(auction), id
+            )
+        );
+        auction.sendRescuedToMuseum(saleId);
+    }
+
+    /// @dev The same when the rescue's recipient sends the work back after the sale closed.
+    function test_SendRescuedToMuseum_ARescuedWorkSentBackAfterItsSaleClosed() public {
+        uint256 saleId = _start();
+        _bid(alice, saleId, 1 ether);
+        uint256 id = _tokenId(saleId);
+        registry.setAdapter(address(auction), IIndependentStreamRegistry.Form.ERC721, false);
+        skip(fStream.rescueDelay());
+        address vault = makeAddr("networkVault");
+        fStream.rescue(id, vault);
+        auction.settle(saleId);
+        assertEq(auction.claimable(alice), 1 ether);
+        vm.prank(vault);
+        fStream.transferFrom(vault, address(auction), id);
+        auction.sendRescuedToMuseum(saleId);
+        assertEq(fStream.ownerOf(id), makeAddr("museum"));
+        assertEq(address(auction).balance, 1 ether, "the credit is untouched");
+    }
+
     function test_Delisted_RefusesBidsRefundsAndCannotRestart() public {
         uint256 saleId = _start();
         _bid(alice, saleId, 1 ether);

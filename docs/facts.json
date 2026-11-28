@@ -499,7 +499,7 @@
       },
       {
         "operation": "settle, first payout to a seller vault",
-        "pragueGas": 152306,
+        "pragueGas": 162138,
         "pragueCeiling": {
           "gas": 400000,
           "kind": "budget"
@@ -510,7 +510,7 @@
       },
       {
         "operation": "settle, with a bid",
-        "pragueGas": 127306,
+        "pragueGas": 137138,
         "pragueCeiling": {
           "gas": 400000,
           "kind": "budget"
@@ -524,7 +524,7 @@
       },
       {
         "operation": "settle, no bid (to the museum, D140)",
-        "pragueGas": 81436,
+        "pragueGas": 91279,
         "pragueCeiling": {
           "gas": 400000,
           "kind": "budget"

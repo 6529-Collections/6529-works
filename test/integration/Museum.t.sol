@@ -171,7 +171,9 @@ contract MuseumTest is SaleFlowBase {
         assertEq(stream.ownerOf(tokenId), museum, "the work stays where the rescue sent it");
         assertEq(t.seller.balance, 0, "nothing paid");
         assertEq(networkFee.balance, 0);
-        assertEq(uint8(auction.auction(saleId).state), uint8(IEnglishAuction.AuctionState.SETTLED));
+        assertEq(
+            uint8(auction.auction(saleId).state), uint8(IEnglishAuction.AuctionState.CANCELLED)
+        );
         vm.prank(bidder);
         auction.claim(bidder);
         assertEq(bidder.balance, 1 ether);

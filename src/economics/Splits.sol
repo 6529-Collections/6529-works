@@ -54,10 +54,11 @@ library Splits {
     ///         without overflow for any `observed`.
     /// @dev Across all payees the entitlements fall short of `observed` by at most `count - 1`
     ///      units, and that dust never grows as receipts accumulate. Exact and overflow-free for
-    ///      every `share <= DENOMINATOR` (a canonical payee's always is), the form 6529 Stream's
-    ///      `royaltyInfo` uses: with `observed = q * DENOMINATOR + r`, the floor is
+    ///      every `share <= DENOMINATOR` (a canonical payee's always is): with
+    ///      `observed = q * DENOMINATOR + r`, the floor is
     ///      `q * share + floor(r * share / DENOMINATOR)`, where `q * share <= observed` and
-    ///      `r * share < DENOMINATOR ** 2`. It replaces a full-width `mulDiv`.
+    ///      `r * share < DENOMINATOR ** 2`. It replaces a full-width `mulDiv` here. The token
+    ///      contracts' `royaltyInfo` computes the same floor with OpenZeppelin's `Math.mulDiv`.
     function entitlement(uint256 observed, uint32 share) internal pure returns (uint256) {
         // Exact: the remainder term restores what the first division drops.
         // forge-lint: disable-next-line(divide-before-multiply)
