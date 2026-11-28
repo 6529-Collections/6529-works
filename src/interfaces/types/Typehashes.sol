@@ -15,9 +15,10 @@ pragma solidity 0.8.37;
 ///      Every artist or party signature here binds a deadline (a move and an account's own
 ///      identity change also a single-use nonce), except `ACCOUNT_CONSENT`: a consent binds
 ///      only the contract and what it consents to (for an Independent Stream item, the item
-///      hash, used once), and has no deadline. A curation approval (`PACKAGE_APPROVAL`) binds
-///      no deadline either: it binds the signer's epoch. Constants only; nothing here is linked
-///      bytecode.
+///      hash, used once), and has no deadline field of its own; what it consents to can carry
+///      one (the listing subject does, and the registry checks it). A curation approval
+///      (`PACKAGE_APPROVAL`) binds no deadline either: it binds the signer's epoch. Constants
+///      only; nothing here is linked bytecode.
 library Typehashes {
     /// @notice The EIP-712 domain version of every v1 contract.
     string internal constant DOMAIN_VERSION = "1";

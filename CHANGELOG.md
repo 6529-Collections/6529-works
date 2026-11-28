@@ -35,7 +35,7 @@
   - NatSpec of two permanent contracts, with no change to their code: `SplitLedger.release`
     says that a payee named by artist ID is released only by the account's payout address,
     and any other wallet uses `releaseWithAuthorization`; `editionOf(id).maxSupply` is the
-    creator's cap while the sale runs and the final supply once sealed, the cap itself staying
+    creator's cap while the sale runs and the final maximum once sealed, the cap itself staying
     in the `EditionCreated` event.
   - The open gate's ABI is exported with the others, as `abi/SepoliaOpenGate.json`, and the
     ABI manifest marks it `"testOnly": true`: a Sepolia test contract, never deployed on
