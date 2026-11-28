@@ -161,14 +161,14 @@
     },
     {
       "contract": "Accounts",
-      "label": "artistIdOf",
+      "label": "_artistIdOf",
       "offset": 0,
       "slot": 6,
       "type": "mapping(address => uint256)"
     },
     {
       "contract": "Accounts",
-      "label": "reservedFor",
+      "label": "_reservedFor",
       "offset": 0,
       "slot": 7,
       "type": "mapping(address => uint256)"
@@ -193,6 +193,13 @@
       "offset": 0,
       "slot": 10,
       "type": "address"
+    },
+    {
+      "contract": "Accounts",
+      "label": "_notPayout",
+      "offset": 0,
+      "slot": 11,
+      "type": "mapping(address => bool)"
     }
   ]
 }

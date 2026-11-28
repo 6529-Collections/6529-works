@@ -2,6 +2,86 @@
 
 ## Unreleased
 
+- **Module replacement keeps identities and revocations; the payout address check covers every
+  protocol contract.** Three changes in replaceable modules (`Accounts`, `PackageRegistry`);
+  no permanent contract changed. Both constructors take new arguments, so both modules have a
+  new build.
+    - **A new accounts module names the one it replaces.** `Accounts` takes `previous` in its
+      wiring (zero for the first module of a deployment). For an account it has not recorded
+      it answers from the replaced module's record, read at each use: root, acting root,
+      payout address, freeze and pending change, through any number of replacements; which
+      wallets are consolidated with the root is its own source's answer. An account that
+      moved keeps its ID, root and payout address, and the address its ID was made from has
+      no power. An address the replaced module knows as a root, a former root or a reserved
+      root is never registered again; an address no module knows still registers with the ID
+      its address gives. The first change the new module makes to an inherited account
+      copies its record, freeze and pending change (`AccountInherited`), and from then on it
+      alone answers; `copyAccounts` copies a list, for anyone. What it recorded comes first
+      (an address it already maps keeps its account, and a payout address it refuses by
+      address is not carried: the share is held until the account names another), and a
+      copy calls no address the account chose. Only the module the directory names creates
+      or changes an account: a module that waits for activation and one that has been
+      replaced refuse every such call, so nothing is copied early and the record a
+      successor reads stands still. A replaced module that does not answer leaves only the
+      accounts it still holds without an acting wallet and with their payout held; a read
+      that runs short of gas reverts (ID-42 to ID-46). `artistIdOf` and `reservedFor` are functions
+      now, with the same signatures.
+    - **A new mint policy names the one it replaces.** `PackageRegistry` takes `previous`
+      (zero for the first) and declares `IRevokedRoots`: `isRevoked(root)` is true for a root
+      revoked there, revoked in advance, registered by a signer whose approvals were killed
+      since, or reported by the policy it replaced. A root the replaced policy reports is
+      never registered in the new one and is not live there, whenever the revocation was
+      made, so it does not start, accept parties or open an edition sale; a root never
+      revoked registers again with the attestation it has. A replaced policy that does not
+      answer refuses every root (CUR-25, CUR-26).
+    - **No contract of a deployment is accepted as an artist's payout address.** The payout
+      check, at staging, at execution and at registration, now also refuses the claim
+      router, the sale contracts and the package registry by interface (`ProtocolContracts`,
+      which `Accounts` now uses), every contract governed by the module's AccessManager (the
+      fee and museum vaults and every governed module), the AccessManager, the consolidation
+      source, and a list fixed at deployment for the contracts no rule recognises
+      (`DeployCore.notPayouts`: the factory, the configurator, the content store,
+      `StreamWorkFacts6529`, the renderer, the two lenses, the two Independent Stream
+      deployers and `SaleStarter`). An account with no code, a smart account, a
+      multi-signature wallet and a contract outside the network stay accepted.
+      `isPayoutAllowed(address)` answers the check (ID-10, LIM-ID-12).
+    - **Deployment and readback.** `DeployCore` builds the first accounts module and mint
+      policy with no predecessor; `VerifyCore` requires `previous` to be zero on both and
+      requires `isPayoutAllowed` to be false for every contract of the deployment.
+      `script/CheckReplacement.sol` and `CheckReplacement.s.sol` compare a candidate
+      replacement with the module in force for a list of accounts, addresses and package
+      roots, read-only; for an accounts module they also check that the candidate reads the
+      directory, names the module in force as the one it replaces and has its restricted
+      functions under the same roles.
+    - **Tests and documents.** `AccountsSuccessor.t.sol` now replaces the module with the
+      real `Accounts` (the read-through test double is gone); new suites
+      `AccountsSuccessorModule`, `AccountsPayoutCheck`, `PackageRegistrySuccessor`,
+      `MintPolicySuccessor` and `ReplacementCheck`; `RecipientValidationPorted` tries every
+      contract of the deployment as a payout, one at a time. `ModuleSwap.t.sol` now asserts
+      that a freeze and every account survive a replacement, and
+      `SuccessorStartGas.t.sol` measures a start after each kind of replacement.
+      `replacing-modules.md` says what each replacement inherits and what it does not, and gives the alternative of a
+      new verifier with no predecessor; LIM-GV-32, LIM-ID-12, LIM-ID-19 and LIM-ID-26 are
+      corrected. Two limitations are new: a replaced accounts module must never be named in
+      the directory again (LIM-ID-28), and an address reserved as a new root in the replaced
+      module at activation stays reserved (LIM-ID-29).
+    - Size and gas. `Accounts` grows from 15,623 to 19,836 bytes (4,740 below the EIP-170
+      limit) and `PackageRegistry` from 19,906 to 20,308 (4,268 below); the runtime code of
+      every other contract is unchanged. At genesis a start costs 89 gas more, an edition
+      `open` 182, an artist's release 180; a start signed by a consolidated wallet costs 99
+      less; no ceiling of the gas table moved
+      ([ADR 0004](docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table)). After a
+      replacement a start pays for the reads of the replaced module: about 5,600 gas
+      (root-signed) or 12,800 (signed by a consolidated wallet) while a second accounts
+      module has not copied the account, nothing once it has (`copyAccounts`), and about
+      8,000 under a second mint policy; the wallet-signed start then passes the 370,000
+      ceiling. `test/integration/SuccessorStartGas.t.sol` holds these rows.
+    - Mutation scores. `Accounts` and `PackageRegistry` were measured again at `0fa77564`:
+      `Accounts` 785 of 822 killed and six more by tests added with the measurement
+      (96.2%, floor 94 as before); `PackageRegistry` 562 of 599 and one more by a new test
+      (94.0%, floor 91, was 92: four of the 21 new mutants survive as equivalents). The
+      survivors are triaged on the [scores page](docs/testing/mutation-scores.md).
+
 - **A test for what `sendRescuedToMuseum` refuses.** AUC-58 says a work waiting for a pending
   delivery is never moved; `test_SendRescuedToMuseum_RefusesAPendingDeliveryAndAnUnsoldWork`
   now shows it, with an unsold work in the museum, before and after the auction is a removed

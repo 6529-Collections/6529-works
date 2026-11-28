@@ -41,6 +41,14 @@ are under [Flows](../../docs/spec/curation.md#flows).
   only after `releaseContent` names the burned token and a beneficiary, only for an item whose
   lead artist is the beneficiary, and never by the burned item, which the release bars
   (`isBarred`). A release is used up by the next mint.
+- **Replacing the policy.** `previous` names the policy this one replaces (zero for the
+  first). `isRevoked(root)` is true for a root revoked here (also in advance), registered here
+  by a signer whose approvals were killed since, or reported as revoked by `previous`. A
+  root `previous` reports is never registered here and is not live here, whenever it was
+  revoked: one read per registration, acceptance, start and `isApprovedItem`, forwarding all
+  gas, only when there is a predecessor. A predecessor that does not answer one zero word
+  refuses every root. Approvals, acceptances, move nonces, releases and barred items are not
+  inherited ([Replacing a module](../../docs/operations/replacing-modules.md)).
 - **Open item values.** `PackageItem.kind`, `seedPolicy` and `Party.role` are `uint8`s, so the
   permanent contracts decode any value; this policy refuses, for a new item, any kind, seed
   policy or party role it does not know (`InvalidItem`, `InvalidSeedPolicy`; CUR-9). A successor

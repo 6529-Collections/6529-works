@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { DeployCore } from "script/DeployCore.sol";
 import { IIndependentStreamRegistry } from "src/interfaces/IIndependentStreamRegistry.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { Splits } from "src/economics/Splits.sol";
@@ -28,6 +29,9 @@ import { IndependentIntegrationBase } from "./IndependentIntegrationBase.sol";
 ///         outbid credit, Independent Stream sold, Independent Stream unsold in custody). Tokens
 ///         (owner, Work facts, royalty), finalized facts and owed money (auction credits, escrow,
 ///         split vault balances) are unaffected; new behaviour comes only from the new module.
+///         The new accounts module and the new mint policy each name the instance they replace:
+///         every account, freeze and payout address is served as before, and a root the old
+///         policy revoked stays revoked.
 contract ModuleSwapTest is IndependentIntegrationBase {
     /// @dev A token's permanent state, read back before and after a replacement.
     struct TokenState {
@@ -152,11 +156,13 @@ contract ModuleSwapTest is IndependentIntegrationBase {
         next.finalize(address(stream), a1, bytes32(0));
     }
 
-    function test_ModuleSwap_AccountsComeOnlyFromTheNewModule() public {
+    function test_ModuleSwap_ANewAccountsModuleKeepsEveryAccountAndFreeze() public {
         (TokenState[6] memory before, Owed memory owed) = _snapshot();
         Accounts old = accounts;
         Accounts next = _newAccounts(address(registry));
-        _asNetwork(address(old), abi.encodeCall(Accounts.freeze, (uint256(uint160(indArtist)))));
+        uint256 indId = uint256(uint160(indArtist));
+        _asNetwork(address(old), abi.encodeCall(Accounts.freeze, (indId)));
+        uint48 until = old.frozenUntil(indId);
         vm.prank(indArtist);
         vm.expectRevert(
             abi.encodeWithSelector(IIndependentStreamMembership.NotArtist.selector, indArtist)
@@ -164,41 +170,54 @@ contract ModuleSwapTest is IndependentIntegrationBase {
         fStream.setContractURI("ar://frozen");
         _install(address(directory), Slots.ACCOUNTS, address(next));
         _assertUnchanged(before, owed);
+        assertLt(block.timestamp, until, "the freeze has not run out");
 
-        // Payouts and artist powers are answered by the new module, which does not know these
-        // artists yet: the money stays in the vault, owed and unmoved.
+        // Payouts and artist powers are answered by the new module, from the record of the
+        // module it replaces: the artist is paid as before.
         uint256 idA = uint256(uint160(artistA));
-        assertEq(old.payoutAddress(idA), artistA, "the old module still knows the artist");
-        assertEq(directory.payoutAddress(idA), address(0), "nobody reads the old module");
+        assertEq(next.previous(), address(old));
+        assertEq(next.authorityOf(idA), artistA);
+        assertEq(directory.payoutAddress(idA), artistA);
+        ledger.createWallet(payeesA, bytes32(0)); // anyone deploys the vault
         vm.prank(artistA);
-        vm.expectRevert(abi.encodeWithSelector(ISplitWallet.PayoutUnresolved.selector, idA));
         ledger.release(payeesA, bytes32(0), address(0), 0);
-        assertEq(sellerA.balance, owed.sellerVault, "held, not lost");
+        assertEq(artistA.balance, owed.sellerVault, "every wei the vault held");
 
-        // Artist powers are the new module's too: a freeze recorded by the old module no longer
-        // reaches the token, and the new module, which has no record of the account, answers
-        // for its root address alone (and cannot freeze an account it does not know).
+        // A freeze placed in the old module is still in force: the frozen artist has no power
+        // over its token, and its payout is held.
+        assertEq(next.frozenUntil(indId), until);
+        assertFalse(next.isWallet(indId, indArtist));
+        assertEq(directory.payoutAddress(indId), address(0));
         vm.prank(indArtist);
-        fStream.setContractURI("ar://unfrozen under the new module");
-        assertEq(fStream.contractURI(), "ar://unfrozen under the new module");
-        bytes memory freeze = abi.encodeCall(Accounts.freeze, (uint256(uint160(indArtist))));
-        _governExpectRevert(
-            address(next),
-            freeze,
-            abi.encodeWithSelector(
-                IArtistRegistry.UnknownArtist.selector, uint256(uint160(indArtist))
-            )
+        vm.expectRevert(
+            abi.encodeWithSelector(IIndependentStreamMembership.NotArtist.selector, indArtist)
         );
+        fStream.setContractURI("ar://still frozen under the new module");
+
+        // The network lifts it in the new module, which copies the account first.
+        _asNetwork(address(next), abi.encodeCall(Accounts.unfreeze, (indId)));
+        assertEq(next.frozenUntil(indId), 0);
+        assertEq(old.frozenUntil(indId), until, "the old module is not written");
+        vm.prank(indArtist);
+        fStream.setContractURI("ar://lifted in the new module");
+        assertEq(fStream.contractURI(), "ar://lifted in the new module");
     }
 
     function test_ModuleSwap_TheMintPolicyComesOnlyFromTheNewRegistry() public {
         (TokenState[6] memory before, Owed memory owed) = _snapshot();
-        // A package approved under the old registry and not started yet.
+        // A package approved under the old registry and not started yet, and one the network
+        // revoked there.
         Work[] memory pending = _one(_work(artistA, collectionId));
         bytes32 pendingRoot = _publish(pending);
         bytes memory pendingRequest = _mintData(pendingRoot, pending, 0);
+        bytes32 revokedRoot = _publish(_one(_work(artistA, collectionId)));
+        _asNetwork(
+            address(registry),
+            abi.encodeCall(PackageRegistry.revokePackage, (revokedRoot, keccak256("revoked")))
+        );
 
         PackageRegistry next = _installRegistry(address(accounts));
+        assertEq(next.previous(), address(registry));
         _assertUnchanged(before, owed);
         assertEq(auction.streamPolicy(), address(next));
         assertEq(auction.policyOf(address(stream)), address(next));
@@ -207,6 +226,15 @@ contract ModuleSwapTest is IndependentIntegrationBase {
             abi.encodeWithSelector(IPackageRegistry.PackageNotApproved.selector, pendingRoot)
         );
         auction.start(address(stream), pendingRequest);
+
+        // The attestations are the old ones: the new registry keeps the verifier. The root the
+        // old registry revoked is refused; the one it did not revoke registers again.
+        bytes memory revokedAttestation = _attestation(revokedRoot);
+        vm.expectRevert(
+            abi.encodeWithSelector(IPackageRegistry.PackageNotApproved.selector, revokedRoot)
+        );
+        next.registerPackage(revokedRoot, _evidence(revokedRoot), revokedAttestation);
+        next.registerPackage(pendingRoot, _evidence(pendingRoot), _attestation(pendingRoot));
 
         // A package approved under the new registry starts.
         registry = next;
@@ -302,26 +330,20 @@ contract ModuleSwapTest is IndependentIntegrationBase {
         assertEq(bidderA.balance, owed.credit);
         assertEq(escrow.owed(sellerA, address(0)), owed.escrowed, "the escrow keeps its credit");
 
-        // The artist's money waits in the vault until the new accounts module knows the artist:
-        // accepting a package under the new registry registers it there, and the vault pays in
-        // full.
-        vm.prank(artistA);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                ISplitWallet.PayoutUnresolved.selector, uint256(uint160(artistA))
-            )
-        );
-        ledger.release(payeesA, bytes32(0), address(0), 0);
-        registry = nextRegistry;
-        auction = EnglishAuction(payable(nextAuction));
-        Work[] memory works = _one(_work(artistA, collectionId));
-        bytes32 root = _publish(works);
+        // The new accounts module serves the artist from the record of the module it replaces:
+        // the vault pays in full at once, and the artist accepts a package under the new
+        // registry with the account it has.
         assertEq(directory.payoutAddress(uint256(uint160(artistA))), artistA);
         uint256 vault = sellerA.balance;
         ledger.createWallet(payeesA, bytes32(0)); // anyone deploys the vault
         vm.prank(artistA);
         ledger.release(payeesA, bytes32(0), address(0), 0);
         assertEq(artistA.balance, vault, "every wei the vault held");
+        registry = nextRegistry;
+        auction = EnglishAuction(payable(nextAuction));
+        Work[] memory works = _one(_work(artistA, collectionId));
+        bytes32 root = _publish(works);
+        assertEq(nextAccounts.authorityOf(uint256(uint160(artistA))), artistA);
         nextMoveNonce[uint256(uint160(artistA))] = 0;
         uint256 tokenId = _sell(root, works, 0, collector, 1 ether);
         assertEq(stream.ownerOf(tokenId), collector);
@@ -435,8 +457,11 @@ contract ModuleSwapTest is IndependentIntegrationBase {
         assertEq(IModuleSlots(target).moduleOf(slot), module);
     }
 
-    function _newAccounts(address packageRegistry) internal returns (Accounts) {
-        return Accounts(
+    /// @dev A second `Accounts` with the genesis constructor arguments, naming the current
+    ///      module as the one it replaces, its freeze functions mapped to the role the genesis
+    ///      role map gives them.
+    function _newAccounts(address packageRegistry) internal returns (Accounts next) {
+        next = Accounts(
             _deployArtifact(
                 "Accounts.sol:Accounts",
                 abi.encode(
@@ -448,14 +473,36 @@ contract ModuleSwapTest is IndependentIntegrationBase {
                     address(editions),
                     address(ledger),
                     address(statements),
-                    packageRegistry
+                    packageRegistry,
+                    address(accounts),
+                    DeployCore.notPayouts(deployment)
                 )
+            )
+        );
+        bytes4[] memory selectors = new bytes4[](2);
+        selectors[0] = Accounts.freeze.selector;
+        selectors[1] = Accounts.unfreeze.selector;
+        uint64 role = manager.getTargetFunctionRole(address(accounts), selectors[0]);
+        _asNetwork(
+            address(manager),
+            abi.encodeCall(manager.setTargetFunctionRole, (address(next), selectors, role))
+        );
+    }
+
+    /// @dev The curation signer's attestation of `root`, as `_approve` submits it.
+    function _attestation(bytes32 root) internal view returns (bytes memory) {
+        return abi.encode(
+            signer1,
+            _sign(
+                signer1,
+                verifier.approvalDigest(root, _evidence(root), verifier.signerEpoch(signer1))
             )
         );
     }
 
-    /// @dev A new PackageRegistry (its genesis constructor arguments; it reads the accounts
-    ///      module from the Directory), bound to Stream, named by `accountsModule` and set as the
+    /// @dev A new PackageRegistry (its genesis constructor arguments, naming the current
+    ///      registry as the one it replaces; it reads the accounts module from the Directory),
+    ///      bound to Stream, named by `accountsModule` and set as the
     ///      auction's 6529 Stream policy, each at its role's delay.
     function _installRegistry(address accountsModule) internal returns (PackageRegistry next) {
         next = PackageRegistry(
@@ -468,7 +515,8 @@ contract ModuleSwapTest is IndependentIntegrationBase {
                     address(directory),
                     address(economics),
                     address(0),
-                    cc0TextFileId
+                    cc0TextFileId,
+                    address(registry)
                 )
             )
         );

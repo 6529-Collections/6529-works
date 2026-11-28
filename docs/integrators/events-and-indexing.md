@@ -194,11 +194,16 @@ The mint policy.
 
 ### Accounts
 
-The accounts module behind `StreamDirectory6529.ACCOUNTS`.
+The accounts module behind `StreamDirectory6529.ACCOUNTS`. A module that replaces another
+(`previous()`) emits nothing for an account until it records it: follow the replaced module's
+events for the account until `AccountInherited`, which carries the record the new module
+copied (a pending change copied with it follows as `ChangeStaged`), and the new module's
+events from then on.
 
 | Event | topic0 |
 | --- | --- |
 | `AccountFrozen(uint256 indexed artistId, uint48 until)` | `0x983a5942682c78759d32ecfdf88ff04ffd3274f4392eae9115fa650723991cc9` |
+| `AccountInherited(uint256 indexed artistId, address indexed from, ArtistIdentity identity, uint48 frozenUntil)` | `0xa6df5e97df70d885aaac414c33e265ea1fcbddcee3a38bda896f46ab997f7db7` |
 | `AccountUnfrozen(uint256 indexed artistId)` | `0x5538ed094a81af73ef675d54ae7afcd21726935740de63e8dd6403fbb715eaf4` |
 | `ArtistRegistered(uint256 indexed artistId, ArtistIdentity identity)` | `0xd245a084992a93fd6ea576a8978336bc03798bf9ae33d7863f3f5ac2464d2e8e` |
 | `ChangeCancelled(uint256 indexed artistId, address indexed by, bool byNetwork)` | `0x88a03d9ccb529a0c33b398ed874de8eb17013d6989134d8ca2bb31d264882ddf` |

@@ -49,8 +49,30 @@ no bind step.
   and every Independent Stream token), or of an edition through `IEditions.stream()` and the same
   ID. A token that answers neither, or answers malformed data, is "false".
 - **Payout refusals.** A payout may not be this module, the directory, 6529 Stream or Editions,
-  the split ledger or one of its vaults, the statement log, the package registry, or any
-  contract declaring (ERC-165) the interface of a network contract that cannot pull money.
+  the split ledger or one of its vaults, the statement log, the package registry, the
+  AccessManager, the consolidation source, a contract listed at deployment (`notPayouts`: the
+  deployment's contracts no rule recognises), any contract declaring (ERC-165) a protocol
+  interface (`ProtocolContracts`, plus a module host, the directory, the record contract, a
+  mint policy and an Independent Stream gate), or any contract whose `authority()` is this
+  module's AccessManager. Checked at staging, at execution and at registration;
+  `isPayoutAllowed(address)` answers it. An account with no code and a contract that is
+  none of the above are accepted.
+- **Replacing the module.** `previous` names the module this one replaces (zero for the
+  first). An account not recorded here is answered from that module's record (`artistIdOf`,
+  `activeAuthorityOf`, `authorityOf`, `payoutAddress`, `frozenUntil`, `artist`,
+  `pendingChange`, `reservedFor`), each read forwarding all gas; consolidation is this
+  module's own source's answer. `register` refuses an address that module knows. Every
+  function that creates or changes an account requires this module to be the one the
+  directory names (`NotModule`), so a module that waits and a module that was replaced write
+  nothing. The first function here that changes an inherited account copies its record,
+  freeze and pending change (`AccountInherited`), `copyAccounts` copies a list for anyone,
+  and no copy calls an address the account chose; `changeNonce` counts from zero here.
+  While a replaced module does not answer: the accounts it still holds have nobody acting
+  and their payout held, and cannot be copied; no address registers; no account, recorded
+  here or not, can name a new root (the address must be known to be free); an address that
+  was a root before a copy, other than the root and the ID's address, is not resolved. An
+  account recorded here still acts, signs, is paid, changes its payout and is frozen
+  ([Replacing a module](../../docs/operations/replacing-modules.md)).
 - **The live read.** A non-root wallet costs one call to the consolidation source, forwarding
   all gas (`BoundedCall.tryReadWordAll`): a shortfall reverts, anything else but `true` is "no".
 - **Compiled waits.** `OWN_CHANGE_DELAY` 2 days, `REPLACEMENT_NOTICE` 14 days, `CONTEST_LAPSE`

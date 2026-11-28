@@ -338,7 +338,8 @@ contract StreamDependenciesPortedTest is IntegrationBase {
             address(directory),
             IEconomicsResolver(address(economics)),
             address(0),
-            cc0TextFileId
+            cc0TextFileId,
+            address(old)
         );
         _govern(network, address(next), abi.encodeCall(next.bindStream, (address(stream))));
         _setPolicy(address(next));

@@ -374,6 +374,7 @@ outsiders.
 | ID | Invariant | Test | Handler actions |
 | --- | --- | --- | --- |
 | INV-ID-1 | `requireSigned` passes exactly for the account's wallets (the root, or a wallet the source says is consolidated with it), never for an outsider and never while the account is frozen ([ID-2, ID-3](../spec/identity-and-recovery.md#rules-and-invariants)). | `invariant_RequireSignedPassesExactlyForTheAccountsWallets` | as named in the handler |
+| INV-ID-14 | A module that replaces another, and has not recorded the account, answers for it as the replaced module does: the same wallets pass `requireSigned`, the same root, acting root, payout address and freeze, and every address that is or was a root names the account in both ([ID-42](../spec/identity-and-recovery.md#rules-and-invariants)). | `invariant_ASuccessorAnswersAsTheModuleItReplaces` | the same handler, driving the replaced module |
 
 The earlier identity campaign (INV-ID-2 to INV-ID-13: the restraint flag, activity and nonces,
 reservations, past authorities, the standing snapshot, timers, the Independent Stream directory with

@@ -143,8 +143,10 @@ abstract contract IndependentStreamFixture is CoreFixture {
                 address(editions),
                 address(ledger),
                 address(0),
-                packageRegistry
-            )
+                packageRegistry,
+                address(0)
+            ),
+            new address[](0)
         );
         registry = new IndependentStreamRegistry(
             address(manager),

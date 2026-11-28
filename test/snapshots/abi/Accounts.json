@@ -47,11 +47,21 @@
             "internalType": "address",
             "name": "packageRegistry",
             "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "previous",
+            "type": "address"
           }
         ],
         "internalType": "struct Accounts.Wiring",
         "name": "w",
         "type": "tuple"
+      },
+      {
+        "internalType": "address[]",
+        "name": "notPayouts",
+        "type": "address[]"
       }
     ],
     "stateMutability": "nonpayable",
@@ -317,6 +327,24 @@
     "type": "error"
   },
   {
+    "id": "0x40343cbc",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "slot",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "address",
+        "name": "caller",
+        "type": "address"
+      }
+    ],
+    "name": "NotModule",
+    "signature": "NotModule(bytes32,address)",
+    "type": "error"
+  },
+  {
     "id": "0x659d4d84",
     "inputs": [
       {
@@ -436,6 +464,61 @@
     ],
     "name": "AccountFrozen",
     "signature": "AccountFrozen(uint256,uint48)",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "id": "0xa6df5e97df70d885aaac414c33e265ea1fcbddcee3a38bda896f46ab997f7db7",
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "artistId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "from",
+        "type": "address"
+      },
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "root",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "payout",
+            "type": "address"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "profileId",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "profileDocHash",
+            "type": "bytes32"
+          }
+        ],
+        "indexed": false,
+        "internalType": "struct ArtistIdentity",
+        "name": "identity",
+        "type": "tuple"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint48",
+        "name": "frozenUntil",
+        "type": "uint48"
+      }
+    ],
+    "name": "AccountInherited",
+    "signature": "AccountInherited(uint256,address,(address,address,bytes32,bytes32),uint48)",
     "type": "event"
   },
   {
@@ -999,7 +1082,7 @@
     "outputs": [
       {
         "internalType": "uint256",
-        "name": "",
+        "name": "id",
         "type": "uint256"
       }
     ],
@@ -1224,6 +1307,21 @@
     "type": "function"
   },
   {
+    "id": "0x6bc87442",
+    "inputs": [
+      {
+        "internalType": "uint256[]",
+        "name": "artistIds",
+        "type": "uint256[]"
+      }
+    ],
+    "name": "copyAccounts",
+    "outputs": [],
+    "signature": "copyAccounts(uint256[])",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
     "id": "0xc41c2f24",
     "inputs": [],
     "name": "directory",
@@ -1426,6 +1524,27 @@
     "type": "function"
   },
   {
+    "id": "0x608b7d42",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "isPayoutAllowed",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "signature": "isPayoutAllowed(address)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "id": "0x229575fc",
     "inputs": [
       {
@@ -1559,6 +1678,21 @@
       }
     ],
     "signature": "pendingChange(uint256)",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "id": "0x7c2b2e71",
+    "inputs": [],
+    "name": "previous",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "previous()",
     "stateMutability": "view",
     "type": "function"
   },
@@ -1803,7 +1937,7 @@
     "outputs": [
       {
         "internalType": "uint256",
-        "name": "",
+        "name": "id",
         "type": "uint256"
       }
     ],

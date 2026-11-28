@@ -95,8 +95,10 @@ contract AccountsResolversTest is CoreFixture {
                 address(editions),
                 address(factory),
                 address(0),
-                packageRegistry
-            )
+                packageRegistry,
+                address(0)
+            ),
+            new address[](0)
         );
         assertEq(address(acc), predicted);
         _consolidate(artist, wallet);

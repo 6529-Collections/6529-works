@@ -2,12 +2,12 @@
   "contracts": [
     {
       "abi": "Accounts.json",
-      "errors": 26,
-      "events": 15,
-      "functions": 50,
+      "errors": 27,
+      "events": 16,
+      "functions": 53,
       "kind": "contract",
       "name": "Accounts",
-      "sha256": "6328c91cb62008a4f27fe754a830def1da521dcbff82e15ffd4c698d81d9565a",
+      "sha256": "c20389c188d1b736c60b360f251f5fc0af85e0b750e4631c6381a005174939ef",
       "solc": "0.8.37+commit.f401782d",
       "source": "src/identity/Accounts.sol"
     },
@@ -542,6 +542,18 @@
       "source": "src/economics/interfaces/IRevenueEscrow.sol"
     },
     {
+      "abi": "IRevokedRoots.json",
+      "errors": 0,
+      "events": 0,
+      "functions": 1,
+      "interfaceId": "0x4294857f",
+      "kind": "interface",
+      "name": "IRevokedRoots",
+      "sha256": "08faeee96d4603944e6a056c561e009d36a332c718465b7ec87d184f51ee4b64",
+      "solc": "0.8.37+commit.f401782d",
+      "source": "src/interfaces/IRevokedRoots.sol"
+    },
+    {
       "abi": "ISaleAdapter.json",
       "errors": 11,
       "events": 9,
@@ -782,10 +794,10 @@
       "abi": "PackageRegistry.json",
       "errors": 32,
       "events": 11,
-      "functions": 33,
+      "functions": 35,
       "kind": "contract",
       "name": "PackageRegistry",
-      "sha256": "e8f02cd774cc01add90191c4589eeec70badfe04017b5f045acf29839984ccac",
+      "sha256": "d3dba82dd4fb7ef933d400c7c36a3e4ca0b3eef4014f44bc11da0750874b31dd",
       "solc": "0.8.37+commit.f401782d",
       "source": "src/curation/PackageRegistry.sol"
     },

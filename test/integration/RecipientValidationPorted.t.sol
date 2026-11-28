@@ -2,6 +2,8 @@
 pragma solidity ^0.8.24;
 
 import { Vm } from "forge-std/Vm.sol";
+import { DeployCore } from "script/DeployCore.sol";
+import { VerifyCore } from "script/VerifyCore.sol";
 import { IClaimRouter } from "src/economics/interfaces/IClaimRouter.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { Splits } from "src/economics/Splits.sol";
@@ -13,17 +15,77 @@ import {
     PRODUCT_STREAM
 } from "src/interfaces/types/EconomicsTypes.sol";
 import { ArtistIdentity } from "src/interfaces/types/IdentityTypes.sol";
-import { Mock1271Account } from "../mocks/economics/EconomicsMocks.sol";
+import { FixedAuthority, Mock1271Account } from "../mocks/economics/EconomicsMocks.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
+
+/// @dev A multi-signature wallet reduced to what the payout check can see of one: it declares
+///      ERC-165 and the token-receiver interfaces, answers ERC-1271, returns nothing for a
+///      function it does not have (a Safe with no fallback handler), and calls out for its
+///      owners. It declares no network interface and is governed by no AccessManager.
+contract MultisigWalletMock {
+    address[] public owners;
+    uint256 public immutable threshold;
+
+    constructor(address[] memory owners_, uint256 threshold_) {
+        owners = owners_;
+        threshold = threshold_;
+    }
+
+    function supportsInterface(bytes4 id) external pure returns (bool) {
+        return id == 0x01ffc9a7 || id == 0x150b7a02 || id == 0x4e2312e0;
+    }
+
+    function isValidSignature(bytes32, bytes calldata) external pure returns (bytes4) {
+        return 0x1626ba7e;
+    }
+
+    function execute(address to, bytes calldata payload) external returns (bytes memory) {
+        (bool ok, bytes memory result) = to.call(payload);
+        require(ok, "call failed");
+        return result;
+    }
+
+    fallback() external payable { }
+
+    receive() external payable { }
+}
+
+/// @dev An artist's own revenue split outside the network: it holds what it is paid, pulls
+///      from the ledger when asked and pays its two members half each.
+contract OwnSplitMock {
+    address payable public immutable first;
+    address payable public immutable second;
+
+    constructor(address payable first_, address payable second_) {
+        (first, second) = (first_, second_);
+    }
+
+    function pull(address ledger, bytes calldata releaseCall) external {
+        (bool ok,) = ledger.call(releaseCall);
+        require(ok, "release failed");
+        uint256 half = address(this).balance / 2;
+        first.transfer(half);
+        second.transfer(address(this).balance);
+    }
+
+    receive() external payable { }
+}
 
 /// @notice Who may receive money, on the deployed stack (re-ported from the retired
 ///         `RecipientValidation` suite). An artist's payout address must be able to pull
-///         (artist-resolved payees are pull-only), so the accounts module refuses the network
-///         contracts that cannot; the network fee recipient must accept payments, so the
+///         (artist-resolved payees are pull-only), so the accounts module refuses every
+///         contract of the deployment and of the network, none of which can; the network fee
+///         recipient must accept payments, so the
 ///         economics resolver refuses the system contracts that cannot.
 contract RecipientValidationPortedTest is IntegrationBase {
     /// @dev A payout the accounts module should have refused was staged.
     error PayoutAccepted(address payout);
+
+    /// @dev The suite deploys the entropy module too, so every contract a deployment can have
+    ///      is checked as a payout.
+    function _withVrf() internal pure override returns (bool) {
+        return true;
+    }
 
     address internal artist;
     address internal bidder = makeAddr("recipientBidder");
@@ -68,54 +130,72 @@ contract RecipientValidationPortedTest is IntegrationBase {
 
     // ------------------------------------------------------------------ artist payouts
 
-    /// @dev The deployed contracts the accounts module knows or recognises (ERC-165) cannot
-    ///      become a payout: the escrow, both tokens, the directory, the split ledger, the
-    ///      statement log, the package registry, the accounts module itself and a deployed vault.
-    function test_Payout_RefusesNetworkContractsThatCannotPull() public {
-        address[9] memory refused = [
-            address(escrow),
-            address(stream),
-            address(editions),
-            address(directory),
-            address(ledger),
-            address(statements),
-            address(registry),
-            address(accounts),
-            _otherWallet(true)
-        ];
-        for (uint256 i; i < refused.length; ++i) {
-            vm.expectRevert(IArtistRegistry.InvalidIdentity.selector);
-            this.stagePayout(refused[i]);
+    /// @dev Stages `payout` and requires the accounts module to refuse it with
+    ///      `InvalidIdentity`; `isPayoutAllowed` must say the same. One contract, one assertion.
+    function assertRefusedAsPayout(address payout, string calldata name) external {
+        assertGt(payout.code.length, 0, string.concat(name, " is not deployed"));
+        assertFalse(accounts.isPayoutAllowed(payout), string.concat(name, " reads as allowed"));
+        try this.stagePayout(payout) {
+            revert PayoutAccepted(payout);
+        } catch (bytes memory reason) {
+            assertEq(
+                reason,
+                abi.encodeWithSelector(IArtistRegistry.InvalidIdentity.selector),
+                string.concat(name, " was not refused as an invalid identity")
+            );
         }
+    }
+
+    /// @dev No contract of the deployment can call `release` for an artist or sign a release,
+    ///      so none can become a payout. Every contract the deployment names
+    ///      (`VerifyCore.codeNames`: the factory, the manager and each contract the deploy
+    ///      creates, the entropy module included) is tried on its own; a refusal of one says
+    ///      nothing about the next, and the failure message lists every contract accepted.
+    function test_Payout_RefusesEveryContractOfTheDeployment() public {
+        string[] memory names = VerifyCore.codeNames(params);
+        assertEq(names.length, DeployCore.order(params).length + 2);
+        assertGe(names.length, 35, "the whole deployment, the entropy module included");
+        string memory accepted;
+        uint256 checked;
+        for (uint256 i; i < names.length; ++i) {
+            address a = DeployCore.addressOf(deployment, names[i]);
+            try this.assertRefusedAsPayout(a, names[i]) {
+                ++checked;
+            } catch {
+                accepted = string.concat(accepted, names[i], " ");
+            }
+        }
+        assertEq(accepted, "", "accepted as an artist payout");
+        assertEq(checked, names.length, "every contract was tried");
         assertEq(accounts.payoutAddress(artistId), artist);
     }
 
-    /// @dev The claim router, both sale adapters and WorkFacts cannot call `release` either
-    ///      (`ProtocolContracts` names the first three as unable to pull a payout), yet the
-    ///      accounts module accepts each: `_payoutAllowed` compares only its wired addresses and
-    ///      probes a list of interfaces that includes none of the router's or the adapters', and
-    ///      WorkFacts declares no ERC-165. With the router as payout, any stranger can strand an
-    ///      ERC-20 artist share: `ClaimRouter.claim` releases it to the router (the router is
-    ///      then the payout, so the ledger's caller check passes), and the router has no way to
-    ///      move tokens on.
-    function check_Payout_RefusesTheRouterTheAdaptersAndWorkFacts() external {
-        address[4] memory refused =
-            [address(claimRouter), address(auction), address(editionAuction), address(facts)];
+    /// @dev Contracts created after genesis are refused by the same rules: a deployed vault of
+    ///      someone else and a contract governed by the same AccessManager.
+    function test_Payout_RefusesLaterContractsOfTheNetwork() public {
+        address governed = address(new FixedAuthority(address(manager)));
+        address[2] memory refused = [_otherWallet(true), governed];
         for (uint256 i; i < refused.length; ++i) {
-            try this.stagePayout(refused[i]) {
-                revert PayoutAccepted(refused[i]);
-            } catch (bytes memory reason) {
-                assertEq(reason, abi.encodeWithSelector(IArtistRegistry.InvalidIdentity.selector));
-            }
+            assertFalse(accounts.isPayoutAllowed(refused[i]));
+            vm.expectRevert(IArtistRegistry.InvalidIdentity.selector);
+            this.stagePayout(refused[i]);
         }
+        // A contract governed by another manager is not the network's.
+        address foreign = address(new FixedAuthority(makeAddr("anotherManager")));
+        assertTrue(accounts.isPayoutAllowed(foreign));
+        assertEq(accounts.payoutAddress(artistId), artist);
     }
 
-    function test_Finding_PayoutAcceptsTheRouterTheAdaptersAndWorkFacts() public {
-        _expectFailure(
-            abi.encodeCall(this.check_Payout_RefusesTheRouterTheAdaptersAndWorkFacts, ()),
-            PayoutAccepted.selector,
-            "Accounts accepts the claim router, the sale adapters and WorkFacts as a payout"
-        );
+    /// @dev An account cannot be created for a contract of the deployment either: `register`
+    ///      makes the root the payout and applies the same check.
+    function test_Payout_RegisterRefusesAContractOfTheDeployment() public {
+        address[4] memory refused =
+            [address(claimRouter), address(feeVault), address(auction), address(facts)];
+        for (uint256 i; i < refused.length; ++i) {
+            vm.prank(address(registry));
+            vm.expectRevert(IArtistRegistry.InvalidIdentity.selector);
+            accounts.register(refused[i], bytes32(0), bytes32(0));
+        }
     }
 
     /// @dev With the artist's own wallet as payout, a stranger batching the artist's index
@@ -142,12 +222,21 @@ contract RecipientValidationPortedTest is IntegrationBase {
         assertEq(artist.balance - before, owed);
     }
 
-    /// @dev Accounts that can pull stay allowed: an EOA and a smart account (an ERC-1271
-    ///      wallet declaring none of the network interfaces). Staged, announced, applied after
-    ///      the own-change delay.
+    /// @dev Accounts that can pull stay allowed: an EOA, a smart account (an ERC-1271 wallet),
+    ///      a multi-signature wallet and an artist's own split contract outside the network.
+    ///      None declares a network interface or is governed by the network's manager. Each
+    ///      is staged, announced, applied after the own-change delay, and then paid.
     function test_Payout_AcceptsAccountsThatCanPull() public {
-        address[2] memory allowed = [makeAddr("artistVault"), address(new Mock1271Account())];
+        address[] memory two = new address[](2);
+        (two[0], two[1]) = (makeAddr("ownerOne"), makeAddr("ownerTwo"));
+        address[4] memory allowed = [
+            makeAddr("artistVault"),
+            address(new Mock1271Account()),
+            address(new MultisigWalletMock(two, 2)),
+            address(new OwnSplitMock(payable(two[0]), payable(two[1])))
+        ];
         for (uint256 i; i < allowed.length; ++i) {
+            assertTrue(accounts.isPayoutAllowed(allowed[i]));
             vm.recordLogs();
             stagePayout(allowed[i]);
             Vm.Log[] memory logs = vm.getRecordedLogs();
@@ -163,6 +252,49 @@ contract RecipientValidationPortedTest is IntegrationBase {
             accounts.executeChange(artistId);
             assertEq(accounts.payoutAddress(artistId), allowed[i]);
         }
+
+        // The split contract, now the payout, pulls the artist's share and pays its members.
+        uint256 owed = ledger.releasable(sellerPayees, bytes32(0), address(0), 0);
+        assertGt(owed, 0);
+        OwnSplitMock(payable(allowed[3]))
+            .pull(
+                address(ledger),
+                abi.encodeCall(ledger.release, (sellerPayees, bytes32(0), address(0), 0))
+            );
+        assertEq(two[0].balance + two[1].balance, owed);
+    }
+
+    /// @dev A multi-signature wallet as the payout pulls the artist's share itself.
+    function test_Payout_AMultisigWalletPullsItsShare() public {
+        address[] memory two = new address[](2);
+        (two[0], two[1]) = (makeAddr("ownerOne"), makeAddr("ownerTwo"));
+        MultisigWalletMock safe = new MultisigWalletMock(two, 2);
+        stagePayout(address(safe));
+        vm.warp(block.timestamp + accounts.OWN_CHANGE_DELAY());
+        accounts.executeChange(artistId);
+        uint256 owed = ledger.releasable(sellerPayees, bytes32(0), address(0), 0);
+        assertGt(owed, 0);
+        safe.execute(
+            address(ledger),
+            abi.encodeCall(ledger.release, (sellerPayees, bytes32(0), address(0), 0))
+        );
+        assertEq(address(safe).balance, owed);
+    }
+
+    /// @dev The check runs again when a change is executed. An address with no code when the
+    ///      change was staged, at which a contract governed by the network's manager is then
+    ///      deployed, is caught at execution and the change is cleared.
+    function test_Payout_AGovernedContractDeployedWhileTheChangeWaitsIsCaughtAtExecution() public {
+        address predicted = vm.computeCreateAddress(address(this), vm.getNonce(address(this)));
+        assertTrue(accounts.isPayoutAllowed(predicted), "no code yet");
+        stagePayout(predicted);
+        assertEq(address(new FixedAuthority(address(manager))), predicted);
+        assertFalse(accounts.isPayoutAllowed(predicted));
+        vm.warp(block.timestamp + accounts.OWN_CHANGE_DELAY());
+        vm.expectEmit(address(accounts));
+        emit IArtistRegistry.ChangeCancelled(artistId, address(accounts), false);
+        accounts.executeChange(artistId);
+        assertEq(accounts.payoutAddress(artistId), artist);
     }
 
     /// @dev A vault's predicted address has no code until someone deploys it, so it cannot be

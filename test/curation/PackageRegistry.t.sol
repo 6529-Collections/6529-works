@@ -142,7 +142,8 @@ contract PackageRegistryTest is CurationBase {
             eoa,
             IEconomicsResolver(address(_policyStub)),
             address(0),
-            keccak256("cc0 text file")
+            keccak256("cc0 text file"),
+            address(0)
         );
         vm.expectRevert(
             abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(verifier))
@@ -154,7 +155,8 @@ contract PackageRegistryTest is CurationBase {
             address(verifier),
             IEconomicsResolver(address(_policyStub)),
             address(0),
-            keccak256("cc0 text file")
+            keccak256("cc0 text file"),
+            address(0)
         );
         // The verifier's code hash is pinned.
         vm.expectRevert(
@@ -167,7 +169,8 @@ contract PackageRegistryTest is CurationBase {
             dir,
             IEconomicsResolver(address(_policyStub)),
             address(0),
-            keccak256("cc0 text file")
+            keccak256("cc0 text file"),
+            address(0)
         );
         vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
         new PackageRegistry(
@@ -177,7 +180,8 @@ contract PackageRegistryTest is CurationBase {
             dir,
             IEconomicsResolver(address(_policyStub)),
             address(0),
-            keccak256("cc0 text file")
+            keccak256("cc0 text file"),
+            address(0)
         );
     }
 
@@ -198,7 +202,8 @@ contract PackageRegistryTest is CurationBase {
             dir,
             IEconomicsResolver(address(_policyStub)),
             address(0),
-            keccak256("cc0 text file")
+            keccak256("cc0 text file"),
+            address(0)
         );
     }
 
@@ -215,12 +220,21 @@ contract PackageRegistryTest is CurationBase {
         );
         bytes32 cc0 = keccak256("cc0 text file");
         vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
-        new PackageRegistry(address(manager), v, vh, dir, IEconomicsResolver(eoa), address(0), cc0);
+        new PackageRegistry(
+            address(manager), v, vh, dir, IEconomicsResolver(eoa), address(0), cc0, address(0)
+        );
         vm.expectRevert(
             abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(entropy))
         );
         new PackageRegistry(
-            address(manager), v, vh, dir, IEconomicsResolver(address(entropy)), address(0), cc0
+            address(manager),
+            v,
+            vh,
+            dir,
+            IEconomicsResolver(address(entropy)),
+            address(0),
+            cc0,
+            address(0)
         );
     }
 
@@ -1624,7 +1638,8 @@ contract PackageRegistryTest is CurationBase {
             ),
             IEconomicsResolver(address(_policyStub)),
             address(0),
-            keccak256("cc0 text file")
+            keccak256("cc0 text file"),
+            address(0)
         );
         bytes32 root = keccak256("misnumbered");
         reg.registerPackage(root, EVIDENCE, _attestation(signerKey1, root, EVIDENCE));
@@ -1648,7 +1663,8 @@ contract PackageRegistryTest is CurationBase {
             ),
             IEconomicsResolver(address(_policyStub)),
             address(0),
-            keccak256("cc0 text file")
+            keccak256("cc0 text file"),
+            address(0)
         );
         bytes32 root = keccak256("undernumbered");
         reg.registerPackage(root, EVIDENCE, _attestation(signerKey1, root, EVIDENCE));

@@ -172,3 +172,83 @@ contract AccountsInvariantTest is AccountsFixture {
         invariant_RequireSignedPassesExactlyForTheAccountsWallets();
     }
 }
+
+/// @notice Invariant: a module that replaces another, and has not recorded the account, answers
+///         for it exactly as the replaced module does, whatever happens there: the same wallets
+///         pass `requireSigned`, the same root acts, the same payout address and freeze, and
+///         every address that is or was a root names the account in both.
+contract AccountsSuccessorInvariantTest is AccountsFixture {
+    AccountsHandler internal handler;
+    Accounts internal next;
+    uint256[5] internal pool = [uint256(0xA1), 0xB2, 0xB3, 0xB4, 0xB5];
+
+    function setUp() public override {
+        super.setUp();
+        _revoke(artist, wallet);
+        _revoke(wallet, artist);
+        handler = new AccountsHandler(registry, delegation, network, artistId, pool);
+        vm.prank(admin);
+        manager.grantRole(NETWORK, address(handler), 0);
+        next = new Accounts(
+            address(manager),
+            adapter,
+            address(adapter).codehash,
+            Accounts.Wiring(
+                address(directory),
+                streamAddr,
+                editionsAddr,
+                address(factory),
+                address(outcomes),
+                packageRegistry,
+                address(registry)
+            ),
+            new address[](0)
+        );
+        targetContract(address(handler));
+    }
+
+    function invariant_ASuccessorAnswersAsTheModuleItReplaces() public view {
+        bytes32 digest = keccak256(abi.encode("probe", block.timestamp));
+        for (uint256 i; i < pool.length; ++i) {
+            address a = vm.addr(pool[i]);
+            assertEq(_passes(pool[i], digest), handler.isWalletInModel(i), vm.toString(i));
+            assertEq(next.artistIdOf(a), registry.artistIdOf(a), "the account an address names");
+            uint256 asId = uint256(uint160(a));
+            assertEq(next.isWallet(asId, a), registry.isWallet(asId, a), "named by its address");
+        }
+        assertFalse(_passes(outsiderKey, digest), "an outsider never passes");
+        assertEq(next.authorityOf(artistId), registry.authorityOf(artistId));
+        assertEq(next.activeAuthorityOf(artistId), registry.activeAuthorityOf(artistId));
+        assertEq(next.payoutAddress(artistId), registry.payoutAddress(artistId));
+        assertEq(next.frozenUntil(artistId), registry.frozenUntil(artistId));
+        assertEq(next.changeNonce(artistId), 0, "nothing was copied");
+    }
+
+    function _passes(uint256 key, bytes32 digest) internal view returns (bool) {
+        try next.requireSigned(artistId, digest, _proof(key, digest)) returns (address w) {
+            return w == vm.addr(key);
+        } catch {
+            return false;
+        }
+    }
+
+    /// @notice Handler self-test: the root really moves in the replaced module, and the
+    ///         successor follows it.
+    function test_SuccessorFollowsTheHandlersMoves() public {
+        uint8 w = HandlerReach.WRITES;
+        HandlerReach.Expect[] memory e = new HandlerReach.Expect[](6);
+        e[0] = HandlerReach.Expect(AccountsHandler.consolidate.selector, w);
+        e[1] = HandlerReach.Expect(AccountsHandler.revoke.selector, w);
+        e[2] = HandlerReach.Expect(AccountsHandler.freeze.selector, w);
+        e[3] = HandlerReach.Expect(AccountsHandler.unfreeze.selector, w);
+        e[4] = HandlerReach.Expect(AccountsHandler.warp.selector, HandlerReach.CLOCK);
+        e[5] = HandlerReach.Expect(AccountsHandler.moveRoot.selector, w);
+        address[] memory sut = new address[](2);
+        sut[0] = address(registry);
+        sut[1] = address(delegation);
+        HandlerReach.check(e, HandlerReach.drive(address(handler), e, sut, 80, 1));
+        assertGt(handler.moves(), 0);
+        assertEq(next.authorityOf(artistId), vm.addr(pool[handler.rootIndex()]));
+        invariant_ASuccessorAnswersAsTheModuleItReplaces();
+    }
+}

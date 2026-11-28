@@ -53,6 +53,7 @@ The module interfaces, with the IDs `test/interfaces/InterfacesCompile.t.sol` pi
 | --- | --- | --- |
 | [`IPackageRegistry`](../../src/interfaces/IPackageRegistry.sol) | `0xfecfa933` | PackageRegistry |
 | [`IItemApprovals`](../../src/interfaces/IItemApprovals.sol) | `0x881b19aa` | PackageRegistry |
+| [`IRevokedRoots`](../../src/interfaces/IRevokedRoots.sol) | `0x4294857f` | PackageRegistry |
 | [`ICurationVerifier`](../../src/interfaces/ICurationVerifier.sol) | `0x492733ca` | Eip712CurationVerifier |
 | [`ICurationSignerVerifier`](../../src/interfaces/ICurationVerifier.sol) | `0x9f12d97a` | Eip712CurationVerifier |
 | [`IEnglishAuction`](../../src/interfaces/IEnglishAuction.sol) | `0x54df3713` | EnglishAuction |

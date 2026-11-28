@@ -92,9 +92,11 @@ are the Independent Stream module's answer.
 - **Independent Stream tokens need an immediate role.** An Independent Stream token accepts the
   network's `rescue`, `setRescueDelay`, `rebind` and `setRebindDelay` only from a role member
   calling directly with no delay; giving that role a delay would lock these functions (LIM-GV-31).
-- **A replacement module carries state over.** A new accounts module must carry the artists
-  over; a new mint policy starts with no content releases and no barred items, and the network
-  releases again what is still to be minted (LIM-GV-32;
+- **A replacement module names the one it replaces.** A new accounts module deployed that
+  way serves the existing accounts, and a new mint policy refuses the roots the old one
+  revoked; deployed with no predecessor, neither inherits anything. A new mint policy starts
+  with no approvals, content releases or barred items, and the network releases again what is
+  still to be minted (LIM-GV-32;
   [Replacing a module](../operations/replacing-modules.md)).
 - **Off-chain copies of a finalized work** are named by the replaceable delivery module; the
   content hashes stay in `StreamWorkFacts6529` (LIM-CNT-23).
