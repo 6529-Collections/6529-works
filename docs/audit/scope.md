@@ -15,7 +15,7 @@ with `--artifacts out --update` to refresh them. No audit has taken place.
 | --- | --- |
 | Language and compiler | Solidity 0.8.37, EVM `prague`, optimizer on (200 runs), `via_ir` off ([`foundry.toml`](../../foundry.toml)) |
 | Dependencies | OpenZeppelin Contracts 5.7.0 and forge-std 1.17.0, as git submodules in `lib/` |
-| Source lines | 14,120 non-blank, non-comment lines in 121 files under `src/` (budget: 17,000) |
+| Source lines | 14,159 non-blank, non-comment lines in 121 files under `src/` (budget: 17,000) |
 | Deployed contracts | Every contract `script/DeployCore.sol` deploys: the permanent core, the money contracts, the modules, the governance pair and the two Independent Stream deployers (the deploy order is in the [runbook](../../script/README.md#how-a-deployment-is-built)) |
 | Linked libraries | None: every library function is `internal` |
 | Proxies and `delegatecall` | None in `src/`. The one exception is OpenZeppelin `Multicall` inside `AccessManager` ([ADR 0002](../adr/0002-access-manager-hardening.md)) |
