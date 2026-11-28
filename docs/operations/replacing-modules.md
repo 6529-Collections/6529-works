@@ -162,7 +162,8 @@ rules ([AUC-57](../spec/stream-and-auctions.md#rules-and-invariants)).
   `settle` on the edition auction for it: that call voids it, and its bidders claim their
   refunds (`claimBid`). Until each call is made, the bids of that sale stay where they are.
 - Name a rescue recipient other than the sale contract. A rescued work that is in the English
-  auction when its sale is settled is sent to the museum.
+  auction when its sale is settled is sent to the museum; one that reaches the auction after
+  its sale closed is sent there by anyone with `sendRescuedToMuseum(saleId)`.
 - For Independent Stream tokens, the Independent Stream module's
   `setAdapter(adapter, form, admitted)` admits a sale contract for one token form (ERC-721 or
   ERC-1155).

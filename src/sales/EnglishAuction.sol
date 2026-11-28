@@ -293,7 +293,8 @@ contract EnglishAuction is
             emit RescuedSaleClosed(saleId);
             // A rescued work that is here again (rescued to this contract, or sent back) could
             // never leave by itself: nothing records, restarts or rescues it a second time. The
-            // resolver's museum is never zero.
+            // resolver's museum is never zero. One that arrives after its sale closed leaves by
+            // `sendRescuedToMuseum`.
             if (held) IERC721(token).transferFrom(address(this), economics.museum(), tokenId);
             return;
         }
@@ -387,6 +388,25 @@ contract EnglishAuction is
         s.status = AuctionState.SETTLED;
         _refundHighBid(saleId, s);
         emit SettlementRefused(saleId);
+    }
+
+    /// @notice Sends a rescued work that this auction holds to the museum. Permissionless.
+    /// @dev For a rescued work that reached this auction outside a settlement: rescued to it, or
+    ///      sent back, after its sale had closed (an unsold Independent Stream work waits here
+    ///      with its sale SETTLED). Nothing here records, restarts or rescues such a work again,
+    ///      so without this call it could never leave. The token's recorded outcome decides:
+    ///      only RESCUED qualifies, so a work waiting for a sale, a restart or a pending delivery
+    ///      is never moved. Reverts with the token's own error if this auction does not hold it.
+    /// @param saleId The sale the work was minted in.
+    function sendRescuedToMuseum(uint256 saleId) external nonReentrant {
+        Sale storage s = _sales[saleId];
+        (address token, uint256 tokenId) = (s.token, s.tokenId);
+        AuctionState state = _state(s);
+        if (state == AuctionState.NONE) revert UnknownSale(saleId);
+        if (IStream(token).workOf(tokenId).outcome != Outcome.RESCUED) {
+            revert InvalidAuctionState(saleId, state);
+        }
+        IERC721(token).transferFrom(address(this), economics.museum(), tokenId);
     }
 
     /// @inheritdoc IEnglishAuction

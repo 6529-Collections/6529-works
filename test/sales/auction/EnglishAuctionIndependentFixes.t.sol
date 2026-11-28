@@ -209,6 +209,70 @@ contract EnglishAuctionIndependentFixesTest is IndependentStreamFixture {
         assertEq(address(auction).balance, 0);
     }
 
+    /// @dev An unsold work waits in the auction with its sale SETTLED. The network then rescues
+    ///      it to the auction itself: no settlement is left to forward it and it can never be
+    ///      offered again, so anyone sends it to the museum. A work that was not rescued, an
+    ///      unknown sale and a work the auction does not hold are refused.
+    function test_SendRescuedToMuseum_AWorkRescuedIntoTheAuctionAfterItsSaleClosed() public {
+        uint256 saleId = _start();
+        _end(saleId);
+        auction.settle(saleId);
+        uint256 id = _tokenId(saleId);
+        bytes memory settled = abi.encodeWithSelector(
+            IEnglishAuction.InvalidAuctionState.selector,
+            saleId,
+            IEnglishAuction.AuctionState.SETTLED
+        );
+        // Unsold and waiting for a restart: not rescued, so it stays.
+        vm.expectRevert(settled);
+        auction.sendRescuedToMuseum(saleId);
+        vm.expectRevert(abi.encodeWithSelector(IEnglishAuction.UnknownSale.selector, 77));
+        auction.sendRescuedToMuseum(77);
+
+        registry.setAdapter(address(auction), IIndependentStreamRegistry.Form.ERC721, false);
+        skip(fStream.rescueDelay());
+        fStream.rescue(id, address(auction));
+        assertEq(fStream.ownerOf(id), address(auction));
+        vm.expectRevert(settled);
+        auction.settle(saleId);
+        vm.expectRevert(settled);
+        auction.restart(saleId);
+
+        vm.expectEmit(address(fStream));
+        emit IERC721.Transfer(address(auction), makeAddr("museum"), id);
+        vm.prank(alice);
+        auction.sendRescuedToMuseum(saleId);
+        assertEq(fStream.ownerOf(id), makeAddr("museum"));
+        assertEq(
+            uint8(auction.auction(saleId).state), uint8(IEnglishAuction.AuctionState.SETTLED)
+        );
+        // Gone: a second call finds nothing to send.
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IERC721Errors.ERC721InsufficientApproval.selector, address(auction), id
+            )
+        );
+        auction.sendRescuedToMuseum(saleId);
+    }
+
+    /// @dev The same when the rescue's recipient sends the work back after the sale closed.
+    function test_SendRescuedToMuseum_ARescuedWorkSentBackAfterItsSaleClosed() public {
+        uint256 saleId = _start();
+        _bid(alice, saleId, 1 ether);
+        uint256 id = _tokenId(saleId);
+        registry.setAdapter(address(auction), IIndependentStreamRegistry.Form.ERC721, false);
+        skip(fStream.rescueDelay());
+        address vault = makeAddr("networkVault");
+        fStream.rescue(id, vault);
+        auction.settle(saleId);
+        assertEq(auction.claimable(alice), 1 ether);
+        vm.prank(vault);
+        fStream.transferFrom(vault, address(auction), id);
+        auction.sendRescuedToMuseum(saleId);
+        assertEq(fStream.ownerOf(id), makeAddr("museum"));
+        assertEq(address(auction).balance, 1 ether, "the credit is untouched");
+    }
+
     function test_Delisted_RefusesBidsRefundsAndCannotRestart() public {
         uint256 saleId = _start();
         _bid(alice, saleId, 1 ether);

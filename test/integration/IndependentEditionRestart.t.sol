@@ -504,6 +504,67 @@ contract IndependentEditionRestartTest is IndependentIntegrationBase {
         _voidsWithBothBidsRefunded(saleId, escrow);
     }
 
+    /// @dev The work is offered again and the network rescues it during that later sale, while
+    ///      the edition sale opened in the first sale has its scan in progress. Closing the
+    ///      rescued 1/1 credits its bid back and leaves it cancelled; the edition sale then
+    ///      voids with both bids refunded and nobody paid (EA-22).
+    function test_Restart_ARescueOfTheRestartedOneOfOneVoidsAnUnpaidEditionSale() public {
+        (uint256 saleId, uint256 escrow) = _startAScanInSeveralCalls();
+        _restartAt(block.timestamp);
+        _ethBid(oneSaleId, collector, 1 ether);
+        _rescueTheRestartedOneOfOne();
+        vm.expectEmit(address(auction));
+        emit IEnglishAuction.RescuedSaleClosed(oneSaleId);
+        auction.settle(oneSaleId);
+        assertEq(auction.claimable(collector), 1 ether, "the 1/1 bid, credited back");
+        vm.prank(collector);
+        auction.claim(collector);
+        assertEq(collector.balance, 1 ether);
+        assertEq(address(auction).balance, 0);
+        assertEq(
+            uint8(ea.endTimes(saleId).oneOfOneState), uint8(IEnglishAuction.AuctionState.CANCELLED)
+        );
+        _voidsWithBothBidsRefunded(saleId, escrow);
+    }
+
+    /// @dev An edition sale that settled and paid before the later sale's work was rescued
+    ///      stands: its winner claims the copies.
+    function test_Restart_ARescueAfterTheClearingPaidLeavesItStanding() public {
+        uint256 saleId = _openEdition();
+        uint256 escrow = _bid(saleId, alice, 100, 2);
+        uint256 firstEnd = auction.auction(oneSaleId).endTime;
+        vm.warp(firstEnd);
+        auction.settle(oneSaleId);
+        vm.warp(firstEnd + CLOSE_OFFSET);
+        IUniformEditionAuction.Clearing memory c = _settleAndCheckThePayout(saleId);
+        uint256 sellerAfter = seller.balance;
+        _restartAt(block.timestamp);
+        _rescueTheRestartedOneOfOne();
+        auction.settle(oneSaleId);
+        assertTrue(indAuction.settle(saleId, new uint256[](0)), "still settled");
+        assertEq(seller.balance, sellerAfter, "nothing taken back, nothing paid again");
+        assertEq(_claim(saleId, 1, alice), escrow - c.revenue, "the difference only");
+        assertEq(fEditions.balanceOf(alice, tokenId), 2, "the copies it won");
+        assertEq(address(indAuction).balance, 0);
+    }
+
+    /// @dev The network removes the English auction as a sale contract and, with the token's
+    ///      rescue wait at zero, rescues the work; the sale is then at its end.
+    function _rescueTheRestartedOneOfOne() internal {
+        _asNetwork(
+            address(independentStream),
+            abi.encodeCall(
+                independentStream.setAdapter,
+                (address(auction), IIndependentStreamRegistry.Form.ERC721, false)
+            )
+        );
+        vm.prank(network);
+        fStream.setRescueDelay(0);
+        vm.prank(network);
+        fStream.rescue(tokenId, makeAddr("rescueRecipient"));
+        vm.warp(auction.auction(oneSaleId).endTime);
+    }
+
     /// @dev The contract is delisted in the same window, after a restart: the sale voids too.
     function test_Restart_ADelistingBetweenUnpaidSettleCallsVoidsWithFullRefunds() public {
         (uint256 saleId, uint256 escrow) = _startAScanInSeveralCalls();

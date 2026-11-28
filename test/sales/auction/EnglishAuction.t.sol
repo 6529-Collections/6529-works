@@ -614,6 +614,31 @@ contract EnglishAuctionTest is AuctionFixture {
         assertEq(auction.claimable(alice), 0);
     }
 
+    /// @dev A sold work waiting for its delivery, an unsold work in the museum and a work in a
+    ///      running sale are not rescued works: `sendRescuedToMuseum` moves none of them. Called
+    ///      on a rescued sale before its settlement, it sends the work on and the settlement
+    ///      still refunds the bid.
+    function test_SendRescuedToMuseum_OnlyARescuedWork() public {
+        uint256 running = _start(1);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IEnglishAuction.InvalidAuctionState.selector,
+                running,
+                IEnglishAuction.AuctionState.ACTIVE
+            )
+        );
+        auction.sendRescuedToMuseum(running);
+        _bid(alice, running, 1 ether);
+        _rescueTo(address(auction));
+        vm.prank(carol);
+        auction.sendRescuedToMuseum(running);
+        assertEq(stream.ownerOf(1), museum);
+        auction.settle(running);
+        assertEq(uint8(_state(running)), uint8(IEnglishAuction.AuctionState.CANCELLED));
+        assertEq(auction.claimable(alice), 1 ether);
+        assertEq(address(auction).balance, 1 ether);
+    }
+
     /// @dev A work rescued while its sale is still running (the delay set to zero) keeps taking
     ///      bids until the end; an outbid bidder is credited as usual, the last high bid at the
     ///      close, and each exactly once.

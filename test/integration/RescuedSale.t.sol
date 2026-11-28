@@ -268,6 +268,9 @@ contract RescuedSaleIndependentTest is IndependentIntegrationBase {
     address internal seller;
     uint256 internal oneSaleId;
     uint256 internal tokenId;
+    /// @dev Close the rescued sale with `settleOrRefund`, from the refusal delay, instead of
+    ///      with `settle` at the end.
+    bool internal closeByRefusalExit;
 
     function setUp() public override {
         super.setUp();
@@ -329,9 +332,11 @@ contract RescuedSaleIndependentTest is IndependentIntegrationBase {
     ///      museum, and the work is never offered again.
     function _closeTheOneOfOne(Custody custody, uint256 oneBid) internal {
         vm.warp(auction.auction(oneSaleId).endTime);
+        if (closeByRefusalExit) vm.warp(block.timestamp + auction.REFUSAL_DELAY());
         vm.expectEmit(address(auction));
         emit IEnglishAuction.RescuedSaleClosed(oneSaleId);
-        auction.settle(oneSaleId);
+        if (closeByRefusalExit) auction.settleOrRefund(oneSaleId);
+        else auction.settle(oneSaleId);
         assertEq(
             uint8(auction.auction(oneSaleId).state), uint8(IEnglishAuction.AuctionState.CANCELLED)
         );
@@ -398,6 +403,19 @@ contract RescuedSaleIndependentTest is IndependentIntegrationBase {
 
     function test_RescuedIndependentSale_SentBackWithNoBid_TheEditionSaleIsVoid() public {
         _run(Custody.SENT_BACK, 0, true);
+    }
+
+    /// @dev The refusal exit as the first closing call: its attempt is `settle` itself, which
+    ///      succeeds for a rescued sale, so the sale ends cancelled (not settled after a refused
+    ///      settlement), the bid is credited once and the edition sale is void.
+    function test_RescuedIndependentSale_ClosedBySettleOrRefund_TheEditionSaleIsVoid() public {
+        closeByRefusalExit = true;
+        _run(Custody.RESCUED_TO_THE_AUCTION, 1 ether, true);
+    }
+
+    function test_RescuedIndependentSale_ClosedBySettleOrRefund_WorkWithItsRecipient() public {
+        closeByRefusalExit = true;
+        _run(Custody.ELSEWHERE, 1 ether, true);
     }
 }
 
