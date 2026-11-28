@@ -37,9 +37,9 @@ delay: the wait that applies is the contract's own setting, which the network ch
 | `unusedRoles` | Roles with no selector |
 
 Other files:
-- `sepolia-r1/` to `sepolia-r9/`: each Sepolia round's public inputs (`accounts.json`,
-  `genesis.json`, `deploy.env`, `manifest-epoch0.json`), kept as deployed. All are dated before
-  28 November 2026 and use the protocol's earlier name, "6529 Works". r1 to r5 were deployed before the
+- `sepolia-r1/` to `sepolia-r10/`: each Sepolia round's public inputs (`accounts.json`,
+  `genesis.json`, `deploy.env`, `manifest-epoch0.json`), kept as deployed. r1 to r9 are dated before
+  the rename of 28 November 2026 and use the protocol's earlier name, "6529 Works". r1 to r5 were deployed before the
   contracts were renamed and are kept exactly as deployed, with the names of that time
   ([old name to new name](../deployments/11155111/README.md)); r6, deployed on 23 November
   2026, is the first round of the plain core and uses the contract names of 22 November 2026, and r7, deployed
@@ -48,9 +48,11 @@ Other files:
   holders, is `main` at `961bc956`, which adds that commit's module
   fixes, with its governance kept as installed too ([runbook](../script/README.md#sepolia)).
   r9, deployed on 28 November 2026 from `main` at `355a7a71` with the same Safe, holders and
-  policy, is the current instance. It runs with
+  policy, runs with
   [the open gate](../script/sepolia/open-gate.md), a test-only contract the network granted
-  its two roles after deployment; the genesis file does not name it.
+  its two roles after deployment; the genesis file does not name it. r10, deployed later that
+  day from `main` at `c6d49658` with the same Safe, holders, policy and settings, is the
+  current instance and the first under the name 6529 Stream; it runs with its own open gate.
 - `local/` (git-ignored): the walkthrough's genesis file, written by
   `script/local/make_genesis.py`.
 

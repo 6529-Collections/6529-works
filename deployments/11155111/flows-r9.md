@@ -1,7 +1,7 @@
 # Sepolia r9: the open gate, and one work taken through it (28 November 2026)
 
 On 28 November 2026 the flows below ran on **r9**
-([README](README.md#sepolia-r9-28-november-2026-current-instance-with-an-open-gate)), the
+([README](README.md#sepolia-r9-28-november-2026-earlier-instance-with-an-open-gate)), the
 current Sepolia instance of the plain permanent core
 ([ADR 0010](../../docs/adr/0010-plain-permanent-core.md)), `main` at `355a7a71`, record
 [`core-1795840548.json`](core-1795840548.json). They open the instance to any wallet with
@@ -105,7 +105,7 @@ The files of the ten-item package, sent by the keeper key (`ContentStore` is ope
 ## Totals and what did not run
 
 44 transactions, 82,702,784 gas in all. The deployment itself is in the
-[README](README.md#sepolia-r9-28-november-2026-current-instance-with-an-open-gate).
+[README](README.md#sepolia-r9-28-november-2026-earlier-instance-with-an-open-gate).
 
 Not run on r9: a bid, a settlement, an edition sale, an Independent Stream sale, a VRF work, a
 dispute and a finalized record. A curated sale with an edition sale, bids, settlement and

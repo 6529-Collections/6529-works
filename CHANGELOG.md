@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **Sepolia r10, the current instance: the first under the name 6529 Stream, with an open
+  gate.** r10 was deployed on 28 November 2026 from `main` at `c6d49658` (blocks 12,230,273 to
+  12,230,309, the Safe, holders and settings of r9, the committed policy), read back by
+  `VerifyCore`, and verified on Sourcify
+  ([record](deployments/11155111/README.md#sepolia-r10-28-november-2026-current-instance-with-an-open-gate),
+  [flows](deployments/11155111/flows-r10.md)). Every address is new. The network then granted
+  `CURATION_SIGNER` and `PLATFORM` to `SepoliaOpenGate` at
+  `0xD40A02677136bd5F147775FC2C143d90c42A424F`, the test-only contract that lets any wallet try
+  the curated path. **The gate removes curation on this test instance**; it must never be
+  deployed on mainnet. Nothing under `src/` changed. Two of the round's tools are corrected
+  for the rename: `make_manifest.py` writes the current manifest schema and repository
+  address, and `make_record.py` reads the manager with `streamManager()`. r9 stays as
+  deployed, under the earlier name, and is listed as the earlier instance.
 - **Pre-freeze cleanups for integrators: unused constants removed, the package registry's
   preview made complete, NatSpec and guide corrected.** The one behaviour change is in
   `PackageRegistry.preview`, a view of a replaceable module; no permanent contract's code
@@ -95,7 +108,7 @@
 - **Sepolia r9, the current instance, with an open gate for test pages.** r9 was deployed on
   28 November 2026 from `main` at `355a7a71` (blocks 12,227,835 to 12,227,871, the Safe and
   holders of r8, the committed policy), read back by `VerifyCore`, and verified on Sourcify
-  ([record](deployments/11155111/README.md#sepolia-r9-28-november-2026-current-instance-with-an-open-gate),
+  ([record](deployments/11155111/README.md#sepolia-r9-28-november-2026-earlier-instance-with-an-open-gate),
   [flows](deployments/11155111/flows-r9.md)). The network then granted `CURATION_SIGNER` and
   `PLATFORM` to `SepoliaOpenGate` (`script/sepolia/`, at
   `0x843d8DCdD279215225f39AFCA33a5Fd4E84370Ac`), a test-only contract that lets any wallet try

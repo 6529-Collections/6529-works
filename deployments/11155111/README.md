@@ -26,7 +26,8 @@
 > earlier name, and so do their contracts: the signing domains (`6529 Works ...`), the hash
 > domains (`6529WORKS_...`), `WorksAccessManager` and the configurator's `worksManager()`. From
 > that date the scripts, the keeper and the walkthrough read the new names and do not work with
-> these instances.
+> these instances. r10, deployed that day from the renamed code, is the first instance they
+> work with.
 
 Deployment records for 6529 Works on Sepolia. Each record is written by
 [`script/Deploy.s.sol`](https://github.com/6529-Collections/6529-works/blob/581cfb6f/script/Deploy.s.sol) and confirmed by
@@ -38,22 +39,26 @@ here is a mainnet deployment.
 
 Flow gas under Glamsterdam: [flows.md](flows.md). r5's flows: [flows.md](flows.md#r5-the-current-main-22-november-2026).
 
-Four instances of the plain core are live, with the same network Safe, holders and VRF
-subscription, at different addresses: r6, r7 and r8, deployed on 23 November 2026, and r9,
-deployed on 28 November 2026. r6 and r7 run the same contracts; r8 runs the modules as changed
-at `961bc956` (no permanent contract changed); r9 runs `main` at `355a7a71` and is open to any
-wallet through a test-only gate.
+Five instances of the plain core are live, with the same network Safe, holders and VRF
+subscription, at different addresses: r6, r7 and r8, deployed on 23 November 2026, and r9
+and r10, deployed on 28 November 2026. r6 and r7 run the same contracts; r8 runs the modules as changed
+at `961bc956` (no permanent contract changed); r9 runs `main` at `355a7a71` and r10 runs `main` at
+`c6d49658`, the first build under the name 6529 Stream; both are open to any wallet through a
+test-only gate.
 Their records are written by [`script/DeployCore.s.sol`](../../script/DeployCore.s.sol) and read
 back by [`script/VerifyCore.s.sol`](../../script/VerifyCore.s.sol).
 
 | Instance | What it is for | Read-back | Flows |
 | --- | --- | --- | --- |
-| [r9](#sepolia-r9-28-november-2026-current-instance-with-an-open-gate) | The current instance, from `main` at `355a7a71`, with [the open gate](../../script/sepolia/open-gate.md): any wallet can run the curated path, with no curation step. A test convenience, never for mainnet | Passed at the head before the gate's grants; after them with `ALLOW_GOVERNANCE_CHANGES=1` | [flows-r9.md](flows-r9.md) |
+| [r10](#sepolia-r10-28-november-2026-current-instance-with-an-open-gate) | The current instance, from `main` at `c6d49658`, the first under the name 6529 Stream, with [the open gate](../../script/sepolia/open-gate.md): any wallet can run the curated path, with no curation step. A test convenience, never for mainnet | Passed at the head before the gate's grants; after them with `ALLOW_GOVERNANCE_CHANGES=1` | [flows-r10.md](flows-r10.md) |
+| [r9](#sepolia-r9-28-november-2026-earlier-instance-with-an-open-gate) | The earlier open instance, from `main` at `355a7a71`, under the earlier name (6529 Works), with [the open gate](../../script/sepolia/open-gate.md): any wallet can run the curated path, with no curation step. A test convenience, never for mainnet | Passed at the head before the gate's grants; after them with `ALLOW_GOVERNANCE_CHANGES=1` | [flows-r9.md](flows-r9.md) |
 | [r8](#sepolia-r8-23-november-2026-earlier-instance) | The earlier instance, from `main` at `961bc956`: it carries that commit's module fixes (an edition sale no longer follows a 1/1 offered again; `restart` waits 15 minutes; `auctionClock` answers four values; no zero fee recipient; an entropy module needs code). Its governance is as genesis installed it | Passes at the chain's head | [flows-r8.md](flows-r8.md) |
 | [r7](#sepolia-r7-23-november-2026-clean-reference-instance) | The reference instance at `5de6abaa`, without those module fixes: its governance is as genesis installed it, with no module announced and nothing pending | Passes at the chain's head, run from `5de6abaa` | [flows-r7.md](flows-r7.md) |
 | [r6](#sepolia-r6-23-november-2026-module-swap-test-instance) | The first round on the plain core, kept for a module-swap test: a renderer is announced for `Stream6529`'s `RENDERER` slot and can be activated from 30 November 2026, 06:18:12 UTC | Passes at a block before the announcement ([how](#reading-r6-back-later)); stops at the head while the proposal is pending or once it is activated | [flows-r6.md](flows-r6.md) |
 
-Use r9 for a test page. r8 is the same design a few commits earlier, with its governance as
+Use r10 for a test page. r9 is the same design under the protocol's earlier name, with its
+own open gate; the current scripts do not work with it. r8 is the same design a few commits
+before r9, with its governance as
 genesis installed it (curated: only its curation signers approve packages); r7 shows the
 behaviour before the module fixes, and r6 is the one to follow for the module swap.
 
@@ -62,9 +67,122 @@ and Dutch sale adapters; r4, the rc.2 rehearsal, is the first deployment under t
 6529 Stream Editions (ADR 0005, D139), with the uniform edition auction and without those
 adapters (decision 8).
 
-## sepolia-r9: 28 November 2026 (current instance, with an open gate)
+## sepolia-r10: 28 November 2026 (current instance, with an open gate)
 
-r9 is the current Sepolia instance of the plain permanent core
+r10 is the current Sepolia instance of the plain permanent core
+([ADR 0010](../../docs/adr/0010-plain-permanent-core.md)), from `main` at `c6d49658`. It is the
+first instance deployed under the name 6529 Stream: its signing domains (`6529 Stream ...`), its
+hash domains, `StreamAccessManager` and the configurator's `streamManager()` carry the new
+name, and the scripts, the keeper and the walkthrough of this repository work with it. It
+repeats r9 on the renamed code, which also carries the pre-freeze cleanups merged that day,
+with the same network Safe, holders, settings and VRF subscription, all throwaway testnet keys.
+Every address differs from r9's. It is a rehearsal: pre-audit code, testnet only.
+
+**r10 is not curated.** After the read-back the network granted `CURATION_SIGNER` and `PLATFORM`
+to [`SepoliaOpenGate`](../../script/sepolia/SepoliaOpenGate.sol), a test-only contract at
+[`0xD40A02677136bd5F147775FC2C143d90c42A424F`](https://sepolia.etherscan.io/address/0xD40A02677136bd5F147775FC2C143d90c42A424F), so that any wallet can
+register a package and create a collection without a curation step
+([The open gate](../../script/sepolia/open-gate.md)). The gate removes curation on this test
+instance. It refuses every chain but Sepolia and a local development chain and must never be
+deployed on mainnet. It is not one of the 35 contracts of the deployment and no contract under
+`src/` knows it.
+
+| | |
+| --- | --- |
+| Status | Deployed and configured in blocks 12,230,273 to 12,230,309 (37 transactions in 37 consecutive blocks), on 28 November 2026 between 13:19:12 and 13:27:36 UTC. The network Safe accepted (`acceptNetwork`, two owner signatures, Safe nonce 13) in block 12,230,311, [`0xa52348a3…`](https://sepolia.etherscan.io/tx/0xa52348a35206bec52a9f240584b58fbbdb630060e5e5955472480c1b8d8a06e7). |
+| Read-back | `script/VerifyCore.s.sol` passed against the chain's head on 28 November 2026 after the acceptance and before the gate's grants (block 12,230,311): 33 contracts with the governance configuration, the four settings at their launch values, the stored configuration equal to the round's parameters, no minter ever added but the two genesis minters, the governance chain holding exactly the expected epoch-0 manifest, no difference between the manager's logs and the genesis file, and the runtime code of all 35 contracts equal to a fresh deployment of the build from block 12,230,270. The record says `"confirmed": true`. After the grants it stops at the head, as it must, and passes with `ALLOW_GOVERNANCE_CHANGES=1` (block 12,230,320), printing exactly two differences: the gate holds `CURATION_SIGNER` and `PLATFORM`. |
+| Source | `main` at `c6d49658`, solc 0.8.37, `prague`. The broadcast ran from the branch commit `c91f26a5`, which adds this round's inputs and two corrections to the round's Python tools and changes nothing under `src/` |
+| Source verification | [Sourcify](https://sourcify.dev): all 35 contracts, `exact_match` for both the runtime and the creation code (`script/sepolia/sourcify.ps1`). The gate is verified there too (`exact_match`). Etherscan verification was not submitted (it needs an API key). |
+| Record | [`core-1795871904.json`](core-1795871904.json): the `<name>: <address>` entries `script/DeployCore.s.sol` wrote, completed by `script/sepolia/make_record.py` |
+| Genesis | [`config/sepolia-r10/genesis.json`](../../config/sepolia-r10/genesis.json), SHA-256 `57580a792efd071253d262b5feaefb9d23cb7a132819d66b8da0cb39a3ea83c3`: the committed policy with r9's holders (`script/sepolia/make_genesis.py r10 config/sepolia-r10/accounts.json`); `tools/check_genesis.py --config` passes on it. It does not name the gate |
+| Epoch-0 manifest | [`config/sepolia-r10/manifest-epoch0.json`](../../config/sepolia-r10/manifest-epoch0.json), SHA-256 `dbd62931b6a473b0be322c35054a8c8a5a08469aec1173b4724aee8bb9e742c5`, the one entry of the governance chain in `StatementLog`. Its URI names the file on `main`, so it resolves once this record is merged. |
+| Inputs | [`config/sepolia-r10/deploy.env`](../../config/sepolia-r10/deploy.env), run by [`script/sepolia/deploy.ps1`](../../script/sepolia/deploy.ps1) |
+| Namespace | `keccak256("6529-stream/sepolia/r10")` = `0x8a22955f…dc40` |
+| Network | [`0x54a769fe591c3F47CF83d30b69e576497CE34454`](https://sepolia.etherscan.io/address/0x54a769fe591c3F47CF83d30b69e576497CE34454): the Safe of r5 to r9 (Safe 1.4.1, threshold 2 of 3 plain-key owners, no module, no guard). It is also the network fee recipient and the marketplace owner of `Stream6529` and `StreamEditions6529`. A call it makes names one instance's contracts and does not touch the others'. |
+| Museum | [`0xB37A2a265044Ca0cB07839950D208D62B3944D25`](https://sepolia.etherscan.io/address/0xB37A2a265044Ca0cB07839950D208D62B3944D25): r5's dedicated testnet EOA, no role. |
+| Cost | 37 transactions, 721,155,355 gas, 0.0072 Sepolia ETH at a 0.01 gwei priority fee. The largest was `IndependentEditionAuction`'s creation: 37,906,096 gas used. |
+
+**Holders and testnet deviation.** As r6 to r9: the same pausers, curation signers, storage
+operator, platform and curator keys and Safe owners (the full addresses are in the genesis file
+and the manifest), and a 1-hour English auction (`AUCTION_DURATION=3600`); every other parameter
+is the launch default, and the genesis file is the committed policy.
+
+**The open gate.** The relay key created the gate through the canonical CREATE2 factory in
+block 12,230,316 ([`0xdf144eff…`](https://sepolia.etherscan.io/tx/0xdf144eff9c6a14db72b9accef8320429fe4ed34fde905839304248b6aa858aa0)). The network Safe then granted it `CURATION_SIGNER` (Safe
+nonce 14, block 12,230,317, [`0x5311cace…`](https://sepolia.etherscan.io/tx/0x5311cace8f46bbf02d0519e1c1761fc82cf5bb071375f57ea64b431a82c1a75d)) and `PLATFORM` (Safe nonce 15, block 12,230,318,
+[`0xbea0e877…`](https://sepolia.etherscan.io/tx/0xbea0e8778e68c39dcaa03619099489634f4369e26ab9190962cafb3325773edf)), each with two owner signatures and no delay. The usual curation signers and the
+platform key keep their roles. To close the gate the Safe revokes the two roles
+(`flows.ps1 -Step gateRevoke`).
+
+**VRF subscription.** The subscription of r5 to r9 is reused. The deployer added r10's entropy
+module as a consumer ([`0x6793eb86…`](https://sepolia.etherscan.io/tx/0x6793eb862aa3a3c5799b1df3c8f0854af378707e06247b02f51993fe0f5bcd70)); the earlier modules stay consumers, nothing was removed and
+nothing was funded. r10 made no VRF request.
+
+**How the broadcast ran.** The deployment, the Safe's acceptance, `VerifyCore`, the gate, its
+grants and the curated start below were first run on a local anvil fork of Sepolia with the
+deployer and the Safe's owners impersonated; the broadcast then went through
+`script/sepolia/deploy.ps1 -Broadcast` and Tenderly's public gateway in one run, without a stop
+or a resume. The addresses, the gate's included, and the three Safe transaction hashes are the
+ones the rehearsal produced.
+
+**What ran on it.** [flows-r10.md](flows-r10.md) lists every transaction: the gate, its grants,
+and one curated work taken through the gate to a started sale with the operator's usual artist
+key (a collection created through the gate, the package registered with the gate's approval
+and no curation signer, the artist's acceptance, the start through `SaleStarter`).
+
+**Left on r10.** The gate is open. One 6529 Stream work (token 1) was in its 1-hour sale with no
+bid when this was written; anyone may settle it after its end. Nothing is scheduled: no module
+is announced and no operation is pending.
+
+### Contracts (r10)
+
+`StreamAccessManager` is created by the configurator's constructor; every other contract is
+created by the deployer's `CoreFactory` in one transaction each. `SepoliaOpenGate`
+([`0xD40A02677136bd5F147775FC2C143d90c42A424F`](https://sepolia.etherscan.io/address/0xD40A02677136bd5F147775FC2C143d90c42A424F), block 12,230,316) is not part of the deployment.
+
+| Contract | Address | Block | Source |
+| --- | --- | ---: | --- |
+| CoreFactory | [`0x9C2EC16EfC36bf7BFd78C48c90a14c9bCa67C177`](https://sepolia.etherscan.io/address/0x9C2EC16EfC36bf7BFd78C48c90a14c9bCa67C177) | 12,230,273 | [Sourcify](https://repo.sourcify.dev/11155111/0x9C2EC16EfC36bf7BFd78C48c90a14c9bCa67C177) |
+| StreamAccessManager | [`0xc29A7DE2599c645eb8788531CCd4AfaED9fd0912`](https://sepolia.etherscan.io/address/0xc29A7DE2599c645eb8788531CCd4AfaED9fd0912) | 12,230,274 | [Sourcify](https://repo.sourcify.dev/11155111/0xc29A7DE2599c645eb8788531CCd4AfaED9fd0912) |
+| GovernanceConfigurator | [`0x281021151Ce1f180078407E1AB46073f6354Db6B`](https://sepolia.etherscan.io/address/0x281021151Ce1f180078407E1AB46073f6354Db6B) | 12,230,274 | [Sourcify](https://repo.sourcify.dev/11155111/0x281021151Ce1f180078407E1AB46073f6354Db6B) |
+| ContentStore | [`0x50B999Da8F0289a301a85Bc536D600D802B50ddd`](https://sepolia.etherscan.io/address/0x50B999Da8F0289a301a85Bc536D600D802B50ddd) | 12,230,275 | [Sourcify](https://repo.sourcify.dev/11155111/0x50B999Da8F0289a301a85Bc536D600D802B50ddd) |
+| StreamWorkFacts6529 | [`0x218D90fC7055c723EC9fa8B959edfDC698AA0eb4`](https://sepolia.etherscan.io/address/0x218D90fC7055c723EC9fa8B959edfDC698AA0eb4) | 12,230,278 | [Sourcify](https://repo.sourcify.dev/11155111/0x218D90fC7055c723EC9fa8B959edfDC698AA0eb4) |
+| StreamDirectory6529 | [`0xa47Fe827F2F0c48E3c89Ab5a13E7C4b226AbE20c`](https://sepolia.etherscan.io/address/0xa47Fe827F2F0c48E3c89Ab5a13E7C4b226AbE20c) | 12,230,279 | [Sourcify](https://repo.sourcify.dev/11155111/0xa47Fe827F2F0c48E3c89Ab5a13E7C4b226AbE20c) |
+| FeeRecipientVault | [`0xDC1A9286010A76e08C6A3Cb1c55aE7b149c8cb1d`](https://sepolia.etherscan.io/address/0xDC1A9286010A76e08C6A3Cb1c55aE7b149c8cb1d) | 12,230,280 | [Sourcify](https://repo.sourcify.dev/11155111/0xDC1A9286010A76e08C6A3Cb1c55aE7b149c8cb1d) |
+| MuseumVault | [`0x603E50262aF8cE8bf3e31312129D72E4F8bF625F`](https://sepolia.etherscan.io/address/0x603E50262aF8cE8bf3e31312129D72E4F8bF625F) | 12,230,281 | [Sourcify](https://repo.sourcify.dev/11155111/0x603E50262aF8cE8bf3e31312129D72E4F8bF625F) |
+| SplitFactory | [`0x77b8C1467946A91fD90B0FbE4c52ea46dE40EaB6`](https://sepolia.etherscan.io/address/0x77b8C1467946A91fD90B0FbE4c52ea46dE40EaB6) | 12,230,282 | [Sourcify](https://repo.sourcify.dev/11155111/0x77b8C1467946A91fD90B0FbE4c52ea46dE40EaB6) |
+| ClaimRouter | [`0xE08895501678cd3285c0c854d0AC76c0D1f01d0a`](https://sepolia.etherscan.io/address/0xE08895501678cd3285c0c854d0AC76c0D1f01d0a) | 12,230,283 | [Sourcify](https://repo.sourcify.dev/11155111/0xE08895501678cd3285c0c854d0AC76c0D1f01d0a) |
+| RevenueEscrow | [`0x1b2Ae0fB171dc7AA64dC8143aceF98E65c825A67`](https://sepolia.etherscan.io/address/0x1b2Ae0fB171dc7AA64dC8143aceF98E65c825A67) | 12,230,284 | [Sourcify](https://repo.sourcify.dev/11155111/0x1b2Ae0fB171dc7AA64dC8143aceF98E65c825A67) |
+| Stream6529 | [`0x697bF4f9B1894d9769Dd5A1c160F22fcFb62A5FC`](https://sepolia.etherscan.io/address/0x697bF4f9B1894d9769Dd5A1c160F22fcFb62A5FC) | 12,230,285 | [Sourcify](https://repo.sourcify.dev/11155111/0x697bF4f9B1894d9769Dd5A1c160F22fcFb62A5FC) |
+| StreamEditions6529 | [`0x1a7095F554a75D94247f2d6FA2AB3bbE15c9C24B`](https://sepolia.etherscan.io/address/0x1a7095F554a75D94247f2d6FA2AB3bbE15c9C24B) | 12,230,286 | [Sourcify](https://repo.sourcify.dev/11155111/0x1a7095F554a75D94247f2d6FA2AB3bbE15c9C24B) |
+| ConsolidationAdapter | [`0x25C1AfcC8FFFAb34811Be382E5EeFD793ea32f34`](https://sepolia.etherscan.io/address/0x25C1AfcC8FFFAb34811Be382E5EeFD793ea32f34) | 12,230,287 | [Sourcify](https://repo.sourcify.dev/11155111/0x25C1AfcC8FFFAb34811Be382E5EeFD793ea32f34) |
+| Accounts | [`0x96d041A620deC6718B52A03e7E341d3075DB6158`](https://sepolia.etherscan.io/address/0x96d041A620deC6718B52A03e7E341d3075DB6158) | 12,230,288 | [Sourcify](https://repo.sourcify.dev/11155111/0x96d041A620deC6718B52A03e7E341d3075DB6158) |
+| AssetAllowlist | [`0x16206a6eb98108e8E8Fc5e9baA8571c3Eae7FcDb`](https://sepolia.etherscan.io/address/0x16206a6eb98108e8E8Fc5e9baA8571c3Eae7FcDb) | 12,230,289 | [Sourcify](https://repo.sourcify.dev/11155111/0x16206a6eb98108e8E8Fc5e9baA8571c3Eae7FcDb) |
+| EconomicsResolver | [`0xfA39632E53235786Acb61B984836C6f8a37c170A`](https://sepolia.etherscan.io/address/0xfA39632E53235786Acb61B984836C6f8a37c170A) | 12,230,290 | [Sourcify](https://repo.sourcify.dev/11155111/0xfA39632E53235786Acb61B984836C6f8a37c170A) |
+| CurationVerifier | [`0x218E1DfDB673fDEbD8C60AbF8E82c9a8162Ed271`](https://sepolia.etherscan.io/address/0x218E1DfDB673fDEbD8C60AbF8E82c9a8162Ed271) | 12,230,291 | [Sourcify](https://repo.sourcify.dev/11155111/0x218E1DfDB673fDEbD8C60AbF8E82c9a8162Ed271) |
+| PackageRegistry | [`0xae608831C3eB757EaB01b4B2712364fb7D33AF69`](https://sepolia.etherscan.io/address/0xae608831C3eB757EaB01b4B2712364fb7D33AF69) | 12,230,292 | [Sourcify](https://repo.sourcify.dev/11155111/0xae608831C3eB757EaB01b4B2712364fb7D33AF69) |
+| EntropyModule | [`0x6F8aBc8F2Db4abe5629CAe84edCF922B3B10C513`](https://sepolia.etherscan.io/address/0x6F8aBc8F2Db4abe5629CAe84edCF922B3B10C513) | 12,230,293 | [Sourcify](https://repo.sourcify.dev/11155111/0x6F8aBc8F2Db4abe5629CAe84edCF922B3B10C513) |
+| StatementLog | [`0xD8a6D2147Ce97DC06275B026fB1043E76C5A2A9b`](https://sepolia.etherscan.io/address/0xD8a6D2147Ce97DC06275B026fB1043E76C5A2A9b) | 12,230,294 | [Sourcify](https://repo.sourcify.dev/11155111/0xD8a6D2147Ce97DC06275B026fB1043E76C5A2A9b) |
+| DependencyRegistry | [`0x6C7b4dc44712002b1c1A5723f055e6925233757B`](https://sepolia.etherscan.io/address/0x6C7b4dc44712002b1c1A5723f055e6925233757B) | 12,230,295 | [Sourcify](https://repo.sourcify.dev/11155111/0x6C7b4dc44712002b1c1A5723f055e6925233757B) |
+| Renderer | [`0xCc04665C82555B34eac5fdaf7549599f829c535f`](https://sepolia.etherscan.io/address/0xCc04665C82555B34eac5fdaf7549599f829c535f) | 12,230,296 | [Sourcify](https://repo.sourcify.dev/11155111/0xCc04665C82555B34eac5fdaf7549599f829c535f) |
+| WorkRules | [`0xabF1dFF0D795F2687847b68911b7ddB06509cF88`](https://sepolia.etherscan.io/address/0xabF1dFF0D795F2687847b68911b7ddB06509cF88) | 12,230,297 | [Sourcify](https://repo.sourcify.dev/11155111/0xabF1dFF0D795F2687847b68911b7ddB06509cF88) |
+| WorkDelivery | [`0xfD9Cb7CeC5d3F8a0362cDf77Efa9fC31426D3596`](https://sepolia.etherscan.io/address/0xfD9Cb7CeC5d3F8a0362cDf77Efa9fC31426D3596) | 12,230,298 | [Sourcify](https://repo.sourcify.dev/11155111/0xfD9Cb7CeC5d3F8a0362cDf77Efa9fC31426D3596) |
+| StreamTerms | [`0xB6433E4FA447bf36e344B42d4d7b515A51E57230`](https://sepolia.etherscan.io/address/0xB6433E4FA447bf36e344B42d4d7b515A51E57230) | 12,230,299 | [Sourcify](https://repo.sourcify.dev/11155111/0xB6433E4FA447bf36e344B42d4d7b515A51E57230) |
+| EnglishAuction | [`0x831f0f454A5Bf3C8305ADb5aE9bFF1A9EB684ee7`](https://sepolia.etherscan.io/address/0x831f0f454A5Bf3C8305ADb5aE9bFF1A9EB684ee7) | 12,230,300 | [Sourcify](https://repo.sourcify.dev/11155111/0x831f0f454A5Bf3C8305ADb5aE9bFF1A9EB684ee7) |
+| UniformEditionAuctionLens | [`0xF9029259b4fDAd4E61BFF685B87aa186C4dAc7fF`](https://sepolia.etherscan.io/address/0xF9029259b4fDAd4E61BFF685B87aa186C4dAc7fF) | 12,230,301 | [Sourcify](https://repo.sourcify.dev/11155111/0xF9029259b4fDAd4E61BFF685B87aa186C4dAc7fF) |
+| UniformEditionAuction | [`0x89aEDF104A512084ab21db22d781c5a5EB4473C1`](https://sepolia.etherscan.io/address/0x89aEDF104A512084ab21db22d781c5a5EB4473C1) | 12,230,302 | [Sourcify](https://repo.sourcify.dev/11155111/0x89aEDF104A512084ab21db22d781c5a5EB4473C1) |
+| IndependentStreamRegistry | [`0x564a3e0e3A1d89B868E9b9Df634fAF5a23848711`](https://sepolia.etherscan.io/address/0x564a3e0e3A1d89B868E9b9Df634fAF5a23848711) | 12,230,303 | [Sourcify](https://repo.sourcify.dev/11155111/0x564a3e0e3A1d89B868E9b9Df634fAF5a23848711) |
+| IndependentStream721Deployer | [`0x8B590DBeAaCE1672f310996F15793db8faF12515`](https://sepolia.etherscan.io/address/0x8B590DBeAaCE1672f310996F15793db8faF12515) | 12,230,304 | [Sourcify](https://repo.sourcify.dev/11155111/0x8B590DBeAaCE1672f310996F15793db8faF12515) |
+| IndependentStreamEditionsDeployer | [`0x80367F50F90ed3Ec2b82E52Bd8b1C100e8113Da3`](https://sepolia.etherscan.io/address/0x80367F50F90ed3Ec2b82E52Bd8b1C100e8113Da3) | 12,230,305 | [Sourcify](https://repo.sourcify.dev/11155111/0x80367F50F90ed3Ec2b82E52Bd8b1C100e8113Da3) |
+| IndependentEditionAuctionLens | [`0x1fCbe2421236e34c922Fff612421313abB9C9409`](https://sepolia.etherscan.io/address/0x1fCbe2421236e34c922Fff612421313abB9C9409) | 12,230,306 | [Sourcify](https://repo.sourcify.dev/11155111/0x1fCbe2421236e34c922Fff612421313abB9C9409) |
+| IndependentEditionAuction | [`0x40fCdaD7E97A573553767Bd278857E31197feBC5`](https://sepolia.etherscan.io/address/0x40fCdaD7E97A573553767Bd278857E31197feBC5) | 12,230,307 | [Sourcify](https://repo.sourcify.dev/11155111/0x40fCdaD7E97A573553767Bd278857E31197feBC5) |
+| SaleStarter | [`0xdA8224F1C33d333BCBC53c72108FD240E57dF1e1`](https://sepolia.etherscan.io/address/0xdA8224F1C33d333BCBC53c72108FD240E57dF1e1) | 12,230,308 | [Sourcify](https://repo.sourcify.dev/11155111/0xdA8224F1C33d333BCBC53c72108FD240E57dF1e1) |
+
+## sepolia-r9: 28 November 2026 (earlier instance, with an open gate)
+
+> [r10](#sepolia-r10-28-november-2026-current-instance-with-an-open-gate) is the current instance. r9 is kept as deployed, with its gate open.
+
+r9 was the current Sepolia instance until r10 was deployed later on 28 November 2026. It is an instance of the plain permanent core
 ([ADR 0010](../../docs/adr/0010-plain-permanent-core.md)), from `main` at `355a7a71`. It repeats
 r8 on the newer code (the changes to `Accounts`, `PackageRegistry`, `EnglishAuction` and the
 other modules merged since `961bc956`), with the same network Safe, holders and VRF
@@ -172,7 +290,7 @@ created by the deployer's `CoreFactory` in one transaction each. `SepoliaOpenGat
 
 ## sepolia-r8: 23 November 2026 (earlier instance)
 
-> [r9](#sepolia-r9-28-november-2026-current-instance-with-an-open-gate) is the current instance. r8 is kept as deployed.
+> [r9](#sepolia-r9-28-november-2026-earlier-instance-with-an-open-gate) is the current instance. r8 is kept as deployed.
 
 r8 was the current Sepolia instance until 28 November 2026. It is an instance of the plain permanent core
 ([ADR 0010](../../docs/adr/0010-plain-permanent-core.md)), from `main` at `961bc956`. That commit
@@ -283,7 +401,7 @@ created by the deployer's `CoreFactory` in one transaction each.
 
 > r7 runs the modules as they were at `5de6abaa`, before the module fixes of `961bc956`:
 > its `auctionClock` answers three values and its edition sales follow a 1/1 offered again.
-> [r9](#sepolia-r9-28-november-2026-current-instance-with-an-open-gate) is the current instance,
+> [r9](#sepolia-r9-28-november-2026-earlier-instance-with-an-open-gate) is the current instance,
 > and [r8](#sepolia-r8-23-november-2026-earlier-instance) the one before it. r7 is kept
 > unchanged as the reference for the earlier behaviour.
 
