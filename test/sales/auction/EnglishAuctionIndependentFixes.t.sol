@@ -243,9 +243,7 @@ contract EnglishAuctionIndependentFixesTest is IndependentStreamFixture {
         vm.prank(alice);
         auction.sendRescuedToMuseum(saleId);
         assertEq(fStream.ownerOf(id), makeAddr("museum"));
-        assertEq(
-            uint8(auction.auction(saleId).state), uint8(IEnglishAuction.AuctionState.SETTLED)
-        );
+        assertEq(uint8(auction.auction(saleId).state), uint8(IEnglishAuction.AuctionState.SETTLED));
         // Gone: a second call finds nothing to send.
         vm.expectRevert(
             abi.encodeWithSelector(

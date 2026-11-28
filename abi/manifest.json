@@ -92,10 +92,10 @@
       "abi": "EnglishAuction.json",
       "errors": 32,
       "events": 19,
-      "functions": 47,
+      "functions": 48,
       "kind": "contract",
       "name": "EnglishAuction",
-      "sha256": "22bc65521a01bf05c245439d4aed528089619f0e459d602a6cbb1f727a06fd23",
+      "sha256": "832fef420f17c6dc17ad6f24dd52fd74478d2d5c3554f28f38870be5a456c667",
       "solc": "0.8.37+commit.f401782d",
       "source": "src/sales/EnglishAuction.sol"
     },

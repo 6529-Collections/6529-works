@@ -108,7 +108,7 @@
       later must do the same (the admission checklist in
       [Replacing a module](docs/operations/replacing-modules.md#sale-contracts-minters)).
     - The edition auction's stateful campaign gains a rescue action (INV-EA-14).
-    - Runtime sizes: `EnglishAuction` 21,805 bytes (margin 2,771), `IndependentEditionAuction`
+    - Runtime sizes: `EnglishAuction` 22,354 bytes (margin 2,222), `IndependentEditionAuction`
       23,957 (619), `IndependentEditionAuctionLens` 24,014 (562), `Stream6529` 14,870 (9,706),
       `IndependentStream6529` 14,159 (10,417). A comment in `Splits` said the tokens'
       `royaltyInfo` shares its arithmetic; it uses `Math.mulDiv`, and the comment now says so.
