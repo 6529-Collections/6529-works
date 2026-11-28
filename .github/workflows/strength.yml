@@ -226,11 +226,17 @@ jobs:
         run: |
           set -euo pipefail
           body="The Test strength workflow failed on commit $SHA: $RUN_URL (attempt $ATTEMPT)."
-          # The search is by words, so the title is compared exactly; only an issue this
-          # workflow's token opened counts.
-          number=$(gh issue list --state open --author "app/github-actions"             --search "in:title \"$TITLE\"" --json number,title             --jq '.[] | [.number, .title] | @tsv' | awk -F'	' -v t="$TITLE" '$2 == t { print $1; exit }')
-          if [ -n "$number" ]; then
-            gh issue comment "$number" --body "$body"
+          # The open issues this workflow's token opened, read from the issues API (not the
+          # search index), with the title compared exactly. If they cannot be read, or the
+          # comment fails, a new issue is opened: a second issue is better than no report.
+          number=""
+          if list=$(gh api --paginate \
+            "repos/$GH_REPO/issues?state=open&creator=github-actions%5Bbot%5D&per_page=100" \
+            --jq '.[] | select(.pull_request | not) | select(.title == env.TITLE) | .number'); then
+            number=$(printf '%s\n' "$list" | head -n 1)
           else
+            echo "::warning::Could not list the open issues; opening a new one."
+          fi
+          if [ -z "$number" ] || ! gh issue comment "$number" --body "$body"; then
             gh issue create --title "$TITLE" --body "$body"
           fi
