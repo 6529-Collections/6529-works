@@ -392,6 +392,10 @@ jobs:
           else
             echo "::warning::Could not list the open issues; opening a new one."
           fi
-          if [ -z "$number" ] || ! gh issue comment "$number" --body "$body"; then
-            gh issue create --title "$TITLE" --body "$body"
+          if [ -n "$number" ] && gh issue comment "$number" --body "$body"; then
+            exit 0
           fi
+          if [ -n "$number" ]; then
+            echo "::warning::Could not comment on issue #$number; opening a new one."
+          fi
+          gh issue create --title "$TITLE" --body "$body"
