@@ -198,6 +198,12 @@
       23,957 (619), `IndependentEditionAuctionLens` 24,014 (562), `Stream6529` 14,870 (9,706),
       `IndependentStream6529` 14,159 (10,417). A comment in `Splits` said the tokens'
       `royaltyInfo` shares its arithmetic; it uses `Math.mulDiv`, and the comment now says so.
+- **A failed scheduled workflow opens an issue.** The nightly, strength and mutation workflows
+  run on `main` only, so a failed run showed on the Actions page and nowhere else; the nightly
+  deep fuzz job failed three times in five days before it was read. Each workflow now ends
+  with a job that, when a run on `main` fails, opens an issue titled `<workflow name> workflow
+  failed on main` with a link to the run, or comments on the open one. That job alone may
+  write issues; nothing else in the workflows gains a permission.
 
 ## 1.0.0-rc.3 (2026-11-23)
 

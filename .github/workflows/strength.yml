@@ -194,3 +194,43 @@ jobs:
           test "$declared" -gt 0 || status=1
           test "$passed" -eq "$declared" || status=1
           exit $status
+
+  report-failure:
+    # A failed run of this workflow on main is otherwise visible only on the Actions page: no
+    # pull request shows it. This job keeps one open issue for the workflow: it opens the issue
+    # on the first failed run and comments on it on each later one; closing the issue is by
+    # hand, once the cause is fixed. It runs only for runs of main in this repository, never
+    # for a pull request or in a fork, and it is the only job here that may write anything:
+    # issues, nothing else. It uses the `gh` on the runner with the run's own token.
+    name: Report a failed run
+    needs: [coverage, symbolic-contracts, symbolic]
+    if: >-
+      ${{ failure() && github.event_name != 'pull_request'
+      && github.event_name != 'pull_request_target' && github.ref == 'refs/heads/main'
+      && github.repository == '6529-Collections/6529-works' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+
+    steps:
+      - name: Open the issue, or comment on the open one
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TITLE: "Test strength workflow failed on main"
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SHA: ${{ github.sha }}
+          ATTEMPT: ${{ github.run_attempt }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          body="The Test strength workflow failed on commit $SHA: $RUN_URL (attempt $ATTEMPT)."
+          # The search is by words, so the title is compared exactly; only an issue this
+          # workflow's token opened counts.
+          number=$(gh issue list --state open --author "app/github-actions"             --search "in:title \"$TITLE\"" --json number,title             --jq '.[] | [.number, .title] | @tsv' | awk -F'	' -v t="$TITLE" '$2 == t { print $1; exit }')
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --body "$body"
+          else
+            gh issue create --title "$TITLE" --body "$body"
+          fi

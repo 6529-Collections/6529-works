@@ -85,6 +85,11 @@ Branch protection requires two checks of `ci.yml`: `Contracts` and `Static analy
 `Contracts` is green only when every other job of the workflow is: the documentation checks,
 the build and its checks, every test part, the walkthrough and static analysis.
 
+The other three workflows run on `main` only, so no pull request shows a failed run. Each ends
+with a job that reports one: it opens an issue titled `<workflow name> workflow failed on
+main` with a link to the run, or comments on that issue while it is open. Close the issue once
+the cause is fixed.
+
 ## ABI and storage snapshots
 
 ```bash
