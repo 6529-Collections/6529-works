@@ -1,5 +1,5 @@
 {
-  "schema": "6529-works/cid-golden/v1",
+  "schema": "6529-stream/cid-golden/v1",
   "profile": {
     "cidVersion": 1,
     "hash": "sha2-256",

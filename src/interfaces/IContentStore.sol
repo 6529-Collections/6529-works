@@ -1,11 +1,11 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity 0.8.37;
 
 import { IChunkStore } from "./IChunkStore.sol";
 
 /// @title IContentStore
 /// @notice Permissionless, content-addressed file storage in SSTORE2 chunks, shared by every
-///         6529 Works contract (ADR 0001 §8).
+///         6529 Stream contract (ADR 0001 §8).
 /// @dev A file is a manifest: an ordered list of chunk hashes plus a declared length, MIME type,
 ///      encoding and digest. Every chunk except the last holds exactly `CHUNK_SIZE` bytes, so
 ///      the same bytes always produce the same chunks and the same file ID. Chunks and manifests

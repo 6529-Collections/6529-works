@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:6529-works:schema:common:v1",
-  "title": "6529 Works convention documents: shared definitions",
+  "$id": "urn:6529-stream:schema:common:v1",
+  "title": "6529 Stream convention documents: shared definitions",
   "description": "Definitions the other convention schemas reference. Hex values are lowercase so that two documents naming the same value compare equal as text. See docs/spec/declarations-and-conventions.md.",
   "$defs": {
     "address": {

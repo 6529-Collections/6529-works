@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity 0.8.37;
 
 import { Limits } from "../interfaces/types/Limits.sol";
@@ -8,7 +8,7 @@ import { Limits } from "../interfaces/types/Limits.sol";
 ///         `[A-Za-z0-9.+-]`. The mint policy applies it to an item's license, and
 ///         `StreamWorkFacts6529` applies it whenever a license is replaced, locked or frozen by
 ///         finalize, so every license a finalized work shows is one a renderer can print.
-/// @dev The identifier keeps its original case (`License`); only `WorksHashing.licenseKey`
+/// @dev The identifier keeps its original case (`License`); only `StreamHashing.licenseKey`
 ///      lowercases it. Plain code: one comparison chain per byte, no assembly.
 library SpdxId {
     /// @notice Whether `spdxId` (in memory) follows the rule.

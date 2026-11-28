@@ -293,7 +293,7 @@
       "floor": 91,
       "was": null
     },
-    "src/governance/WorksAccessManager.sol": {
+    "src/governance/StreamAccessManager.sol": {
       "tier": 3,
       "mutants": 126,
       "killed": 122,
@@ -452,6 +452,15 @@
       "floor": 92,
       "was": null
     },
+    "src/interfaces/types/StreamHashing.sol": {
+      "tier": 3,
+      "mutants": 47,
+      "killed": 43,
+      "timedOut": 0,
+      "newKills": 0,
+      "floor": 89,
+      "was": 87
+    },
     "src/interfaces/types/Typehashes.sol": {
       "tier": 3,
       "mutants": 26,
@@ -460,15 +469,6 @@
       "newKills": 0,
       "floor": 98,
       "was": null
-    },
-    "src/interfaces/types/WorksHashing.sol": {
-      "tier": 3,
-      "mutants": 47,
-      "killed": 43,
-      "timedOut": 0,
-      "newKills": 0,
-      "floor": 89,
-      "was": 87
     },
     "src/libraries/AgedCredits.sol": {
       "tier": 3,

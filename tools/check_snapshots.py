@@ -47,7 +47,7 @@ def keccak256(data: bytes) -> bytes:
     global _KECCAK
     if _KECCAK is None:
         path = Path(__file__).resolve().parent / "content" / "keccak.py"
-        spec = importlib.util.spec_from_file_location("works_keccak_snapshots", path)
+        spec = importlib.util.spec_from_file_location("stream_keccak_snapshots", path)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         _KECCAK = module.keccak256

@@ -135,9 +135,9 @@ def floor_input(doc: dict, media: list[tuple], *, seed: str = "NONE",
 
 #: Stand-in media bytes for the examples' files (never decoded here; the dimensions a signer
 #: measures are an input).
-STILL_PRIMARY_BYTES = b"6529 works example: the still image's PRIMARY file\n" * 40
-STILL_PREVIEW_BYTES = b"6529 works example: the still image's PREVIEW file\n" * 12
-GENERATIVE_PRIMARY_BYTES = b"// 6529 works example: the generative work's script\n" * 20
+STILL_PRIMARY_BYTES = b"6529 stream example: the still image's PRIMARY file\n" * 40
+STILL_PREVIEW_BYTES = b"6529 stream example: the still image's PREVIEW file\n" * 12
+GENERATIVE_PRIMARY_BYTES = b"// 6529 stream example: the generative work's script\n" * 20
 
 
 def still_media() -> tuple[dict, list[tuple]]:

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 import { Test } from "forge-std/Test.sol";
@@ -21,7 +21,7 @@ import {
     SeedPolicy
 } from "src/interfaces/types/PackageTypes.sol";
 import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { UniformEditionAuction } from "src/sales/UniformEditionAuction.sol";
 import { UniformEditionAuctionLens } from "src/sales/UniformEditionAuctionLens.sol";
 import {
@@ -185,7 +185,7 @@ abstract contract EditionAuctionBase is Test {
         item.seedPolicy = uint8(SeedPolicy.NONE);
         item.sale = SaleTerms(SaleKind.ENGLISH_AUCTION, CURRENCY_ETH, "");
         item.edition = EditionTerms(maxCount, CURRENCY_ETH, SaleKind.UNIFORM_AUCTION, "");
-        stream.setWork(id, WorksHashing.itemHash(item), ItemKind.EDITION_MASTER);
+        stream.setWork(id, StreamHashing.itemHash(item), ItemKind.EDITION_MASTER);
     }
 
     /// @dev Opens edition `ID` with cap `maxCount`; returns the sale ID.

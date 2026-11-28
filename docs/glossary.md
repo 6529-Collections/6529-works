@@ -11,8 +11,11 @@ rates are out of 100,000.
 
 ### 6529 Stream
 
-The one shared, network-curated ERC-721 of 1/1 works (`Stream6529`). Permanent. See
-[stream and auctions](spec/stream-and-auctions.md).
+The protocol and its family of contracts. Used of a token, it means the protocol's curated 1/1
+contract: the one shared, network-curated ERC-721 of 1/1 works (`Stream6529`). Permanent. See
+[stream and auctions](spec/stream-and-auctions.md). Records dated before 28 November 2026
+(deployment records, validation records, earlier changelog entries and the ADRs) call the
+protocol by its earlier name, "6529 Works".
 
 ### 6529 Stream Editions
 
@@ -223,9 +226,9 @@ How a token's first sale ended: none, sold, unsold or rescued. Set once by the h
 Freezing a work's descriptive record and pinning the renderer that draws it, in
 `StreamWorkFacts6529`. Never undone.
 
-### windowworks
+### windowstream
 
-`window.works`: the object `{ v: 1, tokenId, seed }` the renderer's page sets before a work's
+`window.stream`: the object `{ v: 1, tokenId, seed }` the renderer's page sets before a work's
 JavaScript runs. See [rendering and tokenURI](spec/rendering-and-tokenuri.md).
 
 ## Curation, disputes and statements

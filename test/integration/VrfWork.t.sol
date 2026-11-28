@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
@@ -7,7 +7,7 @@ import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { Work as StoredWork } from "src/interfaces/core/CoreTypes.sol";
 import { SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
 import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { SaleFlowBase } from "./SaleFlowBase.sol";
 
 /// @notice A seeded 1/1 on the deployed stack with the VRF entropy module (the Chainlink VRF v2.5
@@ -39,7 +39,7 @@ contract VrfWorkTest is SaleFlowBase {
         works[1].item.seed = ARTIST_SEED;
         root = _publish(works);
         _keep(root, works);
-        itemHash = WorksHashing.itemHash(works[0].item);
+        itemHash = StreamHashing.itemHash(works[0].item);
     }
 
     function _request() internal returns (uint256 requestId) {
@@ -166,7 +166,7 @@ contract VrfWorkTest is SaleFlowBase {
         coordinator.fulfill(entropy.requestSeed(copy.item, copyRoot, none), 77);
 
         (uint256 saleId, uint256 tokenId) = _start(copyRoot, _one(copy), 0);
-        bytes32 originalItem = WorksHashing.itemHash(original.item);
+        bytes32 originalItem = StreamHashing.itemHash(original.item);
         vm.expectRevert(
             abi.encodeWithSelector(IEntropyModule.NotRequestable.selector, originalItem)
         );

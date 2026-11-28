@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 import { IReleaseVerifier } from "src/economics/interfaces/IReleaseVerifier.sol";
@@ -9,7 +9,7 @@ import {
     PartyAcceptance,
     StreamMintRequest
 } from "src/interfaces/types/PackageTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { SignatureVerifier } from "src/libraries/SignatureVerifier.sol";
 import { ISafe, SafeForkBase } from "./SafeForkBase.sol";
 
@@ -254,7 +254,7 @@ contract SafeAccountsForkTest is SafeForkBase {
         uint256 nonce = nextMoveNonce[artistId]++;
         uint64 deadline = uint64(block.timestamp + 7 days);
         bytes32 digest =
-            registry.moveDigest(root, WorksHashing.itemHash(works[0].item), nonce, deadline);
+            registry.moveDigest(root, StreamHashing.itemHash(works[0].item), nonce, deadline);
         MoveAuthorization memory move =
             MoveAuthorization(nonce, deadline, _safeProof(artistSafe, digest));
         auction.start(

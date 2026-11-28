@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 import { Test } from "forge-std/Test.sol";
@@ -6,7 +6,7 @@ import { StreamWorkFacts6529 } from "src/core/StreamWorkFacts6529.sol";
 import { Stream6529 } from "src/core/Stream6529.sol";
 import { Facts, Slots } from "src/interfaces/core/CoreTypes.sol";
 import { License } from "src/interfaces/types/PackageTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { FileRole, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
 import { CodeRenderer } from "../mocks/records/RulesMocks.sol";
@@ -173,7 +173,7 @@ contract WorkFactsInvariantTest is RulesFixture {
         }
         // A CC0 work stays CC0, with the CC0 text.
         if (cc0AtOpen[id]) {
-            assertEq(WorksHashing.licenseKey(f.licenseId), WorksHashing.CC0_LICENSE_KEY, "CC0");
+            assertEq(StreamHashing.licenseKey(f.licenseId), StreamHashing.CC0_LICENSE_KEY, "CC0");
             assertEq(f.licenseTextFileId, cc0Text, "CC0 text");
         }
         // The renderer moves only by finalize or repin, and never past the lock.

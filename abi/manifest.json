@@ -106,7 +106,7 @@
       "functions": 4,
       "kind": "contract",
       "name": "GovernanceConfigurator",
-      "sha256": "7163d522711cdf262e05ea5b7aa5924b03f683d6e07ea90436f076aded27299a",
+      "sha256": "b65b83d7f033cd90cb86776fa41d7c0fc1171a9d95bff758ac03cf4311788929",
       "solc": "0.8.37+commit.f401782d",
       "source": "src/governance/GovernanceConfigurator.sol"
     },
@@ -868,6 +868,17 @@
       "source": "src/core/Stream6529.sol"
     },
     {
+      "abi": "StreamAccessManager.json",
+      "errors": 24,
+      "events": 16,
+      "functions": 41,
+      "kind": "contract",
+      "name": "StreamAccessManager",
+      "sha256": "27fcfa43d1925df1b675144234cdb6c99d49bfa58d2664a4b526d6353a4c6093",
+      "solc": "0.8.37+commit.f401782d",
+      "source": "src/governance/StreamAccessManager.sol"
+    },
+    {
       "abi": "StreamDirectory6529.json",
       "errors": 6,
       "events": 6,
@@ -968,17 +979,6 @@
       "sha256": "f037e0579cef5411c3735092bddb8ad07c7adcc3cb2a47eb72183c186912e8f1",
       "solc": "0.8.37+commit.f401782d",
       "source": "src/records/WorkRules.sol"
-    },
-    {
-      "abi": "WorksAccessManager.json",
-      "errors": 24,
-      "events": 16,
-      "functions": 41,
-      "kind": "contract",
-      "name": "WorksAccessManager",
-      "sha256": "27fcfa43d1925df1b675144234cdb6c99d49bfa58d2664a4b526d6353a4c6093",
-      "solc": "0.8.37+commit.f401782d",
-      "source": "src/governance/WorksAccessManager.sol"
     }
   ],
   "generator": "tools/export_abis.py",

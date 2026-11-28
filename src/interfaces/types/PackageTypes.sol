@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity 0.8.37;
 
 import { ISplitWallet } from "../../economics/interfaces/ISplitWallet.sol";
@@ -45,7 +45,7 @@ struct Party {
 /// @notice A work's license (ADR 0001 section 8, owner direction 11 October 2026).
 /// @dev `spdxId` is an SPDX identifier or `LicenseRef-` expression in its original case, for
 ///      display and URLs, from `[A-Za-z0-9.+-]` (at most `Limits.MAX_LICENSE_ID_BYTES`), for
-///      example `CC0-1.0`; its canonical key is `WorksHashing.licenseKey(spdxId)`, keccak256 of
+///      example `CC0-1.0`; its canonical key is `StreamHashing.licenseKey(spdxId)`, keccak256 of
 ///      the ID lowercased, and a license
 ///      is identified by that key plus `textFileId`, the `IContentStore` file ID of the full
 ///      license text. CC0 irrevocability is checked on the key. Editions carry their master's
@@ -88,10 +88,10 @@ struct EditionTerms {
 }
 
 /// @notice One item of an approved package: everything voters approve and every party signs.
-/// @dev Hashed as `WorksHashing.itemHash`; the package root is a Merkle root over
-///      `WorksHashing.leaf(itemHash)`.
+/// @dev Hashed as `StreamHashing.itemHash`; the package root is a Merkle root over
+///      `StreamHashing.leaf(itemHash)`.
 ///      - `contentHash`: the decoded SHA-256 of the primary media, the per-product uniqueness key.
-///      - `mediaHash`: `WorksHashing.mediaHash` of every media file (file IDs and decoded SHA-256,
+///      - `mediaHash`: `StreamHashing.mediaHash` of every media file (file IDs and decoded SHA-256,
 ///        primary first), so media is fixed by approval; the list's first entry carries
 ///        `contentHash`.
 ///      - `recordFileId`: the `IContentStore` file ID of the approved descriptive record (JSON);

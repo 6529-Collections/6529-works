@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity 0.8.37;
 
 import { console2 } from "forge-std/console2.sol";
@@ -6,7 +6,7 @@ import { Vm } from "forge-std/Vm.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { GovernanceConfigurator } from "src/governance/GovernanceConfigurator.sol";
 import { Roles } from "src/governance/Roles.sol";
-import { WorksAccessManager } from "src/governance/WorksAccessManager.sol";
+import { StreamAccessManager } from "src/governance/StreamAccessManager.sol";
 import { IModules } from "src/interfaces/core/IModules.sol";
 import { IStatementLog } from "src/interfaces/IStatementLog.sol";
 import { DeployCore } from "./DeployCore.sol";
@@ -126,7 +126,7 @@ contract VerifyCoreScript is ScriptIO {
         vm.startPrank(p.deployer);
         DeployCore.Deployment memory ref = DeployCore.deploy(p, DeployCore.CREATE2_FACTORY);
         vm.stopPrank();
-        ref.manager = WorksAccessManager(ref.configurator.worksManager());
+        ref.manager = StreamAccessManager(ref.configurator.streamManager());
         VerifyCore.checkCode(p, d, actual, ref, VerifyCore.codeHashes(p, ref));
         return actual.length;
     }
@@ -218,9 +218,9 @@ contract VerifyCoreScript is ScriptIO {
     function holders() external returns (GovernanceConfig.Grant[] memory held) {
         checkChain();
         string memory record = _read(_envString("DEPLOYMENT", ""));
-        WorksAccessManager manager = GovernanceConfigurator(
+        StreamAccessManager manager = GovernanceConfigurator(
                 vm.parseJsonAddress(record, ".GovernanceConfigurator")
-            ).worksManager();
+            ).streamManager();
         VerifyCore.Entry[] memory logs =
             entriesSince(address(manager), vm.parseJsonUint(record, ".forkBlock"));
         console2.log("block:", block.number);
@@ -248,7 +248,7 @@ contract VerifyCoreScript is ScriptIO {
 
     /// @notice Prints the scheduled operations the manager's logs leave open and the manager
     ///         still holds (`getSchedule` is not zero), with the time each becomes ready.
-    function logOpenOperations(WorksAccessManager manager, VerifyCore.Entry[] memory logs)
+    function logOpenOperations(StreamAccessManager manager, VerifyCore.Entry[] memory logs)
         internal
         view
     {
@@ -348,7 +348,7 @@ contract VerifyCoreScript is ScriptIO {
         for (uint256 i; i < list.length; ++i) {
             DeployCore.assign(d, list[i], vm.parseJsonAddress(record, string.concat(".", list[i])));
         }
-        d.manager = WorksAccessManager(d.configurator.worksManager());
+        d.manager = StreamAccessManager(d.configurator.streamManager());
         d.cc0TextFileId = d.workFacts.cc0TextFileId();
     }
 }

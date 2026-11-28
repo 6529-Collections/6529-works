@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 import { Test } from "forge-std/Test.sol";
@@ -6,14 +6,14 @@ import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessMa
 import { Roles } from "src/governance/Roles.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { GovernanceConfigurator } from "src/governance/GovernanceConfigurator.sol";
-import { WorksAccessManager } from "src/governance/WorksAccessManager.sol";
+import { StreamAccessManager } from "src/governance/StreamAccessManager.sol";
 import { GovernedTargetMock } from "../mocks/governance/GovernanceMocks.sol";
 
-/// @notice Deploys and configures a `WorksAccessManager` the way a deploy script must: one
+/// @notice Deploys and configures a `StreamAccessManager` the way a deploy script must: one
 ///         network, one brake, operational keys. Offers schedule and execute helpers. Other
 ///         lanes can inherit it to put their own targets under governance in tests.
 abstract contract GovernanceFixture is Test {
-    bytes32 internal constant MANIFEST = keccak256("6529 Works governance manifest, test epoch");
+    bytes32 internal constant MANIFEST = keccak256("6529 Stream governance manifest, test epoch");
 
     /// @dev The network: the one holder of every network role.
     address internal adminSafe = makeAddr("networkSafe");
@@ -35,13 +35,13 @@ abstract contract GovernanceFixture is Test {
     address internal verifier0 = makeAddr("verifier0");
 
     GovernanceConfigurator internal configurator;
-    WorksAccessManager internal manager;
+    StreamAccessManager internal manager;
     GovernedTargetMock internal target;
 
     /// @dev Deploys the configurator (which deploys the manager) and the sample target.
     function _deployUnconfigured() internal {
         configurator = new GovernanceConfigurator(address(this));
-        manager = configurator.worksManager();
+        manager = configurator.streamManager();
         target = new GovernedTargetMock(address(manager), recipient0, verifier0);
     }
 

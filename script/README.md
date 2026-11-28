@@ -1,9 +1,9 @@
 # script
 
-Deployment, read-back and the operating procedures of 6529 Works on the plain core
+Deployment, read-back and the operating procedures of 6529 Stream on the plain core
 ([ADR 0010](../docs/adr/0010-plain-permanent-core.md); what the system is:
 [overview](../docs/overview.md)). Deployments are to a local `anvil` node or Sepolia only; the
-deploy script refuses every other chain. 6529 Works is pre-audit and not deployed on mainnet.
+deploy script refuses every other chain. 6529 Stream is pre-audit and not deployed on mainnet.
 
 | File | What it is |
 | --- | --- |
@@ -333,7 +333,7 @@ notice, deploys missing vaults, and sends credits that waited `unclaimedPeriod` 
 | Variable | On anvil | Off anvil (Sepolia) |
 | --- | --- | --- |
 | `GENESIS_CONFIG` | `config/genesis.core.example.json` | Required |
-| `DEPLOY_NAMESPACE` | `keccak256("6529-works/core")` | Required |
+| `DEPLOY_NAMESPACE` | `keccak256("6529-stream/core")` | Required |
 | `NETWORK_FEE_RECIPIENT`, `MUSEUM`, `MARKETPLACE_OWNER` | Placeholders | Required |
 | `MANIFEST_PATH` or `MANIFEST_DIGEST`, `MANIFEST_URI` | A placeholder digest | Required (`MANIFEST_PATH` is hashed with SHA-256) |
 | `AUCTION_DURATION` | 24 hours | Optional; a testnet round may shorten the 1/1 auction to 1 hour |

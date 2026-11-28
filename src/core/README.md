@@ -1,6 +1,6 @@
 # core
 
-The permanent contracts of 6529 Works ([ADR 0010](../../docs/adr/0010-plain-permanent-core.md)).
+The permanent contracts of 6529 Stream ([ADR 0010](../../docs/adr/0010-plain-permanent-core.md)).
 They hold only what must never change: who owns which token and the collection's address; the
 facts of a finished work; the network's settings for its waiting periods. Every rule (sale
 terms, fee shares, who may edit a record and when, identity, rescue routing) lives in a

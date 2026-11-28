@@ -1,6 +1,6 @@
 # Testing
 
-How to run each part of the 6529 Works test suite, and what CI runs. The project is pre-audit:
+How to run each part of the 6529 Stream test suite, and what CI runs. The project is pre-audit:
 the suite is evidence for reviewers, not a substitute for an audit.
 [The test map](../../test/README.md) says where the tests for a contract live and how tests and
 mocks are named.
@@ -190,7 +190,8 @@ data file and the page is written again.
 
 ## Validation records
 
-A record of one pass of every layer over one commit, with the counts and what was not run:
+A record of one pass of every layer over one commit, with the counts and what was not run.
+Records dated before 28 November 2026 use the protocol's earlier name, "6529 Works":
 
 - [28 November 2026](validation-2026-11-28.md), commit `355a7a71`; the deep fuzz row on
   `5da3ec36`.

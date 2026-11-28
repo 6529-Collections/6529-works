@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
@@ -7,13 +7,13 @@ import { IndependentStream6529 } from "src/independent/IndependentStream6529.sol
 import { IndependentStreamRegistry } from "src/independent/IndependentStreamRegistry.sol";
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
 import { IIndependentStreamRegistry } from "src/interfaces/IIndependentStreamRegistry.sol";
-import { MintFacts, MintTerms } from "src/interfaces/core/CoreTypes.sol";
+import { Core, MintFacts, MintTerms } from "src/interfaces/core/CoreTypes.sol";
 import { IIndependentStreamGate } from "src/interfaces/core/IIndependentStreamGate.sol";
 import { IMintPolicy } from "src/interfaces/core/IMintPolicy.sol";
 import { MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { ArtistIdentity } from "src/interfaces/types/IdentityTypes.sol";
 import { License, PackageItem, Party } from "src/interfaces/types/PackageTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { IndependentStreamFixture } from "./IndependentStreamFixture.sol";
 
 /// @notice Behaviour of the Independent Stream module that the mutation campaign found unpinned:
@@ -177,13 +177,29 @@ contract IndependentStreamRegistryMutationTest is IndependentStreamFixture {
         assertEq(abi.encode(registry.listingOf(address(0))), abi.encode(none));
     }
 
+    /// @notice The collaborator's consent subject, pinned: the domain, the item hash and the
+    ///         rate, each in a whole word. The values were computed independently with
+    ///         `cast keccak` and `cast abi-encode "f(bytes32,bytes32,uint24)"` for the item hash
+    ///         `keccak256("item")` and the rate 6,529.
+    function test_IndependentConsent_Golden() public pure {
+        assertEq(
+            Core.INDEPENDENT_CONSENT_DOMAIN,
+            0x22fa010d48b30efa0ad886886afa983972547c8d73a243ed9c0bb0fe4c451283
+        );
+        assertEq(Core.INDEPENDENT_CONSENT_DOMAIN, keccak256("6529STREAM_INDEPENDENT_CONSENT_V1"));
+        assertEq(
+            Core.independentConsent(keccak256("item"), 6529),
+            0x3fd493609a08f7c5ee290c4f97480bcf6b1bc7d69a9fe013205ecf6b35e6f142
+        );
+    }
+
     /// @notice The listing subject is the hash of the ABI-encoded domain and fields, each in a
     ///         whole word.
     function test_ListingSubject_IsTheAbiEncodedDomainAndFields() public view {
         IIndependentStreamRegistry.Form form = IIndependentStreamRegistry.Form.ERC1155;
         bytes32 expected = keccak256(
             abi.encode(
-                keccak256("6529WORKS_INDEPENDENT_LISTING_V1"),
+                keccak256("6529STREAM_INDEPENDENT_LISTING_V1"),
                 address(0x1111),
                 form,
                 address(0x2222),
@@ -342,7 +358,7 @@ contract IndependentStreamRegistryMutationTest is IndependentStreamFixture {
         (PackageItem memory item, MediaFile[] memory media) = _item(1);
         media[0].sha256Hash = bytes32(uint256(media[0].sha256Hash) - 1);
         item.contentHash = media[0].sha256Hash;
-        item.mediaHash = WorksHashing.mediaHash(media);
+        item.mediaHash = StreamHashing.mediaHash(media);
         _refuse(item, media, new bytes[](0));
     }
 

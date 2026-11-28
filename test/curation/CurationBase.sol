@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 import { StreamDirectory6529 } from "src/core/StreamDirectory6529.sol";
@@ -29,7 +29,7 @@ import {
     StreamMintRequest
 } from "src/interfaces/types/PackageTypes.sol";
 import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { MintFacts, MintTerms } from "src/interfaces/core/CoreTypes.sol";
 import { IMintPolicy } from "src/interfaces/core/IMintPolicy.sol";
 import { IStream } from "src/interfaces/core/IStream.sol";
@@ -160,7 +160,7 @@ abstract contract CurationHelpers is Test {
     }
 
     function _hash(PackageItem memory item) internal pure returns (bytes32) {
-        return WorksHashing.itemHash(item);
+        return StreamHashing.itemHash(item);
     }
 
     // ---------------------------------------------------------------------- merkle trees
@@ -216,7 +216,7 @@ abstract contract CurationHelpers is Test {
     {
         bytes32[] memory leaves = new bytes32[](items.length);
         for (uint256 i; i < items.length; ++i) {
-            leaves[i] = WorksHashing.leaf(_hash(items[i]));
+            leaves[i] = StreamHashing.leaf(_hash(items[i]));
         }
         root = _root(leaves);
         proofs = new bytes32[][](items.length);
@@ -474,7 +474,7 @@ abstract contract CurationBase is CurationHelpers {
         returns (bytes32 root, PackageItem memory item, MoveAuthorization memory move)
     {
         item = _item(lead, sha);
-        root = WorksHashing.leaf(_hash(item));
+        root = StreamHashing.leaf(_hash(item));
         _register(root);
         _accept(root, leadKey);
         move = _move(leadKey, root, _hash(item), 0);

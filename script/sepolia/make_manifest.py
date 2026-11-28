@@ -29,7 +29,7 @@ REPO = Path(__file__).resolve().parents[2]
 # (created by the configurator), then `DeployCore.order` with the entropy module (a VRF
 # coordinator is set for every Sepolia round).
 CONTRACTS = [
-    "CoreFactory", "WorksAccessManager", "GovernanceConfigurator", "ContentStore", "StreamWorkFacts6529", "StreamDirectory6529",
+    "CoreFactory", "StreamAccessManager", "GovernanceConfigurator", "ContentStore", "StreamWorkFacts6529", "StreamDirectory6529",
     "FeeRecipientVault", "MuseumVault", "SplitFactory", "ClaimRouter", "RevenueEscrow", "Stream6529",
     "StreamEditions6529", "ConsolidationAdapter", "Accounts", "AssetAllowlist", "EconomicsResolver",
     "CurationVerifier", "PackageRegistry", "EntropyModule", "StatementLog", "DependencyRegistry",
@@ -128,7 +128,7 @@ def main(new, prev, commit, sim_path=None):
     assert re.fullmatch(r"[0-9a-f]{40}", commit), commit
     e = env(new)
     m = json.loads((REPO / f"config/sepolia-{prev}/manifest-epoch0.json").read_text(encoding="utf-8"))
-    label = f"6529-works/sepolia/{new}"
+    label = f"6529-stream/sepolia/{new}"
     m["deployment"] = f"sepolia-{new}"
     m["source"]["commit"] = commit
     m["namespace"] = {"label": label, "keccak256": e["DEPLOY_NAMESPACE"]}

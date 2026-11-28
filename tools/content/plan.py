@@ -62,7 +62,7 @@ ATTEST_CHUNKS_PER_CALL = 48
 ONE_CALL_MAX_CHUNKS = 16
 MAX_STORED_BYTES = CHUNK_SIZE * MAX_CHUNKS  # 100,659,200
 
-SCHEMA = "6529-works/content-plan/v1"
+SCHEMA = "6529-stream/content-plan/v1"
 
 _MIME_CHARS = re.compile(r"[a-z0-9+._-]+")
 

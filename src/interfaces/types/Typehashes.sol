@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity 0.8.37;
 
 /// @title Typehashes
@@ -18,13 +18,13 @@ library Typehashes {
     /// @notice The EIP-712 domain version of every v1 contract.
     string internal constant DOMAIN_VERSION = "1";
     /// @notice Domain name of the package registry.
-    string internal constant PACKAGE_REGISTRY_NAME = "6529 Works Package Registry";
+    string internal constant PACKAGE_REGISTRY_NAME = "6529 Stream Package Registry";
     /// @notice Domain name of the v1 curation verifier.
-    string internal constant CURATION_VERIFIER_NAME = "6529 Works Curation Verifier";
+    string internal constant CURATION_VERIFIER_NAME = "6529 Stream Curation Verifier";
     /// @notice Domain name of the work records satellite.
-    string internal constant WORK_RECORDS_NAME = "6529 Works Records";
+    string internal constant WORK_RECORDS_NAME = "6529 Stream Records";
     /// @notice Domain name of the artist registry.
-    string internal constant ARTIST_REGISTRY_NAME = "6529 Works Artist Registry";
+    string internal constant ARTIST_REGISTRY_NAME = "6529 Stream Artist Registry";
 
     /// @notice The lead artist moves an approved item to Stream (package registry domain).
     bytes32 internal constant MOVE_TO_STREAM = keccak256(

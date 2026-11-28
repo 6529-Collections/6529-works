@@ -1,10 +1,10 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
 import { Slots } from "src/interfaces/core/CoreTypes.sol";
 import { ArtistIdentity } from "src/interfaces/types/IdentityTypes.sol";
-import { IndependentStreamRegistryStub } from "../mocks/identity/IdentityWorksMocks.sol";
+import { IndependentStreamRegistryStub } from "../mocks/identity/IdentityStreamMocks.sol";
 import { PreApprovedWallet } from "../mocks/identity/PermanenceMocks.sol";
 import { SignatureReverts } from "test/helpers/SignatureReverts.sol";
 import { AccountsFixture } from "./AccountsFixture.sol";

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
@@ -10,7 +10,7 @@ import { Facts, Outcome, Slots } from "src/interfaces/core/CoreTypes.sol";
 import { IWorkFacts } from "src/interfaces/core/IWorkFacts.sol";
 import { IWorkRules } from "src/interfaces/core/IWorkRules.sol";
 import { License } from "src/interfaces/types/PackageTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { SignatureVerifier } from "src/libraries/SignatureVerifier.sol";
 import { WorkRules } from "src/records/WorkRules.sol";
 import { RecordFlowsBase } from "./RecordFlowsBase.sol";
@@ -278,7 +278,7 @@ contract RecordLifecycleTest is RecordFlowsBase {
             address(rules),
             _relicenseCall(tokenId, w, License("CC0-1.0", cc0TextFileId), _list(lead, collab))
         );
-        assertEq(WorksHashing.licenseKey(_facts(tokenId).licenseId), WorksHashing.CC0_LICENSE_KEY);
+        assertEq(StreamHashing.licenseKey(_facts(tokenId).licenseId), StreamHashing.CC0_LICENSE_KEY);
         License memory mit =
             License("MIT", _storeText(bytes("MIT License (after CC0)"), "text/plain"));
         _governExpectRevert(

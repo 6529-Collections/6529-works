@@ -210,7 +210,7 @@ jobs:
     if: >-
       ${{ failure() && github.event_name != 'pull_request'
       && github.event_name != 'pull_request_target' && github.ref == 'refs/heads/main'
-      && github.repository == '6529-Collections/6529-works' }}
+      && github.repository == '6529-Collections/6529-stream' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

@@ -8,7 +8,7 @@ body:
     attributes:
       value: |
         **Do not report exploitable vulnerabilities here.** Use private vulnerability reporting
-        as described in [SECURITY.md](https://github.com/6529-Collections/6529-works/blob/main/SECURITY.md).
+        as described in [SECURITY.md](https://github.com/6529-Collections/6529-stream/blob/main/SECURITY.md).
         This code is pre-audit, so please do not paste private keys or secrets.
   - type: dropdown
     id: area

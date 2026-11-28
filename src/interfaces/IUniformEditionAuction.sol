@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity 0.8.37;
 
 import { IEnglishAuction } from "./IEnglishAuction.sol";
@@ -479,7 +479,7 @@ interface IUniformEditionAuction is ISaleAdapter {
     /// @param id The edition ID (the master's token ID).
     /// @param data Token-specific terms. For 6529 Stream Editions: `abi.encode(PackageItem item,
     ///        bytes32 packageRoot, bytes32[] proof)`: the master's EDITION_MASTER item, whose
-    ///        `WorksHashing.itemHash` must equal the item hash 6529 Stream stored for `id`
+    ///        `StreamHashing.itemHash` must equal the item hash 6529 Stream stored for `id`
     ///        (`IStream.itemHashOf`, with `workOf(id).kind` 1), and the package it was approved in, which must still be
     ///        approved and contain the item (`IItemApprovals.isApprovedItem` of the package
     ///        registry the lens names: a revoked package or a disabled signer opens no sale; a sale

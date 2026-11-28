@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 import { Base64 } from "@openzeppelin/contracts/utils/Base64.sol";
@@ -17,7 +17,7 @@ import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { IStatementLog } from "src/interfaces/IStatementLog.sol";
 import { FileRole, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { ItemKind, License, SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { JsonEscape } from "src/libraries/JsonEscape.sol";
 import { IRenderer } from "src/interfaces/IRenderer.sol";
 
@@ -196,7 +196,7 @@ abstract contract RendererBase is ContentBase {
         bytes32 recordFile = _file(json, IDENTITY, "application/json");
         RecordInfo memory info;
         info.recordFileId = recordFile;
-        info.licenseKey = WorksHashing.CC0_LICENSE_KEY;
+        info.licenseKey = StreamHashing.CC0_LICENSE_KEY;
         info.version = 1;
         info.onChainComplete = true;
         stream.setWork(id, _core());

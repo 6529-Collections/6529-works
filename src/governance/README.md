@@ -1,7 +1,7 @@
 # governance
 
-One OpenZeppelin 5.7.0 `AccessManager`, subclassed as `WorksAccessManager`, governs every 6529
-Works contract: one authority address (the network), one optional brake, and four delay classes. A
+One OpenZeppelin 5.7.0 `AccessManager`, subclassed as `StreamAccessManager`, governs every 6529
+Stream contract: one authority address (the network), one optional brake, and four delay classes. A
 one-shot configurator installs genesis in one transaction. Rules and flows:
 [Governance](../../docs/spec/governance.md) (`GV-*`); selectors, roles and delays: the generated
 [role and permission matrix](../../docs/audit/roles.md).
@@ -11,9 +11,9 @@ one-shot configurator installs genesis in one transaction. Rules and flows:
 | File | What it is |
 | --- | --- |
 | `Roles.sol` | Internal library: role IDs (3 unused), the class delays (24 hours, 3 days, 7 days, brake 7 days), `isNetworkRole`, `executionDelay`, `label`. Every contract imports it; nothing hard-codes a role ID. |
-| `WorksAccessManager.sol` | Stock `AccessManager` plus the network (`network`, `pendingNetwork`, `transferNetwork`, `acceptNetwork`), the brake (`brake`, `setBrake`, `brakeOnce`, `notBefore`), a 14-day expiry, and the refusal to grant a network role or to remap or close the manager itself. |
+| `StreamAccessManager.sol` | Stock `AccessManager` plus the network (`network`, `pendingNetwork`, `transferNetwork`, `acceptNetwork`), the brake (`brake`, `setBrake`, `brakeOnce`, `notBefore`), a 14-day expiry, and the refusal to grant a network role or to remap or close the manager itself. |
 | `GovernanceConfig.sol` | Internal library: `validate`, `validateWiring`, `isGenesisSelector`, `install`, `verify` (readback) and `hasRecord`. |
-| `GovernanceConfigurator.sol` | Deploys its own `WorksAccessManager`, runs `configure(cfg, manifestHash, wiring)` once for its `deployer`, proposes the network, renounces its installer record, and exposes `verify(cfg)` for readback. |
+| `GovernanceConfigurator.sol` | Deploys its own `StreamAccessManager`, runs `configure(cfg, manifestHash, wiring)` once for its `deployer`, proposes the network, renounces its installer record, and exposes `verify(cfg)` for readback. |
 | `BoundedParameter.sol` | Internal library for raise-only parameters: at most double per step, never above a ceiling fixed in the target's code. Its one v1 user is the entropy module's callback gas limit. |
 
 ## Entry points
@@ -48,7 +48,7 @@ Flows: [Genesis configure](../../docs/spec/governance.md#genesis-configure),
   `GovernanceConfig.isGenesisSelector` and the wiring.
 - **Storage.** Three addresses (`network`, `pendingNetwork`, `brake`) and one mapping of brake
   marks; everything else is OpenZeppelin's.
-- **Where `WorksAccessManager` changes OpenZeppelin, and what each change relies on.** Upgrading
+- **Where `StreamAccessManager` changes OpenZeppelin, and what each change relies on.** Upgrading
   OpenZeppelin means rechecking each override:
   - `hasRole`: every authorisation path (`canCall`, `_canCallSelf`, `_canCancel`) asks it, so the
     network roles answer from the `network` slot everywhere.

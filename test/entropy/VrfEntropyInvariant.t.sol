@@ -1,11 +1,11 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 import { Test } from "forge-std/Test.sol";
 import { VrfEntropyModule } from "src/entropy/VrfEntropyModule.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { PackageItem, SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import {
     EntropyPackageRegistryMock,
     MockVrfCoordinator
@@ -169,7 +169,7 @@ contract EntropyHandler is Test, EntropyItems {
     }
 
     function _twinRoot(uint256 i) internal pure returns (bytes32) {
-        return WorksHashing.leaf(_hash(itemOf(i)));
+        return StreamHashing.leaf(_hash(itemOf(i)));
     }
 
     function _rootOf(uint256 i) internal view returns (bytes32) {

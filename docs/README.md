@@ -28,6 +28,9 @@ Start with the [three-page overview](overview.md).
 | Accepted risks and known gaps | [Known limitations](audit/known-limitations.md) |
 | Deployed addresses | [Addresses](integrators/addresses.md) and [`deployments/`](../deployments/11155111/README.md) |
 
+Records dated before 28 November 2026 (the ADRs, the release notes, earlier changelog entries,
+validation records and deployment records) use the protocol's earlier name, "6529 Works".
+
 [`facts.json`](facts.json) is generated from these owners by
 [`tools/gen_facts.py`](../tools/gen_facts.py) for the 6529.io site.
 

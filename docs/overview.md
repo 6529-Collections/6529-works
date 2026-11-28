@@ -1,14 +1,17 @@
-# 6529 Works in three pages
+# 6529 Stream in three pages
 
 > Pre-audit. Nothing here claims an audit, production readiness or correctness. See the
 > [project status](../README.md#status).
 
 ## 1. What it is
 
-6529 Works is the 6529 network's art protocol on Ethereum. It has two products:
+6529 Stream is the 6529 network's art protocol on Ethereum, and the name of the family of
+contracts that runs it. It has two shared token contracts:
 
-- **6529 Stream**, one shared ERC-721 for curated 1/1 artworks. A work gets in only after the
-  network's curation approves it, and every party named in it has signed.
+- **The curated 1/1 contract** (`Stream6529`), one shared ERC-721 for curated 1/1 artworks. A
+  work gets in only after the network's curation approves it, and every party named in it has
+  signed. Where these pages say a work is "in 6529 Stream" or call something "a Stream work",
+  they mean this contract.
 - **6529 Stream Editions**, one shared ERC-1155. Each edition is anchored by a Stream work
   (its master) and sells in a uniform-price auction that closes just after the master's sale.
 

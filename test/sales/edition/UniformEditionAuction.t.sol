@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
@@ -12,7 +12,7 @@ import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import { ItemKind, PackageItem } from "src/interfaces/types/PackageTypes.sol";
 import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { StepLadder } from "src/interfaces/types/StepLadder.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
 import {
     UniformEditionAuction,
@@ -617,23 +617,23 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         vm.expectRevert(terms);
         auction.open(address(editions), ID, _openData(other));
         // Not an EDITION_MASTER.
-        stream.setWork(ID, WorksHashing.itemHash(item), ItemKind.ORIGINAL);
+        stream.setWork(ID, StreamHashing.itemHash(item), ItemKind.ORIGINAL);
         vm.expectRevert(terms);
         auction.open(address(editions), ID, _openData(item));
         // Another sale kind, a currency other than ETH, params.
         item = _item(ID, 0);
         item.edition.saleKind = SaleKind.FIXED_PRICE;
-        stream.setWork(ID, WorksHashing.itemHash(item), ItemKind.EDITION_MASTER);
+        stream.setWork(ID, StreamHashing.itemHash(item), ItemKind.EDITION_MASTER);
         vm.expectRevert(terms);
         auction.open(address(editions), ID, _openData(item));
         item = _item(ID, 0);
         item.edition.currency = address(0xE20);
-        stream.setWork(ID, WorksHashing.itemHash(item), ItemKind.EDITION_MASTER);
+        stream.setWork(ID, StreamHashing.itemHash(item), ItemKind.EDITION_MASTER);
         vm.expectRevert(terms);
         auction.open(address(editions), ID, _openData(item));
         item = _item(ID, 0);
         item.edition.params = hex"01";
-        stream.setWork(ID, WorksHashing.itemHash(item), ItemKind.EDITION_MASTER);
+        stream.setWork(ID, StreamHashing.itemHash(item), ItemKind.EDITION_MASTER);
         vm.expectRevert(terms);
         auction.open(address(editions), ID, _openData(item));
         // Malformed data: the lens's ABI decoding reverts without data.
@@ -700,7 +700,7 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         for (uint256 i; i < 2; ++i) {
             PackageItem memory item = _item(ID, 0);
             item.edition.params = abi.encode(offsets[i]);
-            stream.setWork(ID, WorksHashing.itemHash(item), ItemKind.EDITION_MASTER);
+            stream.setWork(ID, StreamHashing.itemHash(item), ItemKind.EDITION_MASTER);
             vm.expectRevert(terms);
             auction.open(address(editions), ID, _openData(item));
         }

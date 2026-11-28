@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 import { Vm } from "forge-std/Vm.sol";
@@ -8,8 +8,8 @@ import { Role, Statement } from "src/interfaces/IStatementLog.sol";
 ///         `src/records/README.md` and sharing no code or constants with `StatementLog`. Tests
 ///         use it to rebuild entry hashes, chain heads and EIP-712 digests from event data.
 library StatementModel {
-    bytes32 internal constant ENTRY_DOMAIN = keccak256("6529.works.StatementLog.entry.v1");
-    bytes32 internal constant HEAD_DOMAIN = keccak256("6529.works.StatementLog.head.v1");
+    bytes32 internal constant ENTRY_DOMAIN = keccak256("6529.stream.StatementLog.entry.v1");
+    bytes32 internal constant HEAD_DOMAIN = keccak256("6529.stream.StatementLog.head.v1");
 
     /// @dev A decoded `StatementAppended` event.
     struct Appended {
@@ -91,7 +91,7 @@ library StatementModel {
                 keccak256(
                     "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
                 ),
-                keccak256("6529 Works Statement Log"),
+                keccak256("6529 Stream Statement Log"),
                 keccak256("1"),
                 chainId,
                 log

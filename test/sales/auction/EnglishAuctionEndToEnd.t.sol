@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 import { StreamDirectory6529 } from "src/core/StreamDirectory6529.sol";
@@ -18,7 +18,7 @@ import {
     PartyAcceptance,
     StreamMintRequest
 } from "src/interfaces/types/PackageTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { SaleStarter } from "src/sales/SaleStarter.sol";
 import { CurationHelpers } from "test/curation/CurationBase.sol";
 import { CurationArtistRegistryMock } from "test/mocks/curation/CurationArtistRegistryMock.sol";
@@ -93,7 +93,7 @@ contract EnglishAuctionEndToEndTest is AuctionFixture, CurationHelpers {
     function _request(uint256 i) internal view returns (bytes memory) {
         PackageItem memory item = _itemOf(i);
         uint64 deadline = uint64(block.timestamp + 1 days);
-        bytes32 h = WorksHashing.itemHash(item);
+        bytes32 h = StreamHashing.itemHash(item);
         MoveAuthorization memory move = MoveAuthorization(
             i, deadline, _pf(LEAD_KEY, _sig(LEAD_KEY, registry.moveDigest(root, h, i, deadline)))
         );
@@ -104,7 +104,7 @@ contract EnglishAuctionEndToEndTest is AuctionFixture, CurationHelpers {
         uint256 saleId = auction.start(address(stream), _request(0));
         uint256 tokenId = _tokenId(saleId);
         Work memory w = stream.workOf(tokenId);
-        assertEq(w.itemHash, WorksHashing.itemHash(_itemOf(0)));
+        assertEq(w.itemHash, StreamHashing.itemHash(_itemOf(0)));
         assertEq(w.artistId, uint160(lead));
         assertEq(w.royaltyRate, 6_529);
         IEnglishAuction.Auction memory a = auction.auction(saleId);

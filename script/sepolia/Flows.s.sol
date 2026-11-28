@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity 0.8.37;
 
 import { Script } from "forge-std/Script.sol";
@@ -40,7 +40,7 @@ import {
 } from "src/interfaces/types/PackageTypes.sol";
 import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 
 interface ICurationDigest {
     function approvalDigest(bytes32 packageRoot, bytes32 evidenceHash, uint256 signerEpoch)
@@ -108,7 +108,7 @@ contract Flows is Script {
 
     /// @dev Seeds every file, record and evidence hash. It is kept from r1 so that every instance
     ///      shares one package (same files and root).
-    string internal constant LABEL = "6529-works/sepolia-r1/flows";
+    string internal constant LABEL = "6529-stream/sepolia-r1/flows";
     /// @dev The rehearsals' artist (a throwaway testnet key).
     address internal constant DEFAULT_ARTIST = 0x111Cb972e6734feA580D403555a2a0ed4Cd3Ae1B;
     /// @dev Curation signer 1 of r5 and r6 (holds CURATION_SIGNER); `FLOWS_SIGNER` overrides.
@@ -330,7 +330,7 @@ contract Flows is Script {
         item.kind = master ? uint8(ItemKind.EDITION_MASTER) : uint8(ItemKind.ORIGINAL);
         item.collectionId = i == ITEM_NEW_COLLECTION ? _collection2() : _collection();
         item.contentHash = primary.sha;
-        item.mediaHash = WorksHashing.mediaHash(w.media);
+        item.mediaHash = StreamHashing.mediaHash(w.media);
         item.recordFileId = _fileId(a, _recordFile(i));
         item.parties = new Party[](1);
         item.parties[0] = Party(lead, uint8(PartyRole.ARTIST));
@@ -365,7 +365,7 @@ contract Flows is Script {
     function _leaves(Work[] memory works) internal pure returns (bytes32[] memory leaves) {
         leaves = new bytes32[](works.length);
         for (uint256 i; i < works.length; ++i) {
-            leaves[i] = WorksHashing.leaf(WorksHashing.itemHash(works[i].item));
+            leaves[i] = StreamHashing.leaf(StreamHashing.itemHash(works[i].item));
         }
     }
 
@@ -583,7 +583,7 @@ contract Flows is Script {
         for (uint256 i; i < ITEMS; ++i) {
             _info(
                 string.concat("item-", i.toString()),
-                vm.toString(WorksHashing.itemHash(works[i].item))
+                vm.toString(StreamHashing.itemHash(works[i].item))
             );
         }
         (IPackageRegistry.PackageStatus status,,) = IPackageRegistry(a.registry).packageOf(root);
@@ -650,7 +650,7 @@ contract Flows is Script {
                         address(0),
                         uint256(root),
                         StatementKinds.CURATION_EVIDENCE,
-                        keccak256("6529-works/curation-evidence/1"),
+                        keccak256("6529-stream/curation-evidence/1"),
                         HashRef(HASH_SHA256, _evidence(root)),
                         "ar://sepolia-r1-flows-curation-evidence",
                         bytes32(0),
@@ -703,7 +703,7 @@ contract Flows is Script {
             string.concat("move-", index.toString()),
             _moveSigner(a, artistId),
             IDigests(a.registry)
-                .moveDigest(root, WorksHashing.itemHash(works[index].item), nonce, deadline)
+                .moveDigest(root, StreamHashing.itemHash(works[index].item), nonce, deadline)
         );
     }
 
@@ -878,7 +878,7 @@ contract Flows is Script {
         if (a.entropy == address(0)) revert NoEntropyModule();
         Work[] memory works = _works(a);
         bytes32[] memory leaves = _leaves(works);
-        _info("itemHash", vm.toString(WorksHashing.itemHash(works[ITEM_VRF].item)));
+        _info("itemHash", vm.toString(StreamHashing.itemHash(works[ITEM_VRF].item)));
         _tx(
             "requestSeed",
             "any",
@@ -1199,7 +1199,7 @@ contract Flows is Script {
                         a.stream,
                         tokenId,
                         StatementKinds.DISPUTE_OUTCOME,
-                        keccak256("6529-works/dispute-outcome/1"),
+                        keccak256("6529-stream/dispute-outcome/1"),
                         HashRef(HASH_SHA256, sha256(text)),
                         "ar://sepolia-r4-flows-dispute-outcome",
                         bytes32(0),
@@ -1318,7 +1318,7 @@ contract Flows is Script {
         item.kind = master ? uint8(ItemKind.EDITION_MASTER) : uint8(ItemKind.ORIGINAL);
         item.collectionId = 1;
         item.contentHash = media.sha;
-        item.mediaHash = WorksHashing.mediaHash(w.media);
+        item.mediaHash = StreamHashing.mediaHash(w.media);
         item.recordFileId = _fileId(a, rec);
         item.parties = new Party[](1);
         item.parties[0] = Party(lead, uint8(PartyRole.ARTIST));
@@ -1511,7 +1511,7 @@ contract Flows is Script {
     ) external view {
         Addrs memory a = _addrs();
         address module = _registerTx(a, token, deadline, signature, false);
-        bytes32 itemHash = WorksHashing.itemHash(_independentWork(a).item);
+        bytes32 itemHash = StreamHashing.itemHash(_independentWork(a).item);
         _info("itemHash", vm.toString(itemHash));
         _tx(
             string.concat("independentApproveItem", _independentSuffix()),

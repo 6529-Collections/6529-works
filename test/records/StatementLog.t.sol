@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 import { Vm } from "forge-std/Vm.sol";
@@ -47,7 +47,7 @@ contract StatementLogTest is StatementLogFixture {
         assertEq(stored, head);
         assertEq(
             head,
-            keccak256(abi.encode(keccak256("6529.works.StatementLog.head.v1"), bytes32(0), entry))
+            keccak256(abi.encode(keccak256("6529.stream.StatementLog.head.v1"), bytes32(0), entry))
         );
     }
 

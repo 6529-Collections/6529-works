@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 import { Vm } from "forge-std/Vm.sol";
@@ -12,7 +12,7 @@ import { BoundedCall } from "src/libraries/BoundedCall.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
 import { SignatureVerifier } from "src/libraries/SignatureVerifier.sol";
 import { Burner, GasRuleAssertions } from "../helpers/GasRule.sol";
-import { ConsolidationSourceMock, InterfaceStub } from "../mocks/identity/IdentityWorksMocks.sol";
+import { ConsolidationSourceMock, InterfaceStub } from "../mocks/identity/IdentityStreamMocks.sol";
 import { PredecessorMock } from "../mocks/identity/PredecessorMock.sol";
 import { AccountsFixture } from "./AccountsFixture.sol";
 

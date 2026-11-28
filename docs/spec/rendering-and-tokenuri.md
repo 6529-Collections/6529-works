@@ -81,7 +81,7 @@ The renderer writes these traits, in this order, each as `{"trait_type":...,"val
 | `Dispute statement` | the renderer has a statement log and `latestDisputeOutcome` is nonzero | The entry hash, `0x` and 64 hex digits |
 
 The seed is `Work.seed`, stored in the token at mint, and is shown from mint. The fallback name
-`6529 Works #<id>` exists for a token without a collection, which Stream never mints.
+`6529 Stream #<id>` exists for a token without a collection, which Stream never mints.
 
 ### Media selection
 
@@ -122,10 +122,10 @@ ONCHAIN (the implicit on-chain copy) leaves the member out, and no other copy is
 A JavaScript primary is wrapped in a fixed page:
 
 ```html
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body{margin:0;height:100%;overflow:hidden}</style></head><body><script>window.works={v:1,tokenId:7,seed:"0x...64 hex digits"};</script><script>/* the artist's script */</script></body></html>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body{margin:0;height:100%;overflow:hidden}</style></head><body><script>window.stream={v:1,tokenId:7,seed:"0x...64 hex digits"};</script><script>/* the artist's script */</script></body></html>
 ```
 
-- [`window.works`](../glossary.md#windowworks) is a public, stable interface: `v` (1), `tokenId`
+- [`window.stream`](../glossary.md#windowstream) is a public, stable interface: `v` (1), `tokenId`
   (the rendered ID; for an edition, the edition ID, which equals the master's) and `seed` (`0x`
   hex, or `null` without a seed). A change to its fields needs a new `v`, which means a new
   renderer.
@@ -185,7 +185,7 @@ primary it cannot inline under those limits. Call it on `Stream6529.rendererOf(i
 | RND-16 | The media list must start with a primary file, or the call reverts. | `test_FailsClosed_ThePrimaryMediaFileIsRequired` |
 | RND-17 | A primary is inlined only when the work is on-chain complete, the file complete and its weighted size within the limit. | `test_Locator_NotOnChainCompleteIsNotInlined`, `test_Inline_TheThresholdIsInclusive` |
 | RND-18 | `Base64` text is copied only once attested; gzip files are never inlined. | `test_Base64_AValidFileIsCopiedOnlyOnceAttested` |
-| RND-19 | A script is wrapped only if small, UTF-8 and without dependencies; `</script` and `<!--` are neutralized. | `test_Script_IsWrappedInAPageThatSetsWindowWorks` |
+| RND-19 | A script is wrapped only if small, UTF-8 and without dependencies; `</script` and `<!--` are neutralized. | `test_Script_IsWrappedInAPageThatSetsWindowStream` |
 | RND-20 | The preferred locator is served only if it passes the renderer's locator check; a failing or malformed delivery answer is "no locator". | `test_Locator_AnOnChainPreferenceGivesNoUrl` |
 | RND-21 | `fullTokenURI` inlines up to 1 MiB and reverts instead of falling back. | `test_Full_RevertsWhenThePrimaryCannotBeInlined` |
 | RND-22 | A work's facts are read through plain views of the token (`workOf`, `collectionOf`) and `StreamWorkFacts6529.factsOf`. | `test_Edition_RendersTheMastersWorkAsAnEdition` |

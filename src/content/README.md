@@ -65,7 +65,7 @@ Integrators start at [Reading a work](../../docs/integrators/reading-a-work.md) 
   `HtmlScript` or the read path, means rerunning
   [`RendererGas.t.sol`](../../test/content/renderer/RendererGas.t.sol) and
   `TokenUriBudget.t.sol`; the margin is small.
-- **`window.works` is a public API.** Finalized works pin their renderer, so version 1's fields
+- **`window.stream` is a public API.** Finalized works pin their renderer, so version 1's fields
   never change meaning; a change needs a new `v` and a new renderer.
 - **Behavior is owned by the spec:** piecewise writes and links (WS-50, WS-51), bounded source
   answers (WS-52), open encoding ids (WS-54), degraded versus reverting metadata (RND-9,

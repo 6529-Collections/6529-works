@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
@@ -21,7 +21,7 @@ import {
 } from "src/interfaces/types/EconomicsTypes.sol";
 import { Limits } from "src/interfaces/types/Limits.sol";
 import { License } from "src/interfaces/types/PackageTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { MockERC20 } from "../mocks/economics/EconomicsMocks.sol";
 import { EconomicsBase } from "./EconomicsBase.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
@@ -60,7 +60,7 @@ contract EconomicsResolverTest is EconomicsBase {
         for (uint256 i; i < 3; ++i) {
             License memory license = econ.defaultLicense(products[i]);
             assertEq(license.spdxId, "CC0-1.0");
-            assertEq(WorksHashing.licenseKey(license.spdxId), WorksHashing.CC0_LICENSE_KEY);
+            assertEq(StreamHashing.licenseKey(license.spdxId), StreamHashing.CC0_LICENSE_KEY);
             assertEq(license.textFileId, CC0_TEXT);
             (uint64 fee, uint64 royalty, uint64 lic) = econ.revisions(products[i]);
             assertEq(fee + royalty + lic, 3);
@@ -305,7 +305,9 @@ contract EconomicsResolverTest is EconomicsBase {
     /// @dev Only the CC0 key needs the pinned text: a key that sorts above it does not
     ///      (`GPL-3.0`'s does), whatever the text.
     function test_OnlyTheCc0KeyNeedsThePinnedText() public {
-        assertGt(uint256(WorksHashing.licenseKey("GPL-3.0")), uint256(WorksHashing.CC0_LICENSE_KEY));
+        assertGt(
+            uint256(StreamHashing.licenseKey("GPL-3.0")), uint256(StreamHashing.CC0_LICENSE_KEY)
+        );
         econ.setDefaultLicense(PRODUCT_STREAM, 1, License("GPL-3.0", keccak256("GPL text")));
         assertEq(econ.defaultLicense(PRODUCT_STREAM).spdxId, "GPL-3.0");
     }

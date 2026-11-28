@@ -160,7 +160,7 @@
       "lines": 99.0,
       "branches": 98.0
     },
-    "src/governance/WorksAccessManager.sol": {
+    "src/governance/StreamAccessManager.sol": {
       "lines": 99.0,
       "branches": 98.0
     },
@@ -180,7 +180,7 @@
       "lines": 99.0,
       "branches": 98.0
     },
-    "src/interfaces/types/WorksHashing.sol": {
+    "src/interfaces/types/StreamHashing.sol": {
       "lines": 99.0,
       "branches": 98.0
     },

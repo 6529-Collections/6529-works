@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
@@ -10,7 +10,7 @@ import { IStatementLog } from "src/interfaces/IStatementLog.sol";
 import { IMintPolicy } from "src/interfaces/core/IMintPolicy.sol";
 import { Outcome } from "src/interfaces/core/CoreTypes.sol";
 import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { SaleFlowBase } from "./SaleFlowBase.sol";
 
 /// @notice A dispute on the deployed stack. A copier's package, claiming the rightful artist's
@@ -154,7 +154,7 @@ contract DisputeTest is SaleFlowBase {
         stream.ownerOf(tokenId);
         assertEq(stream.totalSupply(), stream.totalMinted() - 1, "a gap: the ID is never reused");
         assertEq(
-            stream.workOf(tokenId).itemHash, WorksHashing.itemHash(_package(copierRoot)[0].item)
+            stream.workOf(tokenId).itemHash, StreamHashing.itemHash(_package(copierRoot)[0].item)
         );
 
         // Before the release the content is not free, for anyone.
@@ -178,7 +178,7 @@ contract DisputeTest is SaleFlowBase {
         manager.execute(address(registry), release);
         assertEq(registry.releasedTo(address(stream), contentHash), rightfulId);
         assertEq(registry.consumedItemOf(contentHash), bytes32(0));
-        bytes32 copierItem = WorksHashing.itemHash(_package(copierRoot)[0].item);
+        bytes32 copierItem = StreamHashing.itemHash(_package(copierRoot)[0].item);
         assertTrue(registry.isBarred(copierItem));
 
         // The rightful artist's item mints, as a new token.
@@ -188,7 +188,7 @@ contract DisputeTest is SaleFlowBase {
         assertEq(registry.releasedTo(address(stream), contentHash), 0, "the release is used up");
         assertEq(
             registry.consumedItemOf(contentHash),
-            WorksHashing.itemHash(_package(rightfulRoot)[0].item)
+            StreamHashing.itemHash(_package(rightfulRoot)[0].item)
         );
 
         // The copier's item never mints again, through any root.

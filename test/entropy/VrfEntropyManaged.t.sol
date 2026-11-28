@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
@@ -11,7 +11,7 @@ import { IEntropyModule } from "src/interfaces/IEntropyModule.sol";
 import { IModuleSlots } from "src/interfaces/core/IModules.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { PackageItem, SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { GovernanceFixture } from "test/helpers/GovernanceFixture.sol";
 import {
     EntropyPackageRegistryMock,
@@ -19,7 +19,7 @@ import {
 } from "test/mocks/entropy/EntropyMocks.sol";
 import { EntropyItems } from "./EntropyBase.sol";
 
-/// @notice The module under the real `WorksAccessManager`, configured the way a deploy script
+/// @notice The module under the real `StreamAccessManager`, configured the way a deploy script
 ///         must (`GovernanceConfigurator`): the delay classes of its two governed selectors, the
 ///         guardians' veto, no role on `requestSeed`, and no payable function.
 contract VrfEntropyManagedTest is GovernanceFixture, EntropyItems {
@@ -148,7 +148,7 @@ contract VrfEntropyManagedTest is GovernanceFixture, EntropyItems {
         coordinator.setMaxGasLimit(300_000);
 
         PackageItem memory item = _makeItem(0, SeedPolicy.VRF);
-        bytes32 packageRoot = WorksHashing.leaf(_hash(item));
+        bytes32 packageRoot = StreamHashing.leaf(_hash(item));
         registry.setStatus(packageRoot, IPackageRegistry.PackageStatus.APPROVED);
         vm.prank(outsider);
         vm.expectRevert(
@@ -245,7 +245,7 @@ contract VrfEntropyManagedTest is GovernanceFixture, EntropyItems {
 
     function test_AnyoneMayRequestASeedUnderTheRealManager() public {
         PackageItem memory item = _makeItem(0, SeedPolicy.VRF);
-        bytes32 packageRoot = WorksHashing.leaf(_hash(item));
+        bytes32 packageRoot = StreamHashing.leaf(_hash(item));
         registry.setStatus(packageRoot, IPackageRegistry.PackageStatus.APPROVED);
         vm.prank(outsider);
         uint256 id = module.requestSeed(item, packageRoot, new bytes32[](0));

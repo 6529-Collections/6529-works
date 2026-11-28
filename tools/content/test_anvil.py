@@ -153,7 +153,7 @@ class AnvilEndToEndTest(unittest.TestCase):
         return receipts
 
     def test_every_encoding_stages_verifies_and_rebuilds(self) -> None:
-        media = (b"6529 Works on chain. " * 1200) + counter_bytes(31, 26_000)
+        media = (b"6529 Stream on chain. " * 1200) + counter_bytes(31, 26_000)
         for encoding in Encoding:
             with self.subTest(encoding=encoding.label), tempfile.TemporaryDirectory() as tmp:
                 plan = pl.plan_from_media(media, "text/plain", encoding)

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity 0.8.37;
 
 import { Test } from "forge-std/Test.sol";
@@ -21,7 +21,7 @@ import {
     StreamMintRequest
 } from "src/interfaces/types/PackageTypes.sol";
 import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { DelegationManagementMock } from "test/mocks/identity/DelegationManagementMock.sol";
 
 /// @notice Builds the keeper tests' chain: the whole plain-core stack deployed and configured by
@@ -102,7 +102,7 @@ contract KeeperFixture is Test {
     function _deploy() internal {
         DeployCore.Params memory p;
         p.deployer = makeAddr("deployer");
-        p.namespace = keccak256("6529-works/keeper-fixture");
+        p.namespace = keccak256("6529-stream/keeper-fixture");
         p.feeRecipient = makeAddr("feeRecipient");
         p.museum = makeAddr("museum");
         p.marketOwner = makeAddr("marketOwner");
@@ -159,7 +159,7 @@ contract KeeperFixture is Test {
         i.kind = uint8(master ? ItemKind.EDITION_MASTER : ItemKind.ORIGINAL);
         i.collectionId = 1;
         i.contentHash = media[0].sha256Hash;
-        i.mediaHash = WorksHashing.mediaHash(media);
+        i.mediaHash = StreamHashing.mediaHash(media);
         i.recordFileId = _recordFile(media[0].sha256Hash);
         i.parties = new Party[](1);
         i.parties[0] = Party(artist, uint8(PartyRole.ARTIST));
@@ -171,7 +171,7 @@ contract KeeperFixture is Test {
     }
 
     function _leaf(PackageItem memory item) internal pure returns (bytes32) {
-        return WorksHashing.leaf(WorksHashing.itemHash(item));
+        return StreamHashing.leaf(StreamHashing.itemHash(item));
     }
 
     /// @dev The curation signer approves `root`; the artist accepts it (creating its identity).
@@ -196,8 +196,8 @@ contract KeeperFixture is Test {
         returns (bytes memory)
     {
         uint64 deadline = uint64(block.timestamp + 30 days);
-        bytes32 digest =
-            IRegistry(d.packageRegistry).moveDigest(root, WorksHashing.itemHash(item), n, deadline);
+        bytes32 digest = IRegistry(d.packageRegistry)
+            .moveDigest(root, StreamHashing.itemHash(item), n, deadline);
         bytes memory signature = abi.encodePacked(vm.addr(ARTIST_KEY), _sig(ARTIST_KEY, digest));
         return abi.encode(
             StreamMintRequest(root, item, proof, MoveAuthorization(n, deadline, signature))

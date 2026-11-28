@@ -16,7 +16,7 @@ STREAM = "0x02617dbdc0b0521124cb4c2a3ef602977e29bd91"
 EDITIONS = "0x" + "ed" * 20
 AUCTION = "0x" + "a0" * 20
 VENUE = "https://gallery.example"
-DIGEST = bytes.fromhex("2548db021144b031169071ded42000449c5128184168ca0bd94e5d56c4e0a057")
+DIGEST = bytes.fromhex("30131e8926649b07f8edabe55dcc60473c397a998eee6a47a9fdd16c6317b7a7")
 
 
 def accept_example(signer: str, digest: bytes, signature: bytes) -> bool:

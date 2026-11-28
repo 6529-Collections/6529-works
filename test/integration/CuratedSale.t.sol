@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 import { IContentStore } from "src/interfaces/IContentStore.sol";
@@ -12,7 +12,7 @@ import { ISplitFactory } from "src/economics/interfaces/ISplitFactory.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { SaleStarter } from "src/sales/SaleStarter.sol";
 import { WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { ContractWallet, SaleFlowBase } from "./SaleFlowBase.sol";
 
 /// @notice A curated 6529 Stream 1/1 on the deployed stack, from content to collector: the
@@ -71,7 +71,7 @@ contract CuratedSaleTest is SaleFlowBase {
         WorkTerms memory t = _terms(works[0]);
         (uint256 saleId, uint256 tokenId) = _start(root, works, 0);
         assertEq(stream.ownerOf(tokenId), address(auction), "minted into the auction's custody");
-        assertEq(stream.itemHashOf(tokenId), WorksHashing.itemHash(works[0].item));
+        assertEq(stream.itemHashOf(tokenId), StreamHashing.itemHash(works[0].item));
         assertEq(stream.tokenOfContent(works[0].item.contentHash), tokenId);
         IEnglishAuction.Auction memory a = auction.auction(saleId);
         assertEq(a.endTime, block.timestamp + AUCTION_DURATION, "the 24-hour clock");
@@ -344,7 +344,7 @@ contract CuratedSaleTest is SaleFlowBase {
         );
         auction.start(address(stream), viaOther);
         assertEq(stream.totalMinted(), tokenId, "nothing more was minted");
-        assertEq(registry.consumedItemOf(contentHash), WorksHashing.itemHash(works[1].item));
+        assertEq(registry.consumedItemOf(contentHash), StreamHashing.itemHash(works[1].item));
     }
 
     /// @dev The lead artist can revoke a move signature before anyone uses it.

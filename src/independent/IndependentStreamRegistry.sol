@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity 0.8.37;
 
 import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessManaged.sol";
@@ -26,7 +26,7 @@ import { MediaFile } from "../interfaces/types/ContentTypes.sol";
 import { CURRENCY_ETH, PRODUCT_INDEPENDENT } from "../interfaces/types/EconomicsTypes.sol";
 import { Limits } from "../interfaces/types/Limits.sol";
 import { PackageItem, Party } from "../interfaces/types/PackageTypes.sol";
-import { WorksHashing } from "../interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "../interfaces/types/StreamHashing.sol";
 import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 import { SpdxId } from "../stream/SpdxId.sol";
 
@@ -76,7 +76,7 @@ contract IndependentStreamRegistry is
     /// @dev The one collection of an Independent Stream token.
     uint256 private constant COLLECTION = 1;
     /// @dev The domain of a listing consent.
-    bytes32 private constant LISTING_DOMAIN = keccak256("6529WORKS_INDEPENDENT_LISTING_V1");
+    bytes32 private constant LISTING_DOMAIN = keccak256("6529STREAM_INDEPENDENT_LISTING_V1");
 
     /// @notice The permanent directory (its ACCOUNTS slot names the accounts module).
     address public immutable directory;
@@ -334,7 +334,7 @@ contract IndependentStreamRegistry is
     ///         the royalty rate its work gets. Any wallet of the contract's artist's account. An
     ///         approval may be changed until the item is minted.
     /// @param token The Independent Stream 1/1 contract.
-    /// @param itemHash `WorksHashing.itemHash` of the item.
+    /// @param itemHash `StreamHashing.itemHash` of the item.
     /// @param royaltyRate The royalty rate, out of 100,000.
     function approveItem(address token, bytes32 itemHash, uint24 royaltyRate) external {
         _requireTokenArtist(token);
@@ -394,7 +394,7 @@ contract IndependentStreamRegistry is
         ) revert NotSaleContract(token, msg.sender);
         IIndependentStream.IndependentMint memory m =
             abi.decode(request, (IIndependentStream.IndependentMint));
-        bytes32 itemHash = WorksHashing.itemHash(m.item);
+        bytes32 itemHash = StreamHashing.itemHash(m.item);
         Item storage it = _items[token][itemHash];
         if (!it.approved || it.used || isBarred[itemHash]) revert ItemNotApproved(token, itemHash);
         it.used = true;
@@ -421,7 +421,7 @@ contract IndependentStreamRegistry is
     {
         IIndependentStream.IndependentMint memory m =
             abi.decode(request, (IIndependentStream.IndependentMint));
-        bytes32 itemHash = WorksHashing.itemHash(m.item);
+        bytes32 itemHash = StreamHashing.itemHash(m.item);
         Item memory it = _items[token][itemHash];
         if (!it.approved || it.used || isBarred[itemHash]) revert ItemNotApproved(token, itemHash);
         f = _facts(token, m, itemHash, it.royaltyRate);
@@ -589,7 +589,7 @@ contract IndependentStreamRegistry is
             l.form != Form.ERC721 || item.sale.currency != CURRENCY_ETH || count == 0
                 || count > Limits.MAX_MEDIA_FILES || item.contentHash == 0
                 || media[0].sha256Hash != item.contentHash
-                || WorksHashing.mediaHash(media) != item.mediaHash || item.kind > EDITION_MASTER
+                || StreamHashing.mediaHash(media) != item.mediaHash || item.kind > EDITION_MASTER
                 || item.seedPolicy > SEED_VRF || !SpdxId.isValid(item.license.spdxId)
                 || (item.kind == EDITION_MASTER
                     && (l.partner == address(0) || !_listedActive(listingOf(l.partner))))
@@ -605,7 +605,7 @@ contract IndependentStreamRegistry is
             IContentStore(contentStore).fileInfo(item.license.textFileId);
         if (
             info.digestKind != 0 || info.chunkCount > MAX_LICENSE_TEXT_CHUNKS
-                || (WorksHashing.licenseKey(item.license.spdxId) == WorksHashing.CC0_LICENSE_KEY
+                || (StreamHashing.licenseKey(item.license.spdxId) == StreamHashing.CC0_LICENSE_KEY
                     && item.license.textFileId != IWorkFacts(facts).cc0TextFileId())
         ) revert InvalidMintRequest();
     }

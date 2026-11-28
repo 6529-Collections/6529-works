@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity 0.8.37;
 
 import { IContentStore } from "../interfaces/IContentStore.sol";
@@ -9,7 +9,7 @@ import { IWorkFacts } from "../interfaces/core/IWorkFacts.sol";
 import { MediaFile } from "../interfaces/types/ContentTypes.sol";
 import { Limits } from "../interfaces/types/Limits.sol";
 import { License, PackageItem } from "../interfaces/types/PackageTypes.sol";
-import { WorksHashing } from "../interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "../interfaces/types/StreamHashing.sol";
 import { SpdxId } from "../stream/SpdxId.sol";
 
 /// @title WorkFacts
@@ -70,9 +70,9 @@ contract StreamWorkFacts6529 is IWorkFacts {
         if (f.opened) revert RecordAlreadyOpen(token, tokenId);
         uint256 count = media.length;
         if (
-            WorksHashing.itemHashCalldata(item) != itemHash || count == 0
+            StreamHashing.itemHashCalldata(item) != itemHash || count == 0
                 || count > Limits.MAX_MEDIA_FILES
-                || keccak256(abi.encode(WorksHashing.MEDIA_DOMAIN, media)) != item.mediaHash
+                || keccak256(abi.encode(StreamHashing.MEDIA_DOMAIN, media)) != item.mediaHash
                 || media[0].sha256Hash != item.contentHash
         ) revert InvalidRecord(token, tokenId);
         _checkCc0(item.license);
@@ -128,10 +128,10 @@ contract StreamWorkFacts6529 is IWorkFacts {
     function setLicense(address token, uint256 tokenId, License calldata next) external {
         Facts storage f = _module(token, tokenId);
         if (f.licenseLocked) revert LicenseIsLocked(token, tokenId);
-        bytes32 cc0 = WorksHashing.CC0_LICENSE_KEY;
+        bytes32 cc0 = StreamHashing.CC0_LICENSE_KEY;
         if (
-            (WorksHashing.licenseKey(f.licenseId) == cc0
-                    && WorksHashing.licenseKey(next.spdxId) != cc0)
+            (StreamHashing.licenseKey(f.licenseId) == cc0
+                    && StreamHashing.licenseKey(next.spdxId) != cc0)
                 || !SpdxId.isValidCalldata(next.spdxId)
         ) revert InvalidLicense();
         _checkCc0(next);
@@ -240,7 +240,7 @@ contract StreamWorkFacts6529 is IWorkFacts {
     /// @dev A CC0 license always names the deployment's CC0 text.
     function _checkCc0(License calldata license) private view {
         if (
-            WorksHashing.licenseKey(license.spdxId) == WorksHashing.CC0_LICENSE_KEY
+            StreamHashing.licenseKey(license.spdxId) == StreamHashing.CC0_LICENSE_KEY
                 && license.textFileId != cc0TextFileId
         ) revert InvalidLicense();
     }

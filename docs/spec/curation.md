@@ -21,7 +21,7 @@ installed in the sale contract (`EnglishAuction.setStreamPolicy`), with
 | --- | --- | --- |
 | [`PackageRegistry`](../../src/curation/PackageRegistry.sol) ([`IPackageRegistry`](../../src/interfaces/IPackageRegistry.sol), [`IMintPolicy`](../../src/interfaces/core/IMintPolicy.sol)) | module | Approved roots, party acceptances, the item rules, move nonces, the VRF delivery check, the terms of each new work; content release after an upheld dispute; the verifier swap. |
 | [`Eip712CurationVerifier`](../../src/curation/Eip712CurationVerifier.sol) ([`ICurationVerifier`](../../src/interfaces/ICurationVerifier.sol)) | module | Accepts a `PackageApproval` signed by an active curation signer at its current signer epoch; per-signer disable. |
-| [`WorksHashing`](../../src/interfaces/types/WorksHashing.sol), [`Typehashes`](../../src/interfaces/types/Typehashes.sol) | library | The item hash, Merkle leaf, media hash and every EIP-712 typehash. |
+| [`StreamHashing`](../../src/interfaces/types/StreamHashing.sol), [`Typehashes`](../../src/interfaces/types/Typehashes.sol) | library | The item hash, Merkle leaf, media hash and every EIP-712 typehash. |
 | [`EditionRules`](../../src/editions/EditionRules.sol) | library | Valid edition terms, applied when an `EDITION_MASTER` item is authorized. |
 | [`PackageTypes`](../../src/interfaces/types/PackageTypes.sol) | types | `PackageItem`, `Party`, `License`, `SaleTerms`, `EditionTerms`, `PartyAcceptance`, `MoveAuthorization`, `StreamMintRequest`. |
 
@@ -74,9 +74,9 @@ Each signing contract uses the domain `(name, "1", chainid, itself)`.
 
 | Message | Domain | Signed by | Replay protection |
 | --- | --- | --- | --- |
-| `PackageApproval(bytes32 packageRoot,bytes32 evidenceHash,uint256 signerEpoch)` | `6529 Works Curation Verifier` | a curation signer | a root registers once; the signer epoch |
-| `PackageAcceptance(bytes32 packageRoot,address account,bytes32 profileId,bytes32 profileDocHash,uint64 deadline)` | `6529 Works Package Registry` | the account, or any wallet of it once it has an artist ID | once per `(root, account)`; a deadline |
-| `MoveToStream(bytes32 packageRoot,bytes32 itemHash,uint256 nonce,uint64 deadline)` | `6529 Works Package Registry` | any wallet of the lead artist's account | a per-artist nonce; a deadline |
+| `PackageApproval(bytes32 packageRoot,bytes32 evidenceHash,uint256 signerEpoch)` | `6529 Stream Curation Verifier` | a curation signer | a root registers once; the signer epoch |
+| `PackageAcceptance(bytes32 packageRoot,address account,bytes32 profileId,bytes32 profileDocHash,uint64 deadline)` | `6529 Stream Package Registry` | the account, or any wallet of it once it has an artist ID | once per `(root, account)`; a deadline |
+| `MoveToStream(bytes32 packageRoot,bytes32 itemHash,uint256 nonce,uint64 deadline)` | `6529 Stream Package Registry` | any wallet of the lead artist's account | a per-artist nonce; a deadline |
 
 The verifier accepts only canonical `abi.encode(address signer, bytes signature)` attestations and
 returns false on anything else. Signatures go through
@@ -154,7 +154,7 @@ full matrix is [roles.md](../audit/roles.md).
 | CUR-17 | Disabling a signer is the network's (no delay), possible in advance, and stops only future registrations; re-enabling is SUCCESSOR_SETTER (7 days). | `Eip712CurationVerifier.disableSigner`, `enableSigner` | `test_disableSigner_immediateAndOneWay`, `test_disableSigner_inAdvance`, `test_disableSigner_survivesRoleRegrant`, `test_enableSigner_thirtyDayClass`, `test_registerPackage_revertsAfterSignerDisabled`, `test_disabledSigner_registeredRootsStayUsable` |
 | CUR-18 | A verifier swap is compare-and-set, pins the code hash, never installs the current or a retired verifier, and leaves registered approvals intact. | `PackageRegistry.setVerifier` | `test_setVerifier`, `test_setVerifier_compareAndSet`, `test_setVerifier_refusesARetiredVerifier`, `test_setVerifier_keepsRegisteredApprovals`, `test_setVerifier_onlySuccessorSetter` |
 | CUR-19 | While the account is frozen or its root is being replaced, its acceptances and moves do not verify and it cannot revoke moves. | `PackageRegistry.acceptPackage`, `_useMove`, `revokeMove` (through the accounts module) | `test_Move_RefusedWhileTheAccountIsFrozen` |
-| CUR-20 | Item hashes, leaves, media hashes and typehashes match independently computed golden vectors and do not depend on the chain. | `WorksHashing`, `Typehashes` | `test_itemHash_golden`, `test_mediaHash_golden`, `testFuzz_itemHash_independentOfChain`, `test_threeItemPackage_proofs`, `test_domainConstants`, `test_signedPayloadTypehashes`, `test_golden_typehashes`, `test_golden_digests`, `testFuzz_consume_itemHashMatchesWorksHashing` |
+| CUR-20 | Item hashes, leaves, media hashes and typehashes match independently computed golden vectors and do not depend on the chain. | `StreamHashing`, `Typehashes` | `test_itemHash_golden`, `test_mediaHash_golden`, `testFuzz_itemHash_independentOfChain`, `test_threeItemPackage_proofs`, `test_domainConstants`, `test_signedPayloadTypehashes`, `test_golden_typehashes`, `test_golden_digests`, `testFuzz_consume_itemHashMatchesStreamHashing` |
 | CUR-21 | Governed functions are non-payable. | `PackageRegistry`, `Eip712CurationVerifier` | `test_governedFunctionsAreNonPayable` |
 | CUR-22 | `authorize` stays within its gas ceiling and the worst case fits the per-transaction cap. | `PackageRegistry.authorize` | `test_txCap_consumeWorstCase` |
 | CUR-23 | `killSignerApprovals` (the network, no delay) stops every package the signer registered before it: their unminted items no longer mint, open an edition sale or accept parties; other signers' packages, later packages and minted works are untouched. | `PackageRegistry.killSignerApprovals`, `_isLiveRoot` | `test_KillSignerApprovals_StopsPackagesRegisteredBefore`, `test_KillSignerApprovals_LeavesMintedItems` |

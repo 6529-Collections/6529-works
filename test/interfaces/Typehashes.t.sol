@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 import { Test } from "forge-std/Test.sol";
@@ -10,10 +10,10 @@ import { Typehashes } from "../../src/interfaces/types/Typehashes.sol";
 contract TypehashesTest is Test {
     function test_domainConstants() public pure {
         assertEq(Typehashes.DOMAIN_VERSION, "1");
-        assertEq(Typehashes.PACKAGE_REGISTRY_NAME, "6529 Works Package Registry");
-        assertEq(Typehashes.CURATION_VERIFIER_NAME, "6529 Works Curation Verifier");
-        assertEq(Typehashes.WORK_RECORDS_NAME, "6529 Works Records");
-        assertEq(Typehashes.ARTIST_REGISTRY_NAME, "6529 Works Artist Registry");
+        assertEq(Typehashes.PACKAGE_REGISTRY_NAME, "6529 Stream Package Registry");
+        assertEq(Typehashes.CURATION_VERIFIER_NAME, "6529 Stream Curation Verifier");
+        assertEq(Typehashes.WORK_RECORDS_NAME, "6529 Stream Records");
+        assertEq(Typehashes.ARTIST_REGISTRY_NAME, "6529 Stream Artist Registry");
     }
 
     function test_signedPayloadTypehashes() public pure {

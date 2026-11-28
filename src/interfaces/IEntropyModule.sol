@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity 0.8.37;
 
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
@@ -26,7 +26,7 @@ import { PackageItem } from "./types/PackageTypes.sol";
 ///      content's seed is fixed, and later deliveries are no-ops. Seeds are permanent.
 interface IEntropyModule is IERC165 {
     /// @notice The item was linked to its content's draw; it reads that draw's seed.
-    /// @param itemHash The linked item's hash (`WorksHashing.itemHash`).
+    /// @param itemHash The linked item's hash (`StreamHashing.itemHash`).
     /// @param contentHash The item's content hash, which keys the draw.
     event SeedLinked(bytes32 indexed itemHash, bytes32 indexed contentHash);
     /// @notice A seed was requested for the item's content.
@@ -102,7 +102,7 @@ interface IEntropyModule is IERC165 {
     ///         Permissionless.
     /// @param item The package item; the module computes its hash itself.
     /// @param packageRoot An approved package root that lists the item.
-    /// @param proof The Merkle proof of the item's leaf (`WorksHashing.leaf(itemHash)`) under
+    /// @param proof The Merkle proof of the item's leaf (`StreamHashing.leaf(itemHash)`) under
     ///        `packageRoot`.
     /// @return requestId The coordinator's ID for the new request, or zero when the item only
     ///        joined its content's draw.
@@ -111,7 +111,7 @@ interface IEntropyModule is IERC165 {
         returns (uint256 requestId);
     /// @notice Whether the seed of the item's content was delivered (false for an item never
     ///         linked by `requestSeed`).
-    /// @param itemHash The item's hash (`WorksHashing.itemHash`).
+    /// @param itemHash The item's hash (`StreamHashing.itemHash`).
     /// @return True once the seed is delivered.
     function isDelivered(bytes32 itemHash) external view returns (bool);
     /// @notice Whether the seed of `contentHash` was delivered: one storage word, read by 6529
@@ -126,12 +126,12 @@ interface IEntropyModule is IERC165 {
     /// @return The seed.
     function seedOfContent(bytes32 contentHash) external view returns (bytes32);
     /// @notice The delivered seed of the item's content. Reverts with `SeedNotDelivered`.
-    /// @param itemHash The item's hash (`WorksHashing.itemHash`).
+    /// @param itemHash The item's hash (`StreamHashing.itemHash`).
     /// @return The seed: the delivered random word, unchanged.
     function seedOf(bytes32 itemHash) external view returns (bytes32);
     /// @notice The latest request for the item's content: its ID (zero once the seed is
     ///         delivered) and when it was made.
-    /// @param itemHash The item's hash (`WorksHashing.itemHash`).
+    /// @param itemHash The item's hash (`StreamHashing.itemHash`).
     /// @return requestId The latest request's ID; zero once the seed is delivered, and for an
     ///        item never linked.
     /// @return requestedAt When the latest request was made, in seconds since the epoch (kept

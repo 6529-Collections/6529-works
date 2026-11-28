@@ -58,7 +58,7 @@
         "fileId": "0x6666666666666666666666666666666666666666666666666666666666666666",
         "role": "AUXILIARY",
         "sha256": "0x1d232db5cf1959dac10af8d71b808bacd58df08023c6cc43743d425cfe204610",
-        "mimeType": "application/vnd.6529-works.declarations+json",
+        "mimeType": "application/vnd.6529-stream.declarations+json",
         "complete": true,
         "locators": 0,
         "preferredKind": "ONCHAIN"

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 import { IClaimRouter } from "src/economics/interfaces/IClaimRouter.sol";
@@ -10,7 +10,7 @@ import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { ArtistIdentity } from "src/interfaces/types/IdentityTypes.sol";
 import { Burner, GasRuleAssertions } from "../helpers/GasRule.sol";
 import { FixedAuthority } from "../mocks/economics/EconomicsMocks.sol";
-import { InterfaceStub } from "../mocks/identity/IdentityWorksMocks.sol";
+import { InterfaceStub } from "../mocks/identity/IdentityStreamMocks.sol";
 import { AccountsFixture } from "./AccountsFixture.sol";
 
 /// @dev Answers `authority()` with whatever bytes the test sets, or reverts.

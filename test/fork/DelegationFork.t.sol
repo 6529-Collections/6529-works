@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 import { DeployGuards } from "script/DeployGuards.sol";
@@ -6,7 +6,7 @@ import { ConsolidationAdapter, IDelegationManagement } from "src/identity/Consol
 import { ArtistIdentity } from "src/interfaces/types/IdentityTypes.sol";
 import { SignatureVerifier } from "src/libraries/SignatureVerifier.sol";
 import { DelegationManagementMock } from "../mocks/identity/DelegationManagementMock.sol";
-import { CoreForkBase } from "./WorksForkBase.sol";
+import { CoreForkBase } from "./StreamForkBase.sol";
 
 /// @notice The real 6529 delegation contract, read through the `ConsolidationAdapter` that
 ///         `DeployCore` deploys and the `Accounts` module that asks it: a two-way,

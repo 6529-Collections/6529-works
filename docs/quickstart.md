@@ -17,8 +17,8 @@ end. Every command here is run from the repository root.
 ## 1. Clone and build
 
 ```bash
-git clone --recurse-submodules https://github.com/6529-Collections/6529-works.git
-cd 6529-works
+git clone --recurse-submodules https://github.com/6529-Collections/6529-stream.git
+cd 6529-stream
 forge build
 ```
 

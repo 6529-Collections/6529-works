@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 import { Test } from "forge-std/Test.sol";
@@ -8,7 +8,7 @@ import { Facts, Slots } from "src/interfaces/core/CoreTypes.sol";
 import { IWorkFacts } from "src/interfaces/core/IWorkFacts.sol";
 import { MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { License, PackageItem } from "src/interfaces/types/PackageTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 
 /// @notice A token contract as `StreamWorkFacts6529` sees it: the item hash of each token, its
 ///         modules, and a metadata hook that does nothing.
@@ -123,7 +123,7 @@ contract WorkFactsSymbolicTest is Test {
             for (uint256 i; i < media.length; ++i) {
                 store.setSha(media[i].fileId, media[i].sha256Hash);
             }
-            token.setItemHash(id, WorksHashing.itemHash(item));
+            token.setItemHash(id, StreamHashing.itemHash(item));
             facts.open(address(token), id, item, media);
         }
     }
@@ -183,7 +183,7 @@ contract WorkFactsSymbolicTest is Test {
     ) public {
         _run(1, start & 7, caller, action, file, license, a, b, cfg);
         Facts memory f = facts.factsOf(address(token), 1);
-        assert(WorksHashing.licenseKey(f.licenseId) == WorksHashing.CC0_LICENSE_KEY);
+        assert(StreamHashing.licenseKey(f.licenseId) == StreamHashing.CC0_LICENSE_KEY);
         assert(f.licenseTextFileId == CC0_TEXT);
     }
 
@@ -224,7 +224,7 @@ contract WorkFactsSymbolicTest is Test {
         media[1] = MediaFile(bytes32(0x200 + id), keccak256(abi.encode("preview", id)), 1);
         item.collectionId = 1;
         item.contentHash = media[0].sha256Hash;
-        item.mediaHash = WorksHashing.mediaHash(media);
+        item.mediaHash = StreamHashing.mediaHash(media);
         item.recordFileId = bytes32(0x300 + id);
         item.license = id == 1 ? License("CC0-1.0", CC0_TEXT) : License("MIT", MIT_TEXT);
     }

@@ -1,5 +1,5 @@
 {
-  "schema": "6529-works/facts/1",
+  "schema": "6529-stream/facts/1",
   "generator": "tools/gen_facts.py",
   "note": "Generated from the repository's sources; do not edit. Pre-audit: no figure here is a mainnet deployment unless networks.mainnet.deployed is true.",
   "status": {
@@ -763,26 +763,26 @@
     ]
   },
   "links": {
-    "repository": "https://github.com/6529-Collections/6529-works",
-    "release": "https://github.com/6529-Collections/6529-works/releases/tag/v1.0.0-rc.3",
+    "repository": "https://github.com/6529-Collections/6529-stream",
+    "release": "https://github.com/6529-Collections/6529-stream/releases/tag/v1.0.0-rc.3",
     "docs": {
-      "specification": "https://github.com/6529-Collections/6529-works/blob/main/docs/spec/README.md",
-      "editionsAndSales": "https://github.com/6529-Collections/6529-works/blob/main/docs/spec/editions-and-sales.md",
-      "streamAndAuctions": "https://github.com/6529-Collections/6529-works/blob/main/docs/spec/stream-and-auctions.md",
-      "editionAuctionAdr": "https://github.com/6529-Collections/6529-works/blob/main/docs/adr/0005-stream-editions-auction.md",
-      "integrators": "https://github.com/6529-Collections/6529-works/blob/main/docs/integrators/README.md",
-      "addresses": "https://github.com/6529-Collections/6529-works/blob/main/docs/integrators/addresses.md",
-      "buyingBiddingSettling": "https://github.com/6529-Collections/6529-works/blob/main/docs/integrators/buying-bidding-settling.md",
-      "eventsAndIndexing": "https://github.com/6529-Collections/6529-works/blob/main/docs/integrators/events-and-indexing.md",
-      "auditPack": "https://github.com/6529-Collections/6529-works/blob/main/docs/audit/README.md",
-      "knownLimitations": "https://github.com/6529-Collections/6529-works/blob/main/docs/audit/known-limitations.md",
-      "roles": "https://github.com/6529-Collections/6529-works/blob/main/docs/audit/roles.md",
-      "glossary": "https://github.com/6529-Collections/6529-works/blob/main/docs/glossary.md",
-      "architecture": "https://github.com/6529-Collections/6529-works/blob/main/docs/architecture.md",
-      "adrs": "https://github.com/6529-Collections/6529-works/blob/main/docs/adr/README.md",
-      "gasTable": "https://github.com/6529-Collections/6529-works/blob/main/docs/adr/0004-gas-budgets-under-glamsterdam.md",
-      "security": "https://github.com/6529-Collections/6529-works/blob/main/SECURITY.md",
-      "changelog": "https://github.com/6529-Collections/6529-works/blob/main/CHANGELOG.md"
+      "specification": "https://github.com/6529-Collections/6529-stream/blob/main/docs/spec/README.md",
+      "editionsAndSales": "https://github.com/6529-Collections/6529-stream/blob/main/docs/spec/editions-and-sales.md",
+      "streamAndAuctions": "https://github.com/6529-Collections/6529-stream/blob/main/docs/spec/stream-and-auctions.md",
+      "editionAuctionAdr": "https://github.com/6529-Collections/6529-stream/blob/main/docs/adr/0005-stream-editions-auction.md",
+      "integrators": "https://github.com/6529-Collections/6529-stream/blob/main/docs/integrators/README.md",
+      "addresses": "https://github.com/6529-Collections/6529-stream/blob/main/docs/integrators/addresses.md",
+      "buyingBiddingSettling": "https://github.com/6529-Collections/6529-stream/blob/main/docs/integrators/buying-bidding-settling.md",
+      "eventsAndIndexing": "https://github.com/6529-Collections/6529-stream/blob/main/docs/integrators/events-and-indexing.md",
+      "auditPack": "https://github.com/6529-Collections/6529-stream/blob/main/docs/audit/README.md",
+      "knownLimitations": "https://github.com/6529-Collections/6529-stream/blob/main/docs/audit/known-limitations.md",
+      "roles": "https://github.com/6529-Collections/6529-stream/blob/main/docs/audit/roles.md",
+      "glossary": "https://github.com/6529-Collections/6529-stream/blob/main/docs/glossary.md",
+      "architecture": "https://github.com/6529-Collections/6529-stream/blob/main/docs/architecture.md",
+      "adrs": "https://github.com/6529-Collections/6529-stream/blob/main/docs/adr/README.md",
+      "gasTable": "https://github.com/6529-Collections/6529-stream/blob/main/docs/adr/0004-gas-budgets-under-glamsterdam.md",
+      "security": "https://github.com/6529-Collections/6529-stream/blob/main/SECURITY.md",
+      "changelog": "https://github.com/6529-Collections/6529-stream/blob/main/CHANGELOG.md"
     }
   }
 }

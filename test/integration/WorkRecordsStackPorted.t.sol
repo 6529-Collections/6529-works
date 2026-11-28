@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
@@ -11,7 +11,7 @@ import { ILocators } from "src/interfaces/core/ILocators.sol";
 import { IWorkFacts } from "src/interfaces/core/IWorkFacts.sol";
 import { Locator, LocatorKind } from "src/interfaces/types/ContentTypes.sol";
 import { License } from "src/interfaces/types/PackageTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { ContentAddresses as CA } from "../helpers/ContentAddresses.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
 
@@ -258,7 +258,7 @@ contract WorkRecordsStackPortedTest is IntegrationBase {
                     rules.RELICENSE_TYPEHASH(),
                     address(stream),
                     tokenId,
-                    WorksHashing.licenseKey(next.spdxId),
+                    StreamHashing.licenseKey(next.spdxId),
                     next.textFileId,
                     state,
                     deadline
@@ -310,7 +310,9 @@ contract WorkRecordsStackPortedTest is IntegrationBase {
         (, uint256 other) = _start(_publish(works), works, 0);
         _open(other, v);
         assertEq(_licenseOf(other).licenseTextFileId, cc0TextFileId);
-        assertEq(WorksHashing.licenseKey(_licenseOf(other).licenseId), WorksHashing.CC0_LICENSE_KEY);
+        assertEq(
+            StreamHashing.licenseKey(_licenseOf(other).licenseId), StreamHashing.CC0_LICENSE_KEY
+        );
     }
 
     /// @dev A CC0 work's license text never changes: no relicense, with every party's consent
@@ -341,7 +343,7 @@ contract WorkRecordsStackPortedTest is IntegrationBase {
         _expectRelicenseRefused(_relicense(tokenId, w, License("CC0-1.0", other)));
         _asNetwork(address(rules), _relicense(tokenId, w, License("CC0-1.0", cc0TextFileId)));
         assertEq(
-            WorksHashing.licenseKey(_licenseOf(tokenId).licenseId), WorksHashing.CC0_LICENSE_KEY
+            StreamHashing.licenseKey(_licenseOf(tokenId).licenseId), StreamHashing.CC0_LICENSE_KEY
         );
         assertEq(_licenseOf(tokenId).licenseTextFileId, cc0TextFileId);
     }

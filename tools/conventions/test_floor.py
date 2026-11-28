@@ -211,7 +211,7 @@ class FactTest(unittest.TestCase):
     def test_storage_decodes_fetched_bytes_by_the_file_encoding(self) -> None:
         """DCL-5 CHECK_storage: a stored copy reproduces the file ID and
         sha256(decode(fetch(uri), encoding)) == the media SHA-256."""
-        media = b"6529 works media bytes" * 50
+        media = b"6529 stream media bytes" * 50
         digest = sha(media)
         for encoding, stored in (("Identity", media), ("Gzip", gzip.compress(media, mtime=0)),
                                  ("Base64", base64.b64encode(media))):  # fmt: skip
@@ -228,7 +228,7 @@ class FactTest(unittest.TestCase):
     def test_storage_receipt_forms(self) -> None:
         """DCL-4/DCL-5 CHECK_storage: a `decoded` copy hashes to the file's SHA-256 as fetched; a
         `stored` copy must be fileInfo.length bytes that reproduce the file ID and decode to it."""
-        media = b"6529 works media bytes" * 50
+        media = b"6529 stream media bytes" * 50
         stored = gzip.compress(media, mtime=0)
         digest = sha(media)
         inp, doc, _ = stored_input(stored, "Gzip", digest,
@@ -246,7 +246,7 @@ class FactTest(unittest.TestCase):
         """DCL-5 CHECK_storage: a `stored` copy encoded differently (here a gzip header with
         another mtime) has the same length and decodes to the same SHA-256, but its chunk hashes
         are not the committed ones, so it cannot rebuild the file and is refused."""
-        media = b"6529 works media bytes" * 50
+        media = b"6529 stream media bytes" * 50
         stored = gzip.compress(media, mtime=0)
         other = gzip.compress(media, mtime=1)
         self.assertEqual((len(other), sha(gzip.decompress(other))), (len(stored), sha(media)))
@@ -260,7 +260,7 @@ class FactTest(unittest.TestCase):
     def test_stored_receipt_always_needs_the_bytes(self) -> None:
         """DCL-5 CHECK_storage: an observed SHA-256 never stands for a `stored` copy, whatever
         the encoding, Identity included; it stands only for a `decoded` copy."""
-        media = b"6529 works media bytes" * 50
+        media = b"6529 stream media bytes" * 50
         for encoding, stored in (("Identity", media), ("Gzip", gzip.compress(media, mtime=0))):
             with self.subTest(encoding):
                 inp, doc, _ = stored_input(stored, encoding, sha(media),
@@ -278,7 +278,7 @@ class FactTest(unittest.TestCase):
         """DCL-4/DCL-5 CHECK_storage and WS-30: with only hash-observed `decoded` receipts nothing
         ties the declared SHA-256 to the committed chunks, so storage is refused; the file's
         content-store bytes in `contents` tie it."""
-        media = b"6529 works media bytes" * 50
+        media = b"6529 stream media bytes" * 50
         stored = gzip.compress(media, mtime=0)
 
         def both_decoded(d: dict) -> None:
@@ -302,7 +302,7 @@ class FactTest(unittest.TestCase):
         do not decode to. Both receipts' observed hashes equal the declared value, yet the storage
         fact is refused: hash-only `stored` receipts are not accepted, the stored bytes decode to
         another hash, and so do the content-store bytes."""
-        committed = b"6529 works media bytes" * 50
+        committed = b"6529 stream media bytes" * 50
         declared = sha(b"what the artist claimed instead")
         inp, doc, fid = stored_input(committed, "Identity", declared)
         receipts = doc["conservation"]["storage"]["files"][0]["receipts"]
@@ -487,7 +487,7 @@ class HelpersTest(unittest.TestCase):
                     "ipfs://QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG", "https://x", 7):
             self.assertIsNone(locator_network(uri))
 
-    def test_license_key_matches_works_hashing(self) -> None:
+    def test_license_key_matches_stream_hashing(self) -> None:
         self.assertEqual(floor.license_key("CC0-1.0"), floor.license_key("cc0-1.0"))
         self.assertNotEqual(floor.license_key("CC0-1.0"), floor.license_key("CC-BY-4.0"))
 
@@ -512,7 +512,7 @@ class HelpersTest(unittest.TestCase):
             floor_states({"ok": False, "refusals": ["x"], "facts": {}})
 
     def test_constants(self) -> None:
-        self.assertEqual(DECLARATIONS_MIME, "application/vnd.6529-works.declarations+json")
+        self.assertEqual(DECLARATIONS_MIME, "application/vnd.6529-stream.declarations+json")
         self.assertEqual(floor.MAX_DECLARATIONS_BYTES, 24_575)
         self.assertEqual(hashlib.sha256(b"").hexdigest()[:4], "e3b0")
 

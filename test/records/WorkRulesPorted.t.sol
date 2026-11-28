@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
@@ -8,7 +8,7 @@ import { IWorkFacts } from "src/interfaces/core/IWorkFacts.sol";
 import { IWorkRules } from "src/interfaces/core/IWorkRules.sol";
 import { FileRole, LocatorKind, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { License, PackageItem } from "src/interfaces/types/PackageTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { SignatureVerifier } from "src/libraries/SignatureVerifier.sol";
 import { WorkRules } from "src/records/WorkRules.sol";
 import { ContentAddresses as CA } from "../helpers/ContentAddresses.sol";
@@ -85,7 +85,7 @@ contract WorkRulesPortedTest is RulesFixture {
                 rules.RELICENSE_TYPEHASH(),
                 s,
                 id,
-                WorksHashing.licenseKey(next.spdxId),
+                StreamHashing.licenseKey(next.spdxId),
                 next.textFileId,
                 state,
                 dl
@@ -268,7 +268,7 @@ contract WorkRulesPortedTest is RulesFixture {
     ///      way its hash sorts against the minted one's, even with every party's consent.
     function test_Relicense_RefusesAnotherItemEitherWay() public {
         (uint256 id, PackageItem memory item) = _withLicense(1, License("MIT", mitText));
-        bytes32 minted = WorksHashing.itemHash(item);
+        bytes32 minted = StreamHashing.itemHash(item);
         License memory next = License("CC-BY-4.0", mitText);
         bytes32 state = _state(id);
         bytes[] memory sigs = _both(_relicenseHash(id, next, state, deadline));
@@ -276,7 +276,7 @@ contract WorkRulesPortedTest is RulesFixture {
         bool above;
         for (uint256 i = 1; !(below && above); ++i) {
             item.recordFileId = keccak256(abi.encode("another record", i));
-            bool lower = WorksHashing.itemHash(item) < minted;
+            bool lower = StreamHashing.itemHash(item) < minted;
             if (lower ? below : above) continue;
             if (lower) below = true;
             else above = true;
@@ -502,13 +502,13 @@ contract WorkRulesPortedTest is RulesFixture {
         assertEq(WorkPowers.RELICENSE, 2);
         assertEq(WorkPowers.RENDERER_REPIN, 4);
         assertEq(WorkPowers.ALL, 7);
-        assertEq(rules.NAME(), "6529 Works Rules");
+        assertEq(rules.NAME(), "6529 Stream Rules");
         assertEq(
             rules.domainSeparator(),
             keccak256(
                 abi.encode(
                     EIP712_DOMAIN_TYPEHASH,
-                    keccak256("6529 Works Rules"),
+                    keccak256("6529 Stream Rules"),
                     keccak256("1"),
                     block.chainid,
                     address(rules)
@@ -518,18 +518,18 @@ contract WorkRulesPortedTest is RulesFixture {
     }
 
     /// @dev The state hash every consent binds, rebuilt from its documented fields (the domain
-    ///      is `cast keccak "6529WORKS_WORK_STATE_V2"`).
+    ///      is `cast keccak "6529STREAM_WORK_STATE_V2"`).
     function test_StateHash_Golden() public {
         (uint256 id, PackageItem memory item) = _open(1);
         bytes32 expected = keccak256(
             abi.encode(
-                bytes32(0x7b6fed9dbcdcee8599bd9a0623d29046d480130c7b1612e60ae146a670a5183b),
+                bytes32(0x51c30b8fb4ab75bdae19b26c93688c7a38b549bb8bd708b9d51025f0a91064f9),
                 address(rules),
                 s,
                 id,
                 uint32(0),
                 item.recordFileId,
-                WorksHashing.CC0_LICENSE_KEY,
+                StreamHashing.CC0_LICENSE_KEY,
                 cc0Text,
                 uint24(6529),
                 address(renderer)

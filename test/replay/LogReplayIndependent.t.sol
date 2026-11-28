@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
@@ -21,7 +21,7 @@ import {
     SaleTerms
 } from "src/interfaces/types/PackageTypes.sol";
 import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { IndSale } from "../independent/IndependentStreamFixture.sol";
 import { MockRenderer } from "../mocks/core/CoreMocks.sol";
 import { EditionsCoreIndexer } from "./EditionsCoreIndexer.sol";
@@ -176,7 +176,7 @@ contract LogReplayIndependentTest is ReplayBase {
         w.media[0] = MediaFile(fileId, sha, 0);
         w.item.collectionId = 1;
         w.item.contentHash = sha;
-        w.item.mediaHash = WorksHashing.mediaHash(w.media);
+        w.item.mediaHash = StreamHashing.mediaHash(w.media);
         w.item.recordFileId = _record(string.concat("Independent Stream ", vm.toString(salt)));
         w.item.parties = new Party[](1);
         w.item.parties[0] = Party(artist, 0);
@@ -186,7 +186,7 @@ contract LogReplayIndependentTest is ReplayBase {
         w.item.sale = SaleTerms(SaleKind.ENGLISH_AUCTION, CURRENCY_ETH, "");
         w.item.edition = EditionTerms(0, CURRENCY_ETH, bytes32(0), "");
         vm.prank(artist);
-        independentStream.approveItem(address(fStream), WorksHashing.itemHash(w.item), 5_000);
+        independentStream.approveItem(address(fStream), StreamHashing.itemHash(w.item), 5_000);
     }
 
     function _mint(IndSale sale, Work memory w) internal returns (uint256 tokenId) {

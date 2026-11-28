@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
@@ -8,7 +8,7 @@ import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { IRevokedRoots } from "src/interfaces/IRevokedRoots.sol";
 import { PackageItem, PartyAcceptance } from "src/interfaces/types/PackageTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { Burner, GasRuleAssertions } from "../helpers/GasRule.sol";
@@ -187,7 +187,7 @@ contract PackageRegistrySuccessorTest is CurationBase, GasRuleAssertions {
     function test_successor_aLaterRevocationInThePredecessorStopsARootRegisteredHere() public {
         PackageItem memory item = _item(lead, SHA_A);
         bytes32 itemHash = _hash(item);
-        bytes32 root = WorksHashing.leaf(itemHash);
+        bytes32 root = StreamHashing.leaf(itemHash);
         bytes32 killed = keccak256("killed later");
         bytes32[] memory none = new bytes32[](0);
         _register(root);
@@ -291,7 +291,7 @@ contract PackageRegistrySuccessorTest is CurationBase, GasRuleAssertions {
         PackageRegistry policy = _successorOf(address(mock));
         PackageItem memory item = _item(lead, SHA_A);
         bytes32 itemHash = _hash(item);
-        bytes32 root = WorksHashing.leaf(itemHash);
+        bytes32 root = StreamHashing.leaf(itemHash);
         bytes32[] memory none = new bytes32[](0);
         policy.registerPackage(root, EVIDENCE, _attestation(signerKey1, root, EVIDENCE));
         assertTrue(policy.isApprovedItem(root, itemHash, none));
@@ -317,7 +317,7 @@ contract PackageRegistrySuccessorTest is CurationBase, GasRuleAssertions {
         PackageRegistry policy = _successorOf(address(slow));
         PackageItem memory item = _item(lead, SHA_A);
         bytes32 itemHash = _hash(item);
-        bytes32 root = WorksHashing.leaf(itemHash);
+        bytes32 root = StreamHashing.leaf(itemHash);
         bytes32[] memory none = new bytes32[](0);
         bytes memory attestation = _attestation(signerKey1, root, EVIDENCE);
 

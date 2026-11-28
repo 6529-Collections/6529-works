@@ -1,4 +1,4 @@
-# 6529 Works: Foundry configuration. Budgets: see ADR 0001 and tools/check_budgets.py.
+# 6529 Stream: Foundry configuration. Budgets: see ADR 0001 and tools/check_budgets.py.
 [profile.default]
 src = "src"
 test = "test"

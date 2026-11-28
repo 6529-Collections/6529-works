@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
@@ -10,7 +10,7 @@ import {
     PackageItem,
     PartyAcceptance
 } from "src/interfaces/types/PackageTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { SignatureReverts } from "test/helpers/SignatureReverts.sol";
 import { CurationBase } from "./CurationBase.sol";
 
@@ -30,7 +30,7 @@ contract ConsolidatedAccountsTest is CurationBase {
     ///      (fails on the single-authority registry: the signature had to be the authority's).
     function test_Move_AnyWalletOfTheLeadAccount() public {
         PackageItem memory item = _item(lead, keccak256("media"));
-        bytes32 root = WorksHashing.leaf(_hash(item));
+        bytes32 root = StreamHashing.leaf(_hash(item));
         _register(root);
         _accept(root, leadKey);
         MoveAuthorization memory move = _move(WALLET_KEY, root, _hash(item), 0);
@@ -81,7 +81,7 @@ contract ConsolidatedAccountsTest is CurationBase {
     function test_IsApprovedItem() public {
         PackageItem memory item = _item(lead, keccak256("media"));
         bytes32 itemHash = _hash(item);
-        bytes32 root = WorksHashing.leaf(itemHash);
+        bytes32 root = StreamHashing.leaf(itemHash);
         bytes32[] memory none = new bytes32[](0);
         assertFalse(registry.isApprovedItem(root, itemHash, none), "unknown root");
         _register(root);
@@ -122,7 +122,7 @@ contract ConsolidatedAccountsTest is CurationBase {
         assertEq(uint8(status), uint8(IPackageRegistry.PackageStatus.APPROVED), "other signer");
         // A package the same signer registers after the kill is live.
         PackageItem memory later = _item(lead, keccak256("later media"));
-        bytes32 laterRoot = WorksHashing.leaf(_hash(later));
+        bytes32 laterRoot = StreamHashing.leaf(_hash(later));
         _register(laterRoot);
         _accept(laterRoot, leadKey);
         _authorize(laterRoot, later, new bytes32[](0), _move(leadKey, laterRoot, _hash(later), 1));

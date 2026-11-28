@@ -5,7 +5,10 @@ Where the contracts are deployed, and which source each deployment runs.
 > Pre-audit. See the [project status](../../README.md#status).
 
 There is no mainnet deployment. The Sepolia instances are testnet rehearsals with throwaway
-signers; do not send them value you care about.
+signers; do not send them value you care about. Every instance below was deployed before
+28 November 2026 and keeps the protocol's earlier name, "6529 Works", in its records and in
+every signing domain (for example `6529 Works Package Registry`); an instance of the current
+code does not exist yet.
 
 | Network | Chain ID | Instance | Source | Record |
 | --- | ---: | --- | --- | --- |

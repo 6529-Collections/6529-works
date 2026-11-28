@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 import { IIndependentStreamRegistry } from "src/interfaces/IIndependentStreamRegistry.sol";
@@ -6,7 +6,7 @@ import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { ArtistIdentity } from "src/interfaces/types/IdentityTypes.sol";
 import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { IndSale, IndependentStreamFixture } from "./IndependentStreamFixture.sol";
 
 /// @notice The Independent Stream module after the reviews: each sale contract mints for one form
@@ -111,7 +111,7 @@ contract IndependentStreamRegistryFixesTest is IndependentStreamFixture {
     }
 
     function _hash(PackageItem memory item) internal pure returns (bytes32) {
-        return WorksHashing.itemHash(item);
+        return StreamHashing.itemHash(item);
     }
 
     /// @dev The network stages a replacement of the artist's account to the wallet of `newKey`,

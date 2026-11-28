@@ -1,15 +1,15 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity 0.8.37;
 
 import { GovernanceConfig } from "./GovernanceConfig.sol";
 import { Roles } from "./Roles.sol";
-import { WorksAccessManager } from "./WorksAccessManager.sol";
+import { StreamAccessManager } from "./StreamAccessManager.sol";
 
 /// @title GovernanceConfigurator
 /// @notice One-shot installer that owns its manager: the constructor deploys
-///         `WorksAccessManager(address(this))`, so the manager's code is the 6529 one and its
+///         `StreamAccessManager(address(this))`, so the manager's code is the 6529 one and its
 ///         only installer is this contract. Deploy it, deploy every target with
-///         `authority = worksManager()`, then call {configure}. The whole configuration,
+///         `authority = streamManager()`, then call {configure}. The whole configuration,
 ///         including the genesis wiring calls (one-shot binds, admitted minters), lands in one
 ///         transaction; it proposes the network and renounces the installer record at the end.
 ///         The network then calls `acceptNetwork` on the manager.
@@ -24,10 +24,10 @@ contract GovernanceConfigurator {
     /// @notice The account allowed to call {configure}.
     address public immutable deployer;
     /// @notice The manager this configurator deployed and configures.
-    WorksAccessManager public immutable worksManager;
+    StreamAccessManager public immutable streamManager;
 
     /// @notice A configuration epoch was installed on `manager`.
-    /// @param manager The configured `WorksAccessManager`.
+    /// @param manager The configured `StreamAccessManager`.
     /// @param configHash `keccak256(abi.encode(cfg))` of the installed configuration.
     /// @param manifestHash Hash of the signed JSON governance manifest for this epoch.
     /// @param wiringHash `keccak256(abi.encode(wiring))` of the genesis wiring calls.
@@ -50,10 +50,10 @@ contract GovernanceConfigurator {
     constructor(address deployer_) {
         if (deployer_ == address(0)) revert InvalidDeployer();
         deployer = deployer_;
-        worksManager = new WorksAccessManager(address(this));
+        streamManager = new StreamAccessManager(address(this));
     }
 
-    /// @notice Installs `cfg` on {worksManager}, executes the genesis `wiring` as the
+    /// @notice Installs `cfg` on {streamManager}, executes the genesis `wiring` as the
     ///         zero-delay installer, proposes `cfg.network`, renounces this contract's installer
     ///         record and emits the epoch's hashes.
     /// @param cfg The network, the brake, the operational holders and the selector map; delays
@@ -68,17 +68,17 @@ contract GovernanceConfigurator {
         GovernanceConfig.Call[] calldata wiring
     ) external {
         if (msg.sender != deployer) revert NotDeployer(msg.sender);
-        GovernanceConfig.install(worksManager, cfg, wiring);
-        worksManager.renounceRole(Roles.ADMIN, address(this));
+        GovernanceConfig.install(streamManager, cfg, wiring);
+        streamManager.renounceRole(Roles.ADMIN, address(this));
         emit GovernanceConfigured(
-            address(worksManager),
+            address(streamManager),
             keccak256(abi.encode(cfg)),
             manifestHash,
             keccak256(abi.encode(wiring))
         );
     }
 
-    /// @notice Reverts unless {worksManager} matches `cfg`: this contract holds no installer
+    /// @notice Reverts unless {streamManager} matches `cfg`: this contract holds no installer
     ///         record, the network and brake are the configured ones (so the network has
     ///         accepted), and every role, holder and selector reads back as configured.
     /// @dev For CI readback by `eth_call` after the network accepted. Because this contract
@@ -87,9 +87,9 @@ contract GovernanceConfigurator {
     ///      `RoleGranted` event.
     /// @param cfg The expected configuration, as passed to {configure}.
     function verify(GovernanceConfig.Config calldata cfg) external view {
-        if (GovernanceConfig.hasRecord(worksManager, Roles.ADMIN, address(this))) {
+        if (GovernanceConfig.hasRecord(streamManager, Roles.ADMIN, address(this))) {
             revert ConfiguratorStillAdmin();
         }
-        GovernanceConfig.verify(worksManager, cfg);
+        GovernanceConfig.verify(streamManager, cfg);
     }
 }

@@ -52,7 +52,7 @@ copy or test against; this page is the authority where the two differ.
 **DCL-1.** Every convention document is UTF-8 JSON in RFC 8785 canonical form with a `v` member
 and, for a statement document, a `subject` naming the statement's chain ID, token and token ID.
 The statement's `kind` is the label hash, `schema` is `keccak256` of the schema's `$id`
-(`urn:6529-works:schema:<name>:v1`), `content` is SHA-256 (algorithm 2) of the document, and the
+(`urn:6529-stream:schema:<name>:v1`), `content` is SHA-256 (algorithm 2) of the document, and the
 locator is an `ar://` or `ipfs://` address or a complete content-store file. A document is at most
 65,536 bytes; a `uint256` member is a decimal string of at most 2<sup>256</sup> − 1.
 
@@ -65,7 +65,7 @@ same subject, kind and role.
 ## The declarations document
 
 **DCL-3.** A work's declarations document is the one AUXILIARY media file with MIME type
-`application/vnd.6529-works.declarations+json`, stored `Identity` in one chunk (at most 24,575
+`application/vnd.6529-stream.declarations+json`, stored `Identity` in one chunk (at most 24,575
 bytes), following [`declarations.v1`](schemas/declarations.v1.schema.json) with `contentHash`
 equal to the work's. Two make the declarations `ambiguous`. The media hash fixes it from approval.
 Its sections, all optional: `conservation` (DCL-4, DCL-5), `custodians` and `citations` (DCL-6,
@@ -148,7 +148,7 @@ token's media, content hash and `tokenURI` never change.
 
 ## Custody attestations for a physical twin
 
-**DCL-19.** A custodian signs EIP-712 typed data, domain `{name: "6529 Works Custody Attestation",
+**DCL-19.** A custodian signs EIP-712 typed data, domain `{name: "6529 Stream Custody Attestation",
 version: "1", chainId}` with no verifying contract:
 
 ```text
@@ -158,7 +158,7 @@ CustodyAttestation(address token,uint256 tokenId,bytes32 objectId,uint8 status,u
 `status` is 1 HELD, 2 RELEASED (to `successor`), 3 MISSING or 4 DESTROYED. Type hash
 `0x3dc91787a59cbc3117d2a54785ad6b184b56a9699733e6713675770b4787fe15`; the
 [example](schemas/examples/custody-attestation.json) is signed by public Anvil test account 0
-(digest `0xa03cc2c3767834df2ef6c583fd5d08e6d65ddd616d2f90a96e0ad8e00e152e2a`).
+(digest `0x6baa5fab8796d1ba91748da78a4a9f20a2a4118c3b1914c7483f703a0b20ee13`).
 
 - **DCL-20.** It counts posted by OWNER, ARTIST or PLATFORM, with a valid custodian signature
   (verified as `SignatureVerifier` does), only for the work it names.
@@ -173,7 +173,7 @@ CustodyAttestation(address token,uint256 tokenId,bytes32 objectId,uint8 status,u
 An off-chain challenge and response by which a venue checks that the person in front of it
 controls the wallet that holds a work. Nothing is written on chain.
 
-**DCL-23.** EIP-712, domain `{name: "6529 Works Control Proof", version: "1", chainId}`:
+**DCL-23.** EIP-712, domain `{name: "6529 Stream Control Proof", version: "1", chainId}`:
 
 ```text
 ControlProof(string venue,bytes32 nonce,uint64 issuedAt,uint64 expiresAt,uint256 chainId,address token,uint256 tokenId,address holder,address signer)
@@ -181,7 +181,7 @@ ControlProof(string venue,bytes32 nonce,uint64 issuedAt,uint64 expiresAt,uint256
 
 Type hash `0x551abbed9e673b4462640aaa67f046692206a5f53883fb9c6187674681c102eb`; the
 [example](schemas/examples/control-proof.json) is signed by Anvil test account 0 (digest
-`0x2548db021144b031169071ded42000449c5128184168ca0bd94e5d56c4e0a057`).
+`0x30131e8926649b07f8edabe55dcc60473c397a998eee6a47a9fdd16c6317b7a7`).
 
 - **DCL-24.** The verifier issues a fresh nonce valid for at most 10 minutes, then on the response
   first claims the stored challenge by nonce atomically (spending it), requires the response to
@@ -256,7 +256,7 @@ Every rule here is applied off chain; none is a contract invariant.
 
 | Parameter | Value | Rule |
 | --- | --- | --- |
-| Declarations MIME type and size | `application/vnd.6529-works.declarations+json`; `Identity`, at most 24,575 bytes | DCL-3 |
+| Declarations MIME type and size | `application/vnd.6529-stream.declarations+json`; `Identity`, at most 24,575 bytes | DCL-3 |
 | Other convention documents | at most 65,536 bytes | DCL-1 |
 | Storage receipts per file | at least 2, of distinct network or provider | DCL-4, DCL-5 |
 | Script MIME types (a generative work) | `text/html`, `text/javascript`, `application/javascript`, `text/ecmascript`, `application/ecmascript`, `image/svg+xml` | DCL-4, DCL-5 |

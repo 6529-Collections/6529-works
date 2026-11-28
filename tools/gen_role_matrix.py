@@ -211,7 +211,7 @@ def keccak256(data: bytes) -> bytes:
     global _KECCAK
     if _KECCAK is None:
         path = Path(__file__).resolve().parent / "content" / "keccak.py"
-        spec = importlib.util.spec_from_file_location("works_keccak", path)
+        spec = importlib.util.spec_from_file_location("stream_keccak", path)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         _KECCAK = module.keccak256
@@ -365,7 +365,7 @@ def render(config: dict) -> str:
     w("")
     w("# Role and permission matrix")
     w("")
-    w("Every restricted function of every governed 6529 Works contract: the AccessManager role it")
+    w("Every restricted function of every governed 6529 Stream contract: the AccessManager role it")
     w("maps to, the role's delay class and delay, and who can cancel it while it waits. Generated")
     w(f"from [`{CONFIG}`](../../{CONFIG}), the")
     w("committed genesis policy, by [`tools/gen_role_matrix.py`](../../tools/gen_role_matrix.py).")
@@ -406,7 +406,7 @@ def render(config: dict) -> str:
         w("")
     w("## How to read the matrix")
     w("")
-    w("- **Role.** The selector's role in the `WorksAccessManager`. The network schedules a call")
+    w("- **Role.** The selector's role in the `StreamAccessManager`. The network schedules a call")
     w("  whose role has a delay, waits the delay, then executes it.")
     w("- **Cancel.** A scheduled operation can be cancelled by the network or by whoever")
     w("  scheduled it before it executes; the brake can delay it once. A function with no delay")
@@ -434,7 +434,7 @@ def render(config: dict) -> str:
     w("")
     w("Every operational role's admin is NETWORK, so the network grants and revokes those keys at")
     w("once; the network roles answer for `network()` only ([`Roles.sol`](../../src/governance/Roles.sol),")
-    w("[`WorksAccessManager.sol`](../../src/governance/WorksAccessManager.sol)).")
+    w("[`StreamAccessManager.sol`](../../src/governance/StreamAccessManager.sol)).")
     if unused:
         w("")
         for name, note in unused.items():

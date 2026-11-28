@@ -463,7 +463,7 @@ class FilterConfigTest(unittest.TestCase):
             "/work/scripts/repo/src/Vault.sol",
             "/work/repo/src/libraries/Utf8.sol",
             "/work/repo/src/testing/Vault.sol",
-            "C:/Users/me/6529-works-test/src/Vault.sol",
+            "C:/Users/me/6529-stream-test/src/Vault.sol",
         ):
             self.assertFalse(self.slither_matches(pattern, path), path)
 
@@ -632,13 +632,13 @@ class RealSlitherInAnAwkwardPathTest(unittest.TestCase):
     OLD = "(lib/|test/|script/)"
     FOUNDRY_TOML = '[profile.default]\nsrc = "src"\nsolc_version = "0.8.37"\nauto_detect_solc = false\n'
     VAULT = (
-        "// SPDX-License-Identifier: MIT\npragma solidity 0.8.37;\n\n"
+        "// SPDX-License-Identifier: Apache-2.0\npragma solidity 0.8.37;\n\n"
         "contract Vault {\n    function deposit() external payable {}\n\n"
         "    function sweep(address to) external {\n"
         "        payable(to).transfer(address(this).balance);\n    }\n}\n"
     )
     CLEAN = (
-        "// SPDX-License-Identifier: MIT\npragma solidity 0.8.37;\n\n"
+        "// SPDX-License-Identifier: Apache-2.0\npragma solidity 0.8.37;\n\n"
         "/// @notice Nothing for a detector to report.\ncontract Clean {\n"
         "    /// @notice Returns its input.\n"
         "    function identity(uint256 x) external pure returns (uint256) {\n        return x;\n    }\n}\n"

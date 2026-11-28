@@ -27,7 +27,7 @@ from typing import Any, Iterable
 from tools.content.errors import ToolError
 
 SCHEMA_DIR = Path(__file__).resolve().parents[2] / "docs" / "spec" / "schemas"
-ID_PREFIX = "urn:6529-works:schema:"
+ID_PREFIX = "urn:6529-stream:schema:"
 
 _ANNOTATIONS = {"$schema", "$id", "$defs", "$comment", "title", "description", "examples", "default"}
 _KEYWORDS = {

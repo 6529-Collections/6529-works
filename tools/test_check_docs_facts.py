@@ -23,7 +23,7 @@ cf = importlib.util.module_from_spec(_SPEC)
 sys.modules["check_docs_facts"] = cf
 _SPEC.loader.exec_module(cf)
 
-SOURCE = """// SPDX-License-Identifier: MIT
+SOURCE = """// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 // a comment

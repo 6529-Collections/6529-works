@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 import { StreamDirectory6529 } from "src/core/StreamDirectory6529.sol";
@@ -26,7 +26,7 @@ import {
     SaleTerms
 } from "src/interfaces/types/PackageTypes.sol";
 import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { CoreFixture } from "../mocks/core/CoreFixture.sol";
 import { MockSale } from "../mocks/core/CoreMocks.sol";
 import { DelegationManagementMock } from "../mocks/identity/DelegationManagementMock.sol";
@@ -280,7 +280,7 @@ abstract contract IndependentStreamFixture is CoreFixture {
         item.kind = kind;
         item.collectionId = 1;
         item.contentHash = sha256(data);
-        item.mediaHash = WorksHashing.mediaHash(media);
+        item.mediaHash = StreamHashing.mediaHash(media);
         item.recordFileId = _file(abi.encodePacked("record ", n), "application/json");
         item.parties = new Party[](1 + collaborators.length);
         item.parties[0] = Party(artist, 0);
@@ -308,13 +308,13 @@ abstract contract IndependentStreamFixture is CoreFixture {
         view
         returns (bytes memory)
     {
-        bytes32 what = Core.independentConsent(WorksHashing.itemHash(item), rate);
+        bytes32 what = Core.independentConsent(StreamHashing.itemHash(item), rate);
         return _proof(key, accountsModule.consentDigest(token, what));
     }
 
     function _approve(address token, PackageItem memory item, uint24 rate) internal {
         vm.prank(artist);
-        registry.approveItem(token, WorksHashing.itemHash(item), rate);
+        registry.approveItem(token, StreamHashing.itemHash(item), rate);
     }
 
     /// @dev Approves and starts item `n` in the Independent Stream contract; the token sits in the

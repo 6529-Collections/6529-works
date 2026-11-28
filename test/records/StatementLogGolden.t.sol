@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 import { Test } from "forge-std/Test.sol";
@@ -75,19 +75,19 @@ contract StatementLogGoldenTest is Test {
             0x8b73c3c69bb8fe3d512ecc4cf759cc79239f7b179b0ffacaa9a75d522b39400f
         );
         assertEq(
-            keccak256("6529.works.StatementLog.entry.v1"),
-            0x0f3311395c5212a871acb58afd86802fdee2d0bd441c4d282deb4870d87e1f11
+            keccak256("6529.stream.StatementLog.entry.v1"),
+            0xfddcca3af1871d17152d9b629befa9ed1bb4665307aa40067dfb7ca22a9162ad
         );
         assertEq(
-            keccak256("6529.works.StatementLog.head.v1"),
-            0x20025e2db27e195c57e0612653067df58c83f14892beca1016dfd5dfa49b15e0
+            keccak256("6529.stream.StatementLog.head.v1"),
+            0xf9109f5270df85264f0100c43832b567360b634453306359bf9e77515e27600a
         );
     }
 
     function test_Golden_DomainSeparatorMatchesEip5267Fields() public view {
         (, string memory name, string memory version, uint256 chainId, address verifying,,) =
             statementLog.eip712Domain();
-        assertEq(name, "6529 Works Statement Log");
+        assertEq(name, "6529 Stream Statement Log");
         assertEq(version, "1");
         assertEq(chainId, 1);
         assertEq(verifying, LOG);
@@ -103,14 +103,14 @@ contract StatementLogGoldenTest is Test {
                     verifying
                 )
             ),
-            0x75b051dca6358727d5fe93cdc29be21582295eafa128e8efbef7e6530f223320
+            0x35b65742cb0ad2cdd2b282f2fe9314730e660e4ada9f293ee666d2a4e0432ad7
         );
     }
 
     function test_Golden_AuthorizationDigest() public view {
         bytes32 digest =
             statementLog.authorizationDigest(Role.ARTIST, _statement(), SIGNER, NONCE, DEADLINE);
-        assertEq(digest, 0x72db11a97266f8af68809f0c675beae7e586328e006995f45f0bcaa6101341d5);
+        assertEq(digest, 0x23d9eb6be8ba36627ea0f041cd68405d298b320ce8c78869a2de5f0961f25e16);
     }
 
     /// @dev Forge's own EIP-712 encoder (not hand-written type strings) agrees with the contract.
@@ -122,7 +122,7 @@ contract StatementLogGoldenTest is Test {
             '"HashRef":[{"name":"algorithm","type":"uint16"},{"name":"digest","type":"bytes32"}]},'
         );
         string memory domain = string.concat(
-            '"primaryType":"Authorization","domain":{"name":"6529 Works Statement Log","version":"1","chainId":1,"verifyingContract":"',
+            '"primaryType":"Authorization","domain":{"name":"6529 Stream Statement Log","version":"1","chainId":1,"verifyingContract":"',
             vm.toString(LOG),
             '"},'
         );
@@ -134,7 +134,7 @@ contract StatementLogGoldenTest is Test {
             "}}"
         );
         bytes32 expected = vm.eip712HashTypedData(string.concat(types, domain, message));
-        assertEq(expected, 0x72db11a97266f8af68809f0c675beae7e586328e006995f45f0bcaa6101341d5);
+        assertEq(expected, 0x23d9eb6be8ba36627ea0f041cd68405d298b320ce8c78869a2de5f0961f25e16);
         assertEq(
             statementLog.authorizationDigest(Role.ARTIST, _statement(), SIGNER, NONCE, DEADLINE),
             expected
@@ -171,11 +171,11 @@ contract StatementLogGoldenTest is Test {
     function test_Golden_EntryHashAndHead() public {
         vm.prank(SIGNER);
         bytes32 entry = statementLog.append(Role.ARTIST, _statement());
-        assertEq(entry, 0x9d2023b48135217ae6890865f741d06709812534fac2f23ba3d1b7f0664267cb);
+        assertEq(entry, 0x452c6886ddd6b4789c00a083cc04f96152703ea0c50fcd79331f3f4424a68f00);
 
         (uint64 count, bytes32 head) = statementLog.chainOf(TOKEN, 42);
         assertEq(count, 1);
-        assertEq(head, 0x77858d3d57071dd53c884e76681314dda773c76dec240bf8d840c217c683d1e5);
+        assertEq(head, 0x8e4ef9f3fb81314836d80db3f8a74bb8ae7ff04287bf733672c1865216b2085c);
         assertEq(
             statementLog.subjectKey(TOKEN, 42),
             0x7cc63a2d4ee562fdcae382d38b9451623779eabc5f107b97ac03f0070fa56823

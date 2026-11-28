@@ -297,12 +297,12 @@ new slot that records it: about 89,000 gas once per file.
 
 ## Manifest JSON
 
-`schema` is `6529-works/content-plan/v1`. Deterministic (no timestamps), fixed key
+`schema` is `6529-stream/content-plan/v1`. Deterministic (no timestamps), fixed key
 order:
 
 ```json
 {
-  "schema": "6529-works/content-plan/v1",
+  "schema": "6529-stream/content-plan/v1",
   "fileId": "0x...",
   "mimeType": "image/png",
   "encoding": "base64",

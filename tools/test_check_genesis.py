@@ -23,7 +23,7 @@ cg = importlib.util.module_from_spec(_SPEC)
 sys.modules["check_genesis"] = cg
 _SPEC.loader.exec_module(cg)
 
-FOO = """// SPDX-License-Identifier: MIT
+FOO = """// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 contract Foo {

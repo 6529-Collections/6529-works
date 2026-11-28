@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity 0.8.37;
 
 import { Base64 } from "@openzeppelin/contracts/utils/Base64.sol";
@@ -80,7 +80,7 @@ import { JsonScan } from "./JsonScan.sol";
 ///      it cannot break out of the JSON string) and `Identity` (encoded here, and counted eight
 ///      times). `Gzip` and `GzipBase64` hold a compressed stream, not the media, so they are
 ///      served by locator only. A JavaScript primary (stored as `Identity`, and whose record
-///      declares no `dependencies`) is wrapped in a small HTML page that sets `window.works` in a
+///      declares no `dependencies`) is wrapped in a small HTML page that sets `window.stream` in a
 ///      script of its own (see `SHELL_HEAD`), with `</script` and `<!--` neutralized in the
 ///      artist's (see `HtmlScript` for what that changes; a script with more than
 ///      `MAX_SCRIPT_LT` `<` is not wrapped). Otherwise the preferred locator is
@@ -169,14 +169,14 @@ contract Renderer is IRenderer {
     string private constant PREFIX = "data:application/json;utf8,";
     /// @dev The bytes an SPDX identifier is made of, as a bit set over ASCII: `A-Z a-z 0-9 . + -`.
     uint256 private constant SPDX_CHARS = 0x07fffffe07fffffe03ff680000000000;
-    /// @dev The page around a JavaScript primary. `window.works` is the script's interface, public
+    /// @dev The page around a JavaScript primary. `window.stream` is the script's interface, public
     ///      and stable: `v` (the version of this interface, 1), `tokenId` and `seed` (`"0x"` hex,
     ///      or null when the work has no seed). A change to it needs a new `v`. It is set in a
     ///      script of its own, ahead of the artist's, which follows.
     string private constant SHELL_HEAD = '<!doctype html><html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1"><style>'
         "html,body{margin:0;height:100%;overflow:hidden}</style></head><body><script>"
-        "window.works=";
+        "window.stream=";
     string private constant SHELL_TAIL = "</script></body></html>";
 
     /// @dev What a work's record file is good for: not open yet, not completely uploaded,
@@ -809,7 +809,7 @@ contract Renderer is IRenderer {
         view
         returns (string memory)
     {
-        bytes memory name = abi.encodePacked("6529 Works %23", Strings.toString(c.id));
+        bytes memory name = abi.encodePacked("6529 Stream %23", Strings.toString(c.id));
         if (c.work.collectionId != 0) {
             name = abi.encodePacked(_str(c.collection), " %23", Strings.toString(c.work.serial));
         }

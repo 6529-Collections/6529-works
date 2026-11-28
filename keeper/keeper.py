@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reference keeper for 6529 Works: runs the permissionless steps that are due, once.
+"""Reference keeper for 6529 Stream: runs the permissionless steps that are due, once.
 
 A reference implementation, not production software: pre-audit, unaudited, with no monitoring,
 alerting, retries across runs or key management. See keeper/README.md.

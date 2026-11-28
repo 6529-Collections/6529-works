@@ -13,7 +13,7 @@ EIP-712 domains integrators need are in
 | Path | What it holds |
 | --- | --- |
 | `I*.sol` | One interface per module: `IArtistRegistry`, `IArtistRoleResolver`, `IChunkStore`, `IContentStore`, `ICurationVerifier`, `IDependencyRegistry`, `IEconomicsResolver`, `IEnglishAuction`, `IEnglishAuctionClock`, `IEnglishAuctionRefusal`, `IEntropyModule`, `IIndependentStreamDeployer`, `IIndependentStreamMembership`, `IIndependentStream`, `IIndependentStreamRegistry`, `IItemApprovals`, `IPackageRegistry`, `IRenderer`, `IRevokedRoots`, `ISaleAdapter`, `IStatementLog`, `IUniformEditionAuction`, `IUniformEditionAuctionLens`, `IUniformEditionAuctionStorage`, `IWorkDelivery`, `IWorkPowers` (`IWorkPowers`: the renounceable work powers the RECORDS module reports through ERC-165, ADR 0006) |
-| [`types/`](types/) | Shared structs and constants: `PackageTypes` (the package item), `SaleTypes`, `EconomicsTypes`, `IdentityTypes`, `ContentTypes`, `HashRef`, `StatementKinds`, `Limits` (every bound on user-supplied arrays), `Typehashes` (EIP-712 type strings and domain names), `WorksHashing` (item hashes, package leaves, media and record hashes) and `StepLadder` (the edition auction's price ladder) |
+| [`types/`](types/) | Shared structs and constants: `PackageTypes` (the package item), `SaleTypes`, `EconomicsTypes`, `IdentityTypes`, `ContentTypes`, `HashRef`, `StatementKinds`, `Limits` (every bound on user-supplied arrays), `Typehashes` (EIP-712 type strings and domain names), `StreamHashing` (item hashes, package leaves, media and record hashes) and `StepLadder` (the edition auction's price ladder) |
 | [`../economics/interfaces/`](../economics/interfaces/) | The economics module's own interfaces (`ISplitFactory`, `ISplitWallet`, `IAssetAllowlist`, `IRevenueEscrow`, `IReleaseVerifier`, `IClaimRouter`, `IArtistPayoutResolver`) |
 
 ## Developer notes
@@ -23,8 +23,8 @@ EIP-712 domains integrators need are in
   the integrator docs against it (and, with `--artifacts out`, against the compiled selectors).
   Adding, removing or retyping a function changes the ID: update the pin and the docs in the
   same PR, and expect every ERC-165 install check that names the interface to change with it.
-- **Hashes have golden vectors.** `WorksHashing` and `Typehashes` are checked against
-  independently computed values in [`WorksHashing.t.sol`](../../test/interfaces/WorksHashing.t.sol)
+- **Hashes have golden vectors.** `StreamHashing` and `Typehashes` are checked against
+  independently computed values in [`StreamHashing.t.sol`](../../test/interfaces/StreamHashing.t.sol)
   and [`Typehashes.t.sol`](../../test/interfaces/Typehashes.t.sol) (rule CUR-20 in
   [Curation](../../docs/spec/curation.md#rules-and-invariants)). Signers, the uploader and
   off-chain tooling compute the same values, so a change here is a breaking change for them.

@@ -1,6 +1,6 @@
 # Integration examples
 
-Short, runnable examples of the common integration jobs against 6529 Works. Each is one Foundry
+Short, runnable examples of the common integration jobs against 6529 Stream. Each is one Foundry
 test file. They share one setup, [`ExampleBase.sol`](ExampleBase.sol), which deploys the whole
 system with the deploy library the deploy script uses ([`script/DeployCore.sol`](../script/DeployCore.sol))
 and the committed genesis policy ([`config/genesis.core.example.json`](../config/genesis.core.example.json)).

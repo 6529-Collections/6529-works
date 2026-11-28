@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 import { IReleaseVerifier } from "src/economics/interfaces/IReleaseVerifier.sol";
@@ -44,7 +44,7 @@ contract ReleaseVerifierTest is EconomicsBase {
                 keccak256(
                     "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
                 ),
-                keccak256("6529 Works Release Verifier"),
+                keccak256("6529 Stream Release Verifier"),
                 keccak256("1"),
                 block.chainid,
                 address(verifier)
@@ -78,7 +78,7 @@ contract ReleaseVerifierTest is EconomicsBase {
             uint256[] memory extensions
         ) = verifier.eip712Domain();
         assertEq(fields, hex"0f");
-        assertEq(name, "6529 Works Release Verifier");
+        assertEq(name, "6529 Stream Release Verifier");
         assertEq(version, "1");
         assertEq(chainId, block.chainid);
         assertEq(verifyingContract, address(verifier));
@@ -502,7 +502,7 @@ contract ReleaseVerifierTest is EconomicsBase {
             '{"name":"nonce","type":"uint256"},{"name":"deadline","type":"uint256"}]},'
         );
         string memory domain = string.concat(
-            '"primaryType":"ReleaseAuthorization","domain":{"name":"6529 Works Release Verifier",',
+            '"primaryType":"ReleaseAuthorization","domain":{"name":"6529 Stream Release Verifier",',
             '"version":"1","chainId":"',
             vm.toString(block.chainid),
             '","verifyingContract":"',

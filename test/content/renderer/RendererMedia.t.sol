@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 import { Base64 } from "@openzeppelin/contracts/utils/Base64.sol";
@@ -513,9 +513,9 @@ contract RendererMediaTest is RendererBase {
 
     // ---------------------------------------------------------------- the HTML page of a script
 
-    /// @dev `window.works` is set in a script of its own, ahead of the artist's (decision L3).
+    /// @dev `window.stream` is set in a script of its own, ahead of the artist's (decision L3).
     bytes internal constant HEAD_MARK =
-        "<script>window.works={v:1,tokenId:7,seed:null};</script><script>";
+        "<script>window.stream={v:1,tokenId:7,seed:null};</script><script>";
     bytes internal constant TAIL = "</script></body></html>";
 
     function _page() internal view returns (bytes memory) {
@@ -555,7 +555,7 @@ contract RendererMediaTest is RendererBase {
         return true;
     }
 
-    function test_Script_IsWrappedInAPageThatSetsWindowWorks() public {
+    function test_Script_IsWrappedInAPageThatSetsWindowStream() public {
         bytes memory js = "document.body.append('hi');";
         _install(_file(js, IDENTITY, "text/javascript"));
 
@@ -590,7 +590,7 @@ contract RendererMediaTest is RendererBase {
         assertTrue(_contains(page, "var c='<\\!--<script>';"), "comment");
         assertTrue(_contains(page, "/*<\\/Script >*/<\\!--"), "comment and end tag");
         assertTrue(_ends(page, TAIL));
-        // Two: the page's own closing tags, one for `window.works` and one for the artist's script.
+        // Two: the page's own closing tags, one for `window.stream` and one for the artist's script.
         assertEq(_countOf(page, "</script"), 2, "only the page's own closing tags");
     }
 
@@ -623,7 +623,7 @@ contract RendererMediaTest is RendererBase {
                 _page(),
                 bytes(
                     string.concat(
-                        '<script>window.works={v:1,tokenId:7,seed:"',
+                        '<script>window.stream={v:1,tokenId:7,seed:"',
                         seed,
                         '"};</script><script>go();'
                     )
@@ -636,7 +636,7 @@ contract RendererMediaTest is RendererBase {
         stream.setWork(ID, core);
         stream.setSeed(ID, 0);
         assertTrue(
-            _contains(_page(), "window.works={v:1,tokenId:7,seed:null};</script><script>go();")
+            _contains(_page(), "window.stream={v:1,tokenId:7,seed:null};</script><script>go();")
         );
     }
 

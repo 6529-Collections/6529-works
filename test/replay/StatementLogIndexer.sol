@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 import { Vm } from "forge-std/Vm.sol";
@@ -16,8 +16,8 @@ import { ReplayIndexer } from "./ReplayIndexer.sol";
 ///         resolver, recordedAt, statementHash))`), and each head from the one before, so a log
 ///         that was altered or dropped breaks the chain here.
 contract StatementLogIndexer is ReplayIndexer {
-    bytes32 internal constant ENTRY_DOMAIN = keccak256("6529.works.StatementLog.entry.v1");
-    bytes32 internal constant HEAD_DOMAIN = keccak256("6529.works.StatementLog.head.v1");
+    bytes32 internal constant ENTRY_DOMAIN = keccak256("6529.stream.StatementLog.entry.v1");
+    bytes32 internal constant HEAD_DOMAIN = keccak256("6529.stream.StatementLog.head.v1");
     bytes32 internal constant HASHREF_TYPEHASH =
         keccak256("HashRef(uint16 algorithm,bytes32 digest)");
     bytes32 internal constant STATEMENT_TYPEHASH = keccak256(

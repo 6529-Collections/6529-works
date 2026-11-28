@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 import { StreamDirectory6529 } from "src/core/StreamDirectory6529.sol";
@@ -39,7 +39,7 @@ import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { EditionRules } from "src/editions/EditionRules.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { MerkleProof } from "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { ERC1271WalletMock } from "test/mocks/libraries/AdversarialTargets.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
 import { SignatureReverts } from "test/helpers/SignatureReverts.sol";
@@ -66,11 +66,11 @@ contract PackageRegistryTest is CurationBase {
     /// @dev `moveDigest(keccak256("root"), keccak256("item"), 7, 1_900_000_000)` at
     ///      FIXED_REGISTRY on chain 31337.
     bytes32 internal constant GOLDEN_MOVE_DIGEST =
-        0x327fbd1136cdfe4edd681975e83c7944766d06b9231f85adeeb356f02735bc64;
+        0x6afb94042fd25bf92bfb3a9bbf5d8603738db38aaeb29a8cfc89021c3d79dd86;
     /// @dev `acceptanceDigest(keccak256("root"), (0x3333…, keccak256("profile"),
     ///      keccak256("doc"), 1_900_000_000))` at FIXED_REGISTRY on chain 31337.
     bytes32 internal constant GOLDEN_ACCEPTANCE_DIGEST =
-        0x9b13406fdd672b692130dd492f58c58aa8626911fb1523fb27750e9e9f2c6760;
+        0x49624cf665e041719f64117189018d9c95edf56003251548d806ebad78d37be3;
 
     // Declared media SHA-256 values (plain constants: the precompile would consume `vm.prank`).
     bytes32 internal constant SHA_A = keccak256("media A");
@@ -102,7 +102,7 @@ contract PackageRegistryTest is CurationBase {
     function test_eip712Domain() public view {
         (, string memory name, string memory version, uint256 chainId, address self,,) =
             registry.eip712Domain();
-        assertEq(name, "6529 Works Package Registry");
+        assertEq(name, "6529 Stream Package Registry");
         assertEq(version, "1");
         assertEq(chainId, block.chainid);
         assertEq(self, address(registry));
@@ -435,7 +435,7 @@ contract PackageRegistryTest is CurationBase {
     ///      (a leaked attestation), and the root can then never be registered or used.
     function test_revokePackage_inAdvance() public {
         PackageItem memory item = _item(lead, SHA_A);
-        bytes32 root = WorksHashing.leaf(_hash(item));
+        bytes32 root = StreamHashing.leaf(_hash(item));
         vm.expectEmit(address(registry));
         emit IPackageRegistry.PackageRevoked(root, keccak256("leaked attestation"));
         vm.prank(guardian);
@@ -466,7 +466,7 @@ contract PackageRegistryTest is CurationBase {
     function test_revokePackage_isPerRoot() public {
         PackageItem memory item = _item(lead, SHA_A);
         bytes32[] memory leaves = new bytes32[](2);
-        leaves[0] = WorksHashing.leaf(_hash(item));
+        leaves[0] = StreamHashing.leaf(_hash(item));
         leaves[1] = keccak256("other leaf");
         bytes32 single = leaves[0];
         bytes32 pair = _root(leaves);
@@ -700,7 +700,7 @@ contract PackageRegistryTest is CurationBase {
     function test_previewAndAuthorize_carryTheItemsOwnFields() public {
         PackageItem memory item = _item(lead, SHA_A);
         item.sale.params = hex"0102";
-        bytes32 root = WorksHashing.leaf(_hash(item));
+        bytes32 root = StreamHashing.leaf(_hash(item));
         _register(root);
         _accept(root, leadKey);
         MoveAuthorization memory move = _move(leadKey, root, _hash(item), 0);
@@ -720,10 +720,10 @@ contract PackageRegistryTest is CurationBase {
         assertEq(abi.encode(pf), abi.encode(rec), "the preview answers the same facts");
     }
 
-    /// @dev The registry hashes the item from calldata (`WorksHashing.itemHashCalldata`);
-    ///      whatever the dynamic fields hold, the result is `WorksHashing.itemHash`.
+    /// @dev The registry hashes the item from calldata (`StreamHashing.itemHashCalldata`);
+    ///      whatever the dynamic fields hold, the result is `StreamHashing.itemHash`.
     /// The license ID is fixed: the policy refuses one outside the `SpdxId` grammar before hashing.
-    function testFuzz_consume_itemHashMatchesWorksHashing(
+    function testFuzz_consume_itemHashMatchesStreamHashing(
         uint256 collectionId,
         bytes32 mediaHash,
         bytes calldata saleParams,
@@ -736,7 +736,7 @@ contract PackageRegistryTest is CurationBase {
         item.sale.params = saleParams;
         item.seedPolicy = uint8(SeedPolicy.ARTIST);
         item.seed = seed;
-        bytes32 root = WorksHashing.leaf(_hash(item));
+        bytes32 root = StreamHashing.leaf(_hash(item));
         _register(root);
         _accept(root, leadKey);
         (MintFacts memory f,) = minter.authorizeOnly(
@@ -744,13 +744,13 @@ contract PackageRegistryTest is CurationBase {
             stream,
             _request(root, item, new bytes32[](0), _move(leadKey, root, _hash(item), 0))
         );
-        assertEq(f.itemHash, WorksHashing.itemHash(item));
+        assertEq(f.itemHash, StreamHashing.itemHash(item));
         assertEq(f.seed, seed);
     }
 
     function test_consume_masterWithCollaborator() public {
         PackageItem memory item = _masterItem(SHA_A);
-        bytes32 root = WorksHashing.leaf(_hash(item));
+        bytes32 root = StreamHashing.leaf(_hash(item));
         _register(root);
         _accept(root, leadKey);
         _accept(root, collabKey);
@@ -761,7 +761,7 @@ contract PackageRegistryTest is CurationBase {
 
     function test_consume_revertsMissingCollaboratorAcceptance() public {
         PackageItem memory item = _masterItem(SHA_A);
-        bytes32 root = WorksHashing.leaf(_hash(item));
+        bytes32 root = StreamHashing.leaf(_hash(item));
         _register(root);
         _accept(root, leadKey);
         MoveAuthorization memory move = _move(leadKey, root, _hash(item), 0);
@@ -834,7 +834,7 @@ contract PackageRegistryTest is CurationBase {
         // The same item listed in two approved packages still mints once.
         PackageItem memory item = _item(lead, SHA_A);
         bytes32[] memory leaves = new bytes32[](2);
-        leaves[0] = WorksHashing.leaf(_hash(item));
+        leaves[0] = StreamHashing.leaf(_hash(item));
         leaves[1] = keccak256("another leaf");
         bytes32 rootA = leaves[0];
         bytes32 rootB = _root(leaves);
@@ -886,7 +886,7 @@ contract PackageRegistryTest is CurationBase {
         _register(deepRoot);
         _accept(deepRoot, leadKey);
         MoveAuthorization memory move = _move(leadKey, deepRoot, _hash(item), 0);
-        assertTrue(MerkleProof.verify(deep, deepRoot, WorksHashing.leaf(_hash(item))));
+        assertTrue(MerkleProof.verify(deep, deepRoot, StreamHashing.leaf(_hash(item))));
         vm.prank(address(minter));
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -908,7 +908,7 @@ contract PackageRegistryTest is CurationBase {
         returns (bytes32 root, bytes32[] memory proof)
     {
         proof = new bytes32[](depth);
-        root = WorksHashing.leaf(_hash(item));
+        root = StreamHashing.leaf(_hash(item));
         for (uint256 i; i < depth; ++i) {
             proof[i] = keccak256(abi.encode("sibling", depth, i));
             (bytes32 a, bytes32 b) = root < proof[i] ? (root, proof[i]) : (proof[i], root);
@@ -993,7 +993,7 @@ contract PackageRegistryTest is CurationBase {
     function test_move_erc1271Authority() public {
         ERC1271WalletMock safe = new ERC1271WalletMock(lead);
         PackageItem memory item = _item(address(safe), SHA_A);
-        bytes32 root = WorksHashing.leaf(_hash(item));
+        bytes32 root = StreamHashing.leaf(_hash(item));
         _register(root);
         PartyAcceptance memory a = _acceptance(address(safe));
         registry.acceptPackage(
@@ -1175,7 +1175,7 @@ contract PackageRegistryTest is CurationBase {
         PackageItem memory item = _item(lead, SHA_A);
         item.seedPolicy = uint8(SeedPolicy.VRF);
         item.seed = 0;
-        bytes32 root = WorksHashing.leaf(_hash(item));
+        bytes32 root = StreamHashing.leaf(_hash(item));
         _register(root);
         _accept(root, leadKey);
         (MintFacts memory f, MintTerms memory t) = registry.preview(
@@ -1196,7 +1196,7 @@ contract PackageRegistryTest is CurationBase {
         PackageItem memory item = _item(lead, SHA_A);
         item.seedPolicy = uint8(SeedPolicy.ARTIST);
         item.seed = keccak256("artist seed");
-        bytes32 root = WorksHashing.leaf(_hash(item));
+        bytes32 root = StreamHashing.leaf(_hash(item));
         _register(root);
         _accept(root, leadKey);
         MoveAuthorization memory move = _move(leadKey, root, _hash(item), 0);
@@ -1301,7 +1301,7 @@ contract PackageRegistryTest is CurationBase {
         item.parties = new Party[](2);
         item.parties[0] = Party(lead, uint8(PartyRole.ARTIST));
         item.parties[1] = Party(next, uint8(PartyRole.ARTIST));
-        bytes32 root = WorksHashing.leaf(_hash(item));
+        bytes32 root = StreamHashing.leaf(_hash(item));
         _register(root);
         // Each account accepts (signed by the current authority); both resolve to one artist.
         _acceptAs(root, lead, 0xA9);
@@ -1316,7 +1316,7 @@ contract PackageRegistryTest is CurationBase {
         for (uint256 i; i < 17; ++i) {
             item.parties[i] = Party(vm.addr(0x100 + i), uint8(PartyRole.ARTIST));
         }
-        bytes32 root = WorksHashing.leaf(_hash(item));
+        bytes32 root = StreamHashing.leaf(_hash(item));
         _register(root);
         _consumeExpectInvalid(root, item, 0x100);
     }
@@ -1538,7 +1538,7 @@ contract PackageRegistryTest is CurationBase {
         vm.expectRevert(IPackageRegistry.InvalidMintRequest.selector);
         registry.preview(c, new bytes(159));
         PackageItem memory item = _item(lead, SHA_A);
-        bytes32 root = WorksHashing.leaf(_hash(item));
+        bytes32 root = StreamHashing.leaf(_hash(item));
         MoveAuthorization memory none;
         // The lead has no identity yet: nobody has accepted a package for this account.
         vm.expectRevert(IPackageRegistry.InvalidLeadArtist.selector);
@@ -1609,7 +1609,7 @@ contract PackageRegistryTest is CurationBase {
                     registry.preview(stream, _request(root, item, new bytes32[](0), move));
                 assertEq(f.itemHash, _hash(item));
             }
-            if (WorksHashing.licenseKey(ids[i]) > WorksHashing.CC0_LICENSE_KEY) {
+            if (StreamHashing.licenseKey(ids[i]) > StreamHashing.CC0_LICENSE_KEY) {
                 ++above;
             } else {
                 ++below;
@@ -1677,7 +1677,7 @@ contract PackageRegistryTest is CurationBase {
     function test_isApprovedItem_aProofAtTheMaximumDepth() public {
         bytes32 itemHash = keccak256("deep item");
         bytes32[] memory proof = new bytes32[](Limits.MAX_PROOF_DEPTH);
-        bytes32 node = WorksHashing.leaf(itemHash);
+        bytes32 node = StreamHashing.leaf(itemHash);
         for (uint256 i; i < proof.length; ++i) {
             proof[i] = keccak256(abi.encode("sibling", i));
             node = _pairHash(node, proof[i]);
@@ -1707,7 +1707,7 @@ contract PackageRegistryTest is CurationBase {
     {
         item = _item(vm.addr(artistKey), SHA_A);
         item.mediaHash = keccak256("the rival's media list");
-        root = WorksHashing.leaf(_hash(item));
+        root = StreamHashing.leaf(_hash(item));
         _register(root);
         _accept(root, artistKey);
         move = _move(artistKey, root, _hash(item), 0);
@@ -1801,7 +1801,7 @@ contract PackageRegistryTest is CurationBase {
         // The beneficiary's own other item of that content mints.
         PackageItem memory mine = _item(lead, SHA_A);
         mine.recordFileId = keccak256("the rightful record");
-        bytes32 root = WorksHashing.leaf(_hash(mine));
+        bytes32 root = StreamHashing.leaf(_hash(mine));
         _register(root);
         _accept(root, leadKey);
         (bytes32 h,) = _consume(root, mine, new bytes32[](0), _move(leadKey, root, _hash(mine), 5));
@@ -1831,7 +1831,7 @@ contract PackageRegistryTest is CurationBase {
         minter.burn(stream, second);
         PackageItem memory third = _item(collab, SHA_A);
         third.recordFileId = keccak256("third");
-        bytes32 r3 = WorksHashing.leaf(_hash(third));
+        bytes32 r3 = StreamHashing.leaf(_hash(third));
         _register(r3);
         _accept(r3, collabKey);
         MoveAuthorization memory m3 = _move(collabKey, r3, _hash(third), 1);
@@ -1872,7 +1872,7 @@ contract PackageRegistryTest is CurationBase {
         PackageItem memory item = _item(lead, SHA_A);
         item.seedPolicy = uint8(SeedPolicy.ARTIST);
         item.seed = keccak256("artist seed");
-        bytes32 root = WorksHashing.leaf(_hash(item));
+        bytes32 root = StreamHashing.leaf(_hash(item));
         _register(root);
         _accept(root, leadKey);
         (MintFacts memory f,) =
@@ -1884,7 +1884,7 @@ contract PackageRegistryTest is CurationBase {
     function test_facts_vrfSeedOnlyOnceDelivered() public {
         PackageItem memory item = _item(lead, SHA_A);
         item.seedPolicy = uint8(SeedPolicy.VRF);
-        bytes32 root = WorksHashing.leaf(_hash(item));
+        bytes32 root = StreamHashing.leaf(_hash(item));
         _register(root);
         _accept(root, leadKey);
         MoveAuthorization memory move = _move(leadKey, root, _hash(item), 0);
@@ -2110,7 +2110,7 @@ contract PackageRegistryTest is CurationBase {
         for (uint256 i; i < n; ++i) {
             leaves[i] = keccak256(abi.encode(salt, i));
         }
-        leaves[index] = WorksHashing.leaf(_hash(item));
+        leaves[index] = StreamHashing.leaf(_hash(item));
         bytes32 root = _root(leaves);
         bytes32[] memory proof = _proof(leaves, index);
         _register(root);
@@ -2153,7 +2153,7 @@ contract PackageRegistryTest is CurationBase {
         vm.assume(proof.length <= 32);
         PackageItem memory member = _item(lead, keccak256(abi.encode(salt)));
         PackageItem memory outsider = _item(lead, SHA_A);
-        bytes32 root = WorksHashing.leaf(_hash(member));
+        bytes32 root = StreamHashing.leaf(_hash(member));
         _register(root);
         _accept(root, leadKey);
         MoveAuthorization memory move = _move(leadKey, root, _hash(outsider), 0);
@@ -2198,7 +2198,7 @@ contract PackageRegistryTest is CurationBase {
         internal
         returns (bytes32 root)
     {
-        root = WorksHashing.leaf(_hash(item));
+        root = StreamHashing.leaf(_hash(item));
         (IPackageRegistry.PackageStatus status,,) = registry.packageOf(root);
         if (status == IPackageRegistry.PackageStatus.NONE) _register(root);
         for (uint256 i; i < keys.length; ++i) {

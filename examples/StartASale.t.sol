@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity 0.8.37;
 
 // Example: start a 1/1 sale from the artist's signed move.
@@ -13,7 +13,7 @@ pragma solidity 0.8.37;
 import { Splits } from "src/economics/Splits.sol";
 import { MintTerms, Work } from "src/interfaces/core/CoreTypes.sol";
 import { IMintPolicy } from "src/interfaces/core/IMintPolicy.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { ExampleBase } from "./ExampleBase.sol";
 
 contract ExampleStartASale is ExampleBase {
@@ -59,7 +59,7 @@ contract ExampleStartASale is ExampleBase {
         // in Stream's WorkMinted event) and finishes what SaleStarter would have done. Each
         // call is permissionless and fully determined by the item and the locked terms.
         assertEq(stream.tokenOfContent(pkg.item.contentHash), tokenId);
-        assertEq(stream.itemHashOf(tokenId), WorksHashing.itemHash(pkg.item));
+        assertEq(stream.itemHashOf(tokenId), StreamHashing.itemHash(pkg.item));
         vm.startPrank(keeper);
         assertEq(ledger.createWallet(pkg.item.payees, bytes32(0)), t.seller);
         address royalty = ledger.createWallet(

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
@@ -19,11 +19,11 @@ contract Eip712CurationVerifierTest is CurationBase {
         0xbf131d47e2ddcf4bd120061a8a3c2841ef379caa26b7eec0881120e1d8a43cdd;
     address internal constant FIXED_VERIFIER = 0x1000000000000000000000000000000000000001;
     bytes32 internal constant GOLDEN_DOMAIN =
-        0x81c511d2826231982036519eb645b3739e82fe2e2095098b6796cc25de79bffe;
+        0xd454c0953ba75456e8871a409993c3eab7d34973a969856e44bdbf63defc89fc;
     /// @dev `approvalDigest(keccak256("root"), keccak256("evidence"), 1)` at FIXED_VERIFIER on
     ///      chain 31337.
     bytes32 internal constant GOLDEN_APPROVAL_DIGEST =
-        0x8832dc6f5fe11be44c58102634abf24ef3ae736343fc16aeb7a54252f00009d3;
+        0xc350027986ef0648a1a3b8c808b842ac13f51602ce97734db41f036b503a2bd5;
 
     bytes32 internal constant ROOT = keccak256("a package root");
 
@@ -57,7 +57,7 @@ contract Eip712CurationVerifierTest is CurationBase {
     function test_eip712Domain() public view {
         (, string memory name, string memory version, uint256 chainId, address self,,) =
             verifier.eip712Domain();
-        assertEq(name, "6529 Works Curation Verifier");
+        assertEq(name, "6529 Stream Curation Verifier");
         assertEq(version, "1");
         assertEq(chainId, block.chainid);
         assertEq(self, address(verifier));

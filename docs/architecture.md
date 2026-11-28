@@ -1,4 +1,4 @@
-# 6529 Works architecture
+# 6529 Stream architecture
 
 The contracts and how they call each other. Read the [three-page overview](overview.md) first;
 the rules are in the [specification](spec/README.md), by rule ID.

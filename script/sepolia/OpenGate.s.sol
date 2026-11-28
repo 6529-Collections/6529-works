@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity 0.8.37;
 
 import { Script } from "forge-std/Script.sol";
@@ -10,7 +10,7 @@ import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { SepoliaOpenGate } from "./SepoliaOpenGate.sol";
 
 interface IOpenGateConfigurator {
-    function worksManager() external view returns (address);
+    function streamManager() external view returns (address);
 }
 
 interface IOpenGateManager {
@@ -46,7 +46,7 @@ contract OpenGate is Script {
     ///      `CREATE2_FACTORY`, the same address as `DeployGuards.CREATE2_FACTORY`), which creates
     ///      `initCode` at `keccak256(0xff ++ factory ++ salt ++ keccak256(initCode))` when sent
     ///      `salt ++ initCode`.
-    bytes32 internal constant SALT = keccak256("6529-works/sepolia/open-gate/1");
+    bytes32 internal constant SALT = keccak256("6529-stream/sepolia/open-gate/1");
 
     struct Addrs {
         address verifier;
@@ -67,7 +67,7 @@ contract OpenGate is Script {
         a.stream = vm.parseJsonAddress(json, ".Stream6529");
         a.registry = vm.parseJsonAddress(json, ".PackageRegistry");
         a.manager = IOpenGateConfigurator(vm.parseJsonAddress(json, ".GovernanceConfigurator"))
-            .worksManager();
+            .streamManager();
         a.gate = vm.computeCreate2Address(SALT, keccak256(_initCode(a)), CREATE2_FACTORY);
     }
 
@@ -190,7 +190,7 @@ contract OpenGate is Script {
     function collectionTx(address creator, string calldata name) external {
         Addrs memory a = _deployed(_addrs());
         bytes32 metadataHash =
-            keccak256(abi.encode("6529-works/sepolia/open-gate/collection", name));
+            keccak256(abi.encode("6529-stream/sepolia/open-gate/collection", name));
         vm.prank(creator);
         uint256 id = SepoliaOpenGate(a.gate).createCollection(name, metadataHash);
         _info("collectionId", id.toString());

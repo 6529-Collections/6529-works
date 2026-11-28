@@ -1,6 +1,6 @@
 # Scope
 
-What an audit of 6529 Works v1 covers: every Solidity file under `src/`, with its size, and what
+What an audit of 6529 Stream v1 covers: every Solidity file under `src/`, with its size, and what
 lies outside.
 
 > Pre-audit. See the [project status](../../README.md#status).
@@ -15,7 +15,7 @@ with `--artifacts out --update` to refresh them. No audit has taken place.
 | --- | --- |
 | Language and compiler | Solidity 0.8.37, EVM `prague`, optimizer on (200 runs), `via_ir` off ([`foundry.toml`](../../foundry.toml)) |
 | Dependencies | OpenZeppelin Contracts 5.7.0 and forge-std 1.17.0, as git submodules in `lib/` |
-| Source lines | 14,159 non-blank, non-comment lines in 121 files under `src/` (budget: 17,000) |
+| Source lines | 14,163 non-blank, non-comment lines in 121 files under `src/` (budget: 17,000) |
 | Deployed contracts | Every contract `script/DeployCore.sol` deploys: the permanent core, the money contracts, the modules, the governance pair and the two Independent Stream deployers (the deploy order is in the [runbook](../../script/README.md#how-a-deployment-is-built)) |
 | Linked libraries | None: every library function is `internal` |
 | Proxies and `delegatecall` | None in `src/`. The one exception is OpenZeppelin `Multicall` inside `AccessManager` ([ADR 0002](../adr/0002-access-manager-hardening.md)) |
@@ -66,12 +66,12 @@ Deployed once and never replaced ([ADR 0010](../adr/0010-plain-permanent-core.md
 | `PackageRegistry` (the mint policy) | [`src/curation/PackageRegistry.sol`](../../src/curation/PackageRegistry.sol) | 547 | 20,308 | 22,019 | 4,268 |
 | `Eip712CurationVerifier` | [`src/curation/Eip712CurationVerifier.sol`](../../src/curation/Eip712CurationVerifier.sol) | 117 | 5,835 | 6,526 | 18,741 |
 | `StreamTerms` (TERMS) | [`src/terms/StreamTerms.sol`](../../src/terms/StreamTerms.sol) | 152 | 7,037 | 7,822 | 17,539 |
-| `WorkRules` (RECORDS) | [`src/records/WorkRules.sol`](../../src/records/WorkRules.sol) | 388 | 15,757 | 16,700 | 8,819 |
+| `WorkRules` (RECORDS) | [`src/records/WorkRules.sol`](../../src/records/WorkRules.sol) | 388 | 15,758 | 16,702 | 8,818 |
 | `WorkDelivery` | [`src/stream/WorkDelivery.sol`](../../src/stream/WorkDelivery.sol) | 253 | 10,172 | 10,541 | 14,404 |
-| `Renderer` (RENDERER) | [`src/content/Renderer.sol`](../../src/content/Renderer.sol) | 724 | 24,057 | 24,372 | 519 |
+| `Renderer` (RENDERER) | [`src/content/Renderer.sol`](../../src/content/Renderer.sol) | 724 | 24,059 | 24,374 | 517 |
 | `Accounts` (ACCOUNTS) | [`src/identity/Accounts.sol`](../../src/identity/Accounts.sol) | 679 | 19,836 | 22,110 | 4,740 |
 | `ConsolidationAdapter` | [`src/identity/ConsolidationAdapter.sol`](../../src/identity/ConsolidationAdapter.sol) | 52 | 1,335 | 1,646 | 23,241 |
-| `IndependentStreamRegistry` (INDEPENDENT_STREAM) | [`src/independent/IndependentStreamRegistry.sol`](../../src/independent/IndependentStreamRegistry.sol) | 510 | 24,064 | 24,888 | 512 |
+| `IndependentStreamRegistry` (INDEPENDENT_STREAM) | [`src/independent/IndependentStreamRegistry.sol`](../../src/independent/IndependentStreamRegistry.sol) | 510 | 24,053 | 24,877 | 523 |
 | `IndependentStreamDeployer` (one per template, ownerless) | [`src/independent/IndependentStreamDeployer.sol`](../../src/independent/IndependentStreamDeployer.sol) | 49 | 1,425 | 2,398 | 23,151 |
 | `StatementLog` | [`src/records/StatementLog.sol`](../../src/records/StatementLog.sol) | 310 | 11,167 | 12,428 | 13,409 |
 | `VrfEntropyModule` (optional) | [`src/entropy/VrfEntropyModule.sol`](../../src/entropy/VrfEntropyModule.sol) | 367 | 12,639 | 14,585 | 11,937 |
@@ -85,10 +85,10 @@ Deployed once and never replaced ([ADR 0010](../adr/0010-plain-permanent-core.md
 
 | Contract | Source | nSLOC | Runtime (bytes) | Initcode (bytes) | EIP-170 margin |
 | --- | --- | ---: | ---: | ---: | ---: |
-| `WorksAccessManager` | [`src/governance/WorksAccessManager.sol`](../../src/governance/WorksAccessManager.sol) | 100 | 12,506 | 14,049 | 12,070 |
+| `StreamAccessManager` | [`src/governance/StreamAccessManager.sol`](../../src/governance/StreamAccessManager.sol) | 100 | 12,506 | 14,049 | 12,070 |
 | `GovernanceConfigurator` | [`src/governance/GovernanceConfigurator.sol`](../../src/governance/GovernanceConfigurator.sol) | 43 | 9,972 | 24,323 | 14,604 |
 
-`WorksAccessManager` extends OpenZeppelin's `AccessManager`, whose code is part of what it
+`StreamAccessManager` extends OpenZeppelin's `AccessManager`, whose code is part of what it
 deploys. `GovernanceConfigurator`'s initcode includes the manager it deploys.
 
 ### Internal libraries
@@ -99,7 +99,7 @@ Compiled into the contracts that use them; none is deployed or linked.
 | --- | --- | ---: | --- |
 | `AgedCredits` | [`src/libraries/AgedCredits.sol`](../../src/libraries/AgedCredits.sol) | 32 | `EnglishAuction`, `UniformEditionAuction` (the one credit rule of both auctions) |
 | `JsonScan` | [`src/content/JsonScan.sol`](../../src/content/JsonScan.sol) | 444 | `Renderer` |
-| `GovernanceConfig` | [`src/governance/GovernanceConfig.sol`](../../src/governance/GovernanceConfig.sol) | 218 | `GovernanceConfigurator` |
+| `GovernanceConfig` | [`src/governance/GovernanceConfig.sol`](../../src/governance/GovernanceConfig.sol) | 220 | `GovernanceConfigurator` |
 | `Utf8` | [`src/libraries/Utf8.sol`](../../src/libraries/Utf8.sol) | 152 | `Renderer`, `JsonScan`, `StatementLog` |
 | `UniformClearing` | [`src/sales/UniformClearing.sol`](../../src/sales/UniformClearing.sol) | 149 | The edition auctions and their lenses |
 | `TokenTransfer` | [`src/economics/TokenTransfer.sol`](../../src/economics/TokenTransfer.sol) | 100 | `SplitLedger`, `RevenueEscrow`, the sale contracts |
@@ -124,7 +124,7 @@ The "Used by" column is a reading aid; the import graph is authoritative.
 
 ### Interfaces and shared types
 
-2,420 nSLOC in [`src/interfaces/`](../../src/interfaces/) (with `core/` and `types/`) and
+2,422 nSLOC in [`src/interfaces/`](../../src/interfaces/) (with `core/` and `types/`) and
 [`src/economics/interfaces/`](../../src/economics/interfaces/), plus the Chainlink interfaces in
 [`src/entropy/`](../../src/entropy/). The frozen interfaces of the permanent core are in
 `src/interfaces/core/`. They count toward the line budget and are in scope: an error in a
@@ -137,7 +137,7 @@ are outside this scope, but their use (overrides, hooks, assumptions) is in scop
 
 | OpenZeppelin contract | Inherited by |
 | --- | --- |
-| `AccessManager` (with `Multicall`) | `WorksAccessManager` |
+| `AccessManager` (with `Multicall`) | `StreamAccessManager` |
 | `AccessManaged` | Every governed contract |
 | `ERC721` | `Stream6529`, `IndependentStream6529` (through `StreamBase`) |
 | `ERC1155` | `StreamEditions6529`, `IndependentStreamEditions6529` (through `EditionsBase`) |

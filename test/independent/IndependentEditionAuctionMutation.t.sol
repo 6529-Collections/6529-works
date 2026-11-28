@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 import { Vm } from "forge-std/Vm.sol";
@@ -9,7 +9,7 @@ import { IUniformEditionAuctionLens } from "src/interfaces/IUniformEditionAuctio
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import { EditionTerms, ItemKind, PackageItem } from "src/interfaces/types/PackageTypes.sol";
 import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { IndependentEditionAuctionTest } from "../sales/edition/IndependentEditionAuction.t.sol";
 
 /// @notice What `IndependentEditionAuction` adds to the shared auction and the mutation campaign
@@ -133,7 +133,7 @@ contract IndependentEditionAuctionMutationTest is IndependentEditionAuctionTest 
     function test_Settle_AClearingThatPaidStandsThroughADelisting() public {
         PackageItem memory item = _item();
         item.edition = EditionTerms(25, CURRENCY_ETH, SaleKind.UNIFORM_AUCTION, "");
-        master.setWork(ID, WorksHashing.itemHash(item), ItemKind.EDITION_MASTER);
+        master.setWork(ID, StreamHashing.itemHash(item), ItemKind.EDITION_MASTER);
         uint256 saleId = auction.open(address(token), ID, abi.encode(item));
         // 30 one-unit bids at step 10, 20 of them raised to step 11 in reverse order: demand 30
         // for 25 copies, and 20 departures at the cut step (more than the clearing call sweeps).

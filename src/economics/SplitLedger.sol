@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity 0.8.37;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -101,7 +101,7 @@ contract SplitLedger is ISplitLedger, EIP712 {
     /// @param network_ The network fee vault (a `GovernedVault`), deployed first. It must have
     ///        code and not be an EIP-7702 delegated account.
     constructor(IArtistPayoutResolver resolver_, address network_)
-        EIP712("6529 Works Release Verifier", "1")
+        EIP712("6529 Stream Release Verifier", "1")
     {
         Dependency.check(address(resolver_));
         Dependency.check(network_);

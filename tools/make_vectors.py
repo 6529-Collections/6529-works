@@ -8,7 +8,7 @@ Two outputs, both reproducible byte for byte (`--check` compares and changes not
   `test/fixtures/real/museum/` (Museum-authored records are CC0, the Museum's `RIGHTS.md`), and
   the digests of the work's display image (its bytes are a reproduction of a third-party
   artwork and are not copied: only its length, SHA-256, chunk hashes and pixel size are kept).
-  From them it derives the 6529 Works record JSON of the work, its content-store file ID, the
+  From them it derives the 6529 Stream record JSON of the work, its content-store file ID, the
   image's file ID, the `tokenURI` fragments the renderer must produce, and the hash of a
   catalogue statement citing the Museum record. `test/replay/RealVectors.t.sol` checks each one
   against the real contracts.

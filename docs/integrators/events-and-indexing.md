@@ -385,7 +385,7 @@ Permanent.
 | --- | --- |
 | `GovernanceConfigured(address indexed manager, bytes32 indexed configHash, bytes32 indexed manifestHash, bytes32 wiringHash)` | `0xeb9f30f841bfc2bc2f6aebff0405fc98dd6e152e030304669b0dcb91e6668529` |
 
-### WorksAccessManager
+### StreamAccessManager
 
 OpenZeppelin `AccessManager`'s events and the network handover and brake.
 

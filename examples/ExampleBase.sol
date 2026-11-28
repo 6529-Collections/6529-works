@@ -1,7 +1,7 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity 0.8.37;
 
-// The shared setup of the examples: the whole 6529 Works stack, deployed and configured by the
+// The shared setup of the examples: the whole 6529 Stream stack, deployed and configured by the
 // deploy library the deploy script broadcasts (script/DeployCore.sol), with the committed
 // genesis policy (config/genesis.core.example.json). Only two things differ from a real
 // deployment: the network is one test key that accepts at once, and the first curation signer
@@ -44,7 +44,7 @@ import {
     StreamMintRequest
 } from "src/interfaces/types/PackageTypes.sol";
 import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { SaleStarter } from "src/sales/SaleStarter.sol";
 import { DelegationManagementMock } from "test/mocks/identity/DelegationManagementMock.sol";
 
@@ -93,7 +93,7 @@ abstract contract ExampleBase is Test {
         vm.warp(1_800_000_000);
         DeployCore.Params memory p;
         p.deployer = deployer;
-        p.namespace = keccak256("6529-works/examples");
+        p.namespace = keccak256("6529-stream/examples");
         p.feeRecipient = feeRecipient;
         p.museum = museum;
         p.marketOwner = marketOwner;
@@ -194,7 +194,7 @@ abstract contract ExampleBase is Test {
         item.kind = kind;
         item.collectionId = 1;
         item.contentHash = sha;
-        item.mediaHash = WorksHashing.mediaHash(pkg.media);
+        item.mediaHash = StreamHashing.mediaHash(pkg.media);
         item.recordFileId = _record(string.concat("Work ", vm.toString(n)));
         item.parties = new Party[](1);
         item.parties[0] = Party(artist, uint8(PartyRole.ARTIST));
@@ -210,7 +210,7 @@ abstract contract ExampleBase is Test {
         }
         pkg.item = item;
         // A one-item package: its root is the item's leaf and its proof is empty.
-        pkg.root = WorksHashing.leaf(WorksHashing.itemHash(item));
+        pkg.root = StreamHashing.leaf(StreamHashing.itemHash(item));
         _publish(pkg.root);
     }
 
@@ -234,7 +234,7 @@ abstract contract ExampleBase is Test {
         uint256 nonce = _nextNonce++;
         uint64 deadline = uint64(block.timestamp + 1 days);
         bytes32 digest =
-            registry.moveDigest(pkg.root, WorksHashing.itemHash(pkg.item), nonce, deadline);
+            registry.moveDigest(pkg.root, StreamHashing.itemHash(pkg.item), nonce, deadline);
         MoveAuthorization memory move =
             MoveAuthorization(nonce, deadline, _proof(ARTIST_KEY, digest));
         return abi.encode(StreamMintRequest(pkg.root, pkg.item, new bytes32[](0), move));

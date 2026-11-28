@@ -195,7 +195,7 @@ no ERC-4906 event: an indexer refreshes metadata on `StatementAppended` with
 | Dispute pause | at most 3 days, once per auction | `EnglishAuction.MAX_PAUSE` |
 | URI length | 8,192 bytes | `StatementLog.MAX_URI_BYTES` |
 | Relay nonces | one bitmap per signer, 256 per word | `StatementLog` |
-| EIP-712 domain | `"6529 Works Statement Log"`, version `"1"` | `StatementLog` constructor |
+| EIP-712 domain | `"6529 Stream Statement Log"`, version `"1"` | `StatementLog` constructor |
 
 ## References
 

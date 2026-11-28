@@ -86,12 +86,12 @@ for one contract on one chain. Each contract reports its domain through EIP-5267
 
 | Contract | `name` | `version` | Defined in |
 | --- | --- | --- | --- |
-| PackageRegistry | `6529 Works Package Registry` | `1` | `Typehashes.PACKAGE_REGISTRY_NAME`, `DOMAIN_VERSION` |
-| Eip712CurationVerifier | `6529 Works Curation Verifier` | `1` | `Typehashes.CURATION_VERIFIER_NAME` |
-| WorkRules (RECORDS module) | `6529 Works Records` | `1` | `Typehashes.WORK_RECORDS_NAME` |
-| Accounts (accounts module) | `6529 Works Artist Registry` | `1` | `Typehashes.ARTIST_REGISTRY_NAME` |
-| StatementLog | `6529 Works Statement Log` | `1` | the constructor of [`StatementLog.sol`](../../src/records/StatementLog.sol) |
-| SplitLedger (the release verifier) | `6529 Works Release Verifier` | `1` | the constructor of [`SplitLedger.sol`](../../src/economics/SplitLedger.sol) |
+| PackageRegistry | `6529 Stream Package Registry` | `1` | `Typehashes.PACKAGE_REGISTRY_NAME`, `DOMAIN_VERSION` |
+| Eip712CurationVerifier | `6529 Stream Curation Verifier` | `1` | `Typehashes.CURATION_VERIFIER_NAME` |
+| WorkRules (RECORDS module) | `6529 Stream Records` | `1` | `Typehashes.WORK_RECORDS_NAME` |
+| Accounts (accounts module) | `6529 Stream Artist Registry` | `1` | `Typehashes.ARTIST_REGISTRY_NAME` |
+| StatementLog | `6529 Stream Statement Log` | `1` | the constructor of [`StatementLog.sol`](../../src/records/StatementLog.sol) |
+| SplitLedger (the release verifier) | `6529 Stream Release Verifier` | `1` | the constructor of [`SplitLedger.sol`](../../src/economics/SplitLedger.sol) |
 
 The `Typehashes` constants are in
 [`src/interfaces/types/Typehashes.sol`](../../src/interfaces/types/Typehashes.sol).
@@ -166,11 +166,11 @@ same item hashes and root on every chain ([CUR-20](../spec/curation.md#rules-and
 
 ### Item hash, leaf and package root
 
-From [`WorksHashing.sol`](../../src/interfaces/types/WorksHashing.sol):
+From [`StreamHashing.sol`](../../src/interfaces/types/StreamHashing.sol):
 
 ```text
-PACKAGE_ITEM_DOMAIN = keccak256("6529WORKS_PACKAGE_ITEM_V1")
-                    = 0xce048e45e85b58b943276445f3e3305cd4c21570a67fd8a4f189d6c38edcae8d
+PACKAGE_ITEM_DOMAIN = keccak256("6529STREAM_PACKAGE_ITEM_V1")
+                    = 0xbad64228621f2ffd03043f0e56944aa0d1e4b318953be6f4dcc731cf95621afa
 itemHash = keccak256(abi.encode(PACKAGE_ITEM_DOMAIN, item))
 leaf     = keccak256(bytes.concat(itemHash))          // keccak256 of the 32-byte item hash
 root     = OpenZeppelin MerkleProof root over the leaves (sorted-pair keccak256)
@@ -196,8 +196,8 @@ its leaf, and proofs are at most 32 nodes (`Limits.MAX_PROOF_DEPTH`).
 ### Media hash, content hash and license key
 
 ```text
-MEDIA_DOMAIN = keccak256("6529WORKS_MEDIA_V1")
-             = 0x722ffd9834d64e2c48b7edc1969f58c7f64a9d03c4a0f7a63da31e7b21c6f062
+MEDIA_DOMAIN = keccak256("6529STREAM_MEDIA_V1")
+             = 0x58e2231a354d9da0c403292de25922cbbed932f4f67326f7ca7781bfdca6d1bc
 mediaHash    = keccak256(abi.encode(MEDIA_DOMAIN, media))   // media: (bytes32 fileId, bytes32 sha256Hash, uint8 role)[]
 licenseKey   = keccak256(lowercaseAscii(spdxId))            // only A-Z are lowered
 CC0_LICENSE_KEY = keccak256("cc0-1.0")
@@ -207,6 +207,19 @@ CC0_LICENSE_KEY = keccak256("cc0-1.0")
 The media list is in approved order, primary first; `role` is 0 PRIMARY, 1 PREVIEW,
 2 AUXILIARY. The **content hash** is not computed on-chain: it is the declared SHA-256 of the
 fully decoded primary media, `media[0].sha256Hash`.
+
+### Independent Stream collaborator consent
+
+From `Core.independentConsent` in [`CoreTypes.sol`](../../src/interfaces/core/CoreTypes.sol):
+the `what` a collaborator of an Independent Stream work consents to, signed as a `Consent`
+whose `subject` is the token contract (`Accounts.consentDigest(token, what)`).
+
+```text
+INDEPENDENT_CONSENT_DOMAIN = keccak256("6529STREAM_INDEPENDENT_CONSENT_V1")
+                           = 0x22fa010d48b30efa0ad886886afa983972547c8d73a243ed9c0bb0fe4c451283
+what = keccak256(abi.encode(INDEPENDENT_CONSENT_DOMAIN, itemHash, royaltyRate))
+       // types: (bytes32, bytes32, uint24)
+```
 
 ### File ID and chunk hash
 
@@ -233,13 +246,13 @@ subjectKey    = keccak256(abi.encode(token, id))
 contentHash   = keccak256(abi.encode(HASHREF_TYPEHASH, content.algorithm, content.digest))
 statementHash = keccak256(abi.encode(STATEMENT_TYPEHASH, token, id, kind, schema,
                     contentHash, keccak256(bytes(uri)), fileId, supersedes))
-ENTRY_DOMAIN  = keccak256("6529.works.StatementLog.entry.v1")
-              = 0x0f3311395c5212a871acb58afd86802fdee2d0bd441c4d282deb4870d87e1f11
+ENTRY_DOMAIN  = keccak256("6529.stream.StatementLog.entry.v1")
+              = 0xfddcca3af1871d17152d9b629befa9ed1bb4665307aa40067dfb7ca22a9162ad
 entryHash     = keccak256(abi.encode(ENTRY_DOMAIN, block.chainid, address(log), subjectKey,
                     index, uint8(role), signer, resolver, recordedAt, statementHash))
                 // types: (bytes32, uint256, address, bytes32, uint64, uint8, address, address, uint64, bytes32)
-HEAD_DOMAIN   = keccak256("6529.works.StatementLog.head.v1")
-              = 0x20025e2db27e195c57e0612653067df58c83f14892beca1016dfd5dfa49b15e0
+HEAD_DOMAIN   = keccak256("6529.stream.StatementLog.head.v1")
+              = 0xf9109f5270df85264f0100c43832b567360b634453306359bf9e77515e27600a
 head_0        = 0x0000000000000000000000000000000000000000000000000000000000000000
 head_(n+1)    = keccak256(abi.encode(HEAD_DOMAIN, head_n, entryHash_n))
 ```
@@ -252,14 +265,15 @@ the `StatementAppended` event; the rebuild procedure is in
 
 ### Work state hash
 
-From the RECORDS module (`IWorkRules.workStateHash`); the formula below is today's and the module may key it by token as well:
+From the RECORDS module (`IWorkRules.workStateHash`); the formula below is today's module's,
+which binds its own address and the token contract:
 
 ```text
-STATE_DOMAIN = keccak256("6529WORKS_WORK_STATE_V1")
-             = 0x7d21f448b063eb6f95d0d30296a34671f5000d77778e5c4ec239f7c682f0c766
-stateHash = keccak256(abi.encode(STATE_DOMAIN, tokenId, version, recordFileId,
+STATE_DOMAIN = keccak256("6529STREAM_WORK_STATE_V2")
+             = 0x51c30b8fb4ab75bdae19b26c93688c7a38b549bb8bd708b9d51025f0a91064f9
+stateHash = keccak256(abi.encode(STATE_DOMAIN, module, token, tokenId, version, recordFileId,
                 licenseKey, textFileId, royaltyRate, renderer))
-            // types: (bytes32, uint256, uint32, bytes32, bytes32, bytes32, uint32, address)
+            // types: (bytes32, address, address, uint256, uint32, bytes32, bytes32, bytes32, uint24, address)
 ```
 
 The license is the stored one, or the deployment's CC0 when none is stored. `renderer` is the
@@ -288,7 +302,7 @@ an input; a renunciation moves the state hash through the version it bumps.
 
 - Code: [`src/interfaces/core/`](../../src/interfaces/core),
   [`Typehashes.sol`](../../src/interfaces/types/Typehashes.sol),
-  [`WorksHashing.sol`](../../src/interfaces/types/WorksHashing.sol).
+  [`StreamHashing.sol`](../../src/interfaces/types/StreamHashing.sol).
 - Golden-vector tests pin type strings, domain labels and hashes: `test/interfaces/`,
   `test/records/StatementLogGolden.t.sol`, `test/economics/ReleaseVerifier.t.sol`,
   `test/content/tooling/UploaderGolden.t.sol`.

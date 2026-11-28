@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 import { Vm } from "forge-std/Vm.sol";
@@ -9,7 +9,7 @@ import { BoundedParameter } from "src/governance/BoundedParameter.sol";
 import { IModuleSlots } from "src/interfaces/core/IModules.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { PackageItem, SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { StateGrowth } from "test/helpers/StateGrowth.sol";
 import { EntropyBase } from "./EntropyBase.sol";
 import {
@@ -443,7 +443,7 @@ contract VrfEntropyModuleTest is EntropyBase {
     ///      package is accepted: the cap refuses only longer ones (found by mutation testing).
     function test_Gate_AcceptsAProofOfExactlyTheMaximumLength() public {
         bytes32[] memory proof = new bytes32[](module.MAX_PROOF_LENGTH());
-        bytes32 deepRoot = WorksHashing.leaf(items[0]);
+        bytes32 deepRoot = StreamHashing.leaf(items[0]);
         for (uint256 i; i < proof.length; ++i) {
             proof[i] = keccak256(abi.encode("sibling", i));
             deepRoot = _pair(deepRoot, proof[i]);
@@ -758,7 +758,7 @@ contract VrfEntropyModuleTest is EntropyBase {
     function _revision() internal returns (PackageItem memory item, bytes32 revisionRoot) {
         item = _makeItem(300, SeedPolicy.VRF);
         item.contentHash = _item(0).contentHash;
-        revisionRoot = WorksHashing.leaf(_hash(item));
+        revisionRoot = StreamHashing.leaf(_hash(item));
         registry.setStatus(revisionRoot, IPackageRegistry.PackageStatus.APPROVED);
     }
 
@@ -914,7 +914,7 @@ contract VrfEntropyModuleTest is EntropyBase {
     function test_Gate_RejectsAnItemWithoutAContentHash() public {
         PackageItem memory item = _makeItem(301, SeedPolicy.VRF);
         item.contentHash = 0;
-        bytes32 itemRoot = WorksHashing.leaf(_hash(item));
+        bytes32 itemRoot = StreamHashing.leaf(_hash(item));
         registry.setStatus(itemRoot, IPackageRegistry.PackageStatus.APPROVED);
         vm.expectRevert(_notRequestable(_hash(item)));
         module.requestSeed(item, itemRoot, new bytes32[](0));

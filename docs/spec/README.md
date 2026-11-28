@@ -1,6 +1,6 @@
 # Protocol specification
 
-How 6529 Works v1 behaves, one page per area. Each page names its contracts (permanent or
+How 6529 Stream v1 behaves, one page per area. Each page names its contracts (permanent or
 module), says how the area works, lists the settings and fixed numbers, and gives the rules with
 the tests that check them. Start with the [overview](../overview.md) if you are new.
 

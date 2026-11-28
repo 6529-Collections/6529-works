@@ -3,7 +3,7 @@
 
 # Role and permission matrix
 
-Every restricted function of every governed 6529 Works contract: the AccessManager role it
+Every restricted function of every governed 6529 Stream contract: the AccessManager role it
 maps to, the role's delay class and delay, and who can cancel it while it waits. Generated
 from [`config/genesis.core.example.json`](../../config/genesis.core.example.json), the
 committed genesis policy, by [`tools/gen_role_matrix.py`](../../tools/gen_role_matrix.py).
@@ -46,7 +46,7 @@ assume the number.
 
 ## How to read the matrix
 
-- **Role.** The selector's role in the `WorksAccessManager`. The network schedules a call
+- **Role.** The selector's role in the `StreamAccessManager`. The network schedules a call
   whose role has a delay, waits the delay, then executes it.
 - **Cancel.** A scheduled operation can be cancelled by the network or by whoever
   scheduled it before it executes; the brake can delay it once. A function with no delay
@@ -76,7 +76,7 @@ assume the number.
 
 Every operational role's admin is NETWORK, so the network grants and revokes those keys at
 once; the network roles answer for `network()` only ([`Roles.sol`](../../src/governance/Roles.sol),
-[`WorksAccessManager.sol`](../../src/governance/WorksAccessManager.sol)).
+[`StreamAccessManager.sol`](../../src/governance/StreamAccessManager.sol)).
 
 - **`MINTER` is unused in v1.** Minting is gated by each token's own minter list (addMinter, after moduleDelay), not by a role.
 - **`KEEPER` is unused in v1.** Every upkeep call is permissionless; no selector maps to KEEPER.

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 import { Vm } from "forge-std/Vm.sol";
@@ -7,7 +7,7 @@ import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessMa
 import { Roles } from "src/governance/Roles.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { GovernanceConfigurator } from "src/governance/GovernanceConfigurator.sol";
-import { WorksAccessManager } from "src/governance/WorksAccessManager.sol";
+import { StreamAccessManager } from "src/governance/StreamAccessManager.sol";
 import { GovernanceFixture } from "../helpers/GovernanceFixture.sol";
 import { GovernedTargetMock, UnmanagedMock } from "../mocks/governance/GovernanceMocks.sol";
 
@@ -48,9 +48,9 @@ contract GovernanceConfiguratorTest is GovernanceFixture {
         vm.expectEmit(address(manager));
         emit IAccessManager.RoleLabel(Roles.NETWORK, "NETWORK");
         vm.expectEmit(address(manager));
-        emit WorksAccessManager.BrakeSet(address(0), brakeSafe);
+        emit StreamAccessManager.BrakeSet(address(0), brakeSafe);
         vm.expectEmit(address(manager));
-        emit WorksAccessManager.NetworkTransferStarted(address(0), adminSafe);
+        emit StreamAccessManager.NetworkTransferStarted(address(0), adminSafe);
         vm.expectEmit(address(configurator));
         emit GovernanceConfigurator.GovernanceConfigured(
             address(manager),
@@ -109,10 +109,10 @@ contract GovernanceConfiguratorTest is GovernanceFixture {
 
     // ------------------------------------------------- manager provenance
 
-    function test_ConfiguratorDeploysAndOwnsAWorksAccessManager() public {
-        assertEq(address(configurator.worksManager()), address(manager));
+    function test_ConfiguratorDeploysAndOwnsAStreamAccessManager() public {
+        assertEq(address(configurator.streamManager()), address(manager));
         assertEq(configurator.deployer(), address(this));
-        assertEq(address(manager).codehash, address(new WorksAccessManager(outsider)).codehash);
+        assertEq(address(manager).codehash, address(new StreamAccessManager(outsider)).codehash);
         assertNotEq(address(manager).codehash, address(new AccessManager(outsider)).codehash);
         (bool installer, uint32 delay) = manager.hasRole(Roles.ADMIN, address(configurator));
         assertTrue(installer);
@@ -128,14 +128,14 @@ contract GovernanceConfiguratorTest is GovernanceFixture {
         Create2Factory factory = new Create2Factory();
         bytes memory initcode =
             abi.encodePacked(type(GovernanceConfigurator).creationCode, abi.encode(operator));
-        bytes32 salt = keccak256("6529-works/genesis/configurator");
+        bytes32 salt = keccak256("6529-stream/genesis/configurator");
         address predicted = vm.computeCreate2Address(salt, keccak256(initcode), address(factory));
         GovernanceConfigurator c = GovernanceConfigurator(factory.deploy(salt, initcode));
         assertEq(address(c), predicted);
         assertEq(c.deployer(), operator);
-        assertEq(address(c.worksManager()), vm.computeCreateAddress(address(c), 1));
+        assertEq(address(c.streamManager()), vm.computeCreateAddress(address(c), 1));
 
-        target = new GovernedTargetMock(address(c.worksManager()), recipient0, verifier0);
+        target = new GovernedTargetMock(address(c.streamManager()), recipient0, verifier0);
         GovernanceConfig.Config memory cfg = _config();
         vm.expectRevert(
             abi.encodeWithSelector(GovernanceConfigurator.NotDeployer.selector, address(factory))
@@ -144,7 +144,7 @@ contract GovernanceConfiguratorTest is GovernanceFixture {
         c.configure(cfg, MANIFEST, _noWiring());
         vm.prank(operator);
         c.configure(cfg, MANIFEST, _noWiring());
-        (bool stillAdmin,) = c.worksManager().hasRole(Roles.ADMIN, address(c));
+        (bool stillAdmin,) = c.streamManager().hasRole(Roles.ADMIN, address(c));
         assertFalse(stillAdmin);
     }
 
@@ -157,7 +157,7 @@ contract GovernanceConfiguratorTest is GovernanceFixture {
         _configured();
         vm.prank(attacker);
         GovernanceConfigurator rogue = new GovernanceConfigurator(attacker);
-        assertTrue(address(rogue.worksManager()) != address(manager));
+        assertTrue(address(rogue.streamManager()) != address(manager));
         GovernanceConfig.Config memory cfg = _config();
         vm.expectRevert(
             abi.encodeWithSelector(GovernanceConfig.InvalidTarget.selector, address(target))
@@ -464,14 +464,14 @@ contract GovernanceConfiguratorTest is GovernanceFixture {
         configurator.configure(cfg, MANIFEST, _noWiring());
         Vm.Log[] memory logs = vm.getRecordedLogs();
         for (uint256 i; i < logs.length; ++i) {
-            assertTrue(logs[i].topics[0] != WorksAccessManager.BrakeSet.selector, "no BrakeSet");
+            assertTrue(logs[i].topics[0] != StreamAccessManager.BrakeSet.selector, "no BrakeSet");
         }
         assertEq(manager.brake(), address(0));
     }
 
     function test_ReadbackDetectsAChangedNetworkOrBrake() public {
         _configured();
-        _adminExecute(abi.encodeCall(WorksAccessManager.setBrake, (address(0))));
+        _adminExecute(abi.encodeCall(StreamAccessManager.setBrake, (address(0))));
         vm.expectRevert(
             abi.encodeWithSelector(GovernanceConfig.NetworkMismatch.selector, adminSafe, address(0))
         );

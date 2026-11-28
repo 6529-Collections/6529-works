@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity 0.8.37;
 
 import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
@@ -11,10 +11,10 @@ import { ISaleAdapter } from "../interfaces/ISaleAdapter.sol";
 import { IStatementLog } from "../interfaces/IStatementLog.sol";
 import { BoundedCall } from "../libraries/BoundedCall.sol";
 import { Roles } from "./Roles.sol";
-import { WorksAccessManager } from "./WorksAccessManager.sol";
+import { StreamAccessManager } from "./StreamAccessManager.sol";
 
 /// @title GovernanceConfig
-/// @notice Validates, installs and reads back the 6529 Works `AccessManager` configuration.
+/// @notice Validates, installs and reads back the 6529 Stream `AccessManager` configuration.
 ///         A config names the network, the optional brake, the operational key holders and
 ///         the selector map; delays come from {Roles}, so a config cannot pick a wrong delay.
 /// @dev `install` must run from the manager's installer (its constructor admin), which holds
@@ -190,7 +190,9 @@ library GovernanceConfig {
     ///         the operational keys with no delay, sets the brake and proposes the network.
     /// @dev The caller still holds its installer record afterwards and must renounce it. A
     ///      reverting wiring call reverts the whole installation with the callee's error.
-    function install(WorksAccessManager manager, Config memory cfg, Call[] memory wiring) internal {
+    function install(StreamAccessManager manager, Config memory cfg, Call[] memory wiring)
+        internal
+    {
         validate(manager, cfg);
         validateWiring(cfg, wiring);
         for (uint64 role = 1; role < Roles.COUNT; ++role) {
@@ -231,7 +233,7 @@ library GovernanceConfig {
     ///         after the network accepted.
     /// @dev Holders not named in `cfg` cannot be enumerated on-chain; an indexer checks them
     ///      from `RoleGranted` events.
-    function verify(WorksAccessManager manager, Config memory cfg) internal view {
+    function verify(StreamAccessManager manager, Config memory cfg) internal view {
         validate(manager, cfg);
         if (manager.network() != cfg.network || manager.brake() != cfg.brake) {
             revert NetworkMismatch(manager.network(), manager.brake());

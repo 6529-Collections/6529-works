@@ -44,7 +44,7 @@ CLASS = {
 
 def _keccak():
     path = ROOT / "tools" / "content" / "keccak.py"
-    spec = importlib.util.spec_from_file_location("works_keccak_genesis", path)
+    spec = importlib.util.spec_from_file_location("stream_keccak_genesis", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module.keccak256
@@ -366,7 +366,7 @@ def build() -> dict:
             row["note"] = note
         wiring.append(row)
     return {
-        "schema": "6529-works/governance-genesis/2",
+        "schema": "6529-stream/governance-genesis/2",
         "description": (
             "Example genesis configuration of the plain-core stack (ADR 0010). One network address "
             "holds every network role; operational keys are the only holders; no brake at launch. "
@@ -388,7 +388,7 @@ def build() -> dict:
         "peers": [
             {"name": "SplitFactory", "address": "0x000000000000000000000000000000000000a010", "note": "the split ledger; unowned; its payout resolver is Directory"},
             {"name": "StreamWorkFacts6529", "address": "0x000000000000000000000000000000000000a019", "note": "the permanent record of every work; unowned"},
-            {"name": "WorksAccessManager", "address": "0x000000000000000000000000000000000000a0ff", "note": "configurator.worksManager(); the subject of the epoch-0 manifest"},
+            {"name": "StreamAccessManager", "address": "0x000000000000000000000000000000000000a0ff", "note": "configurator.streamManager(); the subject of the epoch-0 manifest"},
         ],
         "manager": old["manager"],
         "contracts": CONTRACTS,

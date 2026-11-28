@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity 0.8.37;
 
 import { Vm } from "forge-std/Vm.sol";
@@ -485,7 +485,7 @@ library VerifyCore {
         if (GovernanceConfig.hasRecord(d.manager, Roles.ADMIN, address(d.configurator))) {
             revert NotInstalled();
         }
-        _eq(d.manager.pendingNetwork(), cfg.network, "WorksAccessManager.pendingNetwork");
+        _eq(d.manager.pendingNetwork(), cfg.network, "StreamAccessManager.pendingNetwork");
     }
 
     // ------------------------------------------------------------------ governance logs
@@ -803,7 +803,7 @@ library VerifyCore {
         string[] memory list = DeployCore.order(p);
         names = new string[](list.length + 2);
         names[0] = "CoreFactory";
-        names[1] = "WorksAccessManager";
+        names[1] = "StreamAccessManager";
         for (uint256 i; i < list.length; ++i) {
             names[i + 2] = list[i];
         }

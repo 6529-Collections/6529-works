@@ -1,6 +1,6 @@
 # config
 
-Deployment configuration for the 6529 Works `WorksAccessManager`
+Deployment configuration for the 6529 Stream `StreamAccessManager`
 ([src/governance](../src/governance/README.md)).
 
 [`genesis.core.example.json`](genesis.core.example.json) is the genesis configuration of the
@@ -38,10 +38,11 @@ delay: the wait that applies is the contract's own setting, which the network ch
 
 Other files:
 - `sepolia-r1/` to `sepolia-r9/`: each Sepolia round's public inputs (`accounts.json`,
-  `genesis.json`, `deploy.env`, `manifest-epoch0.json`). r1 to r5 were deployed before the
+  `genesis.json`, `deploy.env`, `manifest-epoch0.json`), kept as deployed. All are dated before
+  28 November 2026 and use the protocol's earlier name, "6529 Works". r1 to r5 were deployed before the
   contracts were renamed and are kept exactly as deployed, with the names of that time
   ([old name to new name](../deployments/11155111/README.md)); r6, deployed on 23 November
-  2026, is the first round of the plain core and uses the current names, and r7, deployed
+  2026, is the first round of the plain core and uses the contract names of 22 November 2026, and r7, deployed
   the same day from the same source with the same Safe and holders, is a second instance
   whose governance stays as installed. r8, also deployed that day with the same Safe and
   holders, is `main` at `961bc956`, which adds that commit's module

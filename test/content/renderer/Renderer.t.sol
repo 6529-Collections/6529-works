@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 import { Rec, RendererBase, Trait } from "./RendererBase.sol";
@@ -231,7 +231,7 @@ contract RendererTest is RendererBase {
 
         string memory j = _out();
 
-        assertEq(_str(j, ".name"), "6529 Works #7");
+        assertEq(_str(j, ".name"), "6529 Stream #7");
         assertFalse(_hasAttr(j, "Collection"));
         assertFalse(_hasAttr(j, "Seed"));
         assertTrue(_hasAttr(j, "Artist ID"));
@@ -245,7 +245,7 @@ contract RendererTest is RendererBase {
 
         string memory j = _decode(renderer.tokenURI(address(editions), ID));
 
-        assertEq(_str(j, ".name"), "6529 Works #7");
+        assertEq(_str(j, ".name"), "6529 Stream #7");
         assertEq(_attrNum(j, "Edition of"), ID);
     }
 
@@ -256,7 +256,7 @@ contract RendererTest is RendererBase {
         info.recordFileId = _incompleteFile(_data(1_000, 1), IDENTITY, "application/json");
         _setRecordInfo(info);
 
-        assertEq(_assertCoreOnly("incomplete"), "6529 Works #7");
+        assertEq(_assertCoreOnly("incomplete"), "6529 Stream #7");
 
         // Completing the upload ends it. The bytes are not a record (not even UTF-8), so the work
         // is core-only for another reason, and never a revert.

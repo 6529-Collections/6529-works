@@ -47,7 +47,7 @@
       },
       "dependencies": [],
       "seedPolicy": "VRF",
-      "runtime": "Any browser with Canvas 2D and requestAnimationFrame; tested in Chromium 140 and Firefox 143. The script reads window.works.seed and nothing from the network."
+      "runtime": "Any browser with Canvas 2D and requestAnimationFrame; tested in Chromium 140 and Firefox 143. The script reads window.stream.seed and nothing from the network."
     },
     "display": {
       "waived": false,

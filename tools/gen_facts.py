@@ -39,7 +39,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 OUTPUT = "docs/facts.json"
-SCHEMA = "6529-works/facts/1"
+SCHEMA = "6529-stream/facts/1"
 
 README = "README.md"
 CHANGELOG = "CHANGELOG.md"

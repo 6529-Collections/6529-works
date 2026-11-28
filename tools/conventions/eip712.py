@@ -1,8 +1,8 @@
 """EIP-712 digests of the two convention typed-data messages, and the signature check readers run.
 
-- `CustodyAttestation` (DCL-19), domain `{name: "6529 Works Custody Attestation", version: "1",
+- `CustodyAttestation` (DCL-19), domain `{name: "6529 Stream Custody Attestation", version: "1",
   chainId}`;
-- `ControlProof` (DCL-23), domain `{name: "6529 Works Control Proof", version: "1", chainId}`.
+- `ControlProof` (DCL-23), domain `{name: "6529 Stream Control Proof", version: "1", chainId}`.
 
 Neither domain has a verifying contract, so the domain type is
 `EIP712Domain(string name,string version,uint256 chainId)`.
@@ -30,14 +30,14 @@ from tools.content.keccak import keccak256
 DOMAIN_TYPE = b"EIP712Domain(string name,string version,uint256 chainId)"
 DOMAIN_TYPEHASH = keccak256(DOMAIN_TYPE)
 
-CUSTODY_DOMAIN_NAME = "6529 Works Custody Attestation"
+CUSTODY_DOMAIN_NAME = "6529 Stream Custody Attestation"
 CUSTODY_TYPE = (
     b"CustodyAttestation(address token,uint256 tokenId,bytes32 objectId,uint8 status,uint64 asOf,"
     b"address successor,bytes32 evidenceHash)"
 )
 CUSTODY_TYPEHASH = keccak256(CUSTODY_TYPE)
 
-CONTROL_DOMAIN_NAME = "6529 Works Control Proof"
+CONTROL_DOMAIN_NAME = "6529 Stream Control Proof"
 CONTROL_TYPE = (
     b"ControlProof(string venue,bytes32 nonce,uint64 issuedAt,uint64 expiresAt,uint256 chainId,"
     b"address token,uint256 tokenId,address holder,address signer)"

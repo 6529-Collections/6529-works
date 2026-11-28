@@ -1,6 +1,6 @@
 # The open gate: the curated path for any wallet, on a Sepolia test instance
 
-This note is for the engineer who builds a test page against a Sepolia instance of 6529 Works
+This note is for the engineer who builds a test page against a Sepolia instance of 6529 Stream
 (r9 is the first one), and for the operator who opens and closes the gate.
 
 On a normal instance two steps of the curated path need someone with a role: a curation signer
@@ -14,6 +14,13 @@ replaceable contracts are the ones `main` builds.
 > any chain but Sepolia (11155111) and a local development chain (31337). The code is pre-audit.
 
 ## On r9
+
+r9 was deployed before 28 November 2026, when the protocol was renamed from "6529 Works" to
+"6529 Stream". On r9 every signing domain keeps the earlier name (for example
+`6529 Works Package Registry` where this note says `6529 Stream Package Registry`), the hash
+domains and salts keep the `6529WORKS_` and `6529-works/` spellings, and the configurator's
+getter is `worksManager()`, not `streamManager()`. The scripts in this folder read the current
+names, so they work with an instance deployed from the current code, not with r9.
 
 | | |
 | --- | --- |
@@ -151,7 +158,7 @@ SepoliaOpenGate.oneItemPackage(PackageItem item) returns (bytes32 itemHash, byte
 
 A package of one item has an empty proof. (For several items the root is an OpenZeppelin
 sorted-pair Merkle root over `keccak256(itemHash)`; see
-[`WorksHashing.sol`](../../src/interfaces/types/WorksHashing.sol).)
+[`StreamHashing.sol`](../../src/interfaces/types/StreamHashing.sol).)
 
 ### 4. Register the package: the step the gate opens
 
@@ -167,7 +174,7 @@ PackageRegistry.registerPackage(bytes32 packageRoot, bytes32 evidenceHash, bytes
 
 ### 5. The artist accepts the package (a signature, then a transaction anyone sends)
 
-Typed data, domain `{ name: "6529 Works Package Registry", version: "1", chainId: 11155111,
+Typed data, domain `{ name: "6529 Stream Package Registry", version: "1", chainId: 11155111,
 verifyingContract: PackageRegistry }`:
 
 ```

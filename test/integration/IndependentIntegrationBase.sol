@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
@@ -10,7 +10,7 @@ import { IIndependentStreamRegistry } from "src/interfaces/IIndependentStreamReg
 import { Core } from "src/interfaces/core/CoreTypes.sol";
 import { PRODUCT_INDEPENDENT } from "src/interfaces/types/EconomicsTypes.sol";
 import { Party, PartyRole } from "src/interfaces/types/PackageTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
 
 /// @notice Independent Stream helpers on the real deployed stack: an Independent Stream artist's
@@ -145,7 +145,7 @@ abstract contract IndependentIntegrationBase is IntegrationBase {
     }
 
     function _itemHash(Work memory w) internal pure returns (bytes32) {
-        return WorksHashing.itemHash(w.item);
+        return StreamHashing.itemHash(w.item);
     }
 
     /// @dev `artist` approves `w` for `token` at `rate`.

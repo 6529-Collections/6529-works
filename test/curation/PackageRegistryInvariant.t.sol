@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 import { MintFacts, MintTerms } from "src/interfaces/core/CoreTypes.sol";
@@ -16,7 +16,7 @@ import {
     PartyAcceptance
 } from "src/interfaces/types/PackageTypes.sol";
 import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { CurationArtistRegistryMock } from "test/mocks/curation/CurationArtistRegistryMock.sol";
 import { CurationBase, CurationHelpers, PolicyMinter } from "./CurationBase.sol";
 import { HandlerReach } from "../helpers/HandlerReach.sol";
@@ -107,7 +107,7 @@ contract CurationHandler is CurationHelpers {
                 item.edition = EditionTerms(10, CURRENCY_ETH, SaleKind.UNIFORM_AUCTION, "");
             }
             encodedItems[i] = abi.encode(item);
-            itemHashes[i] = WorksHashing.itemHash(item);
+            itemHashes[i] = StreamHashing.itemHash(item);
         }
         roots[0] = _package(0, 10, proofA);
         roots[1] = _package(6, PACKAGED, proofB);
@@ -362,7 +362,7 @@ contract CurationHandler is CurationHelpers {
     {
         bytes32[] memory leaves = new bytes32[](to - from);
         for (uint256 i; i < leaves.length; ++i) {
-            leaves[i] = WorksHashing.leaf(itemHashes[from + i]);
+            leaves[i] = StreamHashing.leaf(itemHashes[from + i]);
         }
         root = _root(leaves);
         for (uint256 i; i < leaves.length; ++i) {

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
@@ -12,7 +12,7 @@ import { IEntropyModule } from "src/interfaces/IEntropyModule.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { IMintPolicy } from "src/interfaces/core/IMintPolicy.sol";
 import { PackageItem, SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
 
 /// @dev A replacement that only reports one interface over ERC-165 and reverts on any other
@@ -260,7 +260,7 @@ contract StreamDependenciesPortedTest is IntegrationBase {
         w.item.seedPolicy = uint8(SeedPolicy.VRF);
         Work[] memory one = _one(w);
         bytes32 root = _publish(one);
-        bytes32 itemHash = WorksHashing.itemHash(w.item);
+        bytes32 itemHash = StreamHashing.itemHash(w.item);
         uint256 requestId = entropy.requestSeed(w.item, root, _proofOf(one, 0));
         DeliveringEntropyPorted next = new DeliveringEntropyPorted();
         _setEntropy(address(next));
@@ -397,9 +397,9 @@ contract StreamDependenciesPortedTest is IntegrationBase {
         Work memory again = abi.decode(abi.encode(w), (Work));
         again.item.recordFileId = _record("The same content, listed again");
         Work[] memory second = _one(again);
-        assertTrue(WorksHashing.itemHash(again.item) != WorksHashing.itemHash(w.item));
+        assertTrue(StreamHashing.itemHash(again.item) != StreamHashing.itemHash(w.item));
         bytes32 secondRoot = _publish(second);
-        assertFalse(entropy.isDelivered(WorksHashing.itemHash(again.item)), "never linked");
+        assertFalse(entropy.isDelivered(StreamHashing.itemHash(again.item)), "never linked");
         assertTrue(entropy.isDeliveredContent(again.item.contentHash));
 
         (, uint256 tokenId) = _start(secondRoot, second, 0);
@@ -418,7 +418,7 @@ contract StreamDependenciesPortedTest is IntegrationBase {
         bytes memory thirdData = _mintData(thirdRoot, third, 0);
         vm.expectRevert(
             abi.encodeWithSelector(
-                IPackageRegistry.SeedNotDelivered.selector, WorksHashing.itemHash(unseeded.item)
+                IPackageRegistry.SeedNotDelivered.selector, StreamHashing.itemHash(unseeded.item)
             )
         );
         auction.start(address(stream), thirdData);

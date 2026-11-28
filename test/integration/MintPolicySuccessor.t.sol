@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 import { Eip712CurationVerifier } from "src/curation/Eip712CurationVerifier.sol";
@@ -8,7 +8,7 @@ import { ICurationVerifier } from "src/interfaces/ICurationVerifier.sol";
 import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { EnglishAuction } from "src/sales/EnglishAuction.sol";
 import { UniformEditionAuction } from "src/sales/UniformEditionAuction.sol";
 import { UniformEditionAuctionLens } from "src/sales/UniformEditionAuctionLens.sol";
@@ -134,7 +134,7 @@ contract MintPolicySuccessorTest is EditionAuctionStack {
         vm.prank(makeAddr("anyone"));
         vm.expectRevert(abi.encodeWithSelector(IPackageRegistry.PackageNotApproved.selector, root));
         next.registerPackage(root, _evidence(root), attestation);
-        assertFalse(next.isApprovedItem(root, WorksHashing.itemHash(w.item), _proofOf(works, 0)));
+        assertFalse(next.isApprovedItem(root, StreamHashing.itemHash(w.item), _proofOf(works, 0)));
         vm.expectRevert(refused);
         nextAuction.open(address(editions), tokenId, openData);
         assertEq(editions.editionOf(tokenId).minter, address(0), "no edition was opened");
@@ -154,7 +154,7 @@ contract MintPolicySuccessorTest is EditionAuctionStack {
         PackageRegistry next = _install(_deploy(address(old)));
         next.registerPackage(root, _evidence(root), attestation);
         _assertStatus(next, root, IPackageRegistry.PackageStatus.APPROVED);
-        bytes32 itemHash = WorksHashing.itemHash(w.item);
+        bytes32 itemHash = StreamHashing.itemHash(w.item);
         assertTrue(next.isApprovedItem(root, itemHash, _proofOf(works, 0)));
         registry = next;
         _accept(root, artist);

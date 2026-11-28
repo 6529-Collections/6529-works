@@ -1,10 +1,10 @@
-# 6529 Works
+# 6529 Stream
 
-[![CI](https://github.com/6529-Collections/6529-works/actions/workflows/ci.yml/badge.svg)](https://github.com/6529-Collections/6529-works/actions/workflows/ci.yml)
+[![CI](https://github.com/6529-Collections/6529-stream/actions/workflows/ci.yml/badge.svg)](https://github.com/6529-Collections/6529-stream/actions/workflows/ci.yml)
 
-6529 Works is the 6529 network's art protocol. It holds **6529 Stream**, one shared ERC-721 for
-curated 1/1 artworks, and **6529 Stream Editions**, one shared ERC-1155 whose editions are each
-anchored by a Stream work. **6529 Independent Stream** and **6529 Independent Stream Editions**
+6529 Stream is the 6529 network's art protocol and the family of contracts that runs it. Its
+curated 1/1 contract is one shared ERC-721 for curated 1/1 artworks, and **6529 Stream Editions**
+is one shared ERC-1155 whose editions are each anchored by a Stream work. **6529 Independent Stream** and **6529 Independent Stream Editions**
 are an artist's own pair of contracts, built from the same code. Sales are in ETH: a 1/1 sells
 in an English auction and an edition in a uniform-price auction, and anyone may start and
 settle them. Money moves by pull through immutable split vaults.
@@ -31,14 +31,18 @@ modules**, which the network adds (after a waiting period that is the network's 
 | Mainnet | Not deployed. |
 | Known limits | [Known limitations](docs/audit/known-limitations.md) |
 
+Records dated before 28 November 2026 (deployment records, validation records, the release
+notes, earlier changelog entries and the ADRs) use the protocol's earlier name, "6529 Works",
+and the Sepolia instances deployed before that date keep it in their contracts.
+
 ## Quickstart
 
 You need [Foundry](https://book.getfoundry.sh/) v1.7.1 and Python 3.12 or later (standard
 library only).
 
 ```bash
-git clone --recurse-submodules https://github.com/6529-Collections/6529-works.git
-cd 6529-works
+git clone --recurse-submodules https://github.com/6529-Collections/6529-stream.git
+cd 6529-stream
 forge build
 forge test --no-match-test "^invariant"
 ```
@@ -73,10 +77,11 @@ lib/         OpenZeppelin Contracts 5.7.0 and forge-std 1.17.0
 ## Security
 
 Report vulnerabilities privately through
-[GitHub private vulnerability reporting](https://github.com/6529-Collections/6529-works/security/advisories/new)
+[GitHub private vulnerability reporting](https://github.com/6529-Collections/6529-stream/security/advisories/new)
 ([SECURITY.md](SECURITY.md)). Never include keys or secrets.
 
 ## License
 
-The code is MIT ([LICENSE](LICENSE)). Artworks minted on 6529 Stream and 6529 Stream Editions
-default to CC0 ([ADR 0001 §8](docs/adr/0001-v1-scope.md#8-works-content-and-storage)).
+The code is licensed under the Apache License, Version 2.0 ([LICENSE](LICENSE),
+[NOTICE](NOTICE)). The libraries under `lib/` keep their own licences. Artworks minted on
+6529 Stream and 6529 Stream Editions default to CC0 ([ADR 0001 §8](docs/adr/0001-v1-scope.md#8-works-content-and-storage)).

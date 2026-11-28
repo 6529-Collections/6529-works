@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 import { ContentStore } from "src/content/ContentStore.sol";
@@ -8,7 +8,7 @@ import { Facts, MintFacts, Slots } from "src/interfaces/core/CoreTypes.sol";
 import { IWorkFacts } from "src/interfaces/core/IWorkFacts.sol";
 import { MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { License, PackageItem, Party } from "src/interfaces/types/PackageTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { MockRecords, MockRenderer, MockSale, MockTerms } from "../mocks/core/CoreMocks.sol";
 import { Actor, Gate, MedusaBase } from "./MedusaBase.sol";
 
@@ -172,7 +172,7 @@ contract WorkFactsMedusa is MedusaBase {
         MediaFile[] memory m = media(c, mediaSel);
         it.collectionId = 1;
         it.contentHash = m[0].sha256Hash;
-        it.mediaHash = keccak256(abi.encode(WorksHashing.MEDIA_DOMAIN, m));
+        it.mediaHash = keccak256(abi.encode(StreamHashing.MEDIA_DOMAIN, m));
         it.recordFileId = recordFiles[rec];
         it.parties = new Party[](1);
         it.parties[0] = Party(address(artist), 0);
@@ -193,7 +193,7 @@ contract WorkFactsMedusa is MedusaBase {
         uint256 rec = secondRecord ? 1 : 0;
         uint256 key = ms == 3 ? c + CONTENTS : c;
         MintFacts memory f;
-        f.itemHash = WorksHashing.itemHash(item(c, ms, lic, rec));
+        f.itemHash = StreamHashing.itemHash(item(c, ms, lic, rec));
         f.contentHash = item(c, ms, lic, rec).contentHash;
         f.artistId = 1;
         f.collectionId = 1;
