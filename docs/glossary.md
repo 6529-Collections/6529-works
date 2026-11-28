@@ -226,9 +226,9 @@ How a token's first sale ended: none, sold, unsold or rescued. Set once by the h
 Freezing a work's descriptive record and pinning the renderer that draws it, in
 `StreamWorkFacts6529`. Never undone.
 
-### windowworks
+### windowstream
 
-`window.works`: the object `{ v: 1, tokenId, seed }` the renderer's page sets before a work's
+`window.stream`: the object `{ v: 1, tokenId, seed }` the renderer's page sets before a work's
 JavaScript runs. See [rendering and tokenURI](spec/rendering-and-tokenuri.md).
 
 ## Curation, disputes and statements

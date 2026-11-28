@@ -16,17 +16,21 @@
     conventions `6529 Stream Custody Attestation` and `6529 Stream Control Proof` (each was
     `6529 Works ...`).
   - Hash domains: `6529STREAM_PACKAGE_ITEM_V1`, `6529STREAM_MEDIA_V1`,
-    `6529STREAM_WORK_STATE_V2`, `6529STREAM_INDEPENDENT_LISTING_V1`,
-    `6529STREAM_INDEPENDENT_CONSENT_V1` (each was `6529WORKS_...`), and
+    `6529STREAM_WORK_STATE_V2` and `6529STREAM_INDEPENDENT_LISTING_V1` (each was
+    `6529WORKS_...`), `6529STREAM_INDEPENDENTCONSENT_V1` (was
+    `6529WORKS_INDEPENDENT_CONSENT_V1`; one underscore is dropped so that the literal stays
+    exactly 32 bytes, which keeps `IndependentStreamRegistry` at its size margin), and
     `6529.stream.StatementLog.entry.v1` and `6529.stream.StatementLog.head.v1` (were
     `6529.works...`). Schema and label strings spelled `6529-works/...` are `6529-stream/...`,
     the schema IDs are `urn:6529-stream:schema:<name>:v1` and the declarations MIME type is
     `application/vnd.6529-stream.declarations+json`.
-  - The fallback token name of the renderer is `6529 Stream #<id>`.
+  - The fallback token name of the renderer is `6529 Stream #<id>`, and the object the
+    renderer's page sets for a script is `window.stream` (it was `window.works`), with the same
+    fields.
   - Identifiers: `WorksAccessManager` is `StreamAccessManager`, `WorksHashing` is
     `StreamHashing`, and `GovernanceConfigurator.worksManager()` is `streamManager()` (a new
     selector). Names in which "work" means an artwork (`WorkRules`, `StreamWorkFacts6529` and
-    the like) and the renderer's `window.works` object are unchanged.
+    the like) are unchanged.
   - Licence: [LICENSE](LICENSE) is the Apache License 2.0, with a [NOTICE](NOTICE) file; the
     SPDX header of every first-party file is `Apache-2.0` (it was `MIT`). The libraries under
     `lib/` keep their own licences.

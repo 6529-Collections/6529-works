@@ -68,10 +68,10 @@ Deployed once and never replaced ([ADR 0010](../adr/0010-plain-permanent-core.md
 | `StreamTerms` (TERMS) | [`src/terms/StreamTerms.sol`](../../src/terms/StreamTerms.sol) | 152 | 7,037 | 7,822 | 17,539 |
 | `WorkRules` (RECORDS) | [`src/records/WorkRules.sol`](../../src/records/WorkRules.sol) | 388 | 15,758 | 16,702 | 8,818 |
 | `WorkDelivery` | [`src/stream/WorkDelivery.sol`](../../src/stream/WorkDelivery.sol) | 253 | 10,172 | 10,541 | 14,404 |
-| `Renderer` (RENDERER) | [`src/content/Renderer.sol`](../../src/content/Renderer.sol) | 724 | 24,058 | 24,373 | 518 |
+| `Renderer` (RENDERER) | [`src/content/Renderer.sol`](../../src/content/Renderer.sol) | 724 | 24,059 | 24,374 | 517 |
 | `Accounts` (ACCOUNTS) | [`src/identity/Accounts.sol`](../../src/identity/Accounts.sol) | 679 | 19,836 | 22,110 | 4,740 |
 | `ConsolidationAdapter` | [`src/identity/ConsolidationAdapter.sol`](../../src/identity/ConsolidationAdapter.sol) | 52 | 1,335 | 1,646 | 23,241 |
-| `IndependentStreamRegistry` (INDEPENDENT_STREAM) | [`src/independent/IndependentStreamRegistry.sol`](../../src/independent/IndependentStreamRegistry.sol) | 510 | 24,092 | 24,916 | 484 |
+| `IndependentStreamRegistry` (INDEPENDENT_STREAM) | [`src/independent/IndependentStreamRegistry.sol`](../../src/independent/IndependentStreamRegistry.sol) | 510 | 24,064 | 24,888 | 512 |
 | `IndependentStreamDeployer` (one per template, ownerless) | [`src/independent/IndependentStreamDeployer.sol`](../../src/independent/IndependentStreamDeployer.sol) | 49 | 1,425 | 2,398 | 23,151 |
 | `StatementLog` | [`src/records/StatementLog.sol`](../../src/records/StatementLog.sol) | 310 | 11,167 | 12,428 | 13,409 |
 | `VrfEntropyModule` (optional) | [`src/entropy/VrfEntropyModule.sol`](../../src/entropy/VrfEntropyModule.sol) | 367 | 12,639 | 14,585 | 11,937 |

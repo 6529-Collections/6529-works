@@ -201,6 +201,6 @@ library Core {
         pure
         returns (bytes32)
     {
-        return keccak256(abi.encode("6529STREAM_INDEPENDENT_CONSENT_V1", itemHash, royaltyRate));
+        return keccak256(abi.encode("6529STREAM_INDEPENDENTCONSENT_V1", itemHash, royaltyRate));
     }
 }

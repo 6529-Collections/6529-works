@@ -259,7 +259,7 @@ page, `data:text/html;base64,…`, while `content_type` stays `text/javascript` 
 before the artist's script:
 
 ```js
-window.works={v:1,tokenId:42,seed:"0x…"};
+window.stream={v:1,tokenId:42,seed:"0x…"};
 ```
 
 `seed` is `0x` and 64 hex digits, or `null` for an unseeded work. This object is a stable
