@@ -17,7 +17,9 @@ first run.
   (`c6d4965861907841519cf3878c9db7052424a9a0`). The fork row ran again on commit `801917fc`
   of the branch that adds this record, which differs from `c6d49658` in one test file,
   `test/fork/ReadbackLogsFork.t.sol` (one key, with a comment). No file under `src/` differs,
-  so the other rows stand as measured on `c6d49658`.
+  so the other rows stand as measured on `c6d49658`. While the pass ran, `main` gained one
+  commit, the Sepolia r10 record (#144); it changes no file under `src/`, `test/`, `tools/`
+  or `.github/`, and nothing here was run on it.
 - **Machines.** Two rented 96-core Linux machines (Ubuntu 24.04), several items at a time, so
   the times are wall-clock times under load and are not comparable with a CI runner's. Each
   item ran in its own checkout, and a `forge test` row's time leaves out that checkout's
