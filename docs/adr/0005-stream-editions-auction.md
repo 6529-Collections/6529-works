@@ -428,6 +428,12 @@ decision 15 note under [Open items](#open-items).
   minting and delivering nothing, and ending in its settled state, so the bidders' funds and
   any edition sale that waits on the 1/1 are never stranded. The English auction does this
   (`RescuedSaleClosed`, [AUC-36](../spec/stream-and-auctions.md#rules-and-invariants)).
+  *Amended 27 November 2026:* the English auction reads the outcome the token recorded, so it
+  completes such a sale wherever the work is, and ends it CANCELLED rather than settled: an
+  edition sale that waited on the 1/1 is void with full refunds and sells no copy of a rescued
+  master ([AUC-56](../spec/stream-and-auctions.md#rules-and-invariants),
+  [EA-22](../spec/editions-and-sales.md#rules-and-invariants)). A rescued work found in the
+  auction's custody at that moment goes to the museum.
 - **Cost** ([ADR 0004's table](0004-gas-budgets-under-glamsterdam.md#the-table)): the English
   `settle` with a bid writes one new slot (the sale record) and costs more; with no bid it costs
   less. Also useful for TDH: P29 shares the Works pool by realized ETH price.

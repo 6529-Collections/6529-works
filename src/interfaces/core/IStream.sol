@@ -223,10 +223,12 @@ interface IStream is IERC4906, IERC2981 {
     /// @return The count.
     function collectionCount() external view returns (uint256);
 
-    /// @notice The renderer that draws a live token: the one pinned in `facts()` once the work
-    ///         is finalized, else the RENDERER module. Reverts if the pinned renderer's code
-    ///         changed; never falls back to another renderer.
-    /// @param tokenId A live token.
+    /// @notice The renderer that draws a work: the one pinned in `facts()` once the work is
+    ///         finalized, else the RENDERER module. Reverts if the pinned renderer's code
+    ///         changed; never falls back to another renderer. Answers for a burned token too
+    ///         (its record stays), so the editions of a burned master are still drawn; the burned
+    ///         token itself has no `tokenURI`. Reverts for an ID that was never minted.
+    /// @param tokenId A token that was minted, live or burned.
     /// @return The renderer.
     function rendererOf(uint256 tokenId) external view returns (address);
 

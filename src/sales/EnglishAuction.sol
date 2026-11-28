@@ -62,7 +62,9 @@ import { Dependency } from "../libraries/Dependency.sol";
 ///      venue of the works it minted: its running sales finish, and its unsold works can be offered
 ///      again here (`restart`) for as long as the token is served. The network's other path is
 ///      `IStream.rescue`, once the token's `rescueDelay` has passed since the removal: it ends the
-///      work's primary sale as RESCUED and moves the work where the network says.
+///      work's primary sale as RESCUED and moves the work where the network says. `settle` then
+///      closes the work's sale here with refunds, reading the outcome the token recorded, so it
+///      does so wherever the work is; a rescued work found in custody goes to the museum.
 contract EnglishAuction is
     IEnglishAuction,
     IEnglishAuctionClock,
@@ -271,23 +273,32 @@ contract EnglishAuction is
     // -------------------------------------------------------------------------- settlement
 
     /// @inheritdoc IEnglishAuction
-    /// @dev In order: a work no longer in custody (only the network's `IStream.rescue` can move
-    ///      it) closes with refunds; an Independent Stream work whose token the Independent Stream
-    ///      module no longer serves (delisted, or its version revoked) has its standing bid
-    ///      credited back and ends unsold, while a removed auction or a suspended version settles
-    ///      as usual; with no bid, a 6529 Stream work is recorded UNSOLD and sent to the museum, an
-    ///      Independent Stream work stays in custody for `restart`; with a bid, the outcome is
-    ///      recorded SOLD, the seller and the network are paid and the work is delivered (or left
-    ///      pending).
+    /// @dev In order: a work the network rescued (`IStream.rescue`: it is no longer in custody,
+    ///      or the token already records an outcome, which only a rescue can set while a sale
+    ///      runs) closes with refunds, as CANCELLED, and if the work is back in custody it goes to
+    ///      the museum; an Independent Stream work whose token the Independent Stream module no
+    ///      longer serves (delisted, or its version revoked) has its standing bid credited back
+    ///      and ends unsold, while a removed auction or a suspended version settles as usual; with
+    ///      no bid, a 6529 Stream work is recorded UNSOLD and sent to the museum, an Independent
+    ///      Stream work stays in custody for `restart`; with a bid, the outcome is recorded SOLD,
+    ///      the seller and the network are paid and the work is delivered (or left pending).
     function settle(uint256 saleId) external nonReentrant {
         Sale storage s = _require(saleId, AuctionState.ENDED);
-        s.status = AuctionState.SETTLED;
         (address token, uint256 tokenId) = (s.token, s.tokenId);
-        if (IERC721(token).ownerOf(tokenId) != address(this)) {
+        bool held = IERC721(token).ownerOf(tokenId) == address(this);
+        if (!held || IStream(token).workOf(tokenId).outcome != Outcome.NONE) {
+            // CANCELLED, so a sale that follows this one (an edition sale) is void.
+            s.status = AuctionState.CANCELLED;
             _refundHighBid(saleId, s);
             emit RescuedSaleClosed(saleId);
+            // A rescued work that is here again (rescued to this contract, or sent back) could
+            // never leave by itself: nothing records, restarts or rescues it a second time. The
+            // resolver's museum is never zero. One that arrives after its sale closed leaves by
+            // `sendRescuedToMuseum`.
+            if (held) IERC721(token).transferFrom(address(this), economics.museum(), tokenId);
             return;
         }
+        s.status = AuctionState.SETTLED;
         bool independent = token != stream;
         if (independent && !_served(token)) _refundHighBid(saleId, s);
         if (s.bidder == address(0)) {
@@ -377,6 +388,25 @@ contract EnglishAuction is
         s.status = AuctionState.SETTLED;
         _refundHighBid(saleId, s);
         emit SettlementRefused(saleId);
+    }
+
+    /// @notice Sends a rescued work that this auction holds to the museum. Permissionless.
+    /// @dev For a rescued work that reached this auction outside a settlement: rescued to it, or
+    ///      sent back, after its sale had closed (an unsold Independent Stream work waits here
+    ///      with its sale SETTLED). Nothing here records, restarts or rescues such a work again,
+    ///      so without this call it could never leave. The token's recorded outcome decides:
+    ///      only RESCUED qualifies, so a work waiting for a sale, a restart or a pending delivery
+    ///      is never moved. Reverts with the token's own error if this auction does not hold it.
+    /// @param saleId The sale the work was minted in.
+    function sendRescuedToMuseum(uint256 saleId) external nonReentrant {
+        Sale storage s = _sales[saleId];
+        (address token, uint256 tokenId) = (s.token, s.tokenId);
+        AuctionState state = _state(s);
+        if (state == AuctionState.NONE) revert UnknownSale(saleId);
+        if (IStream(token).workOf(tokenId).outcome != Outcome.RESCUED) {
+            revert InvalidAuctionState(saleId, state);
+        }
+        IERC721(token).transferFrom(address(this), economics.museum(), tokenId);
     }
 
     /// @inheritdoc IEnglishAuction

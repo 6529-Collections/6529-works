@@ -31,7 +31,9 @@ import { IEconomicsResolver } from "./IEconomicsResolver.sol";
 ///      auction as a sale contract or suspending a version lets running sales finish and unsold
 ///      works be offered again here, since the token lets the account that minted a work record its
 ///      sale for good. A work the network rescued (`IStream.rescue`, outcome RESCUED) closes its
-///      sale with the standing bid credited back.
+///      sale with the standing bid credited back and nothing sold: the sale ends CANCELLED, so
+///      an edition sale that followed it is void, and a rescued work that is in this auction's
+///      custody at that moment (rescued to it, or sent back) goes to the museum.
 ///
 ///      Disputes: the network may pause a live auction once, for at most 3 days (`MAX_PAUSE`);
 ///      the high bidder may withdraw while it is paused; the network may cancel it (an upheld
@@ -46,7 +48,10 @@ import { IEconomicsResolver } from "./IEconomicsResolver.sol";
 ///      or postpone a clock.
 interface IEnglishAuction {
     /// @notice An auction's lifecycle. ENDED is derived: ACTIVE with the end passed. PAUSED is
-    ///         derived while a dispute pause is live.
+    ///         derived while a dispute pause is live. SETTLED: closed by `settle` or
+    ///         `settleOrRefund`, sold or unsold. CANCELLED: closed with the bid credited back and
+    ///         nothing sold, by the network after an upheld dispute (`cancel`, the work burned)
+    ///         or at settlement because the network had rescued the work (`RescuedSaleClosed`).
     enum AuctionState {
         NONE,
         ACTIVE,
@@ -208,8 +213,9 @@ interface IEnglishAuction {
     /// @param recipient The recipient the token was pending for.
     /// @param to Where it was sent.
     event DeliveryClaimed(uint256 indexed saleId, address indexed recipient, address to);
-    /// @notice The sale of a work the network rescued ended: nothing was recorded, paid or
-    ///         delivered, and the standing bid, if any, was credited back.
+    /// @notice The sale of a work the network rescued ended, CANCELLED: nothing was recorded,
+    ///         paid or delivered, and the standing bid, if any, was credited back. A rescued
+    ///         work that was in this auction's custody was sent to the museum.
     /// @param saleId The sale.
     event RescuedSaleClosed(uint256 indexed saleId);
     /// @notice The governed parameters changed.

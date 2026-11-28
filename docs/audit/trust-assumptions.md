@@ -34,7 +34,7 @@ trusted with; and what nobody can do. The plain-language summary is the
 | Announce a module or add a sale contract to a permanent contract | Everyone, for new mints, new sales and unfinalized works | Usable after `moduleDelay` |
 | Remove a module or a sale contract | The same | At once |
 | Change `moduleDelay`, `rescueDelay`, `rebindDelay`, `unclaimedPeriod` | Additions announced later; rescues, rebinds, forfeits and expiries attempted later | At once |
-| `rescue` a token a removed sale contract still holds unsold | That unsold token only; never a collector's | Once `rescueDelay` has passed since the removal |
+| `rescue` a token a removed sale contract still holds unsold | That token only: one a removed sale contract holds with no sale outcome ever recorded. The English auction records the outcome before a work leaves it, so no work it sold is within reach ([LIM-SAL-14](known-limitations.md#sales-and-auctions)) | Once `rescueDelay` has passed since the removal |
 | `rebind` an edition with no seal to another sale contract | That edition only | Once `rebindDelay` has passed since its sale contract's removal |
 | Create collections, set the marketplace owner and contract URI | Marketplace presentation | Per the role matrix |
 | Governed parameters of modules (fees for new works, auction timing within bounds, museum, recipients) | New sales and new works | 24 hours, 3 days or 7 days, per the role matrix |
@@ -42,9 +42,12 @@ trusted with; and what nobody can do. The plain-language summary is the
 | Remap any function to another class, or change a class | Every governed function | 7 days |
 | Hand the network to another address | Everything | 7 days, then the new address accepts |
 
-What no power reaches: a held token, a minted work's facts and media, a finalized record, a CC0
+What no power reaches: a token whose first sale has a recorded outcome (every work the English
+auction sold or sent to the museum), a minted work's facts and media, a finalized record, a CC0
 license, a locked royalty rate, a sealed edition's maximum, and money owed in a vault or the
-escrow before the unclaimed period.
+escrow before the unclaimed period. The token contract does not record custody history: a sale
+contract admitted later must record the outcome before a token leaves it, or that token stays
+within reach of `rescue` ([LIM-SAL-14](known-limitations.md#sales-and-auctions)).
 
 ### The network Safe and the brake
 

@@ -617,6 +617,25 @@ contract EditionsTest is EditionsFixture {
         editions.uri(77);
     }
 
+    /// @dev Copies outlive their master: a master burned in sale custody (a cancelled sale)
+    ///      keeps its record, so `uri` of the copies already held answers as before, drawn by the
+    ///      master's renderer. The burned master itself has no `tokenURI`.
+    function test_Uri_StillDrawnAfterTheMasterIsBurned() public {
+        uint256 id = _mint(1);
+        sale.createEdition(address(editions), id, 10, ROYALTY, RATE);
+        sale.mintEdition(address(editions), buyer, id, 3, 0.1 ether);
+        assertEq(editions.uri(id), "data:,mock");
+        sale.burn(address(stream), id);
+        assertEq(editions.uri(id), "data:,mock", "the copies still have metadata");
+        assertEq(editions.balanceOf(buyer, id), 3);
+        vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, id));
+        stream.tokenURI(id);
+        // With no renderer at all the copies have no metadata, as for a live master.
+        stream.removeModule(Slots.RENDERER);
+        vm.expectRevert();
+        editions.uri(id);
+    }
+
     function test_Uri_AFailingRendererRevertsAndNeverFallsBack() public {
         uint256 id = _edition(1, 10);
         HostileModule hostile = new HostileModule();

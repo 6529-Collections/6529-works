@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { Vm } from "forge-std/Vm.sol";
+import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
 import { IUniformEditionAuctionLens } from "src/interfaces/IUniformEditionAuctionLens.sol";
@@ -45,6 +46,14 @@ contract IndependentEditionAuctionMutationTest is IndependentEditionAuctionTest 
             ++found;
         }
         assertEq(found, 1, "one AuctionOpened");
+    }
+
+    /// @dev The Independent Stream auction sells many pairs, so its lens names no single
+    ///      editions contract and no single master contract.
+    function test_Views_NoSingleEditionsContractOrMaster() public view {
+        IUniformEditionAuctionLens views = IUniformEditionAuctionLens(address(auction));
+        assertEq(views.editions(), address(0));
+        assertEq(views.stream(), address(0));
     }
 
     /// @dev The Independent Stream lens reads its module from the directory and accepts no other.
@@ -142,7 +151,9 @@ contract IndependentEditionAuctionMutationTest is IndependentEditionAuctionTest 
         uint256 paid = fee.balance + seller.balance;
         assertEq(paid, 25 * ua.stepPrice(saleId, 10));
 
+        // Neither a delisting nor a cancelled 1/1 voids it now.
         gate.setActive(address(token), false);
+        english.set(address(master), ID, IEnglishAuction.AuctionState.CANCELLED, 0);
         vm.prank(bob);
         assertTrue(auction.settle(saleId, order));
         assertEq(_status(saleId), uint8(IUniformEditionAuction.AuctionStatus.SETTLED));

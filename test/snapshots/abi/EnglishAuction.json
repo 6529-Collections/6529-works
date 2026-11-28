@@ -1767,6 +1767,21 @@
     "type": "function"
   },
   {
+    "id": "0xec6a877b",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "saleId",
+        "type": "uint256"
+      }
+    ],
+    "name": "sendRescuedToMuseum",
+    "outputs": [],
+    "signature": "sendRescuedToMuseum(uint256)",
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
     "id": "0x7a9e5e4b",
     "inputs": [
       {

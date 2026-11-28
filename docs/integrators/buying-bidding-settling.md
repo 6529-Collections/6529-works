@@ -98,7 +98,8 @@ waited the unclaimed period in force.
   calls: pass the departure order `settlementOrderFor` returns.
 - **Claim** each bid with `claimBid` (or anyone with `claimBidFor`): it mints the copies won and
   refunds the rest.
-- A cancelled 1/1 voids its edition sale and refunds every bid.
+- A cancelled 1/1 voids its edition sale and refunds every bid. A 1/1 sale that closed because
+  the network rescued its work (`RescuedSaleClosed`) reads as cancelled too.
 
 ## Claiming
 

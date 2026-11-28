@@ -46,6 +46,20 @@ contract MockGate {
     mapping(address token => bool) public isActive;
     mapping(address token => uint32) public feeShareOf;
     mapping(address minter => uint256) public minterRemovedAt;
+    mapping(address token => address) public partnerOf;
+
+    /// @dev `IIndependentStreamRegistry.entry`, of which only the partner is set here.
+    function entry(address token)
+        external
+        view
+        returns (uint8, address, uint256, uint32, bytes32, uint32, uint8)
+    {
+        return (0, partnerOf[token], 0, 0, 0, 0, 0);
+    }
+
+    function setPartner(address token, address partner) external {
+        partnerOf[token] = partner;
+    }
 
     function set(address token, address minter, bool ok) external {
         canMint[token][minter] = ok;
@@ -158,6 +172,7 @@ contract IndependentEditionAuctionTest is Test {
         gate.set(address(token), address(auction), true);
         gate.setActive(address(token), true);
         gate.setActive(address(master), true); // its master contract is served too
+        gate.setPartner(address(master), address(token)); // and names it as its editions
         gate.setFeeShare(address(token), SHARE);
         english.set(
             address(master),
@@ -230,6 +245,24 @@ contract IndependentEditionAuctionTest is Test {
             abi.encodeWithSelector(ISaleAdapter.InvalidSaleTerms.selector, address(token), ID)
         );
         auction.open(address(token), ID, data);
+    }
+
+    /// @dev One editions contract per master (IND-78): a contract the module lets this auction
+    ///      mint opens no sale unless its master's entry names it as the master's editions
+    ///      contract. A master that names another contract, or none, refuses it.
+    function test_Open_RefusedUnlessTheMasterNamesThisEditionsContract() public {
+        bytes memory data = abi.encode(_item());
+        bytes memory refused =
+            abi.encodeWithSelector(ISaleAdapter.InvalidSaleTerms.selector, address(token), ID);
+        gate.setPartner(address(master), makeAddr("anotherEditionsContract"));
+        assertTrue(gate.canMint(address(token), address(auction)), "the module lets it mint");
+        vm.expectRevert(refused);
+        auction.open(address(token), ID, data);
+        gate.setPartner(address(master), address(0));
+        vm.expectRevert(refused);
+        auction.open(address(token), ID, data);
+        gate.setPartner(address(master), address(token));
+        assertEq(auction.open(address(token), ID, data), ua.saleIdOf(address(token), ID));
     }
 
     function test_SetTarget_Refused() public {
@@ -360,6 +393,99 @@ contract IndependentEditionAuctionTest is Test {
         gate.setActive(address(token), false);
         assertTrue(auction.settle(saleId, new uint256[](0)));
         assertEq(uint8(ua.auction(saleId).status), uint8(IUniformEditionAuction.AuctionStatus.VOID));
+        assertEq(fee.balance + seller.balance, 0, "nothing paid");
+    }
+
+    /// @dev The 1/1 is cancelled while a wide book's scan is in progress (nothing paid yet): the
+    ///      next settle call voids the sale, as the first call would have. Every bid comes back
+    ///      in full, nothing is paid, and the edition is sealed at zero (IND-56).
+    function test_Cancelled_DuringTheScanVoidsWithFullRefunds() public {
+        uint256 saleId = _open();
+        uint256 first = _bid(saleId, alice, 0, 1);
+        uint256 second = _bid(saleId, bob, 335, 1);
+        (uint256 paidAlice, uint256 paidBob) = (ua.stepPrice(saleId, 0), ua.stepPrice(saleId, 335));
+        _close(saleId);
+        assertFalse(auction.settle(saleId, new uint256[](0)));
+        assertEq(
+            uint8(ua.auction(saleId).status), uint8(IUniformEditionAuction.AuctionStatus.SETTLING)
+        );
+        _setOneOfOne(IEnglishAuction.AuctionState.CANCELLED);
+        vm.expectEmit(address(auction));
+        emit IUniformEditionAuction.AuctionVoided(saleId);
+        assertTrue(auction.settle(saleId, new uint256[](0)));
+        assertEq(uint8(ua.auction(saleId).status), uint8(IUniformEditionAuction.AuctionStatus.VOID));
+        assertEq(fee.balance + seller.balance, 0, "nothing paid");
+        Edition memory e = token.editionOf(ID);
+        assertTrue(e.supplySealed && e.maxSupply == 0, "sealed at zero");
+        vm.prank(alice);
+        (uint256 won, uint256 refund) = auction.claimBid(saleId, first, alice);
+        assertEq(won, 0);
+        assertEq(refund, paidAlice, "refunded in full");
+        vm.prank(bob);
+        (won, refund) = auction.claimBid(saleId, second, bob);
+        assertEq(won, 0);
+        assertEq(refund, paidBob, "refunded in full");
+        assertEq(address(auction).balance, 0, "nothing left behind");
+        assertEq(token.balanceOf(alice, ID) + token.balanceOf(bob, ID), 0, "no copy");
+    }
+
+    /// @dev A 1/1 that was only offered again while the scan is in progress (running, paused or
+    ///      ended again, never cancelled) does not void the sale: the next call finishes the
+    ///      scan and pays.
+    function test_Restarted_DuringTheScanTheSettlementGoesOn() public {
+        IEnglishAuction.AuctionState[3] memory states = [
+            IEnglishAuction.AuctionState.ACTIVE,
+            IEnglishAuction.AuctionState.PAUSED,
+            IEnglishAuction.AuctionState.ENDED
+        ];
+        uint256 saleId = _open();
+        _bid(saleId, alice, 0, 1);
+        _bid(saleId, bob, 335, 1);
+        _close(saleId);
+        assertFalse(auction.settle(saleId, new uint256[](0)));
+        english.setRestartedAt(address(master), ID, uint64(block.timestamp));
+        uint256 snapshot = vm.snapshotState();
+        for (uint256 i; i < states.length; ++i) {
+            english.set(address(master), ID, states[i], uint64(block.timestamp + 1 days));
+            assertTrue(auction.settle(saleId, new uint256[](0)), "the scan finishes");
+            assertEq(
+                uint8(ua.auction(saleId).status),
+                uint8(IUniformEditionAuction.AuctionStatus.SETTLED)
+            );
+            assertGt(fee.balance + seller.balance, 0, "paid");
+            vm.revertToState(snapshot);
+        }
+    }
+
+    /// @dev An adopted sale that runs on its own never reads the 1/1: with its scan in progress
+    ///      and the English auction reporting the 1/1 cancelled and then refusing to answer, the
+    ///      next call still finishes the scan and pays; only a delisting voids it.
+    function test_Adopted_AScanInProgressDoesNotReadTheOneOfOne() public {
+        (IndependentEditionAuction next, uint256 saleId) = _adoptedOnItsOwn();
+        IUniformEditionAuction un = IUniformEditionAuction(address(next));
+        uint256[2] memory steps = [uint256(0), 335];
+        for (uint256 i; i < 2; ++i) {
+            uint256 amount = un.stepPrice(saleId, steps[i]);
+            vm.deal(alice, amount);
+            vm.prank(alice);
+            next.bid{ value: amount }(saleId, steps[i], 1);
+        }
+        vm.warp(un.endTimes(saleId).endTime);
+        assertFalse(next.settle(saleId, new uint256[](0)), "the scan needs another call");
+        uint256 snapshot = vm.snapshotState();
+
+        _setOneOfOne(IEnglishAuction.AuctionState.CANCELLED);
+        english.setRefuseClock(true);
+        assertTrue(next.settle(saleId, new uint256[](0)));
+        assertEq(
+            uint8(un.auction(saleId).status), uint8(IUniformEditionAuction.AuctionStatus.SETTLED)
+        );
+        assertGt(fee.balance + seller.balance, 0, "paid");
+
+        vm.revertToState(snapshot);
+        gate.setActive(address(token), false);
+        assertTrue(next.settle(saleId, new uint256[](0)));
+        assertEq(uint8(un.auction(saleId).status), uint8(IUniformEditionAuction.AuctionStatus.VOID));
         assertEq(fee.balance + seller.balance, 0, "nothing paid");
     }
 

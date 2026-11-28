@@ -459,10 +459,50 @@ contract StreamTest is CoreFixture {
         stream.ownerOf(id);
         vm.expectRevert(_nonexistent(id));
         stream.itemHashOf(id);
-        vm.expectRevert(_nonexistent(id));
-        stream.rendererOf(id);
+        // The burned token has no metadata of its own, but its renderer is still named: the
+        // editions of a burned master are drawn through it.
         vm.expectRevert(_nonexistent(id));
         stream.tokenURI(id);
+        assertEq(stream.rendererOf(id), address(renderer));
+    }
+
+    /// @dev `rendererOf` answers for a work that was minted, never for an ID that was not: zero
+    ///      and the next ID to be minted are refused, before and after a mint and a burn.
+    function test_RendererOf_RefusesAnIdNeverMinted() public {
+        vm.expectRevert(_nonexistent(0));
+        stream.rendererOf(0);
+        vm.expectRevert(_nonexistent(1));
+        stream.rendererOf(1);
+        uint256 id = _mint(1);
+        sale.burn(address(stream), id);
+        assertEq(stream.rendererOf(id), address(renderer));
+        vm.expectRevert(_nonexistent(0));
+        stream.rendererOf(0);
+        vm.expectRevert(_nonexistent(id + 1));
+        stream.rendererOf(id + 1);
+    }
+
+    /// @dev A burned work keeps the rule of a live one: the pinned renderer, then the RENDERER
+    ///      module, then none; a pinned renderer whose code changed is still refused, never
+    ///      replaced by the module. `tokenURI` of the burned token reverts in every case.
+    function test_RendererOf_ABurnedWorkKeepsThePinTheModuleAndTheCodeCheck() public {
+        MockPinnedFacts pinned = new MockPinnedFacts();
+        Stream6529 s = _streamWithFacts(address(pinned));
+        uint256 id = sale.mint(address(s), _facts(1));
+        MockRenderer pin = new MockRenderer();
+        pinned.pin(address(s), id, address(pin));
+        sale.burn(address(s), id);
+        assertEq(s.rendererOf(id), address(pin), "the pin");
+        pinned.setFails(true);
+        vm.expectRevert(MockPinnedFacts.PinnedCodeChanged.selector);
+        s.rendererOf(id);
+        pinned.setFails(false);
+        pinned.pin(address(s), id, address(0));
+        assertEq(s.rendererOf(id), address(renderer), "the module");
+        s.removeModule(Slots.RENDERER);
+        assertEq(s.rendererOf(id), address(0), "none");
+        vm.expectRevert(_nonexistent(id));
+        s.tokenURI(id);
     }
 
     function test_Burn_OnlyInSaleCustodyBeforeAnOutcome() public {

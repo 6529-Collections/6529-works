@@ -334,7 +334,8 @@ The stack `script/DeployCore.sol` deploys with the committed genesis: the real
 `StreamEditions6529`, the uniform-price edition auction and its lens, each sale beside its
 master's 1/1 in the real English auction. Six masters by one artist with creator caps of none,
 none, 4, none, 6 and 2; five edition bidders, two 1/1 collectors, two keepers and a settler
-that submits bad orders. Clearing is compared with the per-unit brute-force reference
+that submits bad orders. The network also rescues the work of a 1/1 that is not settled, with
+the token's waits at zero. Clearing is compared with the per-unit brute-force reference
 [`UniformClearingReference`](../../test/helpers/UniformClearingReference.sol). One function
 asserts the state after every fourth call (`check_interval = 4`; every call in the `deep`
 profile); a handler check fails the campaign through the same function.
@@ -354,6 +355,7 @@ profile); a handler check fails the campaign through the same function.
 | INV-EA-11 | Beside the 1/1: a 1/1 bid in its anti-snipe window extends the 1/1 and never moves the edition end earlier; an unbid 1/1 settles to the museum. | handler check: `bidOneOfOne`, `settleOneOfOne` | as named |
 | INV-EA-12 | Per-settler sweeps and completability: a settler's call moves only its own progress (`sweepOf`); an order that skips a departure is accepted but never finishes its sender's sweep; a reordered one reverts with `InvalidSettlementOrder`; after any of these, a keeper settling from its own address completes settlement, and a later call by another settler returns true. | handler check: `settle` | `fifoHole`, `raise`, `settle` |
 | INV-EA-13 | No claim while SETTLING: while a sale's scan or sweep is unfinished, its bidder's claim and a pushed claim both revert with `InvalidAuctionState`. A book wider than one call's scan (24 words) settles over calls: the first stores scan progress and no result, and does not seal the edition. | handler check: `settle` | `wideBook`, `settle` |
+| INV-EA-14 | A rescued master: the network rescues the work of a 1/1 that is not settled, to a safe, to the auction itself, or to a safe that sends it straight back. The rescue changes nothing in the 1/1 sale; settling that sale closes it CANCELLED, with the standing bid credited once and the work with the rescue's recipient or, found in custody, in the museum (AUC-36, AUC-56); its edition sale then settles VOID with every bid refunded (EA-22). | handler check: `rescueOneOfOne`, `settleOneOfOne`, `settle`; `invariant_editionAuction` | `rescueOneOfOne`, `settleOneOfOne`, `settle`, `claim` |
 
 Non-vacuity: `EditionAuctionInvariantTest.test_EveryActionRuns`.
 

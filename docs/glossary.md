@@ -130,8 +130,9 @@ An addition already announced keeps the time it was given.
 ### rescue
 
 The network's move of a token that a removed minter still holds unsold, once the
-[rescue delay](#rescuedelay) has passed since the removal. It can never reach a token a
-collector holds.
+[rescue delay](#rescuedelay) has passed since the removal. It reaches only a token that a
+removed minter holds and whose sale outcome was never recorded. The English auction records the
+outcome before a work leaves it, so no work it sold can be rescued.
 
 ### rescueDelay
 

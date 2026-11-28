@@ -190,6 +190,43 @@ refunds, and its edition stays without a seal; once a module is in the slot agai
 can rebind such an edition after removing its sale contract. Transfers, and the minting of an
 edition that was sealed before, do not depend on the slot.
 
+**Retire the replaced module as a writer.** The replaced module keeps its storage and still
+answers calls. An artist can still list a contract in it (`register` needs no role), and the
+successor serves that listing by reading through. A listing or template version that the
+successor has written once is its own copy from then, and no longer follows the replaced module
+([LIM-IND-10](../audit/known-limitations.md#independent-stream)). So:
+
+1. **Write nothing in the successor before it is active.** A listing copied early (`setStatus`,
+   `lowerFeeShare`, a registration of its partner) misses what the current module records for
+   it during the wait.
+2. **Once the successor is active, stop the replaced module from listing.** `register` needs
+   an approved version, so no version may stay approved or be resumed in the replaced module.
+   For each template version, in one batch, first give the successor its own copy with two
+   calls that leave the version's status as it was, then close the version in the replaced
+   module. Which calls depends on the status the version has:
+
+   | The version is | In the successor | In the replaced module |
+   | --- | --- | --- |
+   | approved | `suspendTemplate(deployer)`, then `resumeTemplate(deployer)` | `revokeTemplate(deployer)` |
+   | suspended | `resumeTemplate(deployer)`, then `suspendTemplate(deployer)` | `revokeTemplate(deployer)` |
+   | revoked | `reinstateTemplate(deployer)`, then `revokeTemplate(deployer)` | nothing: it is revoked there already |
+
+   The replaced module then lists nothing more. The successor's versions keep their statuses
+   and its listings are served as before
+   ([`test_OnePair_ARetiredModuleTakesNoMoreListings`](../../test/integration/IndependentOnePair.t.sol),
+   `test_OnePair_RetiringKeepsASuspendedAndARevokedVersionAsTheyWere`).
+3. **Remove its setter rights.** Close the replaced module in the manager
+   (`setTargetClosed(replacedModule, true)`), so no later call changes a status, a share or a
+   sale contract there by mistake. From then every change is made in the successor.
+4. **Read it back.** For every editions contract the successor serves,
+   `entry(entry(editions).partner).partner` is that editions contract.
+
+What the edition auction enforces whether or not these steps were taken: it opens a sale only
+for the editions contract that its master's entry names
+([IND-78](../spec/independent-stream.md#rules-and-invariants)). A second editions contract
+listed for a master through the replaced module opens no sale and is never minted by the
+auction. A later sale contract for editions needs the same check.
+
 ## Two settings that follow a replaced module
 
 Two contracts keep their own pointer to a module instead of reading it at each use. The network
@@ -208,11 +245,36 @@ updates them as part of the replacement:
 
 ## Sale contracts (minters)
 
+**Before a sale contract is admitted** (`addMinter`, or `setAdapter` for Independent Stream
+tokens), check in its code that:
+
+- it mints every token to itself, never straight to a buyer: only the minter that holds a token
+  can record the token's outcome or burn it;
+- it records the outcome (`recordPrimarySale`) before any transfer of the token out of its
+  custody, on every path: a sale, an unsold work sent to the museum, a refund;
+- it closes a sale whose work the network rescued with refunds, reading the outcome the token
+  recorded, as the English auction does
+  ([AUC-36, AUC-56](../spec/stream-and-auctions.md#rules-and-invariants)).
+
+`rescue` reaches any token that a removed minter holds with no outcome recorded, and the token
+contract keeps no custody history. A token that left its sale contract with no outcome would
+stay within reach at any address with code that is later added and removed as a minter
+([LIM-SAL-14](../audit/known-limitations.md#sales-and-auctions)). The English auction keeps these
+rules ([AUC-57](../spec/stream-and-auctions.md#rules-and-invariants)).
+
 - A removed sale contract still finishes the sales it started.
 - A token left in a removed sale contract with no outcome can be rescued after `rescueDelay`
   (`Stream6529.rescue`); an edition with no seal can be rebound after `rebindDelay`
   (`StreamEditions6529.rebind`), then opened with `adopt` or closed with `closeEdition` on the new
   edition auction.
+- A rescue ends the work's sale, and two calls close it. Once the sale in the removed English
+  auction has reached its end, anyone calls `settle` on it: the standing bid is credited back
+  and the sale reads cancelled. If an edition sale followed that 1/1, anyone then calls
+  `settle` on the edition auction for it: that call voids it, and its bidders claim their
+  refunds (`claimBid`). Until each call is made, the bids of that sale stay where they are.
+- Name a rescue recipient other than the sale contract. A rescued work that is in the English
+  auction when its sale is settled is sent to the museum; one that reaches the auction after
+  its sale closed is sent there by anyone with `sendRescuedToMuseum(saleId)`.
 - For Independent Stream tokens, the Independent Stream module's
   `setAdapter(adapter, form, admitted)` admits a sale contract for one token form (ERC-721 or
   ERC-1155).
