@@ -27,7 +27,7 @@ strings from [`Typehashes`](../interfaces/types/Typehashes.sol), edition-terms v
 | Anyone, relaying a party's proof (`abi.encodePacked(wallet, signature)`) | `acceptPackage(root, acceptance, proof)`; the first acceptance of an account calls `ArtistRegistry.register` | CUR-7, CUR-19 |
 | A wallet of the artist's account | `revokeMove(artistId, nonce)` | CUR-11 |
 | An edition sale opening (view) | `isApprovedItem(root, itemHash, proof)` | CUR-24 |
-| An active minter of the bound Stream (the English auction), at the start | `authorize(token, request)`, then `IStream.mint(custody, facts)`; `preview` answers the same unverified | CUR-1, CUR-6, CUR-8 to CUR-10, CUR-12, CUR-14 |
+| An active minter of the bound Stream (the English auction), at the start | `authorize(token, request)`, then `IStream.mint(custody, facts)`; `preview` answers the same unverified | CUR-1, CUR-6, CUR-8 to CUR-10, CUR-12, CUR-14, CUR-27 |
 | The entropy module (views) | `packageOf`, `consumedItemOf` for its request gate | ENT-1 in [Entropy](../../docs/spec/entropy.md#rules-and-invariants) |
 | The network | `revokePackage`, `killSignerApprovals`, `setVerifier`, `setEntropyModule`, `releaseContent`, `disableSigner`, `enableSigner`; the genesis binds `bindStream` | CUR-15 to CUR-18, CUR-23; [role matrix](../../docs/audit/roles.md#packageregistry) |
 

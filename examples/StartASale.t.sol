@@ -10,9 +10,12 @@ pragma solidity 0.8.37;
 // work's payout vaults and opens its record in WorkFacts. If someone started the sale directly
 // first, the keeper finishes those steps with permissionless calls.
 
+import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { Splits } from "src/economics/Splits.sol";
 import { MintTerms, Work } from "src/interfaces/core/CoreTypes.sol";
 import { IMintPolicy } from "src/interfaces/core/IMintPolicy.sol";
+import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
+import { MoveAuthorization, StreamMintRequest } from "src/interfaces/types/PackageTypes.sol";
 import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { ExampleBase } from "./ExampleBase.sol";
 
@@ -23,7 +26,7 @@ contract ExampleStartASale is ExampleBase {
         Package memory pkg = _original(); // approved by the curation signer, accepted by the artist
         bytes memory request = _request(pkg);
         // Preview first: the policy (the package registry) answers the terms the start would
-        // lock, or reverts with the reason the start would revert with.
+        // lock, or reverts with the reason the start would refuse the item for.
         (, MintTerms memory t) =
             IMintPolicy(auction.policyOf(address(stream))).preview(address(stream), request);
         assertTrue(t.feeRecipient != address(0));
@@ -69,5 +72,37 @@ contract ExampleStartASale is ExampleBase {
         vm.stopPrank();
         assertEq(royalty, stream.workOf(tokenId).royaltyReceiver, "the royalty vault");
         assertTrue(facts.factsOf(address(stream), tokenId).opened);
+    }
+
+    /// Preview every item before anyone signs: an item that breaks a rule can be approved and
+    /// accepted, and is refused only when its sale starts. Preview refuses it first, with the
+    /// error the start would give.
+    function test_PreviewBeforeAnyoneSigns() public {
+        Package memory pkg = _original();
+        IMintPolicy policy = IMintPolicy(auction.policyOf(address(stream)));
+
+        // The lead artist as a fixed payee: the lead is paid only through its account.
+        pkg.item.payees = new ISplitWallet.Payee[](1);
+        pkg.item.payees[0] = ISplitWallet.Payee(0, artist, 100_000);
+        pkg.root = StreamHashing.leaf(StreamHashing.itemHash(pkg.item));
+        bytes memory refused = abi.encodeWithSelector(
+            IPackageRegistry.InvalidItem.selector, StreamHashing.itemHash(pkg.item)
+        );
+        vm.expectRevert(refused);
+        policy.preview(address(stream), _unsigned(pkg));
+
+        // Without the preview the package can still be approved, accepted and its move signed;
+        // the start then refuses the item, and every signature was for nothing.
+        _publish(pkg.root);
+        bytes memory request = _request(pkg);
+        vm.expectRevert(refused);
+        auction.start(address(stream), request);
+    }
+
+    /// The request preview reads before anything is signed: the item and its root, with an
+    /// empty proof and an empty move.
+    function _unsigned(Package memory pkg) internal pure returns (bytes memory) {
+        MoveAuthorization memory none;
+        return abi.encode(StreamMintRequest(pkg.root, pkg.item, new bytes32[](0), none));
     }
 }

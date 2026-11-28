@@ -1,0 +1,416 @@
+[
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "verifier_",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "stream_",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "constructor"
+  },
+  {
+    "inputs": [],
+    "name": "LOCAL_CHAIN_ID",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "SEPOLIA_CHAIN_ID",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "packageRoot",
+        "type": "bytes32"
+      }
+    ],
+    "name": "attestationOf",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "evidenceHash",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "bytes",
+        "name": "attestation",
+        "type": "bytes"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "string",
+        "name": "name",
+        "type": "string"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "metadataHash",
+        "type": "bytes32"
+      }
+    ],
+    "name": "createCollection",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "collectionId",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "packageRoot",
+        "type": "bytes32"
+      }
+    ],
+    "name": "evidenceOf",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "hash",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "bytes",
+        "name": "signature",
+        "type": "bytes"
+      }
+    ],
+    "name": "isValidSignature",
+    "outputs": [
+      {
+        "internalType": "bytes4",
+        "name": "",
+        "type": "bytes4"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "components": [
+          {
+            "internalType": "bytes32",
+            "name": "fileId",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "sha256Hash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "uint8",
+            "name": "role",
+            "type": "uint8"
+          }
+        ],
+        "internalType": "struct MediaFile[]",
+        "name": "media",
+        "type": "tuple[]"
+      }
+    ],
+    "name": "mediaHashOf",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "pure",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint8",
+            "name": "kind",
+            "type": "uint8"
+          },
+          {
+            "internalType": "uint256",
+            "name": "collectionId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "contentHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "mediaHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "recordFileId",
+            "type": "bytes32"
+          },
+          {
+            "components": [
+              {
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+              },
+              {
+                "internalType": "uint8",
+                "name": "role",
+                "type": "uint8"
+              }
+            ],
+            "internalType": "struct Party[]",
+            "name": "parties",
+            "type": "tuple[]"
+          },
+          {
+            "components": [
+              {
+                "internalType": "uint256",
+                "name": "artistId",
+                "type": "uint256"
+              },
+              {
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+              },
+              {
+                "internalType": "uint32",
+                "name": "share",
+                "type": "uint32"
+              }
+            ],
+            "internalType": "struct ISplitWallet.Payee[]",
+            "name": "payees",
+            "type": "tuple[]"
+          },
+          {
+            "components": [
+              {
+                "internalType": "string",
+                "name": "spdxId",
+                "type": "string"
+              },
+              {
+                "internalType": "bytes32",
+                "name": "textFileId",
+                "type": "bytes32"
+              }
+            ],
+            "internalType": "struct License",
+            "name": "license",
+            "type": "tuple"
+          },
+          {
+            "internalType": "uint8",
+            "name": "seedPolicy",
+            "type": "uint8"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "seed",
+            "type": "bytes32"
+          },
+          {
+            "components": [
+              {
+                "internalType": "bytes32",
+                "name": "saleKind",
+                "type": "bytes32"
+              },
+              {
+                "internalType": "address",
+                "name": "currency",
+                "type": "address"
+              },
+              {
+                "internalType": "bytes",
+                "name": "params",
+                "type": "bytes"
+              }
+            ],
+            "internalType": "struct SaleTerms",
+            "name": "sale",
+            "type": "tuple"
+          },
+          {
+            "components": [
+              {
+                "internalType": "uint32",
+                "name": "maxCount",
+                "type": "uint32"
+              },
+              {
+                "internalType": "address",
+                "name": "currency",
+                "type": "address"
+              },
+              {
+                "internalType": "bytes32",
+                "name": "saleKind",
+                "type": "bytes32"
+              },
+              {
+                "internalType": "bytes",
+                "name": "params",
+                "type": "bytes"
+              }
+            ],
+            "internalType": "struct EditionTerms",
+            "name": "edition",
+            "type": "tuple"
+          }
+        ],
+        "internalType": "struct PackageItem",
+        "name": "item",
+        "type": "tuple"
+      }
+    ],
+    "name": "oneItemPackage",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "itemHash",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "packageRoot",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "pure",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "stream",
+    "outputs": [
+      {
+        "internalType": "contract IOpenGateStream",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "verifier",
+    "outputs": [
+      {
+        "internalType": "contract IOpenGateVerifier",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "collectionId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "creator",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "string",
+        "name": "name",
+        "type": "string"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes32",
+        "name": "metadataHash",
+        "type": "bytes32"
+      }
+    ],
+    "name": "CollectionOpened",
+    "type": "event"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "NotAContract",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "chainId",
+        "type": "uint256"
+      }
+    ],
+    "name": "NotATestChain",
+    "type": "error"
+  }
+]

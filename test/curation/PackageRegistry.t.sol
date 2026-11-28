@@ -1531,8 +1531,8 @@ contract PackageRegistryTest is CurationBase {
         assertEq(registry.consumedItemOf(SHA_A), _hash(item));
     }
 
-    /// @dev `preview` refuses what `authorize` would: a malformed request, the item rules, a
-    ///      lead artist with no identity, and invalid product terms.
+    /// @dev `preview` refuses what `authorize` would: a malformed request, the item rules and
+    ///      invalid product terms.
     function test_preview_reverts() public {
         address c = stream;
         vm.expectRevert(IPackageRegistry.InvalidMintRequest.selector);
@@ -1540,9 +1540,6 @@ contract PackageRegistryTest is CurationBase {
         PackageItem memory item = _item(lead, SHA_A);
         bytes32 root = StreamHashing.leaf(_hash(item));
         MoveAuthorization memory none;
-        // The lead has no identity yet: nobody has accepted a package for this account.
-        vm.expectRevert(IPackageRegistry.InvalidLeadArtist.selector);
-        registry.preview(c, abi.encode(StreamMintRequest(root, item, new bytes32[](0), none)));
         item.sale.saleKind = 0;
         vm.expectRevert(IPackageRegistry.InvalidItemSale.selector);
         registry.preview(c, abi.encode(StreamMintRequest(root, item, new bytes32[](0), none)));
@@ -1553,6 +1550,54 @@ contract PackageRegistryTest is CurationBase {
         stub.set(ProductEconomics(address(0), 1, 5000));
         vm.expectRevert(IPackageRegistry.InvalidWorkTerms.selector);
         registry.preview(stream, abi.encode(StreamMintRequest(root, item, new bytes32[](0), none)));
+    }
+
+    /// @dev `preview` answers before anything is signed: the root is not registered, nobody
+    ///      has accepted and the lead has no identity. Each party counts as the artist its
+    ///      acceptance will create (its address as a number), and the creator is the lead's own
+    ///      address. The answer is the one `authorize` gives once the package is signed.
+    function test_preview_beforeAnyAcceptance() public {
+        PackageItem memory item = _masterItem(SHA_A);
+        bytes32 root = StreamHashing.leaf(_hash(item));
+        MoveAuthorization memory none;
+        assertEq(artists.artistIdOf(lead), 0, "the lead has no identity yet");
+        bytes memory request = _request(root, item, new bytes32[](0), none);
+        (MintFacts memory f, MintTerms memory t) = registry.preview(stream, request);
+        assertEq(f.artistId, _id(lead));
+        assertEq(f.itemHash, _hash(item));
+        assertEq(t.creator, lead);
+        // `authorize` is not weakened: without the acceptances it still refuses.
+        _register(root);
+        MoveAuthorization memory move = _move(leadKey, root, _hash(item), 0);
+        vm.prank(address(minter));
+        vm.expectRevert(
+            abi.encodeWithSelector(IPackageRegistry.PartyNotAccepted.selector, root, lead)
+        );
+        _policyCall(registry, root, item, new bytes32[](0), move);
+        // Signed, it answers what the preview answered.
+        _accept(root, leadKey);
+        _accept(root, collabKey);
+        (MintFacts memory g, MintTerms memory u) =
+            _policyCall(registry, root, item, new bytes32[](0), move);
+        assertEq(abi.encode(f), abi.encode(g), "the same facts");
+        assertEq(abi.encode(t), abi.encode(u), "the same terms");
+    }
+
+    /// @dev A party the registry already knows counts under its artist ID, not its address: two
+    ///      accounts of one artist are refused by `preview` before either accepts this root.
+    function test_preview_resolvesAKnownPartysArtistId() public {
+        bytes32 first = keccak256("first");
+        _register(first);
+        _accept(first, leadKey);
+        address next = vm.addr(0xA9);
+        artists.recover(_id(lead), next);
+        PackageItem memory item = _item(lead, SHA_A);
+        item.parties = new Party[](2);
+        item.parties[0] = Party(lead, uint8(PartyRole.ARTIST));
+        item.parties[1] = Party(next, uint8(PartyRole.ARTIST));
+        _previewExpect(
+            item, abi.encodeWithSelector(IPackageRegistry.InvalidItem.selector, _hash(item))
+        );
     }
 
     /// @dev The request's length check passes from 160 bytes (the head of a `StreamMintRequest`):
@@ -2206,7 +2251,22 @@ contract PackageRegistryTest is CurationBase {
         }
     }
 
+    /// @dev `preview` refuses the item with `reason`, given only the item and its root: no
+    ///      proof and no move.
+    function _previewExpect(PackageItem memory item, bytes memory reason) internal {
+        MoveAuthorization memory none;
+        bytes memory request =
+            _request(StreamHashing.leaf(_hash(item)), item, new bytes32[](0), none);
+        vm.expectRevert(reason);
+        registry.preview(stream, request);
+    }
+
+    /// @dev The item is refused with `InvalidItem` by `preview`, before the package is
+    ///      registered or accepted and again after, and by `authorize`.
     function _expectInvalid(PackageItem memory item, uint256[] memory keys) internal {
+        _previewExpect(
+            item, abi.encodeWithSelector(IPackageRegistry.InvalidItem.selector, _hash(item))
+        );
         bytes32 root = _prepare(item, keys);
         _consumeExpectInvalid(root, item, keys[0]);
     }
@@ -2214,23 +2274,35 @@ contract PackageRegistryTest is CurationBase {
     function _consumeExpectInvalid(bytes32 root, PackageItem memory item, uint256 leadKey_)
         internal
     {
+        bytes memory reason =
+            abi.encodeWithSelector(IPackageRegistry.InvalidItem.selector, _hash(item));
+        _previewExpect(item, reason);
         MoveAuthorization memory move = _move(leadKey_, root, _hash(item), 0);
         vm.prank(address(minter));
-        vm.expectRevert(abi.encodeWithSelector(IPackageRegistry.InvalidItem.selector, _hash(item)));
+        vm.expectRevert(reason);
         _policyCall(registry, root, item, new bytes32[](0), move);
     }
 
+    /// @dev As {_expectInvalid}, for another error.
     function _expectInvalidWith(PackageItem memory item, uint256[] memory keys, bytes memory reason)
         internal
     {
+        _previewExpect(item, reason);
         bytes32 root = _prepare(item, keys);
+        _previewExpect(item, reason);
         MoveAuthorization memory move = _move(keys[0], root, _hash(item), 0);
         vm.prank(address(minter));
         vm.expectRevert(reason);
         _policyCall(registry, root, item, new bytes32[](0), move);
     }
 
+    /// @dev The item passes `preview` before anything is registered or accepted, and
+    ///      `authorize` once it is.
     function _expectValid(PackageItem memory item, uint256[] memory keys) internal {
+        MoveAuthorization memory none;
+        registry.preview(
+            stream, _request(StreamHashing.leaf(_hash(item)), item, new bytes32[](0), none)
+        );
         bytes32 root = _prepare(item, keys);
         _consume(root, item, new bytes32[](0), _move(keys[0], root, _hash(item), 0));
         assertEq(registry.consumedItemOf(item.contentHash), _hash(item));

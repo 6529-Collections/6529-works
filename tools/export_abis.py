@@ -13,7 +13,12 @@ src/economics/interfaces/), plus abi/manifest.json, which lists for each file:
     docs/integrators/abis-and-interface-ids.md;
   - the number of functions, events and errors in the ABI;
   - the solc version that compiled it;
-  - the SHA-256 of the exported ABI file's bytes, which does not depend on git.
+  - the SHA-256 of the exported ABI file's bytes, which does not depend on git;
+  - `"testOnly": true` for a contract that is not part of the protocol (TEST_ONLY below).
+
+One contract outside src/ is exported too: the Sepolia open gate (script/sepolia/), a test-only
+contract a test page calls on a Sepolia instance. It is never deployed on mainnet, and its
+manifest entry says so with `testOnly`.
 
 Some contracts answer part of their surface through a lens or an extension they forward calls
 to with a read-only `staticcall` (docs/integrators/abis-and-interface-ids.md). For those,
@@ -56,6 +61,11 @@ EXCLUDED_DIRS = ("src/interfaces/external/",)
 FORWARDED = {
     "src/sales/UniformEditionAuction.sol": "UniformEditionAuctionLens",
     "src/independent/IndependentEditionAuction.sol": "IndependentEditionAuctionLens",
+}
+# Contracts outside src/ that are exported all the same, by source path. Each is test-only: not
+# part of the protocol and never deployed on mainnet. Its manifest entry carries `testOnly`.
+TEST_ONLY = {
+    "script/sepolia/SepoliaOpenGate.sol": "SepoliaOpenGate",
 }
 # Sources of the plain permanent core; a name declared both here and elsewhere is exported
 # under core/.
@@ -265,7 +275,7 @@ def collect(root: Path, out: Path) -> dict[str, dict]:
         ):
             raise ExportError(f"{path}: malformed artifact (abi or methodIdentifiers)")
         abis_by_name.setdefault(name, []).append(abi)
-        if not source.startswith("src/"):
+        if not source.startswith("src/") and TEST_ONLY.get(source) != name:
             continue
         if source not in source_cache:
             # A restored compiler cache can hold artifacts of sources that no longer exist, or of
@@ -321,12 +331,15 @@ def keyed(by_name: dict[str, list[dict]]) -> dict[str, dict]:
 
 
 def exported(kind: str, source: str) -> bool:
+    if not source.startswith("src/"):
+        return kind == "contract" and source in TEST_ONLY
     return kind == "contract" or (kind == "interface" and is_public_interface(source))
 
 
 def expected(root: Path) -> list[str]:
-    """Every contract and public interface the sources under src/ declare."""
-    names = []
+    """Every contract and public interface the sources under src/ declare, and the test-only
+    contracts of TEST_ONLY whose source exists."""
+    names = [name for source, name in sorted(TEST_ONLY.items()) if (root / source).is_file()]
     for file in sorted((root / "src").rglob("*.sol")):
         source = file.relative_to(root).as_posix()
         for kind, name, _, _ in declarations(strip_solidity(file.read_text(encoding="utf-8"))):
@@ -367,6 +380,8 @@ def render(found: dict[str, dict]) -> dict[str, bytes]:
             "solc": c["solc"],
             "sha256": hashlib.sha256(data).hexdigest(),
         }
+        if c["source"] in TEST_ONLY:
+            entry["testOnly"] = True
         if c["kind"] == "interface":
             entry["interfaceId"] = interface_id(abi, c["selectors"], c["own"], c["inherited"])
         lens = FORWARDED.get(c["source"])

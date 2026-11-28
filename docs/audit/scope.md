@@ -15,7 +15,7 @@ with `--artifacts out --update` to refresh them. No audit has taken place.
 | --- | --- |
 | Language and compiler | Solidity 0.8.37, EVM `prague`, optimizer on (200 runs), `via_ir` off ([`foundry.toml`](../../foundry.toml)) |
 | Dependencies | OpenZeppelin Contracts 5.7.0 and forge-std 1.17.0, as git submodules in `lib/` |
-| Source lines | 14,163 non-blank, non-comment lines in 121 files under `src/` (budget: 17,000) |
+| Source lines | 14,152 non-blank, non-comment lines in 121 files under `src/` (budget: 17,000) |
 | Deployed contracts | Every contract `script/DeployCore.sol` deploys: the permanent core, the money contracts, the modules, the governance pair and the two Independent Stream deployers (the deploy order is in the [runbook](../../script/README.md#how-a-deployment-is-built)) |
 | Linked libraries | None: every library function is `internal` |
 | Proxies and `delegatecall` | None in `src/`. The one exception is OpenZeppelin `Multicall` inside `AccessManager` ([ADR 0002](../adr/0002-access-manager-hardening.md)) |
@@ -63,7 +63,7 @@ Deployed once and never replaced ([ADR 0010](../adr/0010-plain-permanent-core.md
 
 | Contract | Source | nSLOC | Runtime (bytes) | Initcode (bytes) | EIP-170 margin |
 | --- | --- | ---: | ---: | ---: | ---: |
-| `PackageRegistry` (the mint policy) | [`src/curation/PackageRegistry.sol`](../../src/curation/PackageRegistry.sol) | 547 | 20,308 | 22,019 | 4,268 |
+| `PackageRegistry` (the mint policy) | [`src/curation/PackageRegistry.sol`](../../src/curation/PackageRegistry.sol) | 558 | 20,446 | 22,157 | 4,130 |
 | `Eip712CurationVerifier` | [`src/curation/Eip712CurationVerifier.sol`](../../src/curation/Eip712CurationVerifier.sol) | 117 | 5,835 | 6,526 | 18,741 |
 | `StreamTerms` (TERMS) | [`src/terms/StreamTerms.sol`](../../src/terms/StreamTerms.sol) | 152 | 7,037 | 7,822 | 17,539 |
 | `WorkRules` (RECORDS) | [`src/records/WorkRules.sol`](../../src/records/WorkRules.sol) | 388 | 15,758 | 16,702 | 8,818 |
@@ -124,7 +124,7 @@ The "Used by" column is a reading aid; the import graph is authoritative.
 
 ### Interfaces and shared types
 
-2,422 nSLOC in [`src/interfaces/`](../../src/interfaces/) (with `core/` and `types/`) and
+2,400 nSLOC in [`src/interfaces/`](../../src/interfaces/) (with `core/` and `types/`) and
 [`src/economics/interfaces/`](../../src/economics/interfaces/), plus the Chainlink interfaces in
 [`src/entropy/`](../../src/entropy/). The frozen interfaces of the permanent core are in
 `src/interfaces/core/`. They count toward the line budget and are in scope: an error in a

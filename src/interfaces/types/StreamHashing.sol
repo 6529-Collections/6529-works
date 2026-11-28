@@ -13,12 +13,15 @@ import { MediaFile } from "./ContentTypes.sol";
 ///        own domain label, so a hash of one type can never be replayed as another;
 ///      - no chain ID and no contract address enter these hashes, so a package root is the same
 ///        on every chain and deployment;
-///      - a package root is an OpenZeppelin `MerkleProof` root (sorted-pair keccak256) over the
-///        leaves `keccak256(bytes.concat(itemHash))`. Double hashing makes a leaf's preimage 32
-///        bytes, so an inner node (64 bytes) can never pass as a leaf. This is exactly the
-///        OpenZeppelin merkle-tree library's `StandardMerkleTree` with leaf values
-///        `[PACKAGE_ITEM_DOMAIN, item]` and leaf encoding `["bytes32", <PackageItem tuple>]`.
-///        A one-item package's root is its leaf.
+///      - a package root is a Merkle root of sorted-pair keccak256 hashes over the leaves
+///        `keccak256(bytes.concat(itemHash))`. Double hashing makes a leaf's preimage 32
+///        bytes, so an inner node (64 bytes) can never pass as a leaf. The contracts check one
+///        thing: OpenZeppelin `MerkleProof.verify` of the leaf against the root, with a proof
+///        of at most `Limits.MAX_PROOF_DEPTH` nodes. They never rebuild a tree, so any tree of
+///        sorted-pair hashes is accepted, whatever its shape or leaf order. Tools build one
+///        layout: the OpenZeppelin merkle-tree library's `StandardMerkleTree` with leaf values
+///        `[PACKAGE_ITEM_DOMAIN, item]` and leaf encoding `["bytes32", <PackageItem tuple>]`,
+///        whose leaf hash is the leaf above. A one-item package's root is its leaf.
 ///      The canonical JSON package document (RFC 8785) maps field for field onto these structs;
 ///      the committed form is the ABI encoding. Every function is internal: nothing here is
 ///      linked bytecode. Callers bound array and string lengths before hashing.

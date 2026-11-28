@@ -19,7 +19,7 @@ enum Outcome {
 /// @param serial The work's number in its collection, from 1.
 /// @param kind The item kind (0 original, 1 edition master). Recorded, never interpreted.
 /// @param seedPolicy The seed policy (0 none, 1 artist, 2 VRF). Recorded, never interpreted.
-/// @param outcome How the first sale ended.
+/// @param outcome How the first sale ended: an `Outcome` (0 NONE, 1 SOLD, 2 UNSOLD, 3 RESCUED).
 /// @param royaltyReceiver Where ERC-2981 royalties are paid.
 /// @param royaltyRate The royalty rate, out of 100,000.
 /// @param royaltyRateLocked True once the rate can never change again.
@@ -83,8 +83,11 @@ struct Collection {
 
 /// @notice An edition: two storage slots.
 /// @param minter The one sale contract that may mint it; zero until the edition is created.
-/// @param maxSupply The most copies that may ever exist: the creator's cap (or no cap) until the
-///        seal, the count sold after it.
+/// @param maxSupply The most copies that may ever exist. Until the seal it is the creator's cap
+///        (`type(uint40).max` for no cap); the seal overwrites it with the final maximum,
+///        which is at least the count minted and at most that cap (copies up to it may still
+///        be minted by the edition's minter). The cap itself is not stored after the seal: it
+///        stays in the `EditionCreated` event.
 /// @param minted Copies minted so far. Burned copies still count.
 /// @param supplySealed True once the supply is fixed for good.
 /// @param royaltyReceiver Where ERC-2981 royalties are paid.

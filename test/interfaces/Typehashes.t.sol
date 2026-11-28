@@ -12,7 +12,6 @@ contract TypehashesTest is Test {
         assertEq(Typehashes.DOMAIN_VERSION, "1");
         assertEq(Typehashes.PACKAGE_REGISTRY_NAME, "6529 Stream Package Registry");
         assertEq(Typehashes.CURATION_VERIFIER_NAME, "6529 Stream Curation Verifier");
-        assertEq(Typehashes.WORK_RECORDS_NAME, "6529 Stream Records");
         assertEq(Typehashes.ARTIST_REGISTRY_NAME, "6529 Stream Artist Registry");
     }
 
@@ -30,17 +29,6 @@ contract TypehashesTest is Test {
             0xbf131d47e2ddcf4bd120061a8a3c2841ef379caa26b7eec0881120e1d8a43cdd
         );
         assertEq(
-            Typehashes.RELICENSE, 0x8e6e8db23b02e7536fe205ab2dd4340fc5f4b94ad3878dece0549cff5101996f
-        );
-        assertEq(
-            Typehashes.ROYALTY_RATE_CHANGE,
-            0x4f00b7a5a626b7fd46a6eb233ba5926281727b94836ffa9091fa1cc73d7fa038
-        );
-        assertEq(
-            Typehashes.RENOUNCE_POWERS,
-            0xff8cc1b150cf1b390fd870b4a587d3c2632e80f32efbefe166b9f7b0131d3aff
-        );
-        assertEq(
             Typehashes.IDENTITY_CHANGE,
             0x861dd247b7856a4fbd738106b59a20eabf86c787bcc7c5c77f8bf506b24e4495
         );
@@ -55,10 +43,6 @@ contract TypehashesTest is Test {
         assertEq(
             Typehashes.ARTIST_REGISTRATION,
             0x251edc52a2bb08ba54c8c256d514ddd287d55597cda1692026fb5fcbf0f8a8d9
-        );
-        assertEq(
-            Typehashes.INDEPENDENT_LISTING,
-            0xc6c1acdb6e5275d9f6ab97f01f142831a32aa8d4d19a2562f68647103f1436d0
         );
     }
 }

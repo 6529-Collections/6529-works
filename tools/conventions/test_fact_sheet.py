@@ -186,8 +186,8 @@ class RecordStatesTest(unittest.TestCase):
 
 class SaleAndDisputeTest(unittest.TestCase):
     def test_every_sale_outcome(self) -> None:
-        """DCL-28: NONE, SOLD, UNBID, FROZEN_OUT or RESCUED; only SOLD carries currency and price."""
-        for outcome in ("NONE", "SOLD", "UNBID", "FROZEN_OUT", "RESCUED"):
+        """DCL-28: NONE, SOLD, UNSOLD or RESCUED; only SOLD carries currency and price."""
+        for outcome in ("NONE", "SOLD", "UNSOLD", "RESCUED"):
             with self.subTest(outcome):
                 c = build(lambda i, o=outcome: reads(i)["Stream6529"]["primarySale"].update(outcome=o))
                 self.assertEqual(c["sale"]["outcome"], outcome)

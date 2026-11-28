@@ -102,7 +102,7 @@ interface IPackageRegistry is IERC165 {
     /// @notice The item names no sale kind, or a currency other than ETH (`CURRENCY_ETH` or
     ///         `CURRENCY_DEFAULT`).
     error InvalidItemSale();
-    /// @notice The item names no parties, or (a preview) its lead party has no artist ID yet.
+    /// @notice The item names no parties.
     error InvalidLeadArtist();
     /// @notice The item's seed does not fit its seed policy, or it is a VRF item and no entropy
     ///         module is set.

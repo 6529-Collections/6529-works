@@ -53,6 +53,24 @@ the content was released for this artist; for a VRF item, the seed is delivered;
 artist's account is not frozen or changing; the auction is not paused. `PackageRegistry.preview`
 answers the mint facts and terms a start would get.
 
+**Check each item before anyone signs.** The item rules are enforced when a sale starts, not
+when a package is approved or accepted, and a signed package cannot be corrected: a broken item
+means a new package and new signatures. Call `PackageRegistry.preview(stream,
+abi.encode(StreamMintRequest))` for every item first. It reads only the item and the package
+root of the request, so the proof and the move may be empty, and it works before any party has
+accepted (a party with no identity yet counts as the artist its first acceptance will create).
+It runs every item check a start runs and reverts with the same errors: the sale kind and
+currency, the seed policy and seed, the license ID, the content and edition fields, and the
+party and payee rules (`InvalidItem`): a lead who is an `ARTIST`, parties of distinct artists,
+no more payees than parties, payees strictly ascending by `(artistId, account)` with exactly
+one of the two set, no zero share, shares summing to 100,000, every payee a party (by account
+or by artist ID), and no fixed payee equal to the lead artist's account. It does not check the
+approval of the root, the proof, the acceptances or the move, which exist only once the package
+is signed; nor the content rules, so an item whose content a live token already holds, or whose
+content is reserved after a burn, passes the preview and is refused at the start (read
+`Stream6529.tokenOfContent` and `PackageRegistry.releasedTo`); nor that a VRF item's seed is
+delivered; nor the media files, which the record checks when it is opened.
+
 **The move signature.** Any wallet of the lead artist's account signs, in the package registry's
 EIP-712 domain, `MoveToStream(bytes32 packageRoot,bytes32 itemHash,uint256 nonce,uint64 deadline)`;
 `PackageRegistry.moveDigest` returns the digest. Use nonces in order from 0. Any wallet of the

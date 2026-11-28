@@ -14,7 +14,10 @@ off-chain. Events are in [Events and indexing](events-and-indexing.md), addresse
 [`abi/`](../../abi/) holds the ABIs of the code on this commit, exported from the build by
 [`tools/export_abis.py`](../../tools/export_abis.py) (`--check` fails when they differ). They
 are the ABIs of `main`, not of a deployment: for a deployed instance, build its commit.
-`abi/manifest.json` lists each file with its kind, source path, interface ID and hash.
+`abi/manifest.json` lists each file with its kind, source path, interface ID and hash. One
+entry is not part of the protocol: `SepoliaOpenGate`, a Sepolia test contract that is never
+deployed on mainnet, carries `"testOnly": true`; a consumer that iterates `contracts` filters on
+that field.
 
 ```bash
 forge build && python tools/export_abis.py          # rewrite abi/
@@ -88,7 +91,7 @@ for one contract on one chain. Each contract reports its domain through EIP-5267
 | --- | --- | --- | --- |
 | PackageRegistry | `6529 Stream Package Registry` | `1` | `Typehashes.PACKAGE_REGISTRY_NAME`, `DOMAIN_VERSION` |
 | Eip712CurationVerifier | `6529 Stream Curation Verifier` | `1` | `Typehashes.CURATION_VERIFIER_NAME` |
-| WorkRules (RECORDS module) | `6529 Stream Records` | `1` | `Typehashes.WORK_RECORDS_NAME` |
+| WorkRules (RECORDS module) | `6529 Stream Rules` | `1` | `WorkRules.NAME` |
 | Accounts (accounts module) | `6529 Stream Artist Registry` | `1` | `Typehashes.ARTIST_REGISTRY_NAME` |
 | StatementLog | `6529 Stream Statement Log` | `1` | the constructor of [`StatementLog.sol`](../../src/records/StatementLog.sol) |
 | SplitLedger (the release verifier) | `6529 Stream Release Verifier` | `1` | the constructor of [`SplitLedger.sol`](../../src/economics/SplitLedger.sol) |
@@ -102,20 +105,23 @@ The `Typehashes` constants are in
 
 Type strings exactly as in code; typehashes pinned by `test_signedPayloadTypehashes` in
 [`test/interfaces/Typehashes.t.sol`](../../test/interfaces/Typehashes.t.sol) unless noted.
+The three `WorkRules` values are public constants of the RECORDS module, pinned by
+`test_Typehashes_Golden` in
+[`WorkRulesPorted.t.sol`](../../test/records/WorkRulesPorted.t.sol); each binds the token
+contract as well as the token ID.
 
 | Constant | Type string | Typehash | Domain and signer |
 | --- | --- | --- | --- |
 | `Typehashes.MOVE_TO_STREAM` | `MoveToStream(bytes32 packageRoot,bytes32 itemHash,uint256 nonce,uint64 deadline)` | `0xe193fedc71b458003faf3a90795989683ea6a572f7cae0f6729d1219894814f8` | Package registry; any wallet of the lead artist's account |
 | `Typehashes.PACKAGE_ACCEPTANCE` | `PackageAcceptance(bytes32 packageRoot,address account,bytes32 profileId,bytes32 profileDocHash,uint64 deadline)` | `0x557d83fa1b5c5123a734c14182eab668ea8678f09c42986018a05d2be5aa362f` | Package registry; any wallet of the party's account |
 | `Typehashes.PACKAGE_APPROVAL` | `PackageApproval(bytes32 packageRoot,bytes32 evidenceHash,uint256 signerEpoch)` | `0xbf131d47e2ddcf4bd120061a8a3c2841ef379caa26b7eec0881120e1d8a43cdd` | Curation verifier; a curation signer, at its current `signerEpoch` |
-| `Typehashes.RELICENSE` | `Relicense(uint256 tokenId,bytes32 licenseKey,bytes32 textFileId,bytes32 stateHash,uint64 deadline)` | `0x8e6e8db23b02e7536fe205ab2dd4340fc5f4b94ad3878dece0549cff5101996f` | Records module; every party of the item, in order |
-| `Typehashes.ROYALTY_RATE_CHANGE` | `RoyaltyRateChange(uint256 tokenId,uint32 rate,bytes32 stateHash,uint64 deadline)` | `0x4f00b7a5a626b7fd46a6eb233ba5926281727b94836ffa9091fa1cc73d7fa038` | Records module; every party of the item, in order |
-| `Typehashes.RENOUNCE_POWERS` | `RenouncePowers(uint256 tokenId,uint16 powers,bytes32 stateHash,uint64 deadline)` | `0xff8cc1b150cf1b390fd870b4a587d3c2632e80f32efbefe166b9f7b0131d3aff` | Records module; any wallet of the lead artist's account (with the network for `ROYALTY_RATE` or `RELICENSE`) |
+| `WorkRules.RELICENSE_TYPEHASH` | `Relicense(address token,uint256 tokenId,bytes32 licenseKey,bytes32 textFileId,bytes32 stateHash,uint64 deadline)` | `0x931a811e6b684375c33ff9dd19f465f9b0029f067114a85c36e70a2515a9214a` | Records module; every party of the item, in order, all with the same `deadline` |
+| `WorkRules.ROYALTY_RATE_TYPEHASH` | `RoyaltyRateChange(address token,uint256 tokenId,uint24 rate,bytes32 stateHash,uint64 deadline)` | `0xce5d0f43a86dedd7a3ef97fdc2aa082a7da4503c38bcc5d69a37918796836df2` | Records module; every party of the item, in order, all with the same `deadline` |
+| `WorkRules.RENOUNCE_POWERS_TYPEHASH` | `RenouncePowers(address token,uint256 tokenId,uint16 powers,bytes32 stateHash,uint64 deadline)` | `0x51c2848ada45e48191946c63376efc2c3cbcc5c0465555da04b4041af793cb8c` | Records module; any wallet of the lead artist's account (with the network for `ROYALTY_RATE` or `RELICENSE`) |
 | `Typehashes.IDENTITY_CHANGE` | `IdentityChange(uint256 artistId,address root,address payout,bytes32 profileId,bytes32 profileDocHash,uint256 nonce,uint64 deadline)` | `0x861dd247b7856a4fbd738106b59a20eabf86c787bcc7c5c77f8bf506b24e4495` | Accounts module; any wallet of the account (the account's own change) |
 | `Typehashes.REPLACEMENT_ACCEPTANCE` | `ReplacementAcceptance(uint256 artistId,address root,address payout,bytes32 profileId,bytes32 profileDocHash,bytes32 evidenceHash,uint64 deadline)` | `0xa0e556173f6123b1243ffd400cc5066b72e9f63a185f7c223a7a9761be52aeff` | Accounts module; the new root of a network replacement (a raw signature, used once) |
 | `Typehashes.ACCOUNT_CONSENT` | `Consent(address subject,bytes32 what)` | `0x698c989ad77f65b3786711063b64ef5589a2f9efc6261c97a73e4eee803af539` | Accounts module; any wallet of the account, for the contract `subject` only (`requireConsent`; an Independent Stream collaborator's consent to an item) |
 | `Typehashes.ARTIST_REGISTRATION` | `ArtistRegistration(address account,bytes32 profileId,bytes32 profileDocHash,uint64 deadline)` | `0x251edc52a2bb08ba54c8c256d514ddd287d55597cda1692026fb5fcbf0f8a8d9` | Accounts module; the new account itself (a raw signature, `registerIndependent`) |
-| `Typehashes.INDEPENDENT_LISTING` | `IndependentListing(uint256 artistId,address token,uint8 form,address partner,uint32 feeShare,address feeRecipient,uint64 deadline)` | `0xc6c1acdb6e5275d9f6ab97f01f142831a32aa8d4d19a2562f68647103f1436d0` | Accounts module; any wallet of the artist's account (`listIndependentContract`) |
 | `StatementLog` `HASHREF_TYPEHASH` | `HashRef(uint16 algorithm,bytes32 digest)` | `0x121a61476ab0828add4a5b9b9f2bb805adcfa15d81ff19494f98b0fd3e0bd6ed` | (a member type) |
 | `StatementLog` `STATEMENT_TYPEHASH` | `Statement(address token,uint256 id,bytes32 kind,bytes32 schema,HashRef content,string uri,bytes32 fileId,bytes32 supersedes)HashRef(uint16 algorithm,bytes32 digest)` | `0xc5917de59a1e9cd194c71a1bfa5d2b7a821403b15a6c26ba9ed4aaa207f324f6` | (a member type, and the statement's identity in the entry hash) |
 | `StatementLog` `AUTHORIZATION_TYPEHASH` | `Authorization(uint8 role,address signer,uint256 nonce,uint64 deadline,Statement statement)HashRef(uint16 algorithm,bytes32 digest)Statement(address token,uint256 id,bytes32 kind,bytes32 schema,HashRef content,string uri,bytes32 fileId,bytes32 supersedes)` | `0x31b41af4c88eb6a6042a07475f214b72f1819151382b4f7c6600f092bf061f89` | Statement log; the relayed signer |
@@ -137,9 +143,9 @@ ABI-encoded as a 32-byte word:
 | MoveToStream | `keccak256(abi.encode(MOVE_TO_STREAM, packageRoot, itemHash, nonce, deadline))` | `PackageRegistry.moveDigest` |
 | PackageAcceptance | `keccak256(abi.encode(PACKAGE_ACCEPTANCE, packageRoot, account, profileId, profileDocHash, deadline))` | `PackageRegistry.acceptanceDigest` |
 | PackageApproval | `keccak256(abi.encode(PACKAGE_APPROVAL, packageRoot, evidenceHash, signerEpoch))` | `Eip712CurationVerifier.approvalDigest` |
-| Relicense | `keccak256(abi.encode(RELICENSE, tokenId, licenseKey, textFileId, stateHash, deadline))`, `licenseKey` of the new license | none; use the records module's domain |
-| RoyaltyRateChange | `keccak256(abi.encode(ROYALTY_RATE_CHANGE, tokenId, rate, stateHash, deadline))` | none |
-| RenouncePowers | `keccak256(abi.encode(RENOUNCE_POWERS, tokenId, powers, stateHash, deadline))`, `powers` a `uint16` mask of `WorkPowers` bits | none; use the records module's domain |
+| Relicense | `keccak256(abi.encode(RELICENSE_TYPEHASH, token, tokenId, licenseKey, textFileId, stateHash, deadline))`, `licenseKey` of the new license | none; use the records module's domain (`WorkRules.domainSeparator`) |
+| RoyaltyRateChange | `keccak256(abi.encode(ROYALTY_RATE_TYPEHASH, token, tokenId, rate, stateHash, deadline))`, `rate` a `uint24` | none; use the records module's domain |
+| RenouncePowers | `keccak256(abi.encode(RENOUNCE_POWERS_TYPEHASH, token, tokenId, powers, stateHash, deadline))`, `powers` a `uint16` mask of `WorkPowers` bits | none; use the records module's domain |
 | IdentityChange | `keccak256(abi.encode(IDENTITY_CHANGE, artistId, root, payout, profileId, profileDocHash, nonce, deadline))` | `Accounts.changeDigest` |
 | ReplacementAcceptance | `keccak256(abi.encode(REPLACEMENT_ACCEPTANCE, artistId, root, payout, profileId, profileDocHash, evidenceHash, deadline))` | `Accounts.replacementDigest` |
 | Consent | `keccak256(abi.encode(ACCOUNT_CONSENT, subject, what))` | `Accounts.consentDigest` |
@@ -148,14 +154,17 @@ ABI-encoded as a 32-byte word:
 
 `stateHash` is the work's current [state hash](#work-state-hash), so a relicense, rate change
 or renunciation signature applies only to the state its signers saw. Every party signs the same
-Relicense or RoyaltyRateChange digest with any wallet of its account, and the proofs go in
-party order ([WS-13, WS-14](../spec/works-and-storage.md#rules-and-invariants)).
+Relicense or RoyaltyRateChange digest (so the same `deadline` value) with any wallet of its
+account, and the proofs go in party order ([WS-13, WS-14](../spec/works-and-storage.md#rules-and-invariants)).
 
 **Proof format.** Wherever an account signs (a move, a package acceptance, an own identity
 change, a listing consent, a collaborator consent, a work-records consent), the call takes a
 proof `abi.encodePacked(wallet, signature)`: `wallet` is the signing wallet, the root or any
 wallet consolidated with it, and `signature` its signature over the digest, checked by
-`SignatureVerifier` (ECDSA, ERC-1271 or EIP-7702). The accounts module's `requireSigned` checks
+`SignatureVerifier` (ECDSA, ERC-1271 or EIP-7702). A listing consent is a `Consent` whose
+`subject` is the Independent Stream registry and whose `what` is
+`IndependentStreamRegistry.listingSubject(token, form, partner, feeShare, deadline)`; it has no
+typehash of its own. The accounts module's `requireSigned` checks
 both that the wallet acts for the account and the signature. `registerIndependent` and a
 replacement's acceptance take the new address's raw signature.
 
@@ -187,10 +196,13 @@ in field order: `kind`, `collectionId`, `contentHash`, `mediaHash`, `recordFileI
 `(account, role)`, `payees` `(artistId, account, share)`, `license` `(spdxId, textFileId)`,
 `seedPolicy`, `seed`, `sale` `(saleKind, currency, params)` and `edition`
 `(maxCount, currency, saleKind, params)`. The tuple is dynamic, so the
-encoding is the domain word, an offset word and then the tuple. This is OpenZeppelin's
+encoding is the domain word, an offset word and then the tuple. Build the tree as OpenZeppelin's
 `StandardMerkleTree` with leaf encoding `["bytes32", <PackageItem tuple>]` and leaf values
 `[PACKAGE_ITEM_DOMAIN, item]`, whose leaf is `keccak256(keccak256(abi.encode(values)))`; the
-double hash keeps a 64-byte inner node from passing as a leaf. A one-item package's root is
+double hash keeps a 64-byte inner node from passing as a leaf. The contracts only verify a
+proof (`MerkleProof.verify`, sorted-pair keccak256) and never rebuild the tree, so they accept
+any tree of sorted-pair hashes; `StandardMerkleTree` is the one layout tools should use, so
+that every tool derives the same root from the same items. A one-item package's root is
 its leaf, and proofs are at most 32 nodes (`Limits.MAX_PROOF_DEPTH`).
 
 ### Media hash, content hash and license key

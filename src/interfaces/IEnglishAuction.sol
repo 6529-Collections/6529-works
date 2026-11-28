@@ -394,6 +394,13 @@ interface IEnglishAuction {
     function policyOf(address token) external view returns (address);
 
     /// @notice An auction. Reverts for an unknown sale.
+    /// @dev `bid` is not cleared when a bid is credited back (`withdrawBid`, `cancel`, a
+    ///      refused settlement closed by `settleOrRefund`, a settlement of a token no longer
+    ///      served, a sale closed after a rescue): `bidder` and `recipient` read zero and `bid`
+    ///      keeps the returned amount. While the sale can still take bids
+    ///      that amount is its reserve, the least the next first bid may be (`minimumBid`); in
+    ///      a closed sale it is only a record. Read `bidder` to learn whether a bid stands. A
+    ///      restart clears it.
     /// @param saleId The sale.
     /// @return The auction.
     function auction(uint256 saleId) external view returns (Auction memory);

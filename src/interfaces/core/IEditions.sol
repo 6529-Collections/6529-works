@@ -179,6 +179,10 @@ interface IEditions is IERC1155, IERC2981 {
     function setContractURI(string calldata uri) external;
 
     /// @notice An edition (empty, with a zero minter, if it does not exist).
+    /// @dev `maxSupply` changes meaning at the seal: while the sale runs (`supplySealed` false)
+    ///      it is the creator's cap, `type(uint40).max` when there is none; once sealed it is
+    ///      the final maximum the minter fixed (`EditionSupplySealed`), which `minted` may still
+    ///      be below. The original cap can then be read only from the `EditionCreated` event.
     /// @param editionId The edition.
     /// @return The edition.
     function editionOf(uint256 editionId) external view returns (Edition memory);
