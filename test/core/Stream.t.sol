@@ -162,6 +162,9 @@ contract StreamTest is CoreFixture {
         f.artistId = bound(f.artistId, 1, type(uint160).max);
         f.collectionId = 1;
         f.royaltyRate = uint24(bound(f.royaltyRate, 0, Core.DENOMINATOR));
+        // A nonzero rate needs a receiver (`InvalidMint`, pinned in the refusals test); a zero
+        // receiver with a zero rate is valid and stays in.
+        if (f.royaltyReceiver == address(0)) f.royaltyRate = 0;
         uint256 id = sale.mintTo(address(stream), to, f);
         Work memory w = stream.workOf(id);
         assertEq(stream.ownerOf(id), to);
