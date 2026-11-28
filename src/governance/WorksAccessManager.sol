@@ -89,10 +89,11 @@ contract WorksAccessManager is AccessManager {
 
     /// @notice Makes the caller the network. Only the pending network itself, which proves it
     ///         can make a call. This moves the network address and the network roles: the
-    ///         former network holds none of them from now on, and its scheduled operations can
-    ///         no longer run. It does not touch operational roles (a PLATFORM or PAUSER grant, the
-    ///         former network's own included) or the brake, which stay until the new network
-    ///         revokes or replaces them.
+    ///         former network holds none of them from now on, and the operations it scheduled
+    ///         under a network role can no longer run. It does not touch operational roles (a
+    ///         PLATFORM or PAUSER grant, the former network's own included) or the brake: they
+    ///         stay, and an operation scheduled under such a grant can still run, until the new
+    ///         network revokes or replaces them.
     function acceptNetwork() external {
         address next = pendingNetwork;
         if (next == address(0) || _msgSender() != next) revert NotPendingNetwork(_msgSender());

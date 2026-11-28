@@ -222,6 +222,28 @@ keep their verdicts at their new lines. No survivor showed a defect in a contrac
 this measurement are listed below; the others, and those of `EconomicsResolver` and
 `BoundedCall`, are the campaign's untriaged ones.
 
+### Measured again on 6b15570c and 1a13218b
+
+Five files were measured again on 27 and 28 November 2026, after the changes to how sales end
+and how editions are read. Their rows, floors and survivor tables on this page are these
+measurements', and their line numbers these commits'; they replace what the sections above
+say for the same files:
+
+- at commit 6b15570c: `StreamBase`, `Stream6529`, `IndependentEditionAuction` and
+  `IndependentEditionAuctionLens` (the first three were run on an earlier commit of the same
+  branch with the same four source files);
+- at commit 1a13218b: `EnglishAuction`.
+
+They ran as the shards `tools/mutation.py` plans, on a rented machine. Every part logged that
+it finished and no mutant timed out; every survivor was run against the whole suite. The
+changed lines left five new survivors, each a comparison with the first or last value of an
+enum or with a zero `bytes32`, which the replacement leaves the same test: all equivalent.
+The survivors seen before keep their verdicts at their new lines. In
+`IndependentEditionAuctionLens` five earlier survivors are triaged now (equivalent) and two
+are still not; one test was added for two of its views
+(`test_Views_NoSingleEditionsContractOrMaster`). The tests the earlier measurements added
+count among the killed in these rows.
+
 ## The tests added
 
 <!-- generated:tests -->
