@@ -79,8 +79,10 @@ Notes on the counts:
   runs unoptimized code, so the tests that hold a gas ceiling, a memory budget or a contract
   size fail there, as the [guide](README.md#coverage) says: 63 did, all of that kind (3,409
   passed). They pass in the rows above, which run the optimized build.
-- **Fork tests** ran against public endpoints at the chains' heads on the day, not at a pinned
-  block. They read the chains; nothing was sent to either.
+- **Fork tests** ran against public endpoints on the day. The suites built on `StreamForkBase`
+  fork eight blocks behind the chain's head, so the block differs from run to run;
+  `ReadbackLogsForkTest` forks at a fixed block, three after the end block of the Sepolia r8
+  deployment record. They read the chains; nothing was sent to either.
 - **Medusa** started each harness from an empty corpus; the nightly workflow keeps one between
   runs.
 

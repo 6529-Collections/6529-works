@@ -191,7 +191,8 @@ data file and the page is written again.
 
 ## Validation records
 
-A record of one pass of every layer over one commit, with the counts and what was not run.
+A record of one pass of every layer over one commit, with the counts and what was not run;
+where a row was run again on a later commit, the entry below names it.
 Records dated before 28 November 2026 use the protocol's earlier name, "6529 Works":
 
 - [28 November 2026, the freeze candidate](validation-2026-11-28-freeze-candidate.md), commit
