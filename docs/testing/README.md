@@ -7,7 +7,7 @@ mocks are named.
 
 Start with `forge build`, then `forge test --no-match-test "^invariant"`. It runs every unit,
 fuzz, integration, replay and example test and names each one that fails. The
-[validation record](validation-2026-11-23.md) has the counts of one pass of every layer over
+[validation record](validation-2026-11-28.md) has the counts of one pass of every layer over
 one commit; [What is not tested](#what-is-not-tested) says where the suite stops.
 
 > Some invariants that campaigns checked on the contracts before
@@ -187,6 +187,8 @@ data file and the page is written again.
 
 A record of one pass of every layer over one commit, with the counts and what was not run:
 
+- [28 November 2026](validation-2026-11-28.md), commit `355a7a71`; the deep fuzz row on
+  `5da3ec36`.
 - [23 November 2026](validation-2026-11-23.md), commit `961bc956`.
 
 ## What is not tested

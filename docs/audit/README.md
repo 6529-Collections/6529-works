@@ -40,7 +40,7 @@ seed, 395,000 and 9; asserted in the gas report).
 ## Existing evidence
 
 - **Tests.** Suites in [`test/`](../../test/) ([map](../../test/README.md)); counts of one
-  full pass in the [validation record](../testing/validation-2026-11-23.md); commands, floors
+  full pass in the [validation record](../testing/validation-2026-11-28.md); commands, floors
   and gaps in [Testing](../testing/README.md).
 - **Static analysis.** Slither runs in CI; every High or Medium finding has a reviewed row in
   the [triage record](../security/slither-triage.md).

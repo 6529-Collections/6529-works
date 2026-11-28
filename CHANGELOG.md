@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Tests: a validation record of `main` at `355a7a71`, and one fuzz test corrected.** A
+  [validation record](docs/testing/validation-2026-11-28.md) of every test layer over one
+  commit, after the changes below: the build with its size margins, the whole suite, the
+  invariant campaigns at both profiles, the Halmos proofs, the Medusa harnesses, coverage,
+  Slither, the gas ceilings, the walkthrough, the keeper and the generators' checks. One row
+  failed on its first run: at 10,000 runs `testFuzz_Mint_StoresValidFactsExactly` stated a
+  zero royalty receiver with a non-zero rate, which `mint` refuses by design. The test now
+  gives a zero receiver a zero rate, and the row passed on the corrected files. No contract
+  changed.
 - **Sepolia r9, the current instance, with an open gate for test pages.** r9 was deployed on
   28 November 2026 from `main` at `355a7a71` (blocks 12,227,835 to 12,227,871, the Safe and
   holders of r8, the committed policy), read back by `VerifyCore`, and verified on Sourcify
