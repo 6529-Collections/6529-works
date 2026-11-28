@@ -18,12 +18,13 @@ emits an event for every state change, enough to rebuild its state from its own 
 - **Module slots** (`bytes32 slot`) are ASCII names left-aligned: `"TERMS"`, `"RENDERER"`,
   `"RECORDS"`, `"ACCOUNTS"`, `"INDEPENDENT_STREAM"`, `"INDEPENDENT_TERMS"`, `"INDEPENDENT_RECORDS"`.
 - **Where to start.** Scan from the deployment record's `startBlock` in
-  [`deployments/11155111/`](../../deployments/11155111). Three Sepolia instances run this design: r8,
-  the current instance (`core-1795440624.json`, `startBlock` 12,196,001), r7, the reference
+  [`deployments/11155111/`](../../deployments/11155111). Four Sepolia instances run this design: r9,
+  the current instance (`core-1795840548.json`, `startBlock` 12,227,835), r8
+  (`core-1795440624.json`, `startBlock` 12,196,001), r7, the reference
   instance (`core-1795423896.json`, `startBlock` 12,194,636), and r6
   (`core-1795412520.json`, `startBlock` 12,193,722); earlier rounds ran an earlier design. r6
   and r7 run the modules as they were before 23 November 2026: their `auctionClock` answers
-  three values, r8's four.
+  three values, r8's and r9's four.
 - **Module events** are listed below with their topics, generated from the build.
 
 ## The permanent core

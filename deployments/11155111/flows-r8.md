@@ -1,7 +1,7 @@
 # Sepolia r8: an unsold work offered again, beside its edition sales (23 November 2026)
 
 On 23 November 2026 the flows below ran on **r8**
-([README](README.md#sepolia-r8-23-november-2026-current-instance)), the current Sepolia instance
+([README](README.md#sepolia-r8-23-november-2026-earlier-instance)), the current Sepolia instance
 of the plain permanent core ([ADR 0010](../../docs/adr/0010-plain-permanent-core.md)), `main` at
 `961bc956`, record [`core-1795440624.json`](core-1795440624.json). r8 carries the module changes
 of that commit, which r6 and r7 do not: an edition sale follows only the 1/1 sale it was opened

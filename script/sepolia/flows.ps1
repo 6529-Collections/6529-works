@@ -58,11 +58,25 @@
     ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step restart -Token <token> -TokenId 1
     ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step clock -Token <token> -TokenId 1 -Label clock-before
     ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step prague
+    ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step gateDeploy
+    ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step gateGrant
+    ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step gateState
+    ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step gateCollection -From artist -Name 'Open gate'
+    ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step gatePackage
+    ./flows.ps1 -SignerModule <path> -State <state.json> $r -Step gateRevoke
 
     The prague step replays each recorded transaction with
     `cast run <tx> --quick --evm-version prague`: the parent block's state, Prague gas costs.
     Run it soon after the transactions: a public RPC keeps only recent historical state (or
     pass an archive RPC with -Rpc, such as https://sepolia.gateway.tenderly.co).
+
+    The gate* steps are for a test instance that opens the curated path to any wallet
+    (script/sepolia/open-gate.md): script/sepolia/OpenGate.s.sol plans them. gateDeploy creates
+    SepoliaOpenGate (a Sepolia test convenience, never for mainnet) at its fixed address;
+    gateGrant has the network Safe grant it CURATION_SIGNER and PLATFORM, and gateRevoke takes
+    them back; gateState prints the address and the roles; gateCollection creates a collection
+    through it (-From, -Name); gatePackage is the `package` step with the gate's approval in
+    place of a curation signer's and with no curator statement.
 #>
 param(
     [Parameter(Mandatory)] [string] $SignerModule,
@@ -75,7 +89,8 @@ param(
         'report', 'independentContent', 'independentDeploy', 'independentList',
         'independentStart', 'independentOpenRecord', 'starterRequest',
         'independentEditionsDeploy', 'independentEditionsList', 'independentOpenEdition',
-        'independentStartNoBid', 'restart', 'clock')] [string] $Step,
+        'independentStartNoBid', 'restart', 'clock', 'gateDeploy', 'gateGrant', 'gateRevoke',
+        'gateState', 'gateCollection', 'gatePackage')] [string] $Step,
     [string] $Rpc = 'https://ethereum-sepolia-rpc.publicnode.com',
     # The deployment record, relative to the repository root (script/DeployCore.s.sol writes
     # deployments/11155111/core-<timestamp>.json).
@@ -124,6 +139,8 @@ param(
     [string] $MoveSigner = '',
     # starterRequest: the request file to write for the reference keeper's --starts folder.
     [string] $Out = '',
+    # gateCollection: the name of the collection created through the open gate.
+    [string] $Name = 'Open gate',
     [switch] $ExpectRevert,
     [string] $GasLimit = '500000'
 )
@@ -136,6 +153,8 @@ $State = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath
 
 $Repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $Script = 'script/sepolia/Flows.s.sol:Flows'
+# The plans of the gate* steps (a Sepolia test convenience; script/sepolia/open-gate.md).
+$GateScript = 'script/sepolia/OpenGate.s.sol:OpenGate'
 $env:FLOWS_RECORD = $Record
 if ($Token) { $env:FLOWS_TOKEN = $Token } else { Remove-Item Env:FLOWS_TOKEN -ErrorAction SilentlyContinue }
 if ($Editions) { $env:FLOWS_EDITIONS = $Editions } else { Remove-Item Env:FLOWS_EDITIONS -ErrorAction SilentlyContinue }
@@ -238,7 +257,7 @@ function Invoke-Cli([string]$Program, [string[]]$Arguments) {
 
 # -AtBlock pins the read to one block (`--fork-block-number`), for a snapshot whose values and
 # recorded block must be the same block.
-function Invoke-Plan([string]$Sig, [string[]]$Arguments, [string]$AtBlock = '') {
+function Invoke-Plan([string]$Sig, [string[]]$Arguments, [string]$AtBlock = '', [string]$PlanScript = $Script) {
     $pin = if ($AtBlock) { @('--fork-block-number', $AtBlock) } else { @() }
     Push-Location $Repo
     try {
@@ -246,7 +265,7 @@ function Invoke-Plan([string]$Sig, [string[]]$Arguments, [string]$AtBlock = '') 
         # just reported; retry the read-only run.
         for ($attempt = 1; ; $attempt++) {
             try {
-                $out = Invoke-Cli 'forge' (@('script', $Script, '--sig', $Sig) + $Arguments + @('--rpc-url', $Rpc) + $pin)
+                $out = Invoke-Cli 'forge' (@('script', $PlanScript, '--sig', $Sig) + $Arguments + @('--rpc-url', $Rpc) + $pin)
                 break
             }
             catch { if ($attempt -ge 4) { throw }; Start-Sleep -Seconds 5 }
@@ -690,6 +709,45 @@ switch ($Step) {
     'independentOpenRecord' {
         if (-not $Token) { throw 'independentOpenRecord needs -Token' }
         Send-Items (Invoke-Plan 'independentOpenRecordTx(address,uint256)' @($Token, "$TokenId"))
+    }
+    'gateDeploy' {
+        # Creates SepoliaOpenGate at its fixed address (the relay sends it; the gate has no owner).
+        # A no-op when it exists. The address is kept in the state file (notes.openGate).
+        $plan = Invoke-Plan 'deployTx()' @() '' $GateScript
+        Send-Items $plan
+        Set-Note 'openGate' (Get-Info $plan 'gate')
+        Write-Host "SepoliaOpenGate: $(Get-Info $plan 'gate')"
+    }
+    'gateGrant' {
+        # The network Safe grants the gate CURATION_SIGNER and PLATFORM (no delay: the network is
+        # the admin of both roles at once). One Safe transaction per role; a role it holds is skipped.
+        Send-Items (Invoke-Plan 'grantTx()' @() '' $GateScript)
+    }
+    'gateRevoke' {
+        # The network Safe revokes the gate's roles: the gate is closed.
+        Send-Items (Invoke-Plan 'revokeTx()' @() '' $GateScript)
+    }
+    'gateState' {
+        foreach ($i in (Invoke-Plan 'state()' @() '' $GateScript)) {
+            if ($i[0] -eq 'INFO') { Write-Host ("{0,-16} {1}" -f $i[1], $i[2]) }
+        }
+    }
+    'gateCollection' {
+        # -From creates a collection through the gate (any account may).
+        $plan = Invoke-Plan 'collectionTx(address,string)' @((Get-Address $From), $Name) '' $GateScript
+        Write-Host "collection ID: $(Get-Info $plan 'collectionId')"
+        Send-Items $plan
+    }
+    'gatePackage' {
+        # The `package` step through the gate: the gate's approval in place of a curation signer's
+        # signature, no curator statement, then the artist's acceptance.
+        $deadline = (Get-Timestamp) + 7 * 86400
+        $plan = Invoke-Plan 'package(uint64)' @("$deadline")
+        $root = Get-Info $plan 'root'
+        Set-Note 'root' $root
+        $acceptance = New-Signature (Get-Sign $plan 'acceptance')
+        Send-Items (Invoke-Plan 'registerTx(bytes32)' @($root) '' $GateScript)
+        Send-Items (Invoke-Plan 'acceptTx(uint64,bytes)' @("$deadline", $acceptance))
     }
     'record' {
         # Records a transaction sent outside this driver (for example by the Chainlink node).
