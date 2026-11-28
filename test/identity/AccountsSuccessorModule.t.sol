@@ -937,10 +937,36 @@ contract AccountsSuccessorModuleTest is AccountsFixture, GasRuleAssertions {
         next.executeChange(artistId);
         assertEq(next.authorityOf(artistId), wallet);
         assertEq(next.payoutAddress(artistId), payout);
-        // Back in force (the network names it again), it writes again.
+    }
+
+    /// @dev The step the checklist forbids (LIM-ID-28), shown so its effect is on record: the
+    ///      slot must only move forward. Going back to a replaced module drops what its
+    ///      successor recorded, and the replaced module, named again, writes again, so a
+    ///      successor activated once more answers a copied account from its earlier copy.
+    function test_Successor_Hazard_AReplacedModuleNamedAgainAndItsSuccessorDisagree() public {
+        _force(next);
+        vm.prank(network);
+        next.freeze(artistId);
+        assertGt(next.frozenUntil(artistId), block.timestamp);
+
+        // Back to the replaced module: the freeze its successor placed is unknown there.
+        _force(first);
+        assertEq(first.frozenUntil(artistId), 0, "what the successor recorded is dropped");
+        assertTrue(first.isWallet(artistId, artist), "the frozen account acts again");
+
+        // The successor lifts its freeze; the replaced module, named again, places one.
+        _force(next);
+        vm.prank(network);
+        next.unfreeze(artistId);
         _force(first);
         vm.prank(network);
         first.freeze(artistId);
+        assertGt(first.frozenUntil(artistId), block.timestamp);
+
+        // The successor, activated again, answers from its own earlier copy.
+        _force(next);
+        assertEq(next.frozenUntil(artistId), 0, "the later freeze is not in the copy");
+        assertTrue(next.isWallet(artistId, artist));
     }
 
     /// @dev Anyone copies a list of accounts into the module in force. The answers do not

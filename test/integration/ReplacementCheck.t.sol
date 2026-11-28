@@ -10,6 +10,7 @@ import { ICurationVerifier } from "src/interfaces/ICurationVerifier.sol";
 import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { IAccounts } from "src/interfaces/core/IAccounts.sol";
+import { IModuleSlots } from "src/interfaces/core/IModules.sol";
 import { AccountsSuccessorBase } from "./AccountsSuccessor.t.sol";
 
 /// @dev Forwards every read to an accounts module, but answers that `wallet` acts for
@@ -44,8 +45,9 @@ contract OneWrongWallet {
 /// @notice The check the network runs before it announces a replacement accounts module or
 ///         mint policy (`script/CheckReplacement.sol`), on the real deployed stack: it passes
 ///         for a module deployed naming the one it replaces, and fails for one that starts
-///         empty, for one that would let a former root act, and for a mint policy that would
-///         take a revoked root again.
+///         empty, for one that would let a former root act, for one that is not wired to take
+///         over (another directory, another module named as replaced, a restricted function
+///         nobody mapped), and for a mint policy that would take a revoked root again.
 contract ReplacementCheckTest is AccountsSuccessorBase {
     address internal frozenArtist;
     address internal pendingArtist;
@@ -63,7 +65,37 @@ contract ReplacementCheckTest is AccountsSuccessorBase {
         view
     {
         CheckReplacement.accounts(
-            IArtistRegistry(address(accounts)), IArtistRegistry(candidate), ids, wallets
+            IModuleSlots(address(directory)),
+            IArtistRegistry(address(accounts)),
+            IArtistRegistry(candidate),
+            ids,
+            wallets
+        );
+    }
+
+    function checkWiring(address live, address candidate) external view {
+        CheckReplacement.wiring(
+            IModuleSlots(address(directory)), IArtistRegistry(live), IArtistRegistry(candidate)
+        );
+    }
+
+    /// @dev An `Accounts` with the genesis arguments that reads `directory_` and names
+    ///      `replaced`, with no function mapped to a role.
+    function _unmapped(address directory_, address replaced) internal returns (Accounts) {
+        return new Accounts(
+            address(manager),
+            IConsolidationSource(address(consolidation)),
+            address(consolidation).codehash,
+            Accounts.Wiring(
+                directory_,
+                address(stream),
+                address(editions),
+                address(ledger),
+                address(statements),
+                address(registry),
+                replaced
+            ),
+            DeployCore.notPayouts(deployment)
         );
     }
 
@@ -108,8 +140,74 @@ contract ReplacementCheckTest is AccountsSuccessorBase {
         (uint256[] memory ids, address[] memory wallets) = _accountsInEveryState();
         Accounts candidate = _newSuccessor(accounts);
         this.checkAccounts(address(candidate), ids, wallets);
-        // And for the module in force against itself.
-        this.checkAccounts(address(accounts), ids, wallets);
+        this.checkWiring(address(accounts), address(candidate));
+    }
+
+    /// @dev A candidate that answers every read as the module in force, but reads another
+    ///      directory: activated, it would refuse every write.
+    function test_ReplacementCheck_FailsForAModuleThatReadsAnotherDirectory() public {
+        (uint256[] memory ids, address[] memory wallets) = _accountsInEveryState();
+        address other = makeAddr("anotherDirectory");
+        address candidate = address(_unmapped(other, address(accounts)));
+        bytes memory refusal =
+            abi.encodeWithSelector(CheckReplacement.WrongDirectory.selector, other);
+        vm.expectRevert(refusal);
+        this.checkAccounts(candidate, ids, wallets);
+        vm.expectRevert(refusal);
+        this.checkWiring(address(accounts), candidate);
+    }
+
+    /// @dev A candidate that names a module other than the one in force: here the module in
+    ///      force was itself a replacement, and the candidate names the first module.
+    function test_ReplacementCheck_FailsForAModuleThatNamesAnotherModuleAsReplaced() public {
+        Accounts second = _installSuccessor();
+        Accounts stale = _newSuccessor(accounts);
+        vm.expectRevert(
+            abi.encodeWithSelector(CheckReplacement.WrongPrevious.selector, address(accounts))
+        );
+        this.checkWiring(address(second), address(stale));
+        // The module given as in force must be the one the directory names.
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                CheckReplacement.NotInForce.selector, address(accounts), address(second)
+            )
+        );
+        this.checkWiring(address(accounts), address(stale));
+        // A candidate naming the module in force passes.
+        this.checkWiring(address(second), address(_newSuccessor(second)));
+    }
+
+    /// @dev A candidate whose restricted functions nobody mapped: each belongs to the
+    ///      manager's administrator, so the network could not freeze an account. Mapping
+    ///      `freeze` alone moves the refusal to `unfreeze`.
+    function test_ReplacementCheck_FailsForAModuleWhoseRestrictedFunctionsAreNotMapped() public {
+        (uint256[] memory ids, address[] memory wallets) = _accountsInEveryState();
+        address candidate = address(_unmapped(address(directory), address(accounts)));
+        uint64 expected = manager.getTargetFunctionRole(address(accounts), Accounts.freeze.selector);
+        assertNotEq(expected, manager.ADMIN_ROLE(), "the network's role, not the administrator");
+        bytes memory refusal = abi.encodeWithSelector(
+            CheckReplacement.RoleDiffers.selector,
+            Accounts.freeze.selector,
+            manager.ADMIN_ROLE(),
+            expected
+        );
+        vm.expectRevert(refusal);
+        this.checkAccounts(candidate, ids, wallets);
+
+        bytes4[] memory one = new bytes4[](1);
+        one[0] = Accounts.freeze.selector;
+        _asNetwork(
+            address(manager),
+            abi.encodeCall(manager.setTargetFunctionRole, (candidate, one, expected))
+        );
+        refusal = abi.encodeWithSelector(
+            CheckReplacement.RoleDiffers.selector,
+            Accounts.unfreeze.selector,
+            manager.ADMIN_ROLE(),
+            manager.getTargetFunctionRole(address(accounts), Accounts.unfreeze.selector)
+        );
+        vm.expectRevert(refusal);
+        this.checkWiring(address(accounts), candidate);
     }
 
     function test_ReplacementCheck_FailsForAModuleThatStartsEmpty() public {

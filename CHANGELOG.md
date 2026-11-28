@@ -50,7 +50,9 @@
       requires `isPayoutAllowed` to be false for every contract of the deployment.
       `script/CheckReplacement.sol` and `CheckReplacement.s.sol` compare a candidate
       replacement with the module in force for a list of accounts, addresses and package
-      roots, read-only.
+      roots, read-only; for an accounts module they also check that the candidate reads the
+      directory, names the module in force as the one it replaces and has its restricted
+      functions under the same roles.
     - **Tests and documents.** `AccountsSuccessor.t.sol` now replaces the module with the
       real `Accounts` (the read-through test double is gone); new suites
       `AccountsSuccessorModule`, `AccountsPayoutCheck`, `PackageRegistrySuccessor`,
@@ -60,7 +62,9 @@
       `SuccessorStartGas.t.sol` measures a start after each kind of replacement.
       `replacing-modules.md` says what each replacement inherits and what it does not, and gives the alternative of a
       new verifier with no predecessor; LIM-GV-32, LIM-ID-12, LIM-ID-19 and LIM-ID-26 are
-      corrected.
+      corrected. Two limitations are new: a replaced accounts module must never be named in
+      the directory again (LIM-ID-28), and an address reserved as a new root in the replaced
+      module at activation stays reserved (LIM-ID-29).
     - Size and gas. `Accounts` grows from 15,623 to 19,836 bytes (4,740 below the EIP-170
       limit) and `PackageRegistry` from 19,906 to 20,308 (4,268 below); the runtime code of
       every other contract is unchanged. At genesis a start costs 89 gas more, an edition

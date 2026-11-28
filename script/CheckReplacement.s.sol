@@ -5,6 +5,7 @@ import { console2 } from "forge-std/console2.sol";
 import { Script } from "forge-std/Script.sol";
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
+import { IModuleSlots } from "src/interfaces/core/IModules.sol";
 import { CheckReplacement } from "./CheckReplacement.sol";
 
 /// @title CheckReplacementScript
@@ -12,7 +13,8 @@ import { CheckReplacement } from "./CheckReplacement.sol";
 ///         ones in force, read-only, before the network announces the replacement
 ///         (`CheckReplacement`). It sends no transaction and reverts on the first difference.
 /// @dev `forge script script/CheckReplacement.s.sol --rpc-url <rpc>` with, for the accounts
-///      module, `LIVE_ACCOUNTS`, `NEXT_ACCOUNTS`, `ACCOUNT_IDS` (comma-separated artist IDs) and
+///      module, `DIRECTORY` (the directory whose ACCOUNTS slot the candidate would take),
+///      `LIVE_ACCOUNTS`, `NEXT_ACCOUNTS`, `ACCOUNT_IDS` (comma-separated artist IDs) and
 ///      optionally `WALLETS` (comma-separated addresses: former roots, consolidated wallets,
 ///      addresses that must have no power); for the mint policy, `LIVE_POLICY`, `NEXT_POLICY`
 ///      and `ROOTS` (comma-separated package roots). A pair that is not set is skipped.
@@ -31,6 +33,7 @@ contract CheckReplacementScript is Script {
             address[] memory wallets = vm.envOr("WALLETS", ",", new address[](0));
             if (ids.length == 0) revert EmptyList("ACCOUNT_IDS");
             CheckReplacement.accounts(
+                IModuleSlots(vm.envAddress("DIRECTORY")),
                 IArtistRegistry(liveAccounts),
                 IArtistRegistry(vm.envAddress("NEXT_ACCOUNTS")),
                 ids,
@@ -38,6 +41,7 @@ contract CheckReplacementScript is Script {
             );
             console2.log("accounts answered alike:", ids.length);
             console2.log("addresses answered alike:", wallets.length);
+            console2.log("candidate wired to take over: directory, replaced module, roles");
         }
         if (livePolicy != address(0)) {
             bytes32[] memory roots = vm.envOr("ROOTS", ",", new bytes32[](0));
