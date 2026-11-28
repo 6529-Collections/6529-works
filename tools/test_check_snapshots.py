@@ -26,7 +26,7 @@ cs = importlib.util.module_from_spec(_SPEC)
 sys.modules["check_snapshots"] = cs
 _SPEC.loader.exec_module(cs)
 
-SOURCE = """// SPDX-License-Identifier: MIT
+SOURCE = """// SPDX-License-Identifier: Apache-2.0
 pragma solidity 0.8.37;
 
 interface IVault {

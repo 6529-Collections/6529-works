@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity 0.8.37;
 
 // The shared setup of the examples: the whole 6529 Works stack, deployed and configured by the

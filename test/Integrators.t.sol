@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity 0.8.37;
 
 // The integrator examples live in examples/ (examples/README.md). Importing them here compiles

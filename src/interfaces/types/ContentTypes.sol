@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity 0.8.37;
 
 /// @notice What a media file is in a work (ADR 0001 section 8).

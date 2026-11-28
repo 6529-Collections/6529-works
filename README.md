@@ -78,5 +78,6 @@ Report vulnerabilities privately through
 
 ## License
 
-The code is MIT ([LICENSE](LICENSE)). Artworks minted on 6529 Stream and 6529 Stream Editions
-default to CC0 ([ADR 0001 §8](docs/adr/0001-v1-scope.md#8-works-content-and-storage)).
+The code is licensed under the Apache License, Version 2.0 ([LICENSE](LICENSE),
+[NOTICE](NOTICE)). The libraries under `lib/` keep their own licences. Artworks minted on
+6529 Stream and 6529 Stream Editions default to CC0 ([ADR 0001 §8](docs/adr/0001-v1-scope.md#8-works-content-and-storage)).

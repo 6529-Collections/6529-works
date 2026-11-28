@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 /// @notice A bidder and recipient for the lifecycle suite that misbehaves when it is paid or

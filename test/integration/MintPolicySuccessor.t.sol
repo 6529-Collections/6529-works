@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
 import { Eip712CurationVerifier } from "src/curation/Eip712CurationVerifier.sol";
