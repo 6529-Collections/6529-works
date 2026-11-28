@@ -216,6 +216,6 @@ Records dated before 28 November 2026 use the protocol's earlier name, "6529 Wor
   and the delivery module are not replayed.
 - **Rules without a test.** The rules that name no test are listed by
   `python tools/check_rules.py --uncovered`; the declaration rules are off-chain conventions.
-- **Live rehearsal.** The new contracts run on Sepolia only (rounds r6 to r9,
+- **Live rehearsal.** The new contracts run on Sepolia only (rounds r6 to r10,
   [records](../../deployments/11155111/README.md)); what each round did not run is at the end
   of its flows page. There is no mainnet deployment.

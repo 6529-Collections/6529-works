@@ -86,10 +86,11 @@ Forge's `broadcast/` output is not committed; the deployment record is.
 | Keeper | No role. Runs the permissionless steps ([`keeper/`](../keeper/README.md)) |
 
 A round's public inputs live in `config/sepolia-<round>/`: `accounts.json` (holders and the
-network Safe), `genesis.json`, `deploy.env` and `manifest-epoch0.json`. Rounds r6 to r9
-reuse r5's network Safe and holders; the commands below show r6, and r7, r8 and r9 were built
+network Safe), `genesis.json`, `deploy.env` and `manifest-epoch0.json`. Rounds r6 to r10
+reuse r5's network Safe and holders; the commands below show r6, and r7 to r10 were built
 the same way (`make_genesis.py r7 r6`, `make_manifest.py r7 r6 <commit>`; then `r8 r7`, then
-`r9 r8`).
+`r9 r8`; r10 from its own `accounts.json`, which names the same Safe and holders, and
+`make_manifest.py r10 r9 <commit>`).
 
 ### 2. Genesis and manifest
 

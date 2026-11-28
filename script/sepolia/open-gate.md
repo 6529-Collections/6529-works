@@ -1,7 +1,7 @@
 # The open gate: the curated path for any wallet, on a Sepolia test instance
 
 This note is for the engineer who builds a test page against a Sepolia instance of 6529 Stream
-(r9 is the first one), and for the operator who opens and closes the gate.
+(r10 is the current one), and for the operator who opens and closes the gate.
 
 On a normal instance two steps of the curated path need someone with a role: a curation signer
 approves each package of works, and the platform key creates collections.
@@ -16,32 +16,50 @@ replaceable contracts are the ones `main` builds.
 Its ABI is exported with the protocol's, as [`abi/SepoliaOpenGate.json`](../../abi/SepoliaOpenGate.json);
 the [ABI manifest](../../abi/manifest.json) marks the entry `"testOnly": true`.
 
+## On r10
+
+r10 is the current instance and the first deployed under the name 6529 Stream. The scripts in
+this folder and every name in this note are r10's.
+
+| | |
+| --- | --- |
+| The gate | [`0xD40A02677136bd5F147775FC2C143d90c42A424F`](https://sepolia.etherscan.io/address/0xD40A02677136bd5F147775FC2C143d90c42A424F), created on 28 November 2026 in block 12,230,316; its source is verified on [Sourcify](https://repo.sourcify.dev/11155111/0xD40A02677136bd5F147775FC2C143d90c42A424F) |
+| State | **Open**: it holds `CURATION_SIGNER` and `PLATFORM` since blocks 12,230,317 and 12,230,318 |
+| r10's addresses | [`core-1795871904.json`](../../deployments/11155111/core-1795871904.json); the round is described in the [Sepolia README](../../deployments/11155111/README.md#sepolia-r10-28-november-2026-current-instance-with-an-open-gate) |
+| What ran through it | [flows-r10.md](../../deployments/11155111/flows-r10.md) |
+
+To close the gate on r10, the network Safe revokes the two roles (two Safe transactions, two
+owner signatures each, effective at once):
+
+```powershell
+./script/sepolia/flows.ps1 -SignerModule <path> -State <state.json> -Record deployments/11155111/core-1795871904.json -Step gateRevoke
+```
+
+`-Step gateState` then prints `curationSigner false` and `platform false`. Packages registered
+before stay approved; `PackageRegistry.killSignerApprovals(0xD40A02677136bd5F147775FC2C143d90c42A424F)`,
+a network call, stops those too. `-Step gateGrant` opens the gate again.
+
 ## On r9
 
-r9 was deployed before 28 November 2026, when the protocol was renamed from "6529 Works" to
+r9, the first instance with a gate, was deployed before 28 November 2026, when the protocol was renamed from "6529 Works" to
 "6529 Stream". On r9 every signing domain keeps the earlier name (for example
 `6529 Works Package Registry` where this note says `6529 Stream Package Registry`), the hash
 domains and salts keep the `6529WORKS_` and `6529-works/` spellings, and the configurator's
 getter is `worksManager()`, not `streamManager()`. The scripts in this folder read the current
-names, so they work with an instance deployed from the current code, not with r9.
+names, so they work with r10, not with r9. r9's gate is a separate contract at another address and
+stays open.
 
 | | |
 | --- | --- |
 | The gate | [`0x843d8DCdD279215225f39AFCA33a5Fd4E84370Ac`](https://sepolia.etherscan.io/address/0x843d8DCdD279215225f39AFCA33a5Fd4E84370Ac), created on 28 November 2026 in block 12,227,880; its source is verified on [Sourcify](https://repo.sourcify.dev/11155111/0x843d8DCdD279215225f39AFCA33a5Fd4E84370Ac) |
 | State | **Open**: it holds `CURATION_SIGNER` and `PLATFORM` since blocks 12,227,881 and 12,227,882 |
-| r9's addresses | [`core-1795840548.json`](../../deployments/11155111/core-1795840548.json); the round is described in the [Sepolia README](../../deployments/11155111/README.md#sepolia-r9-28-november-2026-current-instance-with-an-open-gate) |
+| r9's addresses | [`core-1795840548.json`](../../deployments/11155111/core-1795840548.json); the round is described in the [Sepolia README](../../deployments/11155111/README.md#sepolia-r9-28-november-2026-earlier-instance-with-an-open-gate) |
 | What ran through it | [flows-r9.md](../../deployments/11155111/flows-r9.md) |
 
-To close the gate on r9, the network Safe revokes the two roles (two Safe transactions, two
-owner signatures each, effective at once):
-
-```powershell
-./script/sepolia/flows.ps1 -SignerModule <path> -State <state.json> -Record deployments/11155111/core-1795840548.json -Step gateRevoke
-```
-
-`-Step gateState` then prints `curationSigner false` and `platform false`. Packages registered
-before stay approved; `PackageRegistry.killSignerApprovals(0x843d8DCdD279215225f39AFCA33a5Fd4E84370Ac)`,
-a network call, stops those too. `-Step gateGrant` opens the gate again.
+Closing r9's gate takes the same two revocations by the network Safe, on r9's manager. The
+`gateRevoke` step of the current scripts reads the renamed getter and so does not plan them
+for r9; run it from a checkout that predates the rename, or send the two `revokeRole` calls
+through the Safe by hand.
 
 ## What the gate is
 
@@ -95,10 +113,10 @@ with `--fork-block-number` at a block before the grants.
 
 ## For the frontend: the curated flow through the gate
 
-Addresses come from the instance's deployment record, one `<name>: <address>` object: for r9,
-[`core-1795840548.json`](../../deployments/11155111/core-1795840548.json). ABIs are in
-[`abi/`](../../abi/). The gate's address is printed by `gateState`; on r9 it is
-`0x843d8DCdD279215225f39AFCA33a5Fd4E84370Ac`. (On another instance it differs: it depends on
+Addresses come from the instance's deployment record, one `<name>: <address>` object: for r10,
+[`core-1795871904.json`](../../deployments/11155111/core-1795871904.json). ABIs are in
+[`abi/`](../../abi/). The gate's address is printed by `gateState`; on r10 it is
+`0xD40A02677136bd5F147775FC2C143d90c42A424F`. (On another instance it differs: it depends on
 the gate's code and on that instance's `CurationVerifier` and `Stream6529`.)
 
 Everything is an ordinary transaction or an EIP-712 signature (`eth_signTypedData_v4`) by the
@@ -232,7 +250,7 @@ StreamWorkFacts6529.open(address stream, uint256 tokenId, PackageItem item, Medi
   `Stream6529.WorkMinted(tokenId, collectionId, artistId, minter, serial, facts)`,
   `StreamWorkFacts6529.RecordOpened(token, tokenId, item, media)`, and with (b)
   `EnglishAuction.BidPlaced`.
-- `saleId` is `EnglishAuction.saleIdOf(stream, tokenId)`. The auction runs 3,600 seconds on r9;
+- `saleId` is `EnglishAuction.saleIdOf(stream, tokenId)`. The auction runs 3,600 seconds on r10;
   a bid in the last 15 minutes moves the end to 15 minutes after it.
 
 ### 7. The edition sale (edition masters only), right after the start
@@ -287,36 +305,38 @@ template, lists it and approves each work itself
 
 ## What differs from r8
 
-| | r8 | r9 with the gate open |
+| | r8 | r9 and r10 with the gate open |
 | --- | --- | --- |
-| Addresses | [`core-1795440624.json`](../../deployments/11155111/core-1795440624.json) | [`core-1795840548.json`](../../deployments/11155111/core-1795840548.json) |
-| Code | `main` at `961bc956` | `main` at `355a7a71`. Every function above has the same signature; `Accounts`, `EnglishAuction` and `PackageRegistry` gained functions (use the ABIs of this commit) |
+| Addresses | [`core-1795440624.json`](../../deployments/11155111/core-1795440624.json) | r9: [`core-1795840548.json`](../../deployments/11155111/core-1795840548.json); r10: [`core-1795871904.json`](../../deployments/11155111/core-1795871904.json) |
+| Code | `main` at `961bc956` | `main` at `355a7a71`. Every function above has the same signature; `Accounts`, `EnglishAuction` and `PackageRegistry` gained functions (use the ABIs of this commit). r10 is `main` at `c6d49658`: the same calls under the name 6529 Stream, so every signing domain differs from r9's (use the ABIs in [`abi/`](../../abi/)) |
 | Registering a package (step 4) | The attestation is a curation signer's signature, made by the operator | The attestation comes from `gate.attestationOf(root)`: no signature, nobody to ask |
 | The curator's statement | Appended by the curator key after registration (not required by any contract) | Left out |
 | A collection (step 1) | Created by the platform key | `gate.createCollection`, by anyone |
 | Everything else | | The same calls |
 
-The usual curation signers and the platform key keep their roles on r9, so the operator's own
-flows run as on r8.
+The usual curation signers and the platform key keep their roles on r9 and r10, so the
+operator's own flows run as on r8.
 
 ## Gas
 
 The first column was measured on a local anvil fork of Sepolia before the broadcast
-(28 November 2026), where gas is priced as on mainnet today. The second is the receipt on r9
-for the steps that ran there ([flows-r9.md](../../deployments/11155111/flows-r9.md)): Sepolia
+(28 November 2026), where gas is priced as on mainnet today; the rows with no Sepolia figure
+come from the fork run before r9's broadcast, the others from the one before r10's. The second
+is the receipt on r10
+for the steps that ran there ([flows-r10.md](../../deployments/11155111/flows-r10.md)): Sepolia
 prices state creation higher, so a step that creates state costs several times the first
 figure. Sepolia's gas price is a fraction of a gwei, so even those cost little test ETH.
 
-| Step | Local fork | r9 (Sepolia) |
+| Step | Local fork | r10 (Sepolia) |
 | --- | ---: | ---: |
-| Deploy the gate | 842,550 | 5,780,518 |
-| Each role grant (the Safe's `execTransaction`) | 110,887 | 294,257 |
-| `gate.createCollection` | 135,234 | 481,954 |
+| Deploy the gate | 842,766 | 5,782,064 |
+| Each role grant (the Safe's `execTransaction`) | 110,887 | 294,245 |
+| `gate.createCollection` | 135,150 | 481,930 |
 | A record: `writeChunk` and `registerManifest` | 120,842 and 147,970 | 621,958 and 581,870 |
-| A media file registered only | 145,412 | 579,336 |
+| A media file registered only | 145,436 | 579,336 |
 | `registerPackage` with the gate's attestation | 112,693 | 284,033 |
-| `acceptPackage` (the first: it creates the account) | 229,880 | 841,740 |
-| `SaleStarter.start` | 576,404 | 2,761,886 (the instance's first sale) |
+| `acceptPackage` (the first: it creates the account) | 229,900 | 841,752 |
+| `SaleStarter.start` (the instance's first sale) | 751,300 | 2,763,049 |
 | `startWithBid`, then `StreamWorkFacts6529.open` | 386,373 and 206,212 | |
 | `UniformEditionAuction.open` | 400,591 | |
 | A 1/1 bid; an edition bid | 74,182; 86,127 | |
