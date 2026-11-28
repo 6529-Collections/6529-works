@@ -72,6 +72,11 @@
       module has not copied the account, nothing once it has (`copyAccounts`), and about
       8,000 under a second mint policy; the wallet-signed start then passes the 370,000
       ceiling. `test/integration/SuccessorStartGas.t.sol` holds these rows.
+    - Mutation scores. `Accounts` and `PackageRegistry` were measured again at `0fa77564`:
+      `Accounts` 785 of 822 killed and six more by tests added with the measurement
+      (96.2%, floor 94 as before); `PackageRegistry` 562 of 599 and one more by a new test
+      (94.0%, floor 91, was 92: four of the 21 new mutants survive as equivalents). The
+      survivors are triaged on the [scores page](docs/testing/mutation-scores.md).
 - **Deployment read-back, wallet guard and handover documents: hardening.** Scripts, tests,
   tools and documents only; no contract under `src/` changed, so the build is still
   `v1.0.0-rc.3`'s.

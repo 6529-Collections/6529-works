@@ -138,13 +138,13 @@
     },
     "src/curation/PackageRegistry.sol": {
       "tier": 2,
-      "mutants": 578,
-      "killed": 544,
+      "mutants": 599,
+      "killed": 562,
       "timedOut": 0,
-      "newKills": 0,
-      "floor": 92,
-      "was": 91,
-      "measuredAt": "961bc956"
+      "newKills": 1,
+      "floor": 91,
+      "was": 92,
+      "measuredAt": "0fa77564"
     },
     "src/economics/AssetAllowlist.sol": {
       "tier": 3,
@@ -302,12 +302,13 @@
     },
     "src/identity/Accounts.sol": {
       "tier": 2,
-      "mutants": 562,
-      "killed": 532,
+      "mutants": 822,
+      "killed": 785,
       "timedOut": 0,
-      "newKills": 13,
+      "newKills": 6,
       "floor": 94,
-      "was": null
+      "was": 94,
+      "measuredAt": "0fa77564"
     },
     "src/identity/ConsolidationAdapter.sol": {
       "tier": 3,
@@ -1245,205 +1246,223 @@
     ],
     "src/curation/PackageRegistry.sol": [
       {
-        "line": 200,
+        "line": 226,
         "rule": "ROR",
         "verdict": "equivalent",
         "why": "`!=` vs `>` NONE, the enum's zero value"
       },
       {
-        "line": 204,
+        "line": 231,
         "rule": "ROR",
         "verdict": "equivalent",
         "why": "`== 0` vs `<= 0` on an unsigned value"
       },
       {
-        "line": 215,
+        "line": 242,
         "rule": "ROR",
         "verdict": "equivalent",
         "why": "`==` vs `>=` REVOKED, the enum's last value"
       },
       {
-        "line": 332,
+        "line": 359,
         "rule": "CR",
         "verdict": "equivalent",
         "why": "`token;` is a no-op expression statement that only silences the unused-parameter warning"
       },
       {
-        "line": 340,
+        "line": 367,
         "rule": "ROR",
         "verdict": "equivalent",
         "why": "`<= ARTIST` adds NONE, whose `item.seed` `_checkItem` already forced to zero"
       },
       {
-        "line": 342,
+        "line": 369,
         "rule": "ROR",
         "verdict": "equivalent",
         "why": "`==` vs `>=` VRF: `_checkItem` already refused every seed policy above VRF"
       },
       {
-        "line": 365,
+        "line": 392,
         "rule": "ROR",
         "verdict": "equivalent",
         "why": "boundary value that cannot occur: artist ID 2^160-1 needs a registered account at address 0xff..ff"
       },
       {
-        "line": 377,
+        "line": 404,
         "rule": "ROR",
         "verdict": "defensive",
         "why": "`!=` vs `>`: Stream token IDs only grow, so `tokenOfContent` is never below the released token; differs only if the bound Stream lowered it"
       },
       {
-        "line": 414,
+        "line": 433,
         "rule": "ROR",
         "verdict": "equivalent",
-        "why": "`>= APPROVED` adds only REVOKED, which is not live and is assigned REVOKED again"
+        "why": "`==` vs `>=` REVOKED, the enum's last value"
       },
       {
-        "line": 424,
+        "line": 433,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_successor_theFirstPolicyReplacesNone`: a root nobody registered read as revoked once the approvals of the zero address were killed"
+      },
+      {
+        "line": 433,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`>= APPROVED` adds only REVOKED, which the first condition already answers"
+      },
+      {
+        "line": 457,
         "rule": "ROR",
         "verdict": "defensive",
         "why": "`==` vs `>=`: a release's token is never above `tokenOfContent` (Stream IDs only grow); differs only if the bound Stream lowered it"
       },
       {
-        "line": 510,
+        "line": 543,
         "rule": "ROR",
         "verdict": "equivalent",
         "why": "`== 0` vs `<= 0` on an unsigned value"
       },
       {
-        "line": 516,
+        "line": 549,
         "rule": "ROR",
         "verdict": "equivalent",
         "why": "`!= 0` vs `> 0` on an unsigned value"
       },
       {
-        "line": 516,
+        "line": 549,
         "rule": "ROR",
         "verdict": "equivalent",
         "why": "`>= VRF` adds only policies above VRF, already refused by the first clause of the same condition"
       },
       {
-        "line": 571,
+        "line": 604,
         "rule": "ROR",
         "verdict": "equivalent",
         "why": "`<= ARTIST` adds NONE, whose `item.seed` is zero, the value returned anyway"
       },
       {
-        "line": 572,
+        "line": 605,
         "rule": "ROR",
         "verdict": "equivalent",
         "why": "`!=` vs `<` VRF: policies above VRF were refused by `_checkItem`"
       },
       {
-        "line": 591,
+        "line": 624,
         "rule": "ROR",
         "verdict": "defensive",
         "why": "`!=` vs `<`: a release's token is never above `tokenOfContent` (Stream IDs only grow, never reused); differs only if the bound Stream lowered it"
       },
       {
-        "line": 601,
+        "line": 634,
         "rule": "CR",
         "verdict": "equivalent",
         "why": "without `return false` the catch falls through to the bool default, false"
       },
       {
-        "line": 614,
+        "line": 652,
         "rule": "ROR",
         "verdict": "equivalent",
-        "why": "`==` vs `>=`: a package's epoch is a past `_killEpoch`, which only grows, so it is never above it"
-      },
-      {
-        "line": 622,
-        "rule": "ROR",
-        "verdict": "equivalent",
-        "why": "`== 0` vs `<= 0` on an unsigned value"
-      },
-      {
-        "line": 622,
-        "rule": "ROR",
-        "verdict": "equivalent",
-        "why": "`== 0` vs `<= 0` on an unsigned value"
-      },
-      {
-        "line": 625,
-        "rule": "ROR",
-        "verdict": "equivalent",
-        "why": "`==` vs `<=` ORIGINAL, the enum's zero value"
-      },
-      {
-        "line": 626,
-        "rule": "ROR",
-        "verdict": "equivalent",
-        "why": "`!= 0` vs `> 0` on an unsigned value"
-      },
-      {
-        "line": 649,
-        "rule": "ROR",
-        "verdict": "equivalent",
-        "why": "`!=` vs `>` ARTIST, the enum's zero value"
-      },
-      {
-        "line": 654,
-        "rule": "ROR",
-        "verdict": "equivalent",
-        "why": "`<` vs `!=` on a loop counter that steps by one from zero"
-      },
-      {
-        "line": 654,
-        "rule": "UOR",
-        "verdict": "equivalent",
-        "why": "`++i` vs `i++` as a loop increment whose value is unused"
-      },
-      {
-        "line": 658,
-        "rule": "ROR",
-        "verdict": "equivalent",
-        "why": "`<` vs `!=` on a loop counter that steps by one from zero"
-      },
-      {
-        "line": 658,
-        "rule": "ROR",
-        "verdict": "equivalent",
-        "why": "`j <= i` also reads `ids[i]`, still zero, against an id already checked nonzero"
-      },
-      {
-        "line": 658,
-        "rule": "UOR",
-        "verdict": "equivalent",
-        "why": "`++j` vs `j++` as a loop increment whose value is unused"
+        "why": "`!=` vs `<`: a package's epoch is a past `_killEpoch`, which only grows, so it is never above it"
       },
       {
         "line": 665,
         "rule": "ROR",
         "verdict": "equivalent",
+        "why": "`!= 0` vs `> 0` on an unsigned value"
+      },
+      {
+        "line": 673,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`== 0` vs `<= 0` on an unsigned value"
+      },
+      {
+        "line": 673,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`== 0` vs `<= 0` on an unsigned value"
+      },
+      {
+        "line": 676,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`==` vs `<=` ORIGINAL, the enum's zero value"
+      },
+      {
+        "line": 677,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`!= 0` vs `> 0` on an unsigned value"
+      },
+      {
+        "line": 700,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`!=` vs `>` ARTIST, the enum's zero value"
+      },
+      {
+        "line": 705,
+        "rule": "ROR",
+        "verdict": "equivalent",
         "why": "`<` vs `!=` on a loop counter that steps by one from zero"
       },
       {
-        "line": 667,
-        "rule": "ROR",
+        "line": 705,
+        "rule": "UOR",
         "verdict": "equivalent",
-        "why": "`>=` adds only `artistId` above the previous one, which the preceding clause already accepts as ordered"
+        "why": "`++i` vs `i++` as a loop increment whose value is unused"
       },
       {
-        "line": 684,
+        "line": 709,
         "rule": "ROR",
         "verdict": "equivalent",
         "why": "`<` vs `!=` on a loop counter that steps by one from zero"
       },
       {
-        "line": 684,
+        "line": 709,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`j <= i` also reads `ids[i]`, still zero, against an id already checked nonzero"
+      },
+      {
+        "line": 709,
         "rule": "UOR",
         "verdict": "equivalent",
         "why": "`++j` vs `j++` as a loop increment whose value is unused"
       },
       {
-        "line": 689,
+        "line": 716,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`<` vs `!=` on a loop counter that steps by one from zero"
+      },
+      {
+        "line": 718,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`>=` adds only `artistId` above the previous one, which the preceding clause already accepts as ordered"
+      },
+      {
+        "line": 735,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`<` vs `!=` on a loop counter that steps by one from zero"
+      },
+      {
+        "line": 735,
+        "rule": "UOR",
+        "verdict": "equivalent",
+        "why": "`++j` vs `j++` as a loop increment whose value is unused"
+      },
+      {
+        "line": 740,
         "rule": "CR",
         "verdict": "equivalent",
         "why": "without the final `return false` the function returns the bool default, false"
       },
       {
-        "line": 708,
+        "line": 759,
         "rule": "ROR",
         "verdict": "defensive",
         "why": "a 20-byte proof naming the root (empty signature) falls to `requireSigned`, which checks the same wallet the same way; differs only as gas or if the accounts module lies"
@@ -1691,181 +1710,223 @@
     ],
     "src/identity/Accounts.sol": [
       {
-        "line": 197,
-        "rule": "CR",
-        "verdict": "killed",
-        "why": "`test_RegisterIndependent_RefusesAnExpiredAcceptance`: registerIndependent accepted an expired acceptance signature (deadline check removed)"
+        "line": 194,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`<` vs `!=` in a loop that counts up by one from zero"
       },
       {
-        "line": 214,
+        "line": 194,
+        "rule": "UOR",
+        "verdict": "equivalent",
+        "why": "`++i` vs `i++` as a loop step whose value is not used"
+      },
+      {
+        "line": 265,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`<` vs `!=` in a loop that counts up by one from zero"
+      },
+      {
+        "line": 265,
+        "rule": "UOR",
+        "verdict": "equivalent",
+        "why": "`++i` vs `i++` as a loop step whose value is not used"
+      },
+      {
+        "line": 281,
         "rule": "ROR",
         "verdict": "equivalent",
         "why": "ChangeKind.NONE is the lowest enum value, so the comparison is the same"
       },
       {
-        "line": 231,
+        "line": 299,
         "rule": "ROR",
         "verdict": "equivalent",
         "why": "`<= 0` equals `== 0` on an unsigned bytes32"
       },
       {
-        "line": 234,
+        "line": 302,
         "rule": "ROR",
         "verdict": "equivalent",
         "why": "ChangeKind.REPLACEMENT is the highest enum value, so the comparison is the same"
       },
       {
-        "line": 241,
+        "line": 309,
         "rule": "ROR",
         "verdict": "equivalent",
         "why": "REPLACEMENT already reverted at L234, so `>= OWN` only ever sees OWN"
       },
       {
-        "line": 257,
+        "line": 326,
         "rule": "ROR",
         "verdict": "equivalent",
         "why": "_pendingOf already reverted on NONE, so `<= OWN` only ever sees OWN"
       },
       {
-        "line": 272,
+        "line": 342,
         "rule": "ROR",
         "verdict": "equivalent",
         "why": "ChangeKind.REPLACEMENT is the highest enum value, so the comparison is the same"
       },
       {
-        "line": 289,
+        "line": 361,
         "rule": "ROR",
         "verdict": "equivalent",
         "why": "`<= 0` equals `== 0` on an unsigned bytes32"
       },
       {
-        "line": 405,
+        "line": 440,
+        "rule": "MIA",
+        "verdict": "defensive",
+        "why": "only skips the consolidation read for a zero root: the wallet is not zero (refused above) and no source consolidates a wallet with the zero address"
+      },
+      {
+        "line": 509,
         "rule": "ROR",
         "verdict": "equivalent",
         "why": "ChangeKind.NONE is the lowest enum value, so the comparison is the same"
       },
       {
-        "line": 420,
+        "line": 524,
         "rule": "LOR",
         "verdict": "equivalent",
         "why": "early exit only: a zero token has no code so both reads fail to 'no', and isWallet refuses a zero account"
       },
       {
-        "line": 420,
+        "line": 524,
         "rule": "MIA",
         "verdict": "equivalent",
         "why": "early exit only: a zero token has no code so both reads fail to 'no', and isWallet refuses a zero account"
       },
       {
-        "line": 424,
-        "rule": "ROR",
-        "verdict": "killed",
-        "why": "`test_IsArtist_AnEditionAnswerThatIsNotOneCleanAddressIsNo`: an edition's `stream()` answer longer than one word was read as a master"
-      },
-      {
-        "line": 426,
-        "rule": "LOR",
-        "verdict": "killed",
-        "why": "`test_IsArtist_AnEditionAnswerThatIsNotOneCleanAddressIsNo`: a `stream()` word with bits above the address was truncated and read as a master"
-      },
-      {
-        "line": 426,
-        "rule": "MIA",
-        "verdict": "killed",
-        "why": "`test_IsArtist_AnEditionAnswerThatIsNotOneCleanAddressIsNo`: a `stream()` word with bits above the address was truncated and read as a master"
-      },
-      {
-        "line": 426,
-        "rule": "ROR",
-        "verdict": "killed",
-        "why": "`test_IsArtist_AMasterAtTheHighestAddressCounts`: a master at address(type(uint160).max) was refused (`>=` for `>`)"
-      },
-      {
-        "line": 427,
-        "rule": "CR",
-        "verdict": "killed",
-        "why": "`test_IsArtist_AnEditionAnswerThatIsNotOneCleanAddressIsNo`: a `stream()` word with bits above the address was truncated and read as a master"
-      },
-      {
-        "line": 564,
-        "rule": "ROR",
-        "verdict": "killed",
-        "why": "`test_Register_RefusesARootAPendingChangeReserves`: register created an account on a root another account's pending change reserves"
-      },
-      {
-        "line": 569,
-        "rule": "CR",
-        "verdict": "killed",
-        "why": "`test_Register_LogsTheNewAccount`: ArtistRegistered was not pinned by any test"
-      },
-      {
-        "line": 578,
+        "line": 728,
         "rule": "MIA",
         "verdict": "equivalent",
         "why": "an ID over 160 bits names no account (isWallet answers false for it), so returning it instead of zero gives the same 'no'"
       },
       {
-        "line": 578,
-        "rule": "ROR",
-        "verdict": "killed",
-        "why": "`test_IsArtist_TheHighestArtistIdCounts`: the artist ID type(uint160).max was read as no artist (`>=` for `>`)"
+        "line": 736,
+        "rule": "CR",
+        "verdict": "equivalent",
+        "why": "an account recorded here always has the address its ID is made from mapped to it (`_create`, the copy), so the lookup that follows answers the same ID"
       },
       {
-        "line": 599,
+        "line": 736,
+        "rule": "MIA",
+        "verdict": "equivalent",
+        "why": "an account recorded here always has the address its ID is made from mapped to it (`_create`, the copy), so the lookup that follows answers the same ID"
+      },
+      {
+        "line": 737,
+        "rule": "MIA",
+        "verdict": "killed",
+        "why": "`test_Successor_TheFirstModuleReplacesNone`: `frozenUntil` of an ID wider than an address answered the freeze of the account its low bits name"
+      },
+      {
+        "line": 737,
+        "rule": "ROR",
+        "verdict": "killed",
+        "why": "`test_Successor_TheFirstModuleReplacesNone`: `frozenUntil` of an ID wider than an address answered the freeze of the account its low bits name"
+      },
+      {
+        "line": 766,
+        "rule": "MIA",
+        "verdict": "equivalent",
+        "why": "without the early return the read goes to the zero address, which has no code and is unanswered too"
+      },
+      {
+        "line": 790,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`==` vs `>=` 160: the read copies at most 160 bytes"
+      },
+      {
+        "line": 800,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`!=` vs `<` 288: the read copies at most 288 bytes"
+      },
+      {
+        "line": 829,
+        "rule": "LOR",
+        "verdict": "equivalent",
+        "why": "an unanswered record decodes to nothing, so both conditions are true together; a record with a zero root would be copied as an unknown account, and every caller then reverts with `UnknownArtist`, which undoes the copy"
+      },
+      {
+        "line": 833,
+        "rule": "CR",
+        "verdict": "killed",
+        "why": "`test_Successor_ACopyTakesTheWholeIdentityAndMapsRootAndIdAddress`: the copy left the profile fields out"
+      },
+      {
+        "line": 834,
+        "rule": "CR",
+        "verdict": "killed",
+        "why": "`test_Successor_ACopyTakesTheWholeIdentityAndMapsRootAndIdAddress`: the copy did not map a root that is not the ID's address"
+      },
+      {
+        "line": 835,
+        "rule": "CR",
+        "verdict": "killed",
+        "why": "`test_Successor_ACopyTakesTheWholeIdentityAndMapsRootAndIdAddress`: the copy did not map the address the ID is made from"
+      },
+      {
+        "line": 839,
         "rule": "ROR",
         "verdict": "equivalent",
         "why": "ChangeKind.NONE is the lowest enum value, so the comparison is the same"
       },
       {
-        "line": 663,
-        "rule": "LOR",
-        "verdict": "killed",
-        "why": "`test_OwnChange_CurrentBehaviour_APayoutAnsweringTrueToEveryProbeIsAccepted`: a payout contract that answers true to every ERC-165 probe (so is not ERC-165) was refused as a network contract"
-      },
-      {
-        "line": 663,
-        "rule": "MIA",
-        "verdict": "killed",
-        "why": "`test_OwnChange_CurrentBehaviour_APayoutAnsweringTrueToEveryProbeIsAccepted`: a payout contract that answers true to every ERC-165 probe (so is not ERC-165) was refused as a network contract"
-      },
-      {
-        "line": 675,
-        "rule": "ROR",
-        "verdict": "equivalent",
-        "why": "`<` vs `!=` on a loop counter that steps by one"
-      },
-      {
-        "line": 675,
-        "rule": "UOR",
-        "verdict": "equivalent",
-        "why": "`++i` vs `i++` as a loop step whose value is unused"
-      },
-      {
-        "line": 678,
-        "rule": "CR",
-        "verdict": "equivalent",
-        "why": "the removed `return false` equals the default return value"
-      },
-      {
-        "line": 695,
-        "rule": "MIA",
-        "verdict": "killed",
-        "why": "`test_OwnChange_TheAccountStillActsWhileItsOwnChangeWaits`: an account's own pending change set `replacing`, so nobody could act for the account while it waited"
-      },
-      {
-        "line": 695,
-        "rule": "ROR",
-        "verdict": "killed",
-        "why": "`test_OwnChange_TheAccountStillActsWhileItsOwnChangeWaits`: an account's own pending change set `replacing`, so nobody could act for the account while it waited"
-      },
-      {
-        "line": 695,
+        "line": 840,
         "rule": "ROR",
         "verdict": "equivalent",
         "why": "ChangeKind.REPLACEMENT is the highest enum value, so the comparison is the same"
       },
       {
-        "line": 713,
+        "line": 841,
+        "rule": "MIA",
+        "verdict": "killed",
+        "why": "`test_Successor_ACopiedOwnChangeLeavesTheAccountActing`: a change nobody contested was copied with this module's latest outcome as its prior outcome"
+      },
+      {
+        "line": 859,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "ChangeKind.NONE is the lowest enum value, so the comparison is the same"
+      },
+      {
+        "line": 914,
+        "rule": "MIA",
+        "verdict": "equivalent",
+        "why": "an account with no code answers no probe, so every check that follows says no and the payout is allowed all the same"
+      },
+      {
+        "line": 944,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`<` vs `!=` on a loop counter that steps by one"
+      },
+      {
+        "line": 944,
+        "rule": "UOR",
+        "verdict": "equivalent",
+        "why": "`++i` vs `i++` as a loop step whose value is unused"
+      },
+      {
+        "line": 947,
+        "rule": "CR",
+        "verdict": "equivalent",
+        "why": "the removed `return false` equals the default return value"
+      },
+      {
+        "line": 973,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "ChangeKind.REPLACEMENT is the highest enum value, so the comparison is the same"
+      },
+      {
+        "line": 991,
         "rule": "ROR",
         "verdict": "equivalent",
         "why": "_apply only runs with a pending change (OWN or REPLACEMENT), so `> OWN` equals `!= OWN`"
@@ -3379,6 +3440,17 @@
       ]
     },
     {
+      "file": "test/curation/PackageRegistrySuccessor.t.sol",
+      "tests": [
+        {
+          "name": "test_successor_theFirstPolicyReplacesNone",
+          "where": [
+            "PackageRegistry L433"
+          ]
+        }
+      ]
+    },
+    {
       "file": "test/economics/RevenueEscrow.t.sol",
       "tests": [
         {
@@ -3445,6 +3517,31 @@
           "name": "test_RegisterIndependent_RefusesAnExpiredAcceptance",
           "where": [
             "Accounts L197"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "test/identity/AccountsSuccessorModule.t.sol",
+      "tests": [
+        {
+          "name": "test_Successor_ACopiedOwnChangeLeavesTheAccountActing",
+          "where": [
+            "Accounts L841"
+          ]
+        },
+        {
+          "name": "test_Successor_ACopyTakesTheWholeIdentityAndMapsRootAndIdAddress",
+          "where": [
+            "Accounts L833",
+            "Accounts L834",
+            "Accounts L835"
+          ]
+        },
+        {
+          "name": "test_Successor_TheFirstModuleReplacesNone",
+          "where": [
+            "Accounts L737"
           ]
         }
       ]

@@ -16,7 +16,7 @@
     "src/core/StreamEditions6529.sol": 89,
     "src/core/StreamWorkFacts6529.sol": 93,
     "src/curation/Eip712CurationVerifier.sol": 95,
-    "src/curation/PackageRegistry.sol": 92,
+    "src/curation/PackageRegistry.sol": 91,
     "src/economics/AssetAllowlist.sol": 88,
     "src/economics/ClaimRouter.sol": 86,
     "src/economics/EconomicsResolver.sol": 90,

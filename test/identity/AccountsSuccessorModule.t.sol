@@ -133,6 +133,11 @@ contract AccountsSuccessorModuleTest is AccountsFixture, GasRuleAssertions {
         vm.prank(network);
         vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.UnknownArtist.selector, unknown));
         first.freeze(unknown);
+        // An ID wider than an address names no account, whatever its low bits are.
+        vm.prank(network);
+        first.freeze(artistId);
+        assertGt(first.frozenUntil(artistId), block.timestamp);
+        assertEq(first.frozenUntil(uint256(1) << 160 | artistId), 0);
     }
 
     function test_Successor_ThePredecessorMustBeAnAccountsModule() public {
@@ -729,6 +734,29 @@ contract AccountsSuccessorModuleTest is AccountsFixture, GasRuleAssertions {
         assertEq(seen.payout, payout);
     }
 
+    /// @dev A copy takes the whole identity, profile included, and maps both the root and the
+    ///      address the ID is made from, so neither is looked up in the replaced module again.
+    function test_Successor_ACopyTakesTheWholeIdentityAndMapsRootAndIdAddress() public {
+        _moveInFirst();
+        (ArtistIdentity memory before,) = first.artist(artistId);
+        assertEq(before.root, newRoot);
+        assertEq(before.profileDocHash, keccak256("profile document v2"));
+        _force(next);
+        uint256[] memory ids = new uint256[](1);
+        ids[0] = artistId;
+        next.copyAccounts(ids);
+
+        replaced.setMode(PredecessorMock.Mode.SILENT);
+        (ArtistIdentity memory copied, uint48 frozen) = next.artist(artistId);
+        assertEq(keccak256(abi.encode(copied)), keccak256(abi.encode(before)));
+        assertEq(copied.profileId, PROFILE);
+        assertEq(frozen, 0);
+        assertEq(next.artistIdOf(newRoot), artistId, "the root is mapped here");
+        assertEq(next.artistIdOf(artist), artistId, "and the address the ID is made from");
+        assertTrue(next.isWallet(uint256(uint160(newRoot)), newRoot));
+        assertFalse(next.isWallet(uint256(uint160(artist)), artist));
+    }
+
     /// @dev Each inherited account is copied on its own: copying one with nothing pending
     ///      leaves no pending change and no reservation behind, so the next copies too.
     function test_Successor_CopiesEachAccountOnItsOwn() public {
@@ -763,10 +791,13 @@ contract AccountsSuccessorModuleTest is AccountsFixture, GasRuleAssertions {
     function test_Successor_ACopiedOwnChangeLeavesTheAccountActing() public {
         _use(first);
         _stage(artistKey, _identity(artist, payout));
+        // An outcome already recorded for this module is no part of a change nobody contested.
+        outcomes.setOutcome(address(next), artistId, keccak256("an earlier outcome"));
         _force(next);
         vm.prank(wallet);
         next.revokeNonce(artistId);
         assertEq(uint8(next.pendingChange(artistId).kind), uint8(ChangeKind.OWN));
+        assertEq(next.pendingChange(artistId).priorOutcome, bytes32(0), "copied as it was");
         assertTrue(next.isWallet(artistId, artist), "an own change does not stop the account");
         assertTrue(next.isWallet(artistId, wallet));
         assertEq(next.activeAuthorityOf(artistId), artist);

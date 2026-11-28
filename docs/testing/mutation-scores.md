@@ -82,8 +82,8 @@ final score minus two points, rounded down.
 
 | Contract | Mutants | Killed | Survived | Timed out | Score | Killed by new tests | Final | Floor |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `src/curation/PackageRegistry.sol` | 578 | 544 | 34 | 0 | 94.1% | 0 | 94.1% | 92 (was 91) |
-| `src/identity/Accounts.sol` | 562 | 532 | 30 | 0 | 94.7% | 13 | 97.0% | 94 |
+| `src/curation/PackageRegistry.sol` | 599 | 562 | 37 | 0 | 93.8% | 1 | 94.0% | 91 (was 92) |
+| `src/identity/Accounts.sol` | 822 | 785 | 37 | 0 | 95.5% | 6 | 96.2% | 94 |
 | `src/independent/IndependentEditionAuction.sol` | 56 | 53 | 3 | 0 | 94.6% | 1 | 96.4% | 94 (was 95) |
 | `src/independent/IndependentStreamRegistry.sol` | 948 | 882 | 66 | 0 | 93.0% | 0 | 93.0% | 91 (was 90) |
 | `src/records/WorkRules.sol` | 373 | 353 | 20 | 0 | 94.6% | 12 | 97.9% | 95 (was 89) |
@@ -91,7 +91,7 @@ final score minus two points, rounded down.
 | `src/sales/UniformClearing.sol` | 278 | 276 | 2 | 0 | 99.3% | 0 | 99.3% | 97 (was 93) |
 | `src/sales/UniformEditionAuction.sol` | 1122 | 1055 | 67 | 0 | 94.0% | 0 | 94.0% | 92 (was 91) |
 | `src/terms/StreamTerms.sol` | 170 | 160 | 10 | 0 | 94.1% | 9 | 99.4% | 97 (was 90) |
-| **Total** | **4782** | **4529** | **253** | **0** | **94.7%** | **35** | **95.4%** | |
+| **Total** | **5063** | **4800** | **263** | **0** | **94.8%** | **29** | **95.4%** | |
 
 <!-- /generated -->
 
@@ -222,11 +222,30 @@ keep their verdicts at their new lines. No survivor showed a defect in a contrac
 this measurement are listed below; the others, and those of `EconomicsResolver` and
 `BoundedCall`, are the campaign's untriaged ones.
 
+### Measured again on 0fa77564
+
+`Accounts` and `PackageRegistry` were measured again on 28 November 2026 at commit 0fa77564,
+after both learned to name the module they replace and the payout check was widened. Their
+rows, floors and survivor tables on this page are that measurement's, and their line numbers
+that commit's. Each ran as the four shards the tool plans, in separate checkouts on a rented
+96-core machine; every shard logged that it finished, no operator failed, no mutant timed
+out, and every survivor was run against the whole suite.
+
+`Accounts` went from 562 to 822 mutants. Twenty survivors were new or on changed lines: six
+were gaps and each is killed by a test added with this measurement (an ID wider than an
+address in `frozenUntil`, the prior outcome of a change copied uncontested, and the profile,
+the root mapping and the ID-address mapping of a copy); fourteen are equivalent or defensive
+and are in the table below. `PackageRegistry` went from 578 to 599 mutants with five new
+survivors: one was a gap (a kill of the zero address read an unregistered root as revoked)
+and has a test; four are equivalent. Its final rate is 563 of 599, a hair under 94.0%, so its
+floor is 91 where it was 92: the change added 21 mutants, of which four survive as
+equivalents.
+
 ## The tests added
 
 <!-- generated:tests -->
 
-121 test functions, each shown to fail on the mutants it is listed with:
+125 test functions, each shown to fail on the mutants it is listed with:
 
 - `test/content/ContentStorePermanence.t.sol`
   - `test_Source_ARangeCheckKeepsMemoryAtOneChunk` (ContentStore L584)
@@ -255,6 +274,8 @@ this measurement are listed below; the others, and those of `EconomicsResolver` 
   - `test_preview_nonCc0LicencesMayNameAnyText` (PackageRegistry L522)
   - `test_preview_requestLengthBoundary` (PackageRegistry L489)
   - `test_revokeMove_first255NoncesShareOneSlot` (PackageRegistry L92)
+- `test/curation/PackageRegistrySuccessor.t.sol`
+  - `test_successor_theFirstPolicyReplacesNone` (PackageRegistry L433)
 - `test/economics/RevenueEscrow.t.sol`
   - `test_Recover_ReentryIsBlocked` (RevenueEscrow L147)
 - `test/identity/Accounts.t.sol`
@@ -267,6 +288,10 @@ this measurement are listed below; the others, and those of `EconomicsResolver` 
   - `test_IsArtist_AnEditionAnswerThatIsNotOneCleanAddressIsNo` (Accounts L424, Accounts L426, Accounts L427)
   - `test_IsArtist_TheHighestArtistIdCounts` (Accounts L578)
   - `test_RegisterIndependent_RefusesAnExpiredAcceptance` (Accounts L197)
+- `test/identity/AccountsSuccessorModule.t.sol`
+  - `test_Successor_ACopiedOwnChangeLeavesTheAccountActing` (Accounts L841)
+  - `test_Successor_ACopyTakesTheWholeIdentityAndMapsRootAndIdAddress` (Accounts L833, Accounts L834, Accounts L835)
+  - `test_Successor_TheFirstModuleReplacesNone` (Accounts L737)
 - `test/independent/IndependentEditionAuctionMutation.t.sol`
   - `test_Open_TheEventNamesTheEditionContractsMaster` (IndependentEditionAuction L112)
   - `test_Raise_MovesTheBidUpForTheDifference` (IndependentEditionAuction L70, IndependentEditionAuction L71)
@@ -640,81 +665,91 @@ the survivors new in the second measurement of two lenses.
 
 ### `src/curation/PackageRegistry.sol`
 
-34 survivors: 30 equivalent, 4 defensive.
+37 survivors: 32 equivalent, 4 defensive, 1 killed.
 
 | Line | Rule | Verdict | Why, or the test |
 | ---: | --- | --- | --- |
-| 200 | ROR | equivalent | `!=` vs `>` NONE, the enum's zero value |
-| 204 | ROR | equivalent | `== 0` vs `<= 0` on an unsigned value |
-| 215 | ROR | equivalent | `==` vs `>=` REVOKED, the enum's last value |
-| 332 | CR | equivalent | `token;` is a no-op expression statement that only silences the unused-parameter warning |
-| 340 | ROR | equivalent | `<= ARTIST` adds NONE, whose `item.seed` `_checkItem` already forced to zero |
-| 342 | ROR | equivalent | `==` vs `>=` VRF: `_checkItem` already refused every seed policy above VRF |
-| 365 | ROR | equivalent | boundary value that cannot occur: artist ID 2^160-1 needs a registered account at address 0xff..ff |
-| 377 | ROR | defensive | `!=` vs `>`: Stream token IDs only grow, so `tokenOfContent` is never below the released token; differs only if the bound Stream lowered it |
-| 414 | ROR | equivalent | `>= APPROVED` adds only REVOKED, which is not live and is assigned REVOKED again |
-| 424 | ROR | defensive | `==` vs `>=`: a release's token is never above `tokenOfContent` (Stream IDs only grow); differs only if the bound Stream lowered it |
-| 510 | ROR | equivalent | `== 0` vs `<= 0` on an unsigned value |
-| 516 | ROR | equivalent | `!= 0` vs `> 0` on an unsigned value |
-| 516 | ROR | equivalent | `>= VRF` adds only policies above VRF, already refused by the first clause of the same condition |
-| 571 | ROR | equivalent | `<= ARTIST` adds NONE, whose `item.seed` is zero, the value returned anyway |
-| 572 | ROR | equivalent | `!=` vs `<` VRF: policies above VRF were refused by `_checkItem` |
-| 591 | ROR | defensive | `!=` vs `<`: a release's token is never above `tokenOfContent` (Stream IDs only grow, never reused); differs only if the bound Stream lowered it |
-| 601 | CR | equivalent | without `return false` the catch falls through to the bool default, false |
-| 614 | ROR | equivalent | `==` vs `>=`: a package's epoch is a past `_killEpoch`, which only grows, so it is never above it |
-| 622 | ROR | equivalent | `== 0` vs `<= 0` on an unsigned value |
-| 622 | ROR | equivalent | `== 0` vs `<= 0` on an unsigned value |
-| 625 | ROR | equivalent | `==` vs `<=` ORIGINAL, the enum's zero value |
-| 626 | ROR | equivalent | `!= 0` vs `> 0` on an unsigned value |
-| 649 | ROR | equivalent | `!=` vs `>` ARTIST, the enum's zero value |
-| 654 | ROR | equivalent | `<` vs `!=` on a loop counter that steps by one from zero |
-| 654 | UOR | equivalent | `++i` vs `i++` as a loop increment whose value is unused |
-| 658 | ROR | equivalent | `<` vs `!=` on a loop counter that steps by one from zero |
-| 658 | ROR | equivalent | `j <= i` also reads `ids[i]`, still zero, against an id already checked nonzero |
-| 658 | UOR | equivalent | `++j` vs `j++` as a loop increment whose value is unused |
-| 665 | ROR | equivalent | `<` vs `!=` on a loop counter that steps by one from zero |
-| 667 | ROR | equivalent | `>=` adds only `artistId` above the previous one, which the preceding clause already accepts as ordered |
-| 684 | ROR | equivalent | `<` vs `!=` on a loop counter that steps by one from zero |
-| 684 | UOR | equivalent | `++j` vs `j++` as a loop increment whose value is unused |
-| 689 | CR | equivalent | without the final `return false` the function returns the bool default, false |
-| 708 | ROR | defensive | a 20-byte proof naming the root (empty signature) falls to `requireSigned`, which checks the same wallet the same way; differs only as gas or if the accounts module lies |
+| 226 | ROR | equivalent | `!=` vs `>` NONE, the enum's zero value |
+| 231 | ROR | equivalent | `== 0` vs `<= 0` on an unsigned value |
+| 242 | ROR | equivalent | `==` vs `>=` REVOKED, the enum's last value |
+| 359 | CR | equivalent | `token;` is a no-op expression statement that only silences the unused-parameter warning |
+| 367 | ROR | equivalent | `<= ARTIST` adds NONE, whose `item.seed` `_checkItem` already forced to zero |
+| 369 | ROR | equivalent | `==` vs `>=` VRF: `_checkItem` already refused every seed policy above VRF |
+| 392 | ROR | equivalent | boundary value that cannot occur: artist ID 2^160-1 needs a registered account at address 0xff..ff |
+| 404 | ROR | defensive | `!=` vs `>`: Stream token IDs only grow, so `tokenOfContent` is never below the released token; differs only if the bound Stream lowered it |
+| 433 | ROR | equivalent | `==` vs `>=` REVOKED, the enum's last value |
+| 433 | ROR | killed | `test_successor_theFirstPolicyReplacesNone`: a root nobody registered read as revoked once the approvals of the zero address were killed |
+| 433 | ROR | equivalent | `>= APPROVED` adds only REVOKED, which the first condition already answers |
+| 457 | ROR | defensive | `==` vs `>=`: a release's token is never above `tokenOfContent` (Stream IDs only grow); differs only if the bound Stream lowered it |
+| 543 | ROR | equivalent | `== 0` vs `<= 0` on an unsigned value |
+| 549 | ROR | equivalent | `!= 0` vs `> 0` on an unsigned value |
+| 549 | ROR | equivalent | `>= VRF` adds only policies above VRF, already refused by the first clause of the same condition |
+| 604 | ROR | equivalent | `<= ARTIST` adds NONE, whose `item.seed` is zero, the value returned anyway |
+| 605 | ROR | equivalent | `!=` vs `<` VRF: policies above VRF were refused by `_checkItem` |
+| 624 | ROR | defensive | `!=` vs `<`: a release's token is never above `tokenOfContent` (Stream IDs only grow, never reused); differs only if the bound Stream lowered it |
+| 634 | CR | equivalent | without `return false` the catch falls through to the bool default, false |
+| 652 | ROR | equivalent | `!=` vs `<`: a package's epoch is a past `_killEpoch`, which only grows, so it is never above it |
+| 665 | ROR | equivalent | `!= 0` vs `> 0` on an unsigned value |
+| 673 | ROR | equivalent | `== 0` vs `<= 0` on an unsigned value |
+| 673 | ROR | equivalent | `== 0` vs `<= 0` on an unsigned value |
+| 676 | ROR | equivalent | `==` vs `<=` ORIGINAL, the enum's zero value |
+| 677 | ROR | equivalent | `!= 0` vs `> 0` on an unsigned value |
+| 700 | ROR | equivalent | `!=` vs `>` ARTIST, the enum's zero value |
+| 705 | ROR | equivalent | `<` vs `!=` on a loop counter that steps by one from zero |
+| 705 | UOR | equivalent | `++i` vs `i++` as a loop increment whose value is unused |
+| 709 | ROR | equivalent | `<` vs `!=` on a loop counter that steps by one from zero |
+| 709 | ROR | equivalent | `j <= i` also reads `ids[i]`, still zero, against an id already checked nonzero |
+| 709 | UOR | equivalent | `++j` vs `j++` as a loop increment whose value is unused |
+| 716 | ROR | equivalent | `<` vs `!=` on a loop counter that steps by one from zero |
+| 718 | ROR | equivalent | `>=` adds only `artistId` above the previous one, which the preceding clause already accepts as ordered |
+| 735 | ROR | equivalent | `<` vs `!=` on a loop counter that steps by one from zero |
+| 735 | UOR | equivalent | `++j` vs `j++` as a loop increment whose value is unused |
+| 740 | CR | equivalent | without the final `return false` the function returns the bool default, false |
+| 759 | ROR | defensive | a 20-byte proof naming the root (empty signature) falls to `requireSigned`, which checks the same wallet the same way; differs only as gas or if the accounts module lies |
 
 ### `src/identity/Accounts.sol`
 
-30 survivors: 13 killed, 17 equivalent.
+37 survivors: 30 equivalent, 1 defensive, 6 killed.
 
 | Line | Rule | Verdict | Why, or the test |
 | ---: | --- | --- | --- |
-| 197 | CR | killed | `test_RegisterIndependent_RefusesAnExpiredAcceptance`: registerIndependent accepted an expired acceptance signature (deadline check removed) |
-| 214 | ROR | equivalent | ChangeKind.NONE is the lowest enum value, so the comparison is the same |
-| 231 | ROR | equivalent | `<= 0` equals `== 0` on an unsigned bytes32 |
-| 234 | ROR | equivalent | ChangeKind.REPLACEMENT is the highest enum value, so the comparison is the same |
-| 241 | ROR | equivalent | REPLACEMENT already reverted at L234, so `>= OWN` only ever sees OWN |
-| 257 | ROR | equivalent | _pendingOf already reverted on NONE, so `<= OWN` only ever sees OWN |
-| 272 | ROR | equivalent | ChangeKind.REPLACEMENT is the highest enum value, so the comparison is the same |
-| 289 | ROR | equivalent | `<= 0` equals `== 0` on an unsigned bytes32 |
-| 405 | ROR | equivalent | ChangeKind.NONE is the lowest enum value, so the comparison is the same |
-| 420 | LOR | equivalent | early exit only: a zero token has no code so both reads fail to 'no', and isWallet refuses a zero account |
-| 420 | MIA | equivalent | early exit only: a zero token has no code so both reads fail to 'no', and isWallet refuses a zero account |
-| 424 | ROR | killed | `test_IsArtist_AnEditionAnswerThatIsNotOneCleanAddressIsNo`: an edition's `stream()` answer longer than one word was read as a master |
-| 426 | LOR | killed | `test_IsArtist_AnEditionAnswerThatIsNotOneCleanAddressIsNo`: a `stream()` word with bits above the address was truncated and read as a master |
-| 426 | MIA | killed | `test_IsArtist_AnEditionAnswerThatIsNotOneCleanAddressIsNo`: a `stream()` word with bits above the address was truncated and read as a master |
-| 426 | ROR | killed | `test_IsArtist_AMasterAtTheHighestAddressCounts`: a master at address(type(uint160).max) was refused (`>=` for `>`) |
-| 427 | CR | killed | `test_IsArtist_AnEditionAnswerThatIsNotOneCleanAddressIsNo`: a `stream()` word with bits above the address was truncated and read as a master |
-| 564 | ROR | killed | `test_Register_RefusesARootAPendingChangeReserves`: register created an account on a root another account's pending change reserves |
-| 569 | CR | killed | `test_Register_LogsTheNewAccount`: ArtistRegistered was not pinned by any test |
-| 578 | MIA | equivalent | an ID over 160 bits names no account (isWallet answers false for it), so returning it instead of zero gives the same 'no' |
-| 578 | ROR | killed | `test_IsArtist_TheHighestArtistIdCounts`: the artist ID type(uint160).max was read as no artist (`>=` for `>`) |
-| 599 | ROR | equivalent | ChangeKind.NONE is the lowest enum value, so the comparison is the same |
-| 663 | LOR | killed | `test_OwnChange_CurrentBehaviour_APayoutAnsweringTrueToEveryProbeIsAccepted`: a payout contract that answers true to every ERC-165 probe (so is not ERC-165) was refused as a network contract |
-| 663 | MIA | killed | `test_OwnChange_CurrentBehaviour_APayoutAnsweringTrueToEveryProbeIsAccepted`: a payout contract that answers true to every ERC-165 probe (so is not ERC-165) was refused as a network contract |
-| 675 | ROR | equivalent | `<` vs `!=` on a loop counter that steps by one |
-| 675 | UOR | equivalent | `++i` vs `i++` as a loop step whose value is unused |
-| 678 | CR | equivalent | the removed `return false` equals the default return value |
-| 695 | MIA | killed | `test_OwnChange_TheAccountStillActsWhileItsOwnChangeWaits`: an account's own pending change set `replacing`, so nobody could act for the account while it waited |
-| 695 | ROR | killed | `test_OwnChange_TheAccountStillActsWhileItsOwnChangeWaits`: an account's own pending change set `replacing`, so nobody could act for the account while it waited |
-| 695 | ROR | equivalent | ChangeKind.REPLACEMENT is the highest enum value, so the comparison is the same |
-| 713 | ROR | equivalent | _apply only runs with a pending change (OWN or REPLACEMENT), so `> OWN` equals `!= OWN` |
+| 194 | ROR | equivalent | `<` vs `!=` in a loop that counts up by one from zero |
+| 194 | UOR | equivalent | `++i` vs `i++` as a loop step whose value is not used |
+| 265 | ROR | equivalent | `<` vs `!=` in a loop that counts up by one from zero |
+| 265 | UOR | equivalent | `++i` vs `i++` as a loop step whose value is not used |
+| 281 | ROR | equivalent | ChangeKind.NONE is the lowest enum value, so the comparison is the same |
+| 299 | ROR | equivalent | `<= 0` equals `== 0` on an unsigned bytes32 |
+| 302 | ROR | equivalent | ChangeKind.REPLACEMENT is the highest enum value, so the comparison is the same |
+| 309 | ROR | equivalent | REPLACEMENT already reverted at L234, so `>= OWN` only ever sees OWN |
+| 326 | ROR | equivalent | _pendingOf already reverted on NONE, so `<= OWN` only ever sees OWN |
+| 342 | ROR | equivalent | ChangeKind.REPLACEMENT is the highest enum value, so the comparison is the same |
+| 361 | ROR | equivalent | `<= 0` equals `== 0` on an unsigned bytes32 |
+| 440 | MIA | defensive | only skips the consolidation read for a zero root: the wallet is not zero (refused above) and no source consolidates a wallet with the zero address |
+| 509 | ROR | equivalent | ChangeKind.NONE is the lowest enum value, so the comparison is the same |
+| 524 | LOR | equivalent | early exit only: a zero token has no code so both reads fail to 'no', and isWallet refuses a zero account |
+| 524 | MIA | equivalent | early exit only: a zero token has no code so both reads fail to 'no', and isWallet refuses a zero account |
+| 728 | MIA | equivalent | an ID over 160 bits names no account (isWallet answers false for it), so returning it instead of zero gives the same 'no' |
+| 736 | CR | equivalent | an account recorded here always has the address its ID is made from mapped to it (`_create`, the copy), so the lookup that follows answers the same ID |
+| 736 | MIA | equivalent | an account recorded here always has the address its ID is made from mapped to it (`_create`, the copy), so the lookup that follows answers the same ID |
+| 737 | MIA | killed | `test_Successor_TheFirstModuleReplacesNone`: `frozenUntil` of an ID wider than an address answered the freeze of the account its low bits name |
+| 737 | ROR | killed | `test_Successor_TheFirstModuleReplacesNone`: `frozenUntil` of an ID wider than an address answered the freeze of the account its low bits name |
+| 766 | MIA | equivalent | without the early return the read goes to the zero address, which has no code and is unanswered too |
+| 790 | ROR | equivalent | `==` vs `>=` 160: the read copies at most 160 bytes |
+| 800 | ROR | equivalent | `!=` vs `<` 288: the read copies at most 288 bytes |
+| 829 | LOR | equivalent | an unanswered record decodes to nothing, so both conditions are true together; a record with a zero root would be copied as an unknown account, and every caller then reverts with `UnknownArtist`, which undoes the copy |
+| 833 | CR | killed | `test_Successor_ACopyTakesTheWholeIdentityAndMapsRootAndIdAddress`: the copy left the profile fields out |
+| 834 | CR | killed | `test_Successor_ACopyTakesTheWholeIdentityAndMapsRootAndIdAddress`: the copy did not map a root that is not the ID's address |
+| 835 | CR | killed | `test_Successor_ACopyTakesTheWholeIdentityAndMapsRootAndIdAddress`: the copy did not map the address the ID is made from |
+| 839 | ROR | equivalent | ChangeKind.NONE is the lowest enum value, so the comparison is the same |
+| 840 | ROR | equivalent | ChangeKind.REPLACEMENT is the highest enum value, so the comparison is the same |
+| 841 | MIA | killed | `test_Successor_ACopiedOwnChangeLeavesTheAccountActing`: a change nobody contested was copied with this module's latest outcome as its prior outcome |
+| 859 | ROR | equivalent | ChangeKind.NONE is the lowest enum value, so the comparison is the same |
+| 914 | MIA | equivalent | an account with no code answers no probe, so every check that follows says no and the payout is allowed all the same |
+| 944 | ROR | equivalent | `<` vs `!=` on a loop counter that steps by one |
+| 944 | UOR | equivalent | `++i` vs `i++` as a loop step whose value is unused |
+| 947 | CR | equivalent | the removed `return false` equals the default return value |
+| 973 | ROR | equivalent | ChangeKind.REPLACEMENT is the highest enum value, so the comparison is the same |
+| 991 | ROR | equivalent | _apply only runs with a pending change (OWN or REPLACEMENT), so `> OWN` equals `!= OWN` |
 
 ### `src/independent/IndependentEditionAuction.sol`
 

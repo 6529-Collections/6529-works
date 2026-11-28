@@ -125,6 +125,11 @@ contract PackageRegistrySuccessorTest is CurationBase, GasRuleAssertions {
         vm.prank(guardian);
         registry.revokePackage(advance, 0);
         assertTrue(registry.isRevoked(advance), "revoked in advance");
+        // A root nobody registered has no signer: a kill, even of the zero address, does not
+        // revoke it.
+        vm.prank(guardian);
+        registry.killSignerApprovals(address(0));
+        assertFalse(registry.isRevoked(keccak256("never seen")), "unknown after a kill");
     }
 
     function test_successor_thePredecessorMustDeclareRevokedRoots() public {
