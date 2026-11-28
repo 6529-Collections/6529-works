@@ -169,6 +169,26 @@ contract AccountsPayoutCheckTest is AccountsFixture, GasRuleAssertions {
         }
     }
 
+    /// @dev What the check costs for a contract that is none of the network's (it declares
+    ///      ERC-165 and no network interface, and answers no `authority()`): every probe
+    ///      runs, cold. An account with no code costs one call, to the split factory.
+    function test_PayoutValidation_TheWholeCheckOfAnOutsideContractIsCheap() public {
+        address outside = address(new InterfaceStub(0x12345678));
+        address plain = makeAddr("an account with no code");
+        uint256 before = gasleft();
+        bool allowed = registry.isPayoutAllowed(outside);
+        uint256 contractCost = before - gasleft();
+        before = gasleft();
+        bool plainAllowed = registry.isPayoutAllowed(plain);
+        uint256 plainCost = before - gasleft();
+        assertTrue(allowed);
+        assertTrue(plainAllowed);
+        emit log_named_uint("payout check, an outside contract (gas)", contractCost);
+        emit log_named_uint("payout check, an account with no code (gas)", plainCost);
+        assertLt(contractCost, 100_000);
+        assertLt(plainCost, 25_000);
+    }
+
     /// @dev The probe of `authority()` forwards all gas: with the contract costing 1x to 100x
     ///      its base the payout is refused all the same, and a probe that runs short reverts
     ///      with `BoundedCallShortfall`, never "allowed".

@@ -342,18 +342,26 @@ library DeployCore {
     /// @notice The contracts of the deployment the accounts module refuses as a payout by
     ///         address: the ones that neither declare a network interface (ERC-165) nor are
     ///         governed by the AccessManager, so no rule of the module recognises them.
+    /// @dev One literal, so the compiler checks the count. A contract left out is caught by
+    ///      `VerifyCore`, which requires the accounts module to refuse every contract of the
+    ///      deployment.
     function notPayouts(Deployment memory d) internal pure returns (address[] memory list) {
-        list = new address[](10);
-        list[0] = d.coreFactory;
-        list[1] = address(d.configurator);
-        list[2] = address(d.contentStore);
-        list[3] = address(d.workFacts);
-        list[4] = d.renderer;
-        list[5] = d.editionAuctionLens;
-        list[6] = d.independentStream721Deployer;
-        list[7] = d.independentStreamEditionsDeployer;
-        list[8] = d.independentEditionAuctionLens;
-        list[9] = d.saleStarter;
+        address[10] memory fixed_ = [
+            d.coreFactory,
+            address(d.configurator),
+            address(d.contentStore),
+            address(d.workFacts),
+            d.renderer,
+            d.editionAuctionLens,
+            d.independentStream721Deployer,
+            d.independentStreamEditionsDeployer,
+            d.independentEditionAuctionLens,
+            d.saleStarter
+        ];
+        list = new address[](fixed_.length);
+        for (uint256 i; i < fixed_.length; ++i) {
+            list[i] = fixed_[i];
+        }
     }
 
     /// @notice The creation code and constructor arguments of contract `name`, given every

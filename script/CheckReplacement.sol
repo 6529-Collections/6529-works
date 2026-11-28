@@ -15,8 +15,10 @@ import { ArtistIdentity } from "src/interfaces/types/IdentityTypes.sol";
 /// @dev The lists are the operator's: every artist ID of the module in force (its
 ///      `ArtistRegistered` events) with every address that was ever a root (`ChangeExecuted`),
 ///      and every root of `PackageRevoked` and of the `PackageRegistered` events of a signer
-///      named in `SignerApprovalsKilled`. A check passes only for the block it is run at: run
-///      it again right before the announcement and before the activation.
+///      named in `SignerApprovalsKilled`. The check says nothing about an account, an address
+///      or a root that is not on its lists, so an incomplete list can pass where the full one
+///      would not. A check passes only for the block it is run at: run it again right before
+///      the announcement and before the activation.
 library CheckReplacement {
     /// @notice The candidate's answer about an account differs from the module in force.
     error AccountDiffers(string what, uint256 artistId);

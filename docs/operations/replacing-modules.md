@@ -79,7 +79,9 @@ Before announcing a new accounts module:
    [`script/CheckReplacement.s.sol`](../../script/CheckReplacement.s.sol) with every artist
    ID (`ArtistRegistered`) and every address that was ever a root (`ChangeExecuted`): the
    candidate must answer alike for the root, the acting root, the payout address, the
-   freeze, the pending change and each wallet. Run it again right before activation.
+   freeze, the pending change and each wallet. The check covers only what is on its
+   lists: build them from the whole event history of the module in force, since a list
+   that leaves an account out says nothing about it. Run it again right before activation.
    [`AccountsSuccessor.t.sol`](../../test/integration/AccountsSuccessor.t.sol) shows the
    whole replacement on the deployed stack, a moved account included.
 4. **Bind the package registry** as the new module's `register` caller (a constructor
@@ -134,7 +136,8 @@ predecessor on a verifier that has attested before.
 Before switching the sale contracts to a new mint policy, run
 [`script/CheckReplacement.s.sol`](../../script/CheckReplacement.s.sol) with every root of
 `PackageRevoked` and every root registered by a signer named in `SignerApprovalsKilled`:
-each one the old policy reports as revoked must be revoked in the candidate.
+each one the old policy reports as revoked must be revoked in the candidate. A root left off
+the list is not checked.
 [`MintPolicySuccessor.t.sol`](../../test/integration/MintPolicySuccessor.t.sol) shows both
 ways on the deployed stack.
 
