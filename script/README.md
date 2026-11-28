@@ -15,7 +15,7 @@ deploy script refuses every other chain. 6529 Works is pre-audit and not deploye
 | [`CheckReplacement.sol`](CheckReplacement.sol), [`CheckReplacement.s.sol`](CheckReplacement.s.sol) | The comparison run before a replacement accounts module or mint policy is announced, as a library and as a read-only script: the candidate answers as the module in force for a list of accounts, addresses and package roots, and a candidate accounts module reads the directory, names the module in force as the one it replaces and has its restricted functions under the same roles |
 | [`ScriptIO.sol`](ScriptIO.sol) | Everything the scripts read from outside the EVM: environment, files, chain ID, the deployment parameters |
 | [`local/`](local/README.md) | The local walkthrough: one command, a full sale end to end on anvil |
-| [`sepolia/`](sepolia/) | The Sepolia round tooling: genesis and manifest writers, deploy, record, flows, Sourcify |
+| [`sepolia/`](sepolia/) | The Sepolia round tooling: genesis and manifest writers, deploy, record, flows, Sourcify; and [the open gate](sepolia/open-gate.md), a test-only contract that opens the curated path of a Sepolia instance to any wallet |
 
 ## How a deployment is built
 
@@ -228,6 +228,14 @@ existed.
    further edition masters of the same pair of contracts. `restart` and `clock` are for r8 and
    later: on r6 and r7 `auctionClock` answers three words, which `clock` cannot decode, and
    `restart` has no 15-minute wait there.
+8. **The open gate (a test instance only).** To let any wallet try the curated path with no
+   curation step, `flows.ps1 -Step gateDeploy` creates
+   [`SepoliaOpenGate`](sepolia/SepoliaOpenGate.sol) and `-Step gateGrant` has the network Safe
+   grant it `CURATION_SIGNER` and `PLATFORM`, at once; `-Step gateRevoke` closes it. It is a
+   Sepolia test convenience that refuses every other chain and must never be deployed on
+   mainnet. Do it after the read-back and the record: the grants are governance changes, so
+   `VerifyCore.s.sol` then passes at the head only with `ALLOW_GOVERNANCE_CHANGES=1`. The
+   steps, and the calls a test page makes, are in [The open gate](sepolia/open-gate.md).
 
 ## Operating procedures
 

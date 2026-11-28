@@ -61,7 +61,7 @@ description of the contract.
 | `governance/*` | [`governance/`](governance/): `NetworkAndBrake`, `GovernanceInvariant`, `GovernanceConfigurator`, `Roles`, `BoundedParameter`, `CoreNetwork`, `CoreRoleMap`, `RoleMapComplete`, `GenesisConfig*`, `GenesisWiring*` |
 | `libraries/*` | [`libraries/`](libraries/): one suite per library; the proofs in `symbolic/` |
 | `interfaces/*` | [`interfaces/`](interfaces/): pinned interface IDs, typehashes, `WorksHashing` |
-| `script/` | [`deploy/`](deploy/): `DeployCore` (the deploy library and the whole-stack readback), `DeployCoreSafety` (the one-call factory, the runtime-code comparison, the genesis hashes and the manager's role logs), `DeployGuardsSafe` (the network wallet's own code must be a Safe 1.3.0 or 1.4.1 proxy) |
+| `script/` | [`deploy/`](deploy/): `DeployCore` (the deploy library and the whole-stack readback), `DeployCoreSafety` (the one-call factory, the runtime-code comparison, the genesis hashes and the manager's role logs), `DeployGuardsSafe` (the network wallet's own code must be a Safe 1.3.0 or 1.4.1 proxy); [`sepolia/`](sepolia/): `SepoliaOpenGate` (the test-only gate of `script/sepolia/`: the curated path for any wallet with its two roles, and what it cannot be used for) |
 
 ## The tree
 
@@ -72,6 +72,7 @@ description of the contract.
 | `*/invariant/` | Larger stateful campaigns, each test contract with its handler | invariant |
 | `integration/` | The real, wired v1 stack, deployed by the deploy library with the committed genesis ([its README](integration/README.md)); the gas report and its harness; `invariant/` runs a campaign on the same stack | integration, gas, invariant |
 | `deploy/` | The deploy library, the deploy and Verify scripts, genesis | integration |
+| `sepolia/` | The Sepolia test tooling's one contract, `SepoliaOpenGate`, on the real stack | integration |
 | `fork/` | The stack against the real delegation contract, Permit2 and the VRF coordinator, and Safe v1.4.1 wallets in the network's, an artist's and holders' roles (`Safe*`); skipped without an RPC URL ([its README](fork/README.md)) | fork |
 | `symbolic/` | Halmos proofs (`check_*`), compiled only under the `symbolic` profile: the pure libraries, and the permanent contracts' state rules (`LedgerSymbolic`, `EscrowSymbolic`, `StatementLogSymbolic`, `StreamCoreSymbolic`, `EditionsCoreSymbolic`, `WorkFactsSymbolic`, `ModulesSymbolic`, `IndependentSymbolic`, with stand-ins named `Sym*`) | symbolic |
 | `medusa/` | Cheatcode-free harnesses with their own model of the rules (`LedgerMedusa`, `StreamCoreMedusa`, `LogMedusa`, `WorkFactsMedusa`, on `MedusaBase`), run by Medusa (`medusa.json`) and by a Forge runner each (`*Medusa.t.sol`); `MedusaClock` is the Forge runner's clock | second fuzzer |

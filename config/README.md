@@ -46,6 +46,10 @@ Other files:
   whose governance stays as installed. r8, also deployed that day with the same Safe and
   holders, is the current instance: `main` at `961bc956`, which adds that commit's module
   fixes, with its governance kept as installed too ([runbook](../script/README.md#sepolia)).
+- `sepolia-r9/`: the inputs prepared for a further round from `main` at `355a7a71`, with the
+  same Safe and holders as r8 and the same policy. It is not deployed. It is meant to run with
+  [the open gate](../script/sepolia/open-gate.md), which the network grants its roles after
+  deployment; the genesis file does not name it.
 - `local/` (git-ignored): the walkthrough's genesis file, written by
   `script/local/make_genesis.py`.
 

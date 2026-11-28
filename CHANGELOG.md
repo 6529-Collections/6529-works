@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **Sepolia r9 prepared, with an open gate for test pages.** The inputs of a further Sepolia
+  round from `main` at `355a7a71` (`config/sepolia-r9/`: the committed policy with r8's Safe
+  and holders; not deployed), and `SepoliaOpenGate` under `script/sepolia/`, a test-only
+  contract that lets any wallet try the curated path of a Sepolia instance: once the network
+  grants it `CURATION_SIGNER` and `PLATFORM` (after deployment, at once), it approves every
+  package root through ERC-1271 and forwards `createCollection`. It refuses every chain but
+  Sepolia and a local development chain and must never be deployed on mainnet. Nothing under
+  `src/` changed. `flows.ps1` gained the `gate*` steps (`script/sepolia/OpenGate.s.sol` plans
+  them); the calls a test page makes are in
+  [The open gate](script/sepolia/open-gate.md); tests in `test/sepolia/`.
 - **Module replacement keeps identities and revocations; the payout address check covers every
   protocol contract.** Three changes in replaceable modules (`Accounts`, `PackageRegistry`);
   no permanent contract changed. Both constructors take new arguments, so both modules have a
