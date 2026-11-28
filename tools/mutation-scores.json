@@ -571,13 +571,13 @@
     },
     "src/sales/EnglishAuction.sol": {
       "tier": 2,
-      "mutants": 695,
-      "killed": 674,
+      "mutants": 719,
+      "killed": 695,
       "timedOut": 0,
       "newKills": 0,
       "floor": 94,
       "was": 94,
-      "measuredAt": "961bc956"
+      "measuredAt": "1a13218b"
     },
     "src/sales/SaleStarter.sol": {
       "tier": 3,
@@ -2601,127 +2601,145 @@
     ],
     "src/sales/EnglishAuction.sol": [
       {
-        "line": 220,
+        "line": 222,
         "rule": "ROR",
         "verdict": "equivalent",
         "why": "Outcome.NONE is the enum's zero: `> NONE` equals `!= NONE`"
       },
       {
-        "line": 237,
+        "line": 239,
         "rule": "CR",
         "verdict": "defensive",
         "why": "at a restart pausedAt is already zero and recipient is unread; a stale outcomeFrom matters only if the statement log later answers no outcome for a token it had one for"
       },
       {
-        "line": 297,
+        "line": 289,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "Outcome.NONE is the enum's zero: `> NONE` equals `!= NONE`"
+      },
+      {
+        "line": 308,
         "rule": "MIA",
         "verdict": "defensive",
         "why": "the resolver never names a zero museum (EconomicsResolver._setMuseum refuses it), and the transfer to zero reverts anyway: revert reason only"
       },
       {
-        "line": 412,
+        "line": 405,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "NONE is the enum's zero: the replacement comparison is the same test"
+      },
+      {
+        "line": 406,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "RESCUED is the enum's last value: `< RESCUED` equals `!= RESCUED`"
+      },
+      {
+        "line": 442,
         "rule": "ROR",
         "verdict": "equivalent",
         "why": "`> 0` equals `!= 0` on an unsigned bytes32"
       },
       {
-        "line": 419,
+        "line": 449,
         "rule": "AOR",
         "verdict": "equivalent",
         "why": "`now % pausedAt` equals `now - pausedAt` while now < 2 * pausedAt; a pause is live at most 3 days, so it differs only for a pause begun within 3 days of 1970"
       },
       {
-        "line": 426,
+        "line": 456,
         "rule": "ROR",
         "verdict": "equivalent",
         "why": "`<= 0` equals `== 0` on an unsigned bytes32"
       },
       {
-        "line": 514,
+        "line": 544,
         "rule": "ROR",
         "verdict": "equivalent",
         "why": "NONE is the enum's zero: the replacement comparison is the same test"
       },
       {
-        "line": 538,
-        "rule": "ROR",
-        "verdict": "equivalent",
-        "why": "NONE is the enum's zero: the replacement comparison is the same test"
-      },
-      {
-        "line": 546,
-        "rule": "ROR",
-        "verdict": "equivalent",
-        "why": "NONE is the enum's zero: the replacement comparison is the same test"
-      },
-      {
-        "line": 555,
-        "rule": "ROR",
-        "verdict": "equivalent",
-        "why": "NONE is the enum's zero: the replacement comparison is the same test"
-      },
-      {
-        "line": 632,
-        "rule": "ROR",
-        "verdict": "equivalent",
-        "why": "NONE is the enum's zero: the replacement comparison is the same test"
-      },
-      {
-        "line": 672,
-        "rule": "MIA",
-        "verdict": "equivalent",
-        "why": "when recipientSet is false the branch writes false and zero over false and zero (recipient is zero whenever the flag is false)"
-      },
-      {
-        "line": 674,
-        "rule": "CR",
-        "verdict": "equivalent",
-        "why": "a stale s.recipient is never read while recipientSet is false, and is rewritten whenever the flag is set"
-      },
-      {
-        "line": 678,
-        "rule": "AOR",
-        "verdict": "equivalent",
-        "why": "`end % now` equals `end - now` while now < end < 2 * now, which holds for every live sale at a real clock (sales last days)"
-      },
-      {
-        "line": 678,
-        "rule": "ROR",
-        "verdict": "equivalent",
-        "why": "with exactly the window left the extended end, now + window, is the old end: same value stored and logged"
-      },
-      {
-        "line": 726,
-        "rule": "CR",
-        "verdict": "equivalent",
-        "why": "`ok;` is a statement with no effect"
-      },
-      {
-        "line": 739,
-        "rule": "MIA",
-        "verdict": "equivalent",
-        "why": "clearing when recipientSet is false writes false and zero over false and zero"
-      },
-      {
-        "line": 740,
-        "rule": "CR",
-        "verdict": "equivalent",
-        "why": "with the flag left true the recipient is zero and the bidder is zero, so _recipientOf answers zero either way; the next bid rewrites both"
-      },
-      {
-        "line": 741,
-        "rule": "CR",
-        "verdict": "equivalent",
-        "why": "a stale s.recipient is never read while recipientSet is false"
-      },
-      {
-        "line": 759,
+        "line": 568,
         "rule": "ROR",
         "verdict": "equivalent",
         "why": "NONE is the enum's zero: `<=` equals `==`"
       },
       {
-        "line": 799,
+        "line": 576,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "NONE is the enum's zero: the replacement comparison is the same test"
+      },
+      {
+        "line": 585,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "NONE is the enum's zero: the replacement comparison is the same test"
+      },
+      {
+        "line": 662,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "NONE is the enum's zero: the replacement comparison is the same test"
+      },
+      {
+        "line": 702,
+        "rule": "MIA",
+        "verdict": "equivalent",
+        "why": "when recipientSet is false the branch writes false and zero over false and zero (recipient is zero whenever the flag is false)"
+      },
+      {
+        "line": 704,
+        "rule": "CR",
+        "verdict": "equivalent",
+        "why": "a stale s.recipient is never read while recipientSet is false, and is rewritten whenever the flag is set"
+      },
+      {
+        "line": 708,
+        "rule": "AOR",
+        "verdict": "equivalent",
+        "why": "`end % now` equals `end - now` while now < end < 2 * now, which holds for every live sale at a real clock (sales last days)"
+      },
+      {
+        "line": 708,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "with exactly the window left the extended end, now + window, is the old end: same value stored and logged"
+      },
+      {
+        "line": 756,
+        "rule": "CR",
+        "verdict": "equivalent",
+        "why": "`ok;` is a statement with no effect"
+      },
+      {
+        "line": 769,
+        "rule": "MIA",
+        "verdict": "equivalent",
+        "why": "clearing when recipientSet is false writes false and zero over false and zero"
+      },
+      {
+        "line": 770,
+        "rule": "CR",
+        "verdict": "equivalent",
+        "why": "with the flag left true the recipient is zero and the bidder is zero, so _recipientOf answers zero either way; the next bid rewrites both"
+      },
+      {
+        "line": 771,
+        "rule": "CR",
+        "verdict": "equivalent",
+        "why": "a stale s.recipient is never read while recipientSet is false"
+      },
+      {
+        "line": 789,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "NONE is the enum's zero: `<=` equals `==`"
+      },
+      {
+        "line": 829,
         "rule": "AOR",
         "verdict": "equivalent",
         "why": "`endTime % pausedAt` equals `endTime - pausedAt` while pausedAt <= endTime < 2 * pausedAt, true at any real clock"

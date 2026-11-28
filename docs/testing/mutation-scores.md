@@ -87,11 +87,11 @@ final score minus two points, rounded down.
 | `src/independent/IndependentEditionAuction.sol` | 70 | 67 | 3 | 0 | 95.7% | 0 | 95.7% | 93 (was 94) |
 | `src/independent/IndependentStreamRegistry.sol` | 948 | 882 | 66 | 0 | 93.0% | 0 | 93.0% | 91 (was 90) |
 | `src/records/WorkRules.sol` | 373 | 353 | 20 | 0 | 94.6% | 12 | 97.9% | 95 (was 89) |
-| `src/sales/EnglishAuction.sol` | 695 | 674 | 21 | 0 | 97.0% | 0 | 97.0% | 94 |
+| `src/sales/EnglishAuction.sol` | 719 | 695 | 24 | 0 | 96.7% | 0 | 96.7% | 94 |
 | `src/sales/UniformClearing.sol` | 278 | 276 | 2 | 0 | 99.3% | 0 | 99.3% | 97 (was 93) |
 | `src/sales/UniformEditionAuction.sol` | 1122 | 1055 | 67 | 0 | 94.0% | 0 | 94.0% | 92 (was 91) |
 | `src/terms/StreamTerms.sol` | 170 | 160 | 10 | 0 | 94.1% | 9 | 99.4% | 97 (was 90) |
-| **Total** | **4796** | **4543** | **253** | **0** | **94.7%** | **34** | **95.4%** | |
+| **Total** | **4820** | **4564** | **256** | **0** | **94.7%** | **34** | **95.4%** | |
 
 <!-- /generated -->
 
@@ -827,31 +827,34 @@ the survivors new in the second measurement of two lenses.
 
 ### `src/sales/EnglishAuction.sol`
 
-21 survivors: 19 equivalent, 2 defensive.
+24 survivors: 22 equivalent, 2 defensive.
 
 | Line | Rule | Verdict | Why, or the test |
 | ---: | --- | --- | --- |
-| 220 | ROR | equivalent | Outcome.NONE is the enum's zero: `> NONE` equals `!= NONE` |
-| 237 | CR | defensive | at a restart pausedAt is already zero and recipient is unread; a stale outcomeFrom matters only if the statement log later answers no outcome for a token it had one for |
-| 297 | MIA | defensive | the resolver never names a zero museum (EconomicsResolver._setMuseum refuses it), and the transfer to zero reverts anyway: revert reason only |
-| 412 | ROR | equivalent | `> 0` equals `!= 0` on an unsigned bytes32 |
-| 419 | AOR | equivalent | `now % pausedAt` equals `now - pausedAt` while now < 2 * pausedAt; a pause is live at most 3 days, so it differs only for a pause begun within 3 days of 1970 |
-| 426 | ROR | equivalent | `<= 0` equals `== 0` on an unsigned bytes32 |
-| 514 | ROR | equivalent | NONE is the enum's zero: the replacement comparison is the same test |
-| 538 | ROR | equivalent | NONE is the enum's zero: the replacement comparison is the same test |
-| 546 | ROR | equivalent | NONE is the enum's zero: the replacement comparison is the same test |
-| 555 | ROR | equivalent | NONE is the enum's zero: the replacement comparison is the same test |
-| 632 | ROR | equivalent | NONE is the enum's zero: the replacement comparison is the same test |
-| 672 | MIA | equivalent | when recipientSet is false the branch writes false and zero over false and zero (recipient is zero whenever the flag is false) |
-| 674 | CR | equivalent | a stale s.recipient is never read while recipientSet is false, and is rewritten whenever the flag is set |
-| 678 | AOR | equivalent | `end % now` equals `end - now` while now < end < 2 * now, which holds for every live sale at a real clock (sales last days) |
-| 678 | ROR | equivalent | with exactly the window left the extended end, now + window, is the old end: same value stored and logged |
-| 726 | CR | equivalent | `ok;` is a statement with no effect |
-| 739 | MIA | equivalent | clearing when recipientSet is false writes false and zero over false and zero |
-| 740 | CR | equivalent | with the flag left true the recipient is zero and the bidder is zero, so _recipientOf answers zero either way; the next bid rewrites both |
-| 741 | CR | equivalent | a stale s.recipient is never read while recipientSet is false |
-| 759 | ROR | equivalent | NONE is the enum's zero: `<=` equals `==` |
-| 799 | AOR | equivalent | `endTime % pausedAt` equals `endTime - pausedAt` while pausedAt <= endTime < 2 * pausedAt, true at any real clock |
+| 222 | ROR | equivalent | Outcome.NONE is the enum's zero: `> NONE` equals `!= NONE` |
+| 239 | CR | defensive | at a restart pausedAt is already zero and recipient is unread; a stale outcomeFrom matters only if the statement log later answers no outcome for a token it had one for |
+| 289 | ROR | equivalent | Outcome.NONE is the enum's zero: `> NONE` equals `!= NONE` |
+| 308 | MIA | defensive | the resolver never names a zero museum (EconomicsResolver._setMuseum refuses it), and the transfer to zero reverts anyway: revert reason only |
+| 405 | ROR | equivalent | NONE is the enum's zero: the replacement comparison is the same test |
+| 406 | ROR | equivalent | RESCUED is the enum's last value: `< RESCUED` equals `!= RESCUED` |
+| 442 | ROR | equivalent | `> 0` equals `!= 0` on an unsigned bytes32 |
+| 449 | AOR | equivalent | `now % pausedAt` equals `now - pausedAt` while now < 2 * pausedAt; a pause is live at most 3 days, so it differs only for a pause begun within 3 days of 1970 |
+| 456 | ROR | equivalent | `<= 0` equals `== 0` on an unsigned bytes32 |
+| 544 | ROR | equivalent | NONE is the enum's zero: the replacement comparison is the same test |
+| 568 | ROR | equivalent | NONE is the enum's zero: `<=` equals `==` |
+| 576 | ROR | equivalent | NONE is the enum's zero: the replacement comparison is the same test |
+| 585 | ROR | equivalent | NONE is the enum's zero: the replacement comparison is the same test |
+| 662 | ROR | equivalent | NONE is the enum's zero: the replacement comparison is the same test |
+| 702 | MIA | equivalent | when recipientSet is false the branch writes false and zero over false and zero (recipient is zero whenever the flag is false) |
+| 704 | CR | equivalent | a stale s.recipient is never read while recipientSet is false, and is rewritten whenever the flag is set |
+| 708 | AOR | equivalent | `end % now` equals `end - now` while now < end < 2 * now, which holds for every live sale at a real clock (sales last days) |
+| 708 | ROR | equivalent | with exactly the window left the extended end, now + window, is the old end: same value stored and logged |
+| 756 | CR | equivalent | `ok;` is a statement with no effect |
+| 769 | MIA | equivalent | clearing when recipientSet is false writes false and zero over false and zero |
+| 770 | CR | equivalent | with the flag left true the recipient is zero and the bidder is zero, so _recipientOf answers zero either way; the next bid rewrites both |
+| 771 | CR | equivalent | a stale s.recipient is never read while recipientSet is false |
+| 789 | ROR | equivalent | NONE is the enum's zero: `<=` equals `==` |
+| 829 | AOR | equivalent | `endTime % pausedAt` equals `endTime - pausedAt` while pausedAt <= endTime < 2 * pausedAt, true at any real clock |
 
 ### `src/sales/UniformClearing.sol`
 
