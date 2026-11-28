@@ -7,8 +7,9 @@ mocks are named.
 
 Start with `forge build`, then `forge test --no-match-test "^invariant"`. It runs every unit,
 fuzz, integration, replay and example test and names each one that fails. The
-[validation record](validation-2026-11-28.md) has the counts of one pass of every layer over
-one commit; [What is not tested](#what-is-not-tested) says where the suite stops.
+[validation record](validation-2026-11-28-freeze-candidate.md) has the counts of one pass of
+every layer over one commit; [What is not tested](#what-is-not-tested) says where the suite
+stops.
 
 > Some invariants that campaigns checked on the contracts before
 > [ADR 0010](../adr/0010-plain-permanent-core.md) have no stateful campaign on the current
@@ -190,9 +191,12 @@ data file and the page is written again.
 
 ## Validation records
 
-A record of one pass of every layer over one commit, with the counts and what was not run.
+A record of one pass of every layer over one commit, with the counts and what was not run;
+where a row was run again on a later commit, the entry below names it.
 Records dated before 28 November 2026 use the protocol's earlier name, "6529 Works":
 
+- [28 November 2026, the freeze candidate](validation-2026-11-28-freeze-candidate.md), commit
+  `c6d49658`; the fork row on `801917fc`.
 - [28 November 2026](validation-2026-11-28.md), commit `355a7a71`; the deep fuzz row on
   `5da3ec36`.
 - [23 November 2026](validation-2026-11-23.md), commit `961bc956`.
