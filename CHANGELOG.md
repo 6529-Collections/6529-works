@@ -17,9 +17,11 @@
     `6529 Works ...`).
   - Hash domains: `6529STREAM_PACKAGE_ITEM_V1`, `6529STREAM_MEDIA_V1`,
     `6529STREAM_WORK_STATE_V2` and `6529STREAM_INDEPENDENT_LISTING_V1` (each was
-    `6529WORKS_...`), `6529STREAM_INDEPENDENTCONSENT_V1` (was
-    `6529WORKS_INDEPENDENT_CONSENT_V1`; one underscore is dropped so that the literal stays
-    exactly 32 bytes, which keeps `IndependentStreamRegistry` at its size margin), and
+    `6529WORKS_...`), `6529STREAM_INDEPENDENT_CONSENT_V1` (was
+    `6529WORKS_INDEPENDENT_CONSENT_V1`). The consent subject's formula changes with it: the
+    tag was ABI-encoded as a string and is now a hashed domain word like the others,
+    `keccak256(abi.encode(Core.INDEPENDENT_CONSENT_DOMAIN, itemHash, royaltyRate))` with
+    `INDEPENDENT_CONSENT_DOMAIN = keccak256("6529STREAM_INDEPENDENT_CONSENT_V1")`, and
     `6529.stream.StatementLog.entry.v1` and `6529.stream.StatementLog.head.v1` (were
     `6529.works...`). Schema and label strings spelled `6529-works/...` are `6529-stream/...`,
     the schema IDs are `urn:6529-stream:schema:<name>:v1` and the declarations MIME type is

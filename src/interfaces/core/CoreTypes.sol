@@ -191,8 +191,16 @@ library Core {
     /// @dev Rates and shares are out of this.
     uint256 internal constant DENOMINATOR = 100_000;
 
+    /// @dev The domain of an Independent Stream collaborator's consent
+    ///      ({independentConsent}).
+    bytes32 internal constant INDEPENDENT_CONSENT_DOMAIN =
+        keccak256("6529STREAM_INDEPENDENT_CONSENT_V1");
+
     /// @notice What a collaborator of an Independent Stream work consents to: the item and the
     ///         royalty rate (ADR 0010). Passed as `what` to `IAccounts.requireConsent`.
+    /// @dev `keccak256(abi.encode(INDEPENDENT_CONSENT_DOMAIN, itemHash, royaltyRate))`, three
+    ///      whole words of types `(bytes32, bytes32, uint24)`, with
+    ///      `INDEPENDENT_CONSENT_DOMAIN = keccak256("6529STREAM_INDEPENDENT_CONSENT_V1")`.
     /// @param itemHash The item hash.
     /// @param royaltyRate The royalty rate, out of 100,000.
     /// @return The consent subject.
@@ -201,6 +209,6 @@ library Core {
         pure
         returns (bytes32)
     {
-        return keccak256(abi.encode("6529STREAM_INDEPENDENTCONSENT_V1", itemHash, royaltyRate));
+        return keccak256(abi.encode(INDEPENDENT_CONSENT_DOMAIN, itemHash, royaltyRate));
     }
 }
