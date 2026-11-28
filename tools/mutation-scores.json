@@ -89,16 +89,18 @@
       "timedOut": 0,
       "newKills": 0,
       "floor": 89,
-      "was": 90
+      "was": 89,
+      "measuredAt": "6b15570c"
     },
     "src/core/StreamBase.sol": {
       "tier": 1,
-      "mutants": 327,
-      "killed": 317,
+      "mutants": 336,
+      "killed": 327,
       "timedOut": 0,
-      "newKills": 2,
+      "newKills": 0,
       "floor": 95,
-      "was": 90
+      "was": 95,
+      "measuredAt": "6b15570c"
     },
     "src/core/StreamDirectory6529.sol": {
       "tier": 1,
@@ -320,24 +322,24 @@
     },
     "src/independent/IndependentEditionAuction.sol": {
       "tier": 2,
-      "mutants": 56,
-      "killed": 53,
+      "mutants": 70,
+      "killed": 67,
       "timedOut": 0,
-      "newKills": 1,
-      "floor": 94,
-      "was": 95,
-      "measuredAt": "961bc956"
+      "newKills": 0,
+      "floor": 93,
+      "was": 94,
+      "measuredAt": "6b15570c"
     },
     "src/independent/IndependentEditionAuctionLens.sol": {
       "tier": 3,
-      "mutants": 54,
-      "killed": 46,
+      "mutants": 61,
+      "killed": 54,
       "timedOut": 0,
-      "newKills": 1,
-      "floor": 85,
-      "was": 77,
-      "measuredAt": "961bc956",
-      "untriaged": 7
+      "newKills": 0,
+      "floor": 86,
+      "was": 85,
+      "measuredAt": "6b15570c",
+      "untriaged": 2
     },
     "src/independent/IndependentStream6529.sol": {
       "tier": 1,
@@ -1051,31 +1053,25 @@
         "why": "Outcome.NONE is the enum's zero: `> NONE` is `!= NONE`"
       },
       {
-        "line": 203,
-        "rule": "ROR",
-        "verdict": "killed",
-        "why": "`test_SetRoyalty_AcceptsARateOfExactlyTheDenominator`: setRoyalty with a rate of exactly 100,000 (the denominator) was not pinned"
-      },
-      {
-        "line": 229,
-        "rule": "ROR",
-        "verdict": "killed",
-        "why": "`test_EmitMetadataUpdate_ADescendingRangeIsLoggedAsARange`: emitMetadataUpdate with from > to (logged as a range, not one update) was not pinned"
-      },
-      {
         "line": 266,
         "rule": "SBR",
         "verdict": "equivalent",
         "why": "storage/memory on a read-only reference in a view (gas only)"
       },
       {
-        "line": 307,
+        "line": 275,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "`<= 0` on a bytes32 is `== 0`"
+      },
+      {
+        "line": 309,
         "rule": "SBR",
         "verdict": "equivalent",
         "why": "the collection ID is cast to 32 bits before it is returned: uint128 holds it"
       },
       {
-        "line": 320,
+        "line": 322,
         "rule": "ROR",
         "verdict": "equivalent",
         "why": "Outcome.NONE is the enum's zero: `> NONE` is `!= NONE`"
@@ -1873,30 +1869,54 @@
     ],
     "src/independent/IndependentEditionAuction.sol": [
       {
-        "line": 84,
+        "line": 88,
         "rule": "ROR",
         "verdict": "equivalent",
         "why": "below OPEN is only NONE, a sale never opened: its runsOnItsOwn flag was never set, so `<= OPEN` answers what `== OPEN` answers"
       },
       {
-        "line": 84,
+        "line": 88,
         "rule": "ROR",
         "verdict": "equivalent",
         "why": "_scans is written only while SETTLING and status never returns below it, so status < SETTLING implies _scans == 0"
       },
       {
-        "line": 112,
-        "rule": "CR",
-        "verdict": "killed",
-        "why": "`test_Open_TheEventNamesTheEditionContractsMaster`: the opening event named no master: nothing checked the master the Independent Stream auction logs"
+        "line": 105,
+        "rule": "ROR",
+        "verdict": "equivalent",
+        "why": "CANCELLED is the enum's last value: `>= CANCELLED` equals `== CANCELLED`"
       }
     ],
     "src/independent/IndependentEditionAuctionLens.sol": [
       {
-        "line": 98,
+        "line": 70,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "13 as a uint128 is encoded as the same 32-byte word in `abi.encode(saleId, _SLOT_TOKENS)`: same slot"
+      },
+      {
+        "line": 70,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "an immutable set to the same literal at its declaration: the same value is read"
+      },
+      {
+        "line": 101,
         "rule": "CR",
-        "verdict": "killed",
-        "why": "`test_SetIndependentStreamRegistry_TheLensRefusesAnyModule`: the lens's setter did nothing instead of refusing: nothing called it on the Independent Stream lens"
+        "verdict": "equivalent",
+        "why": "without the statement the function returns its default, the zero address"
+      },
+      {
+        "line": 106,
+        "rule": "CR",
+        "verdict": "equivalent",
+        "why": "without the statement the function returns its default, the zero address"
+      },
+      {
+        "line": 127,
+        "rule": "SBR",
+        "verdict": "equivalent",
+        "why": "`abi.encodePacked` of two 32-byte words is the same bytes as `abi.encode`"
       }
     ],
     "src/independent/IndependentStreamEditions6529.sol": [

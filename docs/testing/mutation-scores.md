@@ -61,8 +61,8 @@ final score minus two points, rounded down.
 | `src/content/ContentStore.sol` | 747 | 699 | 48 | 0 | 93.6% | 2 | 93.8% | 91 (was 92) |
 | `src/core/EditionsBase.sol` | 267 | 262 | 5 | 0 | 98.1% | 5 | 100.0% | 98 (was 93) |
 | `src/core/Modules.sol` | 209 | 205 | 4 | 0 | 98.1% | 1 | 98.6% | 96 (was 94) |
-| `src/core/Stream6529.sol` | 48 | 44 | 4 | 0 | 91.7% | 0 | 91.7% | 89 (was 90) |
-| `src/core/StreamBase.sol` | 327 | 317 | 10 | 0 | 96.9% | 2 | 97.6% | 95 (was 90) |
+| `src/core/Stream6529.sol` | 48 | 44 | 4 | 0 | 91.7% | 0 | 91.7% | 89 |
+| `src/core/StreamBase.sol` | 336 | 327 | 9 | 0 | 97.3% | 0 | 97.3% | 95 |
 | `src/core/StreamDirectory6529.sol` | 46 | 42 | 4 | 0 | 91.3% | 4 | 100.0% | 98 (was 94) |
 | `src/core/StreamEditions6529.sol` | 46 | 40 | 6 | 0 | 87.0% | 2 | 91.3% | 89 (was 93) |
 | `src/core/StreamWorkFacts6529.sol` | 299 | 283 | 16 | 0 | 94.6% | 2 | 95.3% | 93 (was 89) |
@@ -72,7 +72,7 @@ final score minus two points, rounded down.
 | `src/independent/IndependentStream6529.sol` | 181 | 181 | 0 | 0 | 100.0% | 0 | 100.0% | 98 |
 | `src/independent/IndependentStreamEditions6529.sol` | 35 | 33 | 2 | 0 | 94.3% | 1 | 97.1% | 95 |
 | `src/records/StatementLog.sol` | 496 | 472 | 24 | 0 | 95.2% | 0 | 95.2% | 93 |
-| **Total** | **3894** | **3732** | **162** | **0** | **95.8%** | **20** | **96.4%** | |
+| **Total** | **3903** | **3742** | **161** | **0** | **95.9%** | **18** | **96.3%** | |
 
 <!-- /generated -->
 
@@ -84,14 +84,14 @@ final score minus two points, rounded down.
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `src/curation/PackageRegistry.sol` | 578 | 544 | 34 | 0 | 94.1% | 0 | 94.1% | 92 (was 91) |
 | `src/identity/Accounts.sol` | 562 | 532 | 30 | 0 | 94.7% | 13 | 97.0% | 94 |
-| `src/independent/IndependentEditionAuction.sol` | 56 | 53 | 3 | 0 | 94.6% | 1 | 96.4% | 94 (was 95) |
+| `src/independent/IndependentEditionAuction.sol` | 70 | 67 | 3 | 0 | 95.7% | 0 | 95.7% | 93 (was 94) |
 | `src/independent/IndependentStreamRegistry.sol` | 948 | 882 | 66 | 0 | 93.0% | 0 | 93.0% | 91 (was 90) |
 | `src/records/WorkRules.sol` | 373 | 353 | 20 | 0 | 94.6% | 12 | 97.9% | 95 (was 89) |
 | `src/sales/EnglishAuction.sol` | 695 | 674 | 21 | 0 | 97.0% | 0 | 97.0% | 94 |
 | `src/sales/UniformClearing.sol` | 278 | 276 | 2 | 0 | 99.3% | 0 | 99.3% | 97 (was 93) |
 | `src/sales/UniformEditionAuction.sol` | 1122 | 1055 | 67 | 0 | 94.0% | 0 | 94.0% | 92 (was 91) |
 | `src/terms/StreamTerms.sol` | 170 | 160 | 10 | 0 | 94.1% | 9 | 99.4% | 97 (was 90) |
-| **Total** | **4782** | **4529** | **253** | **0** | **94.7%** | **35** | **95.4%** | |
+| **Total** | **4796** | **4543** | **253** | **0** | **94.7%** | **34** | **95.4%** | |
 
 <!-- /generated -->
 
@@ -123,7 +123,7 @@ final score minus two points, rounded down.
 | `src/governance/Roles.sol` | 250 | 233 | 17 | 0 | 93.2% | 0 | 93.2% | 91 |
 | `src/governance/WorksAccessManager.sol` | 126 | 122 | 4 | 0 | 96.8% | 0 | 96.8% | 94 |
 | `src/identity/ConsolidationAdapter.sol` | 75 | 56 | 19 | 0 | 74.7% | 0 | 74.7% | 72 (was 83) |
-| `src/independent/IndependentEditionAuctionLens.sol` | 54 | 46 | 8 | 0 | 85.2% | 1 | 87.0% | 85 (was 77) |
+| `src/independent/IndependentEditionAuctionLens.sol` | 61 | 54 | 7 | 0 | 88.5% | 0 | 88.5% | 86 (was 85) |
 | `src/independent/IndependentStreamDeployer.sol` | 100 | 94 | 6 | 0 | 94.0% | 0 | 94.0% | 92 |
 | `src/independent/IndependentStreamMembership.sol` | 65 | 61 | 4 | 0 | 93.8% | 0 | 93.8% | 91 (was 92) |
 | `src/interfaces/IWorkPowers.sol` | 16 | 12 | 4 | 0 | 75.0% | 0 | 75.0% | 73 (was 98) |
@@ -148,7 +148,7 @@ final score minus two points, rounded down.
 | `src/sales/UniformEditionAuctionLens.sol` | 1117 | 989 | 128 | 0 | 88.5% | 0 | 88.5% | 86 (was 85) |
 | `src/stream/SpdxId.sol` | 114 | 106 | 8 | 0 | 93.0% | 0 | 93.0% | 90 |
 | `src/stream/WorkDelivery.sol` | 567 | 496 | 71 | 0 | 87.5% | 0 | 87.5% | 85 (was 88) |
-| **Total** | **7280** | **6516** | **764** | **0** | **89.5%** | **1** | **89.5%** | |
+| **Total** | **7287** | **6524** | **763** | **0** | **89.5%** | **0** | **89.5%** | |
 
 <!-- /generated -->
 
@@ -476,7 +476,7 @@ the survivors new in the second measurement of two lenses.
 
 ### `src/core/StreamBase.sol`
 
-10 survivors: 8 equivalent, 2 killed.
+9 survivors: 9 equivalent.
 
 | Line | Rule | Verdict | Why, or the test |
 | ---: | --- | --- | --- |
@@ -485,11 +485,10 @@ the survivors new in the second measurement of two lenses.
 | 112 | ROR | equivalent | `> 0` on a bytes32 is `!= 0` |
 | 136 | UOR | equivalent | `++x` vs `x++` as a statement |
 | 155 | ROR | equivalent | Outcome.NONE is the enum's zero: `> NONE` is `!= NONE` |
-| 203 | ROR | killed | `test_SetRoyalty_AcceptsARateOfExactlyTheDenominator`: setRoyalty with a rate of exactly 100,000 (the denominator) was not pinned |
-| 229 | ROR | killed | `test_EmitMetadataUpdate_ADescendingRangeIsLoggedAsARange`: emitMetadataUpdate with from > to (logged as a range, not one update) was not pinned |
 | 266 | SBR | equivalent | storage/memory on a read-only reference in a view (gas only) |
-| 307 | SBR | equivalent | the collection ID is cast to 32 bits before it is returned: uint128 holds it |
-| 320 | ROR | equivalent | Outcome.NONE is the enum's zero: `> NONE` is `!= NONE` |
+| 275 | ROR | equivalent | `<= 0` on a bytes32 is `== 0` |
+| 309 | SBR | equivalent | the collection ID is cast to 32 bits before it is returned: uint128 holds it |
+| 322 | ROR | equivalent | Outcome.NONE is the enum's zero: `> NONE` is `!= NONE` |
 
 ### `src/core/StreamDirectory6529.sol`
 
@@ -718,13 +717,13 @@ the survivors new in the second measurement of two lenses.
 
 ### `src/independent/IndependentEditionAuction.sol`
 
-3 survivors: 2 equivalent, 1 killed.
+3 survivors: 3 equivalent.
 
 | Line | Rule | Verdict | Why, or the test |
 | ---: | --- | --- | --- |
-| 84 | ROR | equivalent | below OPEN is only NONE, a sale never opened: its runsOnItsOwn flag was never set, so `<= OPEN` answers what `== OPEN` answers |
-| 84 | ROR | equivalent | _scans is written only while SETTLING and status never returns below it, so status < SETTLING implies _scans == 0 |
-| 112 | CR | killed | `test_Open_TheEventNamesTheEditionContractsMaster`: the opening event named no master: nothing checked the master the Independent Stream auction logs |
+| 88 | ROR | equivalent | below OPEN is only NONE, a sale never opened: its runsOnItsOwn flag was never set, so `<= OPEN` answers what `== OPEN` answers |
+| 88 | ROR | equivalent | _scans is written only while SETTLING and status never returns below it, so status < SETTLING implies _scans == 0 |
+| 105 | ROR | equivalent | CANCELLED is the enum's last value: `>= CANCELLED` equals `== CANCELLED` |
 
 ### `src/independent/IndependentStreamRegistry.sol`
 
@@ -956,11 +955,15 @@ the survivors new in the second measurement of two lenses.
 
 ### `src/independent/IndependentEditionAuctionLens.sol`
 
-8 survivors: 1 killed, 7 not triaged.
+7 survivors: 5 equivalent, 2 not triaged.
 
 | Line | Rule | Verdict | Why, or the test |
 | ---: | --- | --- | --- |
-| 98 | CR | killed | `test_SetIndependentStreamRegistry_TheLensRefusesAnyModule`: the lens's setter did nothing instead of refusing: nothing called it on the Independent Stream lens |
+| 70 | SBR | equivalent | 13 as a uint128 is encoded as the same 32-byte word in `abi.encode(saleId, _SLOT_TOKENS)`: same slot |
+| 70 | SBR | equivalent | an immutable set to the same literal at its declaration: the same value is read |
+| 101 | CR | equivalent | without the statement the function returns its default, the zero address |
+| 106 | CR | equivalent | without the statement the function returns its default, the zero address |
+| 127 | SBR | equivalent | `abi.encodePacked` of two 32-byte words is the same bytes as `abi.encode` |
 
 ### `src/sales/UniformEditionAuctionLens.sol`
 
