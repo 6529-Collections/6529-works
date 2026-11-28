@@ -1,4 +1,4 @@
-6529 Works golden vector: gzip encoding of a text file.
+6529 Stream golden vector: gzip encoding of a text file.
 Line 01: the content store keeps every byte it is given, addressed by its keccak-256 hash.
 Line 02: the content store keeps every byte it is given, addressed by its keccak-256 hash.
 Line 03: the content store keeps every byte it is given, addressed by its keccak-256 hash.

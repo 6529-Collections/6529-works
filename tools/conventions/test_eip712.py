@@ -16,8 +16,8 @@ from tools.content.errors import ToolError
 from tools.conventions import eip712, testdata
 from tools.conventions.eip712 import HALF_N, MAX_SIGNATURE_LENGTH, SECP256K1_N, verify_signature
 
-CUSTODY_DIGEST = "a03cc2c3767834df2ef6c583fd5d08e6d65ddd616d2f90a96e0ad8e00e152e2a"
-CONTROL_DIGEST = "2548db021144b031169071ded42000449c5128184168ca0bd94e5d56c4e0a057"
+CUSTODY_DIGEST = "6baa5fab8796d1ba91748da78a4a9f20a2a4118c3b1914c7483f703a0b20ee13"
+CONTROL_DIGEST = "30131e8926649b07f8edabe55dcc60473c397a998eee6a47a9fdd16c6317b7a7"
 
 
 def sig_bytes(doc: dict) -> bytes:

@@ -483,7 +483,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m tools.content",
         description=(
-            "Stage a work's bytes into the 6529 Works content store, and verify or rebuild them "
+            "Stage a work's bytes into the 6529 Stream content store, and verify or rebuild them "
             "from the chain. Read-only: nothing is signed or sent."
         ),
     )

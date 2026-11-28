@@ -42,7 +42,7 @@ import {
     StreamMintRequest
 } from "../interfaces/types/PackageTypes.sol";
 import { Typehashes } from "../interfaces/types/Typehashes.sol";
-import { WorksHashing } from "../interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "../interfaces/types/StreamHashing.sol";
 import { BoundedCall } from "../libraries/BoundedCall.sol";
 import { Dependency } from "../libraries/Dependency.sol";
 import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
@@ -333,10 +333,10 @@ contract PackageRegistry is
         _checkItem(item);
         bytes32 root = req.packageRoot;
         _requireApproved(root);
-        bytes32 itemHash = WorksHashing.itemHashCalldata(item);
+        bytes32 itemHash = StreamHashing.itemHashCalldata(item);
         if (
             req.proof.length > Limits.MAX_PROOF_DEPTH
-                || !MerkleProof.verifyCalldata(req.proof, root, WorksHashing.leaf(itemHash))
+                || !MerkleProof.verifyCalldata(req.proof, root, StreamHashing.leaf(itemHash))
         ) revert ItemNotInPackage(root, itemHash);
         _checkTerms(item, itemHash);
         uint256 artistId = _checkParties(root, item, itemHash);
@@ -362,7 +362,7 @@ contract PackageRegistry is
         _checkItem(item);
         uint256 artistId = _artists().artistIdOf(item.parties[0].account);
         if (artistId == 0) revert InvalidLeadArtist();
-        _fill(facts, terms, item, WorksHashing.itemHashCalldata(item), artistId, req.packageRoot);
+        _fill(facts, terms, item, StreamHashing.itemHashCalldata(item), artistId, req.packageRoot);
         terms.creator = _artists().activeAuthorityOf(artistId);
         if (item.seedPolicy == uint8(SeedPolicy.ARTIST)) {
             facts.seed = item.seed;
@@ -414,7 +414,7 @@ contract PackageRegistry is
         returns (bool)
     {
         return _isLiveRoot(packageRoot) && proof.length <= Limits.MAX_PROOF_DEPTH
-            && MerkleProof.verifyCalldata(proof, packageRoot, WorksHashing.leaf(itemHash));
+            && MerkleProof.verifyCalldata(proof, packageRoot, StreamHashing.leaf(itemHash));
     }
 
     /// @inheritdoc IERC165
@@ -475,7 +475,7 @@ contract PackageRegistry is
 
     /// @notice The EIP-712 digest the lead artist signs to move an item to Stream.
     /// @param packageRoot The package root the item is consumed through.
-    /// @param itemHash The item's hash (`WorksHashing.itemHash`).
+    /// @param itemHash The item's hash (`StreamHashing.itemHash`).
     /// @param nonce The lead artist's move nonce; any unused `uint256`.
     /// @param deadline The Unix time in seconds after which the signature is expired.
     /// @return The `Typehashes.MOVE_TO_STREAM` digest in this registry's EIP-712 domain.
@@ -556,7 +556,7 @@ contract PackageRegistry is
         // a record. The text is compared first, so an item naming the CC0 text costs no more.
         if (
             item.license.textFileId != cc0TextFileId
-                && WorksHashing.licenseKey(item.license.spdxId) == WorksHashing.CC0_LICENSE_KEY
+                && StreamHashing.licenseKey(item.license.spdxId) == StreamHashing.CC0_LICENSE_KEY
         ) revert InvalidLicenseId();
     }
 
@@ -605,7 +605,7 @@ contract PackageRegistry is
         if (item.seedPolicy != uint8(SeedPolicy.VRF)) return 0;
         IEntropyModule entropy = IEntropyModule(entropyModule);
         if (!entropy.isDeliveredContent(item.contentHash)) {
-            revert SeedNotDelivered(WorksHashing.itemHashCalldata(item));
+            revert SeedNotDelivered(StreamHashing.itemHashCalldata(item));
         }
         return entropy.seedOfContent(item.contentHash);
     }

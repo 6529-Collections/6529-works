@@ -11,7 +11,7 @@ import {
     DisputeOutcomeLogMock,
     PackageRegistryStub,
     SplitFactoryWalletsMock
-} from "../mocks/identity/IdentityWorksMocks.sol";
+} from "../mocks/identity/IdentityStreamMocks.sol";
 
 /// @notice A directory whose module slots the test sets: `Accounts` asks it for the Independent
 ///         Stream module (the only `registerIndependent` caller).

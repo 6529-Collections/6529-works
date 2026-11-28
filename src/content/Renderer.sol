@@ -809,7 +809,7 @@ contract Renderer is IRenderer {
         view
         returns (string memory)
     {
-        bytes memory name = abi.encodePacked("6529 Works %23", Strings.toString(c.id));
+        bytes memory name = abi.encodePacked("6529 Stream %23", Strings.toString(c.id));
         if (c.work.collectionId != 0) {
             name = abi.encodePacked(_str(c.collection), " %23", Strings.toString(c.work.serial));
         }

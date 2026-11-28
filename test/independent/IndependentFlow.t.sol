@@ -8,7 +8,7 @@ import { MintFacts, MintTerms, Outcome, Slots } from "src/interfaces/core/CoreTy
 import { IModules } from "src/interfaces/core/IModules.sol";
 import { MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { MockRenderer } from "../mocks/core/CoreMocks.sol";
 import { IndependentStreamFixture } from "./IndependentStreamFixture.sol";
 
@@ -34,7 +34,7 @@ contract IndependentFlowTest is IndependentStreamFixture {
         (uint256 id, MintFacts memory f, MintTerms memory t) = indSale.start(
             address(registry), address(fStream), _request(item, media, new bytes[](0))
         );
-        assertEq(fStream.itemHashOf(id), WorksHashing.itemHash(item));
+        assertEq(fStream.itemHashOf(id), StreamHashing.itemHash(item));
         assertEq(fStream.workOf(id).artistId, fArtistId);
         assertEq(t.creator, address(fStream));
         assertTrue(f.royaltyReceiver.code.length != 0, "the royalty vault is deployed");

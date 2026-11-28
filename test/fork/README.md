@@ -32,7 +32,7 @@ whole directory takes about 15 seconds against the public endpoints, after compi
 
 Every suite but the deploy simulation deploys the system with the integration base
 ([`../integration/CoreIntegrationBase.sol`](../integration/CoreIntegrationBase.sol): `DeployCore.deploy`,
-the committed genesis policy, `VerifyCore`); [`WorksForkBase.sol`](WorksForkBase.sol)
+the committed genesis policy, `VerifyCore`); [`StreamForkBase.sol`](StreamForkBase.sol)
 (`CoreForkBase`) selects the fork, swaps the delegation mock for the chain's real contract and
 lets a suite put external accounts in place before the deployment.
 

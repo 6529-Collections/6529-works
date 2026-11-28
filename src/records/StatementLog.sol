@@ -83,8 +83,8 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
     bytes32 private constant AUTHORIZATION_TYPEHASH = keccak256(
         "Authorization(uint8 role,address signer,uint256 nonce,uint64 deadline,Statement statement)HashRef(uint16 algorithm,bytes32 digest)Statement(address token,uint256 id,bytes32 kind,bytes32 schema,HashRef content,string uri,bytes32 fileId,bytes32 supersedes)"
     );
-    bytes32 private constant ENTRY_DOMAIN = keccak256("6529.works.StatementLog.entry.v1");
-    bytes32 private constant HEAD_DOMAIN = keccak256("6529.works.StatementLog.head.v1");
+    bytes32 private constant ENTRY_DOMAIN = keccak256("6529.stream.StatementLog.entry.v1");
+    bytes32 private constant HEAD_DOMAIN = keccak256("6529.stream.StatementLog.head.v1");
 
     /// @dev `disputeIndex` is the chain position of the latest DISPUTE_OUTCOME entry; it shares
     ///      the count's slot.
@@ -119,7 +119,7 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
     /// @param resolverCodeHash The reviewed code hash of `resolver` (ignored when it is zero).
     constructor(address authority_, address resolver, bytes32 resolverCodeHash)
         AccessManaged(authority_)
-        EIP712("6529 Works Statement Log", "1")
+        EIP712("6529 Stream Statement Log", "1")
     {
         _installResolver(resolver, resolverCodeHash);
     }

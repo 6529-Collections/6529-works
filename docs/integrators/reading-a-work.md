@@ -120,7 +120,7 @@ Decode in one pass, so `%2523` (a literal `%23` in the text) comes back as `%23`
 const PREFIX = "data:application/json;utf8,";
 
 export function parseWorkUri(uri: string): Record<string, unknown> {
-  if (!uri.startsWith(PREFIX)) throw new Error("not 6529 Works metadata");
+  if (!uri.startsWith(PREFIX)) throw new Error("not 6529 Stream metadata");
   const body = uri.slice(PREFIX.length).replace(/%2[35]/g, (m) => (m === "%23" ? "#" : "%"));
   return JSON.parse(body);
 }
@@ -134,7 +134,7 @@ PREFIX = "data:application/json;utf8,"
 
 def parse_work_uri(uri: str) -> dict:
     if not uri.startswith(PREFIX):
-        raise ValueError("not 6529 Works metadata")
+        raise ValueError("not 6529 Stream metadata")
     body = re.sub(r"%2[35]", lambda m: "#" if m.group() == "%23" else "%", uri[len(PREFIX):])
     return json.loads(body)
 ```
@@ -394,7 +394,7 @@ conventions, specified with their JSON Schemas in
 who made them.
 
 - **The declarations document.** One AUXILIARY media file of MIME type
-  `application/vnd.6529-works.declarations+json`, fixed from approval: read
+  `application/vnd.6529-stream.declarations+json`, fixed from approval: read
   `StreamWorkFacts6529.factsOf(stream, tokenId).media`, then `ContentStore.fileInfo(fileId)` for
   each AUXILIARY entry, then `ContentStore.read`, or fetch a locator's copy and check its SHA-256
   against the media entry ([DCL-3][dcl]). It holds the conservation floor, named custodians of a

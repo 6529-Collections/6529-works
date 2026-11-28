@@ -7,7 +7,7 @@ import { DeployCore } from "script/DeployCore.sol";
 import { DeployGuards } from "script/DeployGuards.sol";
 import { VerifyCore } from "script/VerifyCore.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
-import { Forks, IVrfSubscriptions } from "./WorksForkBase.sol";
+import { Forks, IVrfSubscriptions } from "./StreamForkBase.sol";
 
 /// @notice `DeployCoreScript` with its environment variables and files set by the test.
 contract DeployCoreHarness is DeployCoreScript {
@@ -74,7 +74,7 @@ contract DeploySimulationSepoliaForkTest is Test {
         script.setFile(GENESIS, genesis);
         string memory r5 = vm.readFile(R5_RECORD);
         _env("GENESIS_CONFIG", GENESIS);
-        _env("DEPLOY_NAMESPACE", vm.toString(keccak256("6529-works/sepolia/fork-simulation")));
+        _env("DEPLOY_NAMESPACE", vm.toString(keccak256("6529-stream/sepolia/fork-simulation")));
         _env("NETWORK_FEE_RECIPIENT", vm.toString(R5_NETWORK));
         _env("MARKETPLACE_OWNER", vm.toString(R5_NETWORK));
         _env("MUSEUM", vm.toString(R5_MUSEUM));
@@ -192,7 +192,7 @@ contract DeploySimulationSepoliaForkTest is Test {
         assertEq(d.manager.pendingNetwork(), R5_NETWORK, "genesis proposes r5's Safe");
         assertEq(d.manager.network(), address(0));
         assertTrue(d.entropyModule != address(0), "the entropy module is deployed");
-        assertEq(address(d.configurator.worksManager()), address(d.manager));
+        assertEq(address(d.configurator.streamManager()), address(d.manager));
 
         vm.prank(subscriptionOwner);
         IVrfSubscriptions(VRF_COORDINATOR).addConsumer(subscriptionId, d.entropyModule);

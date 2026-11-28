@@ -1,6 +1,6 @@
 # Reference keeper
 
-A small, readable reference implementation of the permissionless steps that keep 6529 Works
+A small, readable reference implementation of the permissionless steps that keep 6529 Stream
 sales moving: [`keeper.py`](keeper.py), standard-library Python that reads the chain over
 JSON-RPC and sends transactions with Foundry's `cast send`.
 

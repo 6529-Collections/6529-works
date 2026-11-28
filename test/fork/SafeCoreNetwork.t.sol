@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import { DeployGuards } from "script/DeployGuards.sol";
 import { CoreNetworkFlows } from "../governance/CoreNetworkFlows.sol";
-import { Forks } from "./WorksForkBase.sol";
+import { Forks } from "./StreamForkBase.sol";
 
 /// @dev The parts of Safe v1.4.1 this suite calls.
 interface ISafeV141 {

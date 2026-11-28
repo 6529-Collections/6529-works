@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import { Test } from "forge-std/Test.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { Roles } from "src/governance/Roles.sol";
-import { WorksAccessManager } from "src/governance/WorksAccessManager.sol";
+import { StreamAccessManager } from "src/governance/StreamAccessManager.sol";
 
 /// @notice Re-ported from the retired `GenesisConfig` suite: the committed genesis policy,
 ///         `config/genesis.core.example.json`, checked against {Roles}, the manager's own
@@ -89,9 +89,9 @@ contract GenesisConfigPortedTest is Test {
 
     /// @dev The manager's own functions beyond its OpenZeppelin base, as the genesis file lists
     ///      them: the network's (7 days), the open ones and the views.
-    function test_ManagerSectionMatchesWorksAccessManager() public view {
+    function test_ManagerSectionMatchesStreamAccessManager() public view {
         bytes4[2] memory fns =
-            [WorksAccessManager.transferNetwork.selector, WorksAccessManager.setBrake.selector];
+            [StreamAccessManager.transferNetwork.selector, StreamAccessManager.setBrake.selector];
         assertEq(_count(".manager.functions"), fns.length, "manager.functions");
         for (uint256 i; i < fns.length; ++i) {
             string memory f = _at(".manager.functions", i);
@@ -102,7 +102,7 @@ contract GenesisConfigPortedTest is Test {
             assertEq(vm.parseJsonUint(json, string.concat(f, ".delay")), 7 days);
         }
         bytes4[2] memory open =
-            [WorksAccessManager.acceptNetwork.selector, WorksAccessManager.brakeOnce.selector];
+            [StreamAccessManager.acceptNetwork.selector, StreamAccessManager.brakeOnce.selector];
         assertEq(_count(".manager.open"), open.length, "manager.open");
         for (uint256 i; i < open.length; ++i) {
             assertEq(_selector(string.concat(_at(".manager.open", i), ".selector")), open[i]);
@@ -111,8 +111,8 @@ contract GenesisConfigPortedTest is Test {
             bytes4(keccak256("network()")),
             bytes4(keccak256("pendingNetwork()")),
             bytes4(keccak256("brake()")),
-            WorksAccessManager.notBefore.selector,
-            WorksAccessManager.grantCount.selector
+            StreamAccessManager.notBefore.selector,
+            StreamAccessManager.grantCount.selector
         ];
         assertEq(_count(".manager.views"), views.length, "manager.views");
         for (uint256 i; i < views.length; ++i) {

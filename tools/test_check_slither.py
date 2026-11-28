@@ -463,7 +463,7 @@ class FilterConfigTest(unittest.TestCase):
             "/work/scripts/repo/src/Vault.sol",
             "/work/repo/src/libraries/Utf8.sol",
             "/work/repo/src/testing/Vault.sol",
-            "C:/Users/me/6529-works-test/src/Vault.sol",
+            "C:/Users/me/6529-stream-test/src/Vault.sol",
         ):
             self.assertFalse(self.slither_matches(pattern, path), path)
 

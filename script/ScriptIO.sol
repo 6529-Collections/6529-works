@@ -149,7 +149,7 @@ abstract contract ScriptIO is Script {
     function params(bool local) public view returns (DeployCore.Params memory p) {
         p.deployer = msg.sender;
         p.namespace =
-            _envBytes32("DEPLOY_NAMESPACE", local ? keccak256("6529-works/core") : bytes32(0));
+            _envBytes32("DEPLOY_NAMESPACE", local ? keccak256("6529-stream/core") : bytes32(0));
         if (p.namespace == 0) revert MissingParameter("DEPLOY_NAMESPACE");
         p.feeRecipient = _envAddress("NETWORK_FEE_RECIPIENT", local ? address(0xC001) : address(0));
         p.museum = _envAddress("MUSEUM", local ? address(0xC003) : address(0));

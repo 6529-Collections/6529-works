@@ -15,7 +15,7 @@ import { VrfEntropyModule } from "src/entropy/VrfEntropyModule.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { GovernanceConfigurator } from "src/governance/GovernanceConfigurator.sol";
 import { Roles } from "src/governance/Roles.sol";
-import { WorksAccessManager } from "src/governance/WorksAccessManager.sol";
+import { StreamAccessManager } from "src/governance/StreamAccessManager.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
@@ -52,7 +52,7 @@ library DeployCore {
     /// @notice Anvil's chain ID.
     uint256 internal constant LOCAL_CHAIN_ID = 31337;
     /// @notice Schema of the governance manifest statements in the statement log.
-    bytes32 internal constant MANIFEST_SCHEMA = keccak256("6529-works/governance-manifest/1");
+    bytes32 internal constant MANIFEST_SCHEMA = keccak256("6529-stream/governance-manifest/1");
     /// @notice The SHA-256 of the CC0 1.0 Universal legal code in plain text (7,048 bytes), the
     ///         default license text of every work.
     bytes32 internal constant CC0_LEGALCODE_SHA256 =
@@ -114,7 +114,7 @@ library DeployCore {
         /// The deployer's `CoreFactory`, which created every contract below.
         address coreFactory;
         GovernanceConfigurator configurator;
-        WorksAccessManager manager;
+        StreamAccessManager manager;
         ContentStore contentStore;
         StreamWorkFacts6529 workFacts;
         StreamDirectory6529 directory;
@@ -253,7 +253,7 @@ library DeployCore {
         for (uint256 i; i < list.length; ++i) {
             assign(d, list[i], addressFor(p, list[i], factory));
         }
-        d.manager = WorksAccessManager(vm.computeCreateAddress(address(d.configurator), 1));
+        d.manager = StreamAccessManager(vm.computeCreateAddress(address(d.configurator), 1));
     }
 
     /// @notice The account that sends the creation calls and owns the `CoreFactory`:
@@ -735,7 +735,7 @@ library DeployCore {
     ///         not deployed (the optional entropy module).
     function addressOf(Deployment memory d, string memory name) internal pure returns (address) {
         bytes32 n = keccak256(bytes(name));
-        if (n == keccak256("WorksAccessManager")) return address(d.manager);
+        if (n == keccak256("StreamAccessManager")) return address(d.manager);
         if (n == keccak256("CoreFactory")) return d.coreFactory;
         if (n == keccak256("GovernanceConfigurator")) return address(d.configurator);
         if (n == keccak256("ContentStore")) return address(d.contentStore);
@@ -780,8 +780,8 @@ library DeployCore {
     /// @notice Sets the address of contract `name`.
     function assign(Deployment memory d, string memory name, address a) internal pure {
         bytes32 n = keccak256(bytes(name));
-        if (n == keccak256("WorksAccessManager")) {
-            d.manager = WorksAccessManager(a);
+        if (n == keccak256("StreamAccessManager")) {
+            d.manager = StreamAccessManager(a);
         } else if (n == keccak256("CoreFactory")) {
             d.coreFactory = a;
         } else if (n == keccak256("GovernanceConfigurator")) {

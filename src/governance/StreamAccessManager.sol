@@ -5,8 +5,8 @@ import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessMana
 import { Time } from "@openzeppelin/contracts/utils/types/Time.sol";
 import { Roles } from "./Roles.sol";
 
-/// @title WorksAccessManager
-/// @notice The OpenZeppelin 5 `AccessManager` that governs every 6529 Works contract, with one
+/// @title StreamAccessManager
+/// @notice The OpenZeppelin 5 `AccessManager` that governs every 6529 Stream contract, with one
 ///         authority and one brake (governance spec, GV-1 to GV-9):
 ///         - The network: one address that holds every network role (`Roles.isNetworkRole`)
 ///           with that role's class delay: no delay, 24 hours, 3 days or 7 days. Nobody else
@@ -23,7 +23,7 @@ import { Roles } from "./Roles.sol";
 ///      sanctioned exemption to the no-delegatecall rule. This manager's own selectors cannot
 ///      be remapped and it cannot be closed, so {transferNetwork} and {setBrake} always need
 ///      the network at the 7-day class.
-contract WorksAccessManager is AccessManager {
+contract StreamAccessManager is AccessManager {
     /// @notice The network: the one holder of every network role, or zero before the first
     ///         {acceptNetwork}.
     address public network;

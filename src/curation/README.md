@@ -15,7 +15,7 @@ then mints in Stream with the facts it answers; Stream never calls it. The rules
 | `PackageRegistry.sol` | Package roots and their status, party acceptances (and identity creation), move signatures and nonces, the verifier swap, the kill of a signer's registered approvals, the edition-sale approval check ([`IItemApprovals`](../interfaces/IItemApprovals.sol)), and, as 6529 Stream's mint policy ([`IMintPolicy`](../interfaces/core/IMintPolicy.sol)), the item rules, the VRF seed, the terms of a new work (`MintFacts`, `MintTerms`) and the content rules after an upheld dispute (`releaseContent`, `releasedTo`, `isBarred`). Implements [`IPackageRegistry`](../interfaces/IPackageRegistry.sol). |
 | `Eip712CurationVerifier.sol` | The v1 [`ICurationVerifier`](../interfaces/ICurationVerifier.sol): an EIP-712 `PackageApproval` by an active `CURATION_SIGNER` over its current signer epoch; the network's one-way `disableSigner` and `enableSigner`. |
 
-Item hashes and leaves come from [`WorksHashing`](../interfaces/types/WorksHashing.sol), type
+Item hashes and leaves come from [`StreamHashing`](../interfaces/types/StreamHashing.sol), type
 strings from [`Typehashes`](../interfaces/types/Typehashes.sol), edition-terms validity from
 [`EditionRules`](../editions/EditionRules.sol).
 

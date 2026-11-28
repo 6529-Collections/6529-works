@@ -23,14 +23,14 @@ import {
 } from "src/interfaces/types/PackageTypes.sol";
 import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { CoreIntegrationBase } from "./CoreIntegrationBase.sol";
 
 /// @notice Actors, package building, signatures, content and sale helpers shared by the
 ///         end-to-end suites on the plain-core stack.
 /// @dev Every helper drives the real contracts the way an off-chain tool or a wallet would: it
 ///      signs EIP-712 digests read from the contracts, builds sorted-pair Merkle trees over
-///      `WorksHashing.leaf(itemHash)` and submits ordinary transactions.
+///      `StreamHashing.leaf(itemHash)` and submits ordinary transactions.
 abstract contract IntegrationBase is CoreIntegrationBase {
     /// @dev A package item with the media list its `mediaHash` commits to.
     struct Work {
@@ -142,7 +142,7 @@ abstract contract IntegrationBase is CoreIntegrationBase {
         item.kind = uint8(ItemKind.ORIGINAL);
         item.collectionId = collection;
         item.contentHash = contentHash;
-        item.mediaHash = WorksHashing.mediaHash(media);
+        item.mediaHash = StreamHashing.mediaHash(media);
         item.recordFileId = recordFileId;
         item.parties = new Party[](1);
         item.parties[0] = Party(lead, uint8(PartyRole.ARTIST));
@@ -199,7 +199,7 @@ abstract contract IntegrationBase is CoreIntegrationBase {
     function _leaves(Work[] memory works) internal pure returns (bytes32[] memory leaves) {
         leaves = new bytes32[](works.length);
         for (uint256 i; i < works.length; ++i) {
-            leaves[i] = WorksHashing.leaf(WorksHashing.itemHash(works[i].item));
+            leaves[i] = StreamHashing.leaf(StreamHashing.itemHash(works[i].item));
         }
     }
 
@@ -315,7 +315,7 @@ abstract contract IntegrationBase is CoreIntegrationBase {
                 address(0),
                 uint256(root),
                 StatementKinds.CURATION_EVIDENCE,
-                keccak256("6529-works/curation-evidence/1"),
+                keccak256("6529-stream/curation-evidence/1"),
                 HashRef(HASH_SHA256, evidence),
                 "ar://curation-evidence",
                 bytes32(0),
@@ -372,7 +372,7 @@ abstract contract IntegrationBase is CoreIntegrationBase {
     ) internal view returns (bytes memory) {
         PackageItem memory item = works[index].item;
         uint64 deadline = uint64(block.timestamp + 7 days);
-        bytes32 digest = registry.moveDigest(root, WorksHashing.itemHash(item), nonce, deadline);
+        bytes32 digest = registry.moveDigest(root, StreamHashing.itemHash(item), nonce, deadline);
         MoveAuthorization memory move = MoveAuthorization(
             nonce, deadline, abi.encodePacked(authority, _sign(authority, digest))
         );
@@ -443,7 +443,7 @@ abstract contract IntegrationBase is CoreIntegrationBase {
                 token,
                 id,
                 kind,
-                keccak256("6529-works/dispute-outcome/1"),
+                keccak256("6529-stream/dispute-outcome/1"),
                 HashRef(HASH_SHA256, keccak256(bytes(uri))),
                 uri,
                 bytes32(0),

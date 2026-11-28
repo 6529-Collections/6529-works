@@ -117,6 +117,19 @@
     "type": "function"
   },
   {
+    "inputs": [],
+    "name": "streamManager",
+    "outputs": [
+      {
+        "internalType": "contract StreamAccessManager",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "inputs": [
       {
         "components": [
@@ -184,19 +197,6 @@
     ],
     "name": "verify",
     "outputs": [],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "worksManager",
-    "outputs": [
-      {
-        "internalType": "contract WorksAccessManager",
-        "name": "",
-        "type": "address"
-      }
-    ],
     "stateMutability": "view",
     "type": "function"
   },

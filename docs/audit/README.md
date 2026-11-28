@@ -1,6 +1,6 @@
 # Auditor pack
 
-What a reviewer needs to start on 6529 Works. No external audit has started; the code has been
+What a reviewer needs to start on 6529 Stream. No external audit has started; the code has been
 reviewed only by AI agents.
 
 > Pre-audit. See the [project status](../../README.md#status).
@@ -55,10 +55,11 @@ seed, 395,000 and 9; asserted in the gas report).
   `355a7a71`, opened to any wallet by a test-only gate that is never deployed on mainnet:
   [record](../../deployments/11155111/README.md#sepolia-r9-28-november-2026-current-instance-with-an-open-gate),
   [flows](../../deployments/11155111/flows-r9.md)). The flows are rehearsals with throwaway
-  keys, not an audit.
+  keys, not an audit. These records are dated before 28 November 2026 and use the protocol's
+  earlier name, "6529 Works"; so do the signing domains of those instances.
 
 ## Reporting
 
 Report findings privately through
-[GitHub private vulnerability reporting](https://github.com/6529-Collections/6529-works/security/advisories/new)
+[GitHub private vulnerability reporting](https://github.com/6529-Collections/6529-stream/security/advisories/new)
 ([SECURITY.md](../../SECURITY.md)).

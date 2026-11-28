@@ -1,6 +1,6 @@
 # economics
 
-Money routing for 6529 Works: the per-product economics new works lock at mint, the currency
+Money routing for 6529 Stream: the per-product economics new works lock at mint, the currency
 allowlist, the permanent split ledger and its 66-byte CREATE2 wallets that artists and fixed
 payees pull from, the escrow that catches refused payments, signed releases, batch claims, and
 the governed vault for the network's own accounts. The rules are in

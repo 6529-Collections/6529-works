@@ -81,7 +81,7 @@ The renderer writes these traits, in this order, each as `{"trait_type":...,"val
 | `Dispute statement` | the renderer has a statement log and `latestDisputeOutcome` is nonzero | The entry hash, `0x` and 64 hex digits |
 
 The seed is `Work.seed`, stored in the token at mint, and is shown from mint. The fallback name
-`6529 Works #<id>` exists for a token without a collection, which Stream never mints.
+`6529 Stream #<id>` exists for a token without a collection, which Stream never mints.
 
 ### Media selection
 

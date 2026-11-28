@@ -15,7 +15,7 @@ import {
 } from "../interfaces/types/EconomicsTypes.sol";
 import { Limits } from "../interfaces/types/Limits.sol";
 import { License } from "../interfaces/types/PackageTypes.sol";
-import { WorksHashing } from "../interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "../interfaces/types/StreamHashing.sol";
 import { IAssetAllowlist } from "./interfaces/IAssetAllowlist.sol";
 import { ISplitFactory } from "./interfaces/ISplitFactory.sol";
 import { ISplitWallet } from "./interfaces/ISplitWallet.sol";
@@ -59,7 +59,7 @@ contract EconomicsResolver is IEconomicsResolver, AccessManaged {
     uint32 public constant INDEPENDENT_FEE_SHARE = 10_000;
     /// @notice The launch royalty rate: 6.529%.
     uint32 public constant DEFAULT_ROYALTY_RATE = 6_529;
-    /// @notice The launch default license's SPDX ID; its key is `WorksHashing.CC0_LICENSE_KEY`.
+    /// @notice The launch default license's SPDX ID; its key is `StreamHashing.CC0_LICENSE_KEY`.
     string public constant CC0 = "CC0-1.0";
 
     struct Product {
@@ -150,7 +150,7 @@ contract EconomicsResolver is IEconomicsResolver, AccessManaged {
         _check(expectedRevision, p.licenseRevision);
         _validateLicense(next);
         if (
-            WorksHashing.licenseKey(next.spdxId) == WorksHashing.CC0_LICENSE_KEY
+            StreamHashing.licenseKey(next.spdxId) == StreamHashing.CC0_LICENSE_KEY
                 && next.textFileId != cc0TextFileId
         ) revert InvalidLicense();
         License memory previous = p.license;

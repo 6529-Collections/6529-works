@@ -13,7 +13,7 @@ import { IWorkFacts } from "src/interfaces/core/IWorkFacts.sol";
 import { IWorkRules } from "src/interfaces/core/IWorkRules.sol";
 import { FileRole, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { License, PackageItem } from "src/interfaces/types/PackageTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { SignatureVerifier } from "src/libraries/SignatureVerifier.sol";
 import { WorkRules } from "src/records/WorkRules.sol";
 import { WorkDelivery } from "src/stream/WorkDelivery.sol";
@@ -47,7 +47,7 @@ contract WorkRulesTest is RulesFixture {
                 rules.RELICENSE_TYPEHASH(),
                 s,
                 id,
-                WorksHashing.licenseKey(next.spdxId),
+                StreamHashing.licenseKey(next.spdxId),
                 next.textFileId,
                 state,
                 dl

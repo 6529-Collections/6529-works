@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import { DeployCore } from "script/DeployCore.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { GovernanceConfigurator } from "src/governance/GovernanceConfigurator.sol";
-import { WorksAccessManager } from "src/governance/WorksAccessManager.sol";
+import { StreamAccessManager } from "src/governance/StreamAccessManager.sol";
 import { DelegationManagementMock } from "../mocks/identity/DelegationManagementMock.sol";
 import { MockVrfCoordinator } from "../mocks/entropy/EntropyMocks.sol";
 import { CoreIntegrationBase } from "../integration/CoreIntegrationBase.sol";
@@ -62,6 +62,6 @@ abstract contract GenesisFreshBase is CoreIntegrationBase {
 
     function _accept() internal {
         vm.prank(network);
-        WorksAccessManager(address(manager)).acceptNetwork();
+        StreamAccessManager(address(manager)).acceptNetwork();
     }
 }

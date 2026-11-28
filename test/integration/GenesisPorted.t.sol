@@ -8,13 +8,13 @@ import { DeployCore } from "script/DeployCore.sol";
 import { VerifyCore } from "script/VerifyCore.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { Roles } from "src/governance/Roles.sol";
-import { WorksAccessManager } from "src/governance/WorksAccessManager.sol";
+import { StreamAccessManager } from "src/governance/StreamAccessManager.sol";
 import { IIndependentStreamRegistry } from "src/interfaces/IIndependentStreamRegistry.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
 import { IUniformEditionAuctionLens } from "src/interfaces/IUniformEditionAuctionLens.sol";
 import { CURRENCY_DEFAULT, CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import {
     Erc165PeerPortedMock,
     WiringTargetPortedMock
@@ -305,13 +305,13 @@ contract GenesisPortedTest is GenesisJsonPorted {
         vm.prank(brake);
         manager.brakeOnce(id);
         vm.prank(brake);
-        vm.expectRevert(abi.encodeWithSelector(WorksAccessManager.AlreadyBraked.selector, id));
+        vm.expectRevert(abi.encodeWithSelector(StreamAccessManager.AlreadyBraked.selector, id));
         manager.brakeOnce(id);
         vm.warp(ready);
         vm.prank(network);
         vm.expectRevert(
             abi.encodeWithSelector(
-                WorksAccessManager.BrakeNotElapsed.selector, id, ready + uint48(7 days)
+                StreamAccessManager.BrakeNotElapsed.selector, id, ready + uint48(7 days)
             )
         );
         manager.execute(address(registry), release);
@@ -373,7 +373,7 @@ contract GenesisPortedTest is GenesisJsonPorted {
         assertEq(uint8(a.status), uint8(IUniformEditionAuction.AuctionStatus.OPEN));
         assertEq(a.maxCount, 100, "the creator's cap");
         assertEq(block.timestamp, genesisTime, "no time passed");
-        assertEq(WorksHashing.itemHash(w.item), stream.itemHashOf(tokenId));
+        assertEq(StreamHashing.itemHash(w.item), stream.itemHashOf(tokenId));
         assertEq(CURRENCY_ETH, address(0));
     }
 

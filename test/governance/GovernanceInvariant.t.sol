@@ -5,7 +5,7 @@ import { Test } from "forge-std/Test.sol";
 import { StdInvariant } from "forge-std/StdInvariant.sol";
 import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
 import { Roles } from "src/governance/Roles.sol";
-import { WorksAccessManager } from "src/governance/WorksAccessManager.sol";
+import { StreamAccessManager } from "src/governance/StreamAccessManager.sol";
 import { GovernanceFixture } from "../helpers/GovernanceFixture.sol";
 import { GovernedTargetMock } from "../mocks/governance/GovernanceMocks.sol";
 import { HandlerReach } from "../helpers/HandlerReach.sol";
@@ -14,12 +14,12 @@ import { HandlerReach } from "../helpers/HandlerReach.sol";
 ///         grant and revoke operational keys, brake, cancel and run operations. Every call that
 ///         the rules refuse is caught, so the campaign keeps going.
 contract GovernanceHandler is Test {
-    WorksAccessManager internal immutable manager;
+    StreamAccessManager internal immutable manager;
     GovernedTargetMock internal immutable target;
     address internal immutable brakeSafe;
     address[] public actors;
 
-    constructor(WorksAccessManager manager_, GovernedTargetMock target_, address brake_) {
+    constructor(StreamAccessManager manager_, GovernedTargetMock target_, address brake_) {
         manager = manager_;
         target = target_;
         brakeSafe = brake_;
@@ -55,7 +55,7 @@ contract GovernanceHandler is Test {
         _run(
             _actor(by),
             address(manager),
-            abi.encodeCall(WorksAccessManager.transferNetwork, (_actor(to)))
+            abi.encodeCall(StreamAccessManager.transferNetwork, (_actor(to)))
         );
     }
 

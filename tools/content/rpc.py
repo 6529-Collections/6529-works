@@ -45,7 +45,7 @@ class JsonRpc:
         request = urllib.request.Request(
             self._url,
             data=payload,
-            headers={"Content-Type": "application/json", "User-Agent": "6529-works-content/1"},
+            headers={"Content-Type": "application/json", "User-Agent": "6529-stream-content/1"},
             method="POST",
         )
         try:

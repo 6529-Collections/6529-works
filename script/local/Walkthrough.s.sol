@@ -43,7 +43,7 @@ import {
 } from "src/interfaces/types/PackageTypes.sol";
 import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 
 interface ICurationDigest {
     function approvalDigest(bytes32 packageRoot, bytes32 evidenceHash, uint256 signerEpoch)
@@ -232,7 +232,7 @@ contract Walkthrough is Script {
         w.item.sale = SaleTerms(SaleKind.ENGLISH_AUCTION, CURRENCY_ETH, "");
         w.item.edition = EditionTerms(100, CURRENCY_ETH, SaleKind.UNIFORM_AUCTION, "");
         // A one-item package: the root is the item's leaf, and its Merkle proof is empty.
-        w.root = WorksHashing.leaf(WorksHashing.itemHash(w.item));
+        w.root = StreamHashing.leaf(StreamHashing.itemHash(w.item));
     }
 
     /// @dev The Independent Stream work: another SVG, an original with no edition, in the artist's
@@ -265,7 +265,7 @@ contract Walkthrough is Script {
         address artist = _addr(ARTIST);
         item.collectionId = collectionId;
         item.contentHash = media[0].sha256Hash;
-        item.mediaHash = WorksHashing.mediaHash(media);
+        item.mediaHash = StreamHashing.mediaHash(media);
         item.recordFileId = recordFileId;
         item.parties = new Party[](1);
         item.parties[0] = Party(artist, uint8(PartyRole.ARTIST));
@@ -381,7 +381,7 @@ contract Walkthrough is Script {
                     address(0),
                     uint256(root),
                     StatementKinds.CURATION_EVIDENCE,
-                    keccak256("6529-works/curation-evidence/1"),
+                    keccak256("6529-stream/curation-evidence/1"),
                     HashRef(HASH_SHA256, evidence),
                     "ar://local-walkthrough-evidence",
                     bytes32(0),
@@ -419,7 +419,7 @@ contract Walkthrough is Script {
     function _startWithBid(Addrs memory a, Art memory w) internal returns (uint256 saleId) {
         uint64 deadline = uint64(block.timestamp + 7 days);
         bytes32 digest = IRegistryDigests(a.registry)
-            .moveDigest(w.root, WorksHashing.itemHash(w.item), 0, deadline);
+            .moveDigest(w.root, StreamHashing.itemHash(w.item), 0, deadline);
         bytes memory request = abi.encode(
             StreamMintRequest(
                 w.root,
@@ -479,7 +479,7 @@ contract Walkthrough is Script {
         _list(a, token);
         vm.startBroadcast(artist);
         IItemApproval(a.independentStream)
-            .approveItem(token, WorksHashing.itemHash(w.item), INDEPENDENT_RATE);
+            .approveItem(token, StreamHashing.itemHash(w.item), INDEPENDENT_RATE);
         vm.stopBroadcast();
 
         bytes memory request =

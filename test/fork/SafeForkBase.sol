@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { DeployGuards } from "script/DeployGuards.sol";
-import { CoreForkBase } from "./WorksForkBase.sol";
+import { CoreForkBase } from "./StreamForkBase.sol";
 
 /// @dev The parts of Safe v1.4.1 these suites call, declared here so the repository takes no
 ///      dependency on the Safe contracts.

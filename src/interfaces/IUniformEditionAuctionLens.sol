@@ -90,7 +90,7 @@ interface IUniformEditionAuctionLens {
     function escrow() external view returns (address);
     /// @notice The master check of `open` and `adopt`. The master is `IEditions(token).stream()`;
     ///         `IStream.workOf(id)` must be an edition master (kind 1) whose item hash is
-    ///         `WorksHashing.itemHash` of the item in `data`. For 6529 Stream Editions, `data`
+    ///         `StreamHashing.itemHash` of the item in `data`. For 6529 Stream Editions, `data`
     ///         must be `abi.encode(PackageItem item, bytes32 packageRoot, bytes32[] proof)`, an
     ///         item the package registry still approves in `packageRoot`
     ///         (`IItemApprovals.isApprovedItem`); for an Independent Stream pair

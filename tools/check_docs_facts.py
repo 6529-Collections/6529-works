@@ -77,7 +77,7 @@ def keccak256(data: bytes) -> bytes:
     global _KECCAK
     if _KECCAK is None:
         path = Path(__file__).resolve().parent / "content" / "keccak.py"
-        spec = importlib.util.spec_from_file_location("works_keccak_docs", path)
+        spec = importlib.util.spec_from_file_location("stream_keccak_docs", path)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         _KECCAK = module.keccak256
@@ -96,7 +96,7 @@ def _load_budgets():
     global _BUDGETS
     if _BUDGETS is None:
         path = Path(__file__).resolve().parent / "check_budgets.py"
-        spec = importlib.util.spec_from_file_location("works_budgets_docs", path)
+        spec = importlib.util.spec_from_file_location("stream_budgets_docs", path)
         module = importlib.util.module_from_spec(spec)
         sys.modules[spec.name] = module  # its dataclasses resolve through sys.modules
         spec.loader.exec_module(module)

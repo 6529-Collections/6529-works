@@ -11,7 +11,7 @@ import { IStream } from "src/interfaces/core/IStream.sol";
 import { IWorkFacts } from "src/interfaces/core/IWorkFacts.sol";
 import { PRODUCT_STREAM } from "src/interfaces/types/EconomicsTypes.sol";
 import { ItemKind } from "src/interfaces/types/PackageTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
 
 /// @notice The permanent Stream core on the deployed stack (re-ported from the retired
@@ -62,7 +62,7 @@ contract StreamCorePolicyPortedTest is IntegrationBase {
             assertEq(serial, 1);
         }
         assertEq(count, 1, "WorkMinted once");
-        assertEq(f.itemHash, WorksHashing.itemHash(w.item));
+        assertEq(f.itemHash, StreamHashing.itemHash(w.item));
         assertEq(f.contentHash, w.item.contentHash);
         assertEq(f.packageRoot, root);
         assertEq(f.mediaHash, w.item.mediaHash);

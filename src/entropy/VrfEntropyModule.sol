@@ -14,7 +14,7 @@ import { IIndependentStreamRegistry } from "../interfaces/IIndependentStreamRegi
 import { IEntropyModule } from "../interfaces/IEntropyModule.sol";
 import { IPackageRegistry } from "../interfaces/IPackageRegistry.sol";
 import { PackageItem, SeedPolicy } from "../interfaces/types/PackageTypes.sol";
-import { WorksHashing } from "../interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "../interfaces/types/StreamHashing.sol";
 import { BoundedCall } from "../libraries/BoundedCall.sol";
 import { Dependency } from "../libraries/Dependency.sol";
 import { IVRFCoordinatorV2Plus } from "./IVRFCoordinatorV2Plus.sol";
@@ -257,16 +257,16 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
     ///      finds a pending request and cannot deliver the new ID, which is not yet recorded. A reentrant delivery of an EARLIER request is valid; the
     ///      seed is then already delivered when the call returns, and the new request is recorded
     ///      (its late delivery is a no-op) but is not announced as the item's current request.
-    /// @param item The package item; the module computes its hash (`WorksHashing.itemHash`).
+    /// @param item The package item; the module computes its hash (`StreamHashing.itemHash`).
     /// @param packageRoot An approved package root.
-    /// @param proof The Merkle proof of `WorksHashing.leaf(itemHash)` under `packageRoot`.
+    /// @param proof The Merkle proof of `StreamHashing.leaf(itemHash)` under `packageRoot`.
     /// @return requestId The coordinator's ID for the new request, or zero when the item only
     ///         joined its content's delivered or pending draw.
     function requestSeed(PackageItem calldata item, bytes32 packageRoot, bytes32[] calldata proof)
         external
         returns (uint256 requestId)
     {
-        bytes32 itemHash = WorksHashing.itemHashCalldata(item);
+        bytes32 itemHash = StreamHashing.itemHashCalldata(item);
         bytes32 contentHash = item.contentHash;
         Seed storage seed = _seeds[contentHash];
         bool joined = _contentOf[itemHash] == 0;
@@ -323,7 +323,7 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
         payable
         returns (uint256 requestId)
     {
-        bytes32 itemHash = WorksHashing.itemHashCalldata(item);
+        bytes32 itemHash = StreamHashing.itemHashCalldata(item);
         address w = wrapper;
         if (item.seedPolicy != uint8(SeedPolicy.VRF) || item.contentHash == 0 || w == address(0)) {
             revert NotRequestable(itemHash);
@@ -575,7 +575,7 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
         ) return false;
         (IPackageRegistry.PackageStatus status,,) = packageRegistry.packageOf(packageRoot);
         return status == IPackageRegistry.PackageStatus.APPROVED
-            && MerkleProof.verifyCalldata(proof, packageRoot, WorksHashing.leaf(itemHash))
+            && MerkleProof.verifyCalldata(proof, packageRoot, StreamHashing.leaf(itemHash))
             && packageRegistry.consumedItemOf(item.contentHash) == 0;
     }
 

@@ -10,7 +10,7 @@ import { MintFacts, Slots } from "src/interfaces/core/CoreTypes.sol";
 import { IWorkFacts } from "src/interfaces/core/IWorkFacts.sol";
 import { FileRole, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { License, PackageItem } from "src/interfaces/types/PackageTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { BoundedCall } from "src/libraries/BoundedCall.sol";
 
 /// @dev A RECORDS module with no rules: passes calls to `IWorkFacts`, and names a delivery
@@ -80,7 +80,7 @@ contract RendererCoreTest is CoreFixture {
         media[0] = MediaFile(primary, sha256(PNG), uint8(FileRole.PRIMARY));
         item.collectionId = 1;
         item.contentHash = sha256(PNG);
-        item.mediaHash = keccak256(abi.encode(WorksHashing.MEDIA_DOMAIN, media));
+        item.mediaHash = keccak256(abi.encode(StreamHashing.MEDIA_DOMAIN, media));
         item.recordFileId = recordFile;
         item.license = License("MIT", licenseText);
     }
@@ -90,7 +90,7 @@ contract RendererCoreTest is CoreFixture {
     function _work(bool open, bool finalize) internal returns (uint256 id) {
         (PackageItem memory item, MediaFile[] memory media) = _item();
         MintFacts memory f = _facts(1);
-        f.itemHash = WorksHashing.itemHash(item);
+        f.itemHash = StreamHashing.itemHash(item);
         f.contentHash = sha256(PNG);
         id = sale.mint(address(stream), f);
         if (open) facts.open(address(stream), id, item, media);

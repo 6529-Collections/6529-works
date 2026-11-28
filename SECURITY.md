@@ -1,6 +1,6 @@
 # Security policy
 
-6529 Works is pre-audit and not production-ready. Do not use these contracts to
+6529 Stream is pre-audit and not production-ready. Do not use these contracts to
 custody value.
 
 The code has been reviewed only by AI agents; no external audit has taken place.
@@ -10,7 +10,7 @@ The code has been reviewed only by AI agents; no external audit has taken place.
 Please do not open public issues for exploitable vulnerabilities.
 
 1. Use GitHub private vulnerability reporting:
-   <https://github.com/6529-Collections/6529-works/security/advisories/new>
+   <https://github.com/6529-Collections/6529-stream/security/advisories/new>
 2. If that is unavailable, contact a maintainer privately and keep exploit
    details out of public channels.
 

@@ -19,7 +19,7 @@ import { PackageItem } from "./types/PackageTypes.sol";
 interface IIndependentStream is IModuleSlots, IIndependentStreamMembership {
     /// @notice What a sale contract passes to the Independent Stream module's `authorize` for a new
     ///         work: `abi.encode(IndependentMint)`.
-    /// @param item The approved item (`WorksHashing.itemHash` names it). Its first party is the
+    /// @param item The approved item (`StreamHashing.itemHash` names it). Its first party is the
     ///        artist; any later party is a collaborator.
     /// @param media Its media list, primary first, committed by `item.mediaHash`.
     /// @param consents One per party after the first, in order: `abi.encodePacked(wallet,

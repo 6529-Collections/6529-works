@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessManaged.sol";
 import { BoundedParameter } from "src/governance/BoundedParameter.sol";
 
-/// @notice Sample governed target showing the patterns every 6529 Works target follows:
+/// @notice Sample governed target showing the patterns every 6529 Stream target follows:
 ///         `restricted` non-payable setters, one selector per delay class, separate pause and
 ///         unpause selectors, compare-and-set on recipient and verifier setters, a raise-only
 ///         gas parameter with an absolute ceiling, and old/new events on every setter.

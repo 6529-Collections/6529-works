@@ -11,7 +11,7 @@ import { SignatureVerifier } from "src/libraries/SignatureVerifier.sol";
 import { CoreFixture } from "../mocks/core/CoreFixture.sol";
 import { RawStreamAnswer } from "../mocks/identity/AccountsMutationMocks.sol";
 import { DelegationManagementMock } from "../mocks/identity/DelegationManagementMock.sol";
-import { SplitFactoryWalletsMock } from "../mocks/identity/IdentityWorksMocks.sol";
+import { SplitFactoryWalletsMock } from "../mocks/identity/IdentityStreamMocks.sol";
 
 /// @notice An Independent Stream module answering `entry` as the test sets it.
 contract EntryStub {

@@ -12,7 +12,7 @@ from tools.content import encoding as enc
 from tools.content.encoding import Encoding
 from tools.content.errors import EncodingError, ToolError
 
-TEXT = (b"6529 Works content store. " * 200) + bytes(range(256)) * 4
+TEXT = (b"6529 Stream content store. " * 200) + bytes(range(256)) * 4
 
 
 class GzipProfileTest(unittest.TestCase):

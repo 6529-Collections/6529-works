@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import { Test } from "forge-std/Test.sol";
 import { DeployCore } from "script/DeployCore.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
-import { WorksAccessManager } from "src/governance/WorksAccessManager.sol";
+import { StreamAccessManager } from "src/governance/StreamAccessManager.sol";
 import { IWorkFacts } from "src/interfaces/core/IWorkFacts.sol";
 import { MintFacts } from "src/interfaces/core/CoreTypes.sol";
 import {
@@ -71,7 +71,7 @@ abstract contract CoreDeployFixture is Test {
 
     function _params() internal view returns (DeployCore.Params memory q) {
         q.deployer = deployer;
-        q.namespace = keccak256("6529-works/core-test");
+        q.namespace = keccak256("6529-stream/core-test");
         q.feeRecipient = feeRecipient;
         q.museum = museum;
         q.marketOwner = marketOwner;
@@ -122,7 +122,7 @@ abstract contract CoreDeployFixture is Test {
         GovernanceConfig.Config memory cfg = _config();
         vm.prank(deployer);
         DeployCore.install(d, cfg, manifest, calls);
-        _asNetwork(address(d.manager), abi.encodeCall(WorksAccessManager.acceptNetwork, ()));
+        _asNetwork(address(d.manager), abi.encodeCall(StreamAccessManager.acceptNetwork, ()));
     }
 
     function _holder(string memory json, string memory role) internal pure returns (address) {

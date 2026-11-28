@@ -60,7 +60,7 @@ description of the contract.
 | `entropy/VrfEntropyModule.sol` | [`entropy/`](entropy/): `VrfEntropyModule`, `VrfEntropyManaged`, `VrfEntropyIndependent` (the paid draw of an Independent Stream contract), `VrfEntropyGovernance`, `VrfEntropySetters`, `VrfEntropyFuzz`, `VrfEntropyInvariant`; on the real stack `integration/VrfWork` |
 | `governance/*` | [`governance/`](governance/): `NetworkAndBrake`, `GovernanceInvariant`, `GovernanceConfigurator`, `Roles`, `BoundedParameter`, `CoreNetwork`, `CoreRoleMap`, `RoleMapComplete`, `GenesisConfig*`, `GenesisWiring*` |
 | `libraries/*` | [`libraries/`](libraries/): one suite per library; the proofs in `symbolic/` |
-| `interfaces/*` | [`interfaces/`](interfaces/): pinned interface IDs, typehashes, `WorksHashing` |
+| `interfaces/*` | [`interfaces/`](interfaces/): pinned interface IDs, typehashes, `StreamHashing` |
 | `script/` | [`deploy/`](deploy/): `DeployCore` (the deploy library and the whole-stack readback), `DeployCoreSafety` (the one-call factory, the runtime-code comparison, the genesis hashes and the manager's role logs), `DeployGuardsSafe` (the network wallet's own code must be a Safe 1.3.0 or 1.4.1 proxy); [`sepolia/`](sepolia/): `SepoliaOpenGate` (the test-only gate of `script/sepolia/`: the curated path for any wallet with its two roles, and what it cannot be used for) |
 
 ## The tree

@@ -62,7 +62,7 @@ from .plan import (
     split_parts,
 )
 
-CALLS_SCHEMA = "6529-works/content-calls/v1"
+CALLS_SCHEMA = "6529-stream/content-calls/v1"
 
 
 @dataclass(frozen=True)

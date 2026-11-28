@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
 #
-# Review configuration for 6529 Works. The rules mirrored here come from ADR 0001
+# Review configuration for 6529 Stream. The rules mirrored here come from ADR 0001
 # (docs/adr/0001-v1-scope.md) as amended by later ADRs (ADR 0007, permanence, for the gas rule
 # and the line budget; ADR 0010, the plain permanent core) and AGENTS.md; when they disagree,
 # the ADRs win.

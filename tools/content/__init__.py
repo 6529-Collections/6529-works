@@ -1,4 +1,4 @@
-"""Off-chain tooling for the 6529 Works content store (ADR 0001 section 8).
+"""Off-chain tooling for the 6529 Stream content store (ADR 0001 section 8).
 
 Plans a file's chunks and manifest, emits the transactions that stage them, and verifies or
 rebuilds a stored file from the chain. Standard library only. Every hash, ID and byte layout here

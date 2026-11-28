@@ -22,7 +22,7 @@ tests hold.
 
 [`IntegrationBase.sol`](IntegrationBase.sol) adds the actors and package building: it signs
 EIP-712 digests read from the contracts, builds sorted-pair Merkle trees over
-`WorksHashing.leaf`, and drives sales and governed actions (a zero-delay role acts directly; any
+`StreamHashing.leaf`, and drives sales and governed actions (a zero-delay role acts directly; any
 other role is scheduled, waited out and executed).
 [`IndependentIntegrationBase.sol`](IndependentIntegrationBase.sol) adds a listed Independent Stream
 pair; [`GasBase.sol`](GasBase.sol) the whole-transaction gas measurement.

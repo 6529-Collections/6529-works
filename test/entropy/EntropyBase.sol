@@ -20,7 +20,7 @@ import {
     SeedPolicy
 } from "src/interfaces/types/PackageTypes.sol";
 import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import {
     EntropyPackageRegistryMock,
     MockVrfCoordinator
@@ -58,7 +58,7 @@ abstract contract EntropyItems {
     }
 
     function _hash(PackageItem memory item) internal pure returns (bytes32) {
-        return WorksHashing.itemHash(item);
+        return StreamHashing.itemHash(item);
     }
 }
 
@@ -117,7 +117,7 @@ abstract contract EntropyBase is Test, EntropyItems {
         bytes32[4] memory leaves;
         for (uint256 i; i < 4; ++i) {
             items[i] = _hash(_item(i));
-            leaves[i] = WorksHashing.leaf(items[i]);
+            leaves[i] = StreamHashing.leaf(items[i]);
         }
         bytes32 left = _pair(leaves[0], leaves[1]);
         bytes32 right = _pair(leaves[2], leaves[3]);
@@ -128,7 +128,7 @@ abstract contract EntropyBase is Test, EntropyItems {
         proofs[3] = _proof(leaves[2], left);
         registry.setStatus(root, IPackageRegistry.PackageStatus.APPROVED);
 
-        soloRoot = WorksHashing.leaf(_hash(_solo()));
+        soloRoot = StreamHashing.leaf(_hash(_solo()));
         registry.setStatus(soloRoot, IPackageRegistry.PackageStatus.APPROVED);
         registry.setStatus(plainRoot(SeedPolicy.NONE), IPackageRegistry.PackageStatus.APPROVED);
         registry.setStatus(plainRoot(SeedPolicy.ARTIST), IPackageRegistry.PackageStatus.APPROVED);
@@ -184,7 +184,7 @@ abstract contract EntropyBase is Test, EntropyItems {
 
     /// @dev The root of the one-item package of `_plain(policy)`: its leaf.
     function plainRoot(SeedPolicy policy) internal pure returns (bytes32) {
-        return WorksHashing.leaf(_hash(_plain(policy)));
+        return StreamHashing.leaf(_hash(_plain(policy)));
     }
 
     /// @dev The revert data of every failure of the spam gate.

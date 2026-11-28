@@ -13,7 +13,7 @@ import { IMintPolicy } from "src/interfaces/core/IMintPolicy.sol";
 import { MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { ArtistIdentity } from "src/interfaces/types/IdentityTypes.sol";
 import { License, PackageItem, Party } from "src/interfaces/types/PackageTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { IndependentStreamFixture } from "./IndependentStreamFixture.sol";
 
 /// @notice Behaviour of the Independent Stream module that the mutation campaign found unpinned:
@@ -183,7 +183,7 @@ contract IndependentStreamRegistryMutationTest is IndependentStreamFixture {
         IIndependentStreamRegistry.Form form = IIndependentStreamRegistry.Form.ERC1155;
         bytes32 expected = keccak256(
             abi.encode(
-                keccak256("6529WORKS_INDEPENDENT_LISTING_V1"),
+                keccak256("6529STREAM_INDEPENDENT_LISTING_V1"),
                 address(0x1111),
                 form,
                 address(0x2222),
@@ -342,7 +342,7 @@ contract IndependentStreamRegistryMutationTest is IndependentStreamFixture {
         (PackageItem memory item, MediaFile[] memory media) = _item(1);
         media[0].sha256Hash = bytes32(uint256(media[0].sha256Hash) - 1);
         item.contentHash = media[0].sha256Hash;
-        item.mediaHash = WorksHashing.mediaHash(media);
+        item.mediaHash = StreamHashing.mediaHash(media);
         _refuse(item, media, new bytes[](0));
     }
 

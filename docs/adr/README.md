@@ -1,5 +1,9 @@
 # Architecture decision records
 
+ADRs are kept as accepted. Those dated before 28 November 2026 use the protocol's earlier name,
+"6529 Works", and the earlier contract names `WorksAccessManager` and `WorksHashing` (now
+`StreamAccessManager` and `StreamHashing`).
+
 | ADR | Title | Status |
 | --- | --- | --- |
 | [0001](0001-v1-scope.md) | 6529 Works v1 scope | Accepted (11 October 2026); amended by 0002, 0003, 0004, 0005, 0006, 0007, 0008 0009 and 0010, and on 1 November 2026 (the size budget; Main Stage the only way into 6529 Stream) |

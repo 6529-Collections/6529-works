@@ -1,7 +1,7 @@
 # Governance
 
-One OpenZeppelin 5.7.0 `AccessManager`, subclassed as `WorksAccessManager`, governs every
-6529 Works contract.
+One OpenZeppelin 5.7.0 `AccessManager`, subclassed as `StreamAccessManager`, governs every
+6529 Stream contract.
 
 - **One authority, the network.** A single address holds every network power. Today that is one
   6529 Safe; later it is the executor of TDH governance, bridged from 6529chain. The network can
@@ -126,15 +126,15 @@ Rule IDs use the prefix `GV`.
 
 | ID | Rule | Enforced in | Tested by |
 | --- | --- | --- | --- |
-| GV-1 | Only `network()` holds the network roles; nobody can be granted one; the installer holds them only until it renounces. | `WorksAccessManager.hasRole`, `_grantRole` | `test_NobodyCanBeGrantedANetworkRole`, `testFuzz_OnlyTheNetworkHoldsTheNetworkRoles`, `test_NoNetworkBeforeAcceptance`, `test_ConfiguratorDeploysAndOwnsAWorksAccessManager` |
+| GV-1 | Only `network()` holds the network roles; nobody can be granted one; the installer holds them only until it renounces. | `StreamAccessManager.hasRole`, `_grantRole` | `test_NobodyCanBeGrantedANetworkRole`, `testFuzz_OnlyTheNetworkHoldsTheNetworkRoles`, `test_NoNetworkBeforeAcceptance`, `test_ConfiguratorDeploysAndOwnsAStreamAccessManager` |
 | GV-2 | The network acts through each class at the class's configured delay (genesis: none, 24 hours, 3 days, 7 days); nothing runs before the delay in force. The classes are the network's to remap with one 7-day action. | `Roles.executionDelay`, OpenZeppelin `schedule` | `test_EachClassRunsAtItsDelayAndNotBefore`, `test_ManagerAdministrationIsTheSevenDayClass`, `test_TheNetworkActsAtOnceThroughTheNetworkRole`, `test_UnmappedSelectorFallsBackToTheSevenDayClass` |
 | GV-3 | Operational keys act with no delay; the network grants and revokes them at once; a key may renounce its role. | `GovernanceConfig.install` | `test_OperationalKeysAreGrantedAndRevokedAtOnce`, `test_EveryRoleIsLabelledAndOperationalKeysAnswerToTheNetworkAtOnce` |
-| GV-4 | `transferNetwork(next)` only proposes; `next` takes over by `acceptNetwork`; afterwards the former network holds none of the network roles. Operational roles, whoever holds them, and the brake are unchanged by the handover and last until the new network revokes or replaces them. | `WorksAccessManager.transferNetwork`, `acceptNetwork` | `test_TransferNetworkTakesEffectOnlyOnAccept`, `test_TransferCanBeWithdrawnOrReplaced`, `test_OnlyTheNetworkCanStartATransfer`, `test_Handover_AnOperationalRoleOfTheFormerNetworkLastsUntilTheNewNetworkRevokesIt`, `test_Handover_KeysTheFormerNetworkGrantedToOthersStayUntilRevoked`, `test_Handover_TheBrakeStaysUntilTheNewNetworkReplacesIt`, `test_Handover_TheLogsNameEveryKeyTheNewNetworkMustReview` |
-| GV-5 | `setBrake` is the network at the 7-day class; zero means no brake. | `WorksAccessManager.setBrake` | `test_OnlyTheBrakeCanBrake`, `test_TheBrakeCanDelayItsOwnRemovalOnce`, `test_NoBrakeIsAllowed` |
-| GV-6 | Only the brake brakes, once per scheduled operation until it runs; the operation then cannot run before its ready time plus 7 days. | `WorksAccessManager.brakeOnce` | `test_TheBrakeDelaysAnOperationOnce`, `test_TheBrakeAlsoHoldsADirectDelayedCall`, `test_CancelAndRescheduleDoesNotEscapeTheBrake`, `test_AnActionWithNoDelayCannotBeBraked` |
-| GV-7 | A scheduled operation expires 14 days after its ready time. | `WorksAccessManager.expiration` | `test_ABrakedOperationDoesNotExpireBeforeItCanRun` |
+| GV-4 | `transferNetwork(next)` only proposes; `next` takes over by `acceptNetwork`; afterwards the former network holds none of the network roles. Operational roles, whoever holds them, and the brake are unchanged by the handover and last until the new network revokes or replaces them. | `StreamAccessManager.transferNetwork`, `acceptNetwork` | `test_TransferNetworkTakesEffectOnlyOnAccept`, `test_TransferCanBeWithdrawnOrReplaced`, `test_OnlyTheNetworkCanStartATransfer`, `test_Handover_AnOperationalRoleOfTheFormerNetworkLastsUntilTheNewNetworkRevokesIt`, `test_Handover_KeysTheFormerNetworkGrantedToOthersStayUntilRevoked`, `test_Handover_TheBrakeStaysUntilTheNewNetworkReplacesIt`, `test_Handover_TheLogsNameEveryKeyTheNewNetworkMustReview` |
+| GV-5 | `setBrake` is the network at the 7-day class; zero means no brake. | `StreamAccessManager.setBrake` | `test_OnlyTheBrakeCanBrake`, `test_TheBrakeCanDelayItsOwnRemovalOnce`, `test_NoBrakeIsAllowed` |
+| GV-6 | Only the brake brakes, once per scheduled operation until it runs; the operation then cannot run before its ready time plus 7 days. | `StreamAccessManager.brakeOnce` | `test_TheBrakeDelaysAnOperationOnce`, `test_TheBrakeAlsoHoldsADirectDelayedCall`, `test_CancelAndRescheduleDoesNotEscapeTheBrake`, `test_AnActionWithNoDelayCannotBeBraked` |
+| GV-7 | A scheduled operation expires 14 days after its ready time. | `StreamAccessManager.expiration` | `test_ABrakedOperationDoesNotExpireBeforeItCanRun` |
 | GV-8 | Only the scheduler or the network can cancel an operation. | OpenZeppelin `_canCancel` | `test_CancellationIsTheSchedulerOrTheNetwork` |
-| GV-9 | The manager's own selectors cannot be remapped and the manager cannot be closed. | `WorksAccessManager._setTargetFunctionRole`, `_setTargetClosed` | `test_TheManagerCannotBeRemappedOrClosed` |
+| GV-9 | The manager's own selectors cannot be remapped and the manager cannot be closed. | `StreamAccessManager._setTargetFunctionRole`, `_setTargetClosed` | `test_TheManagerCannotBeRemappedOrClosed` |
 | GV-10 | A configuration names a network; grants are of operational roles only, never repeated; targets have code and this manager; selectors appear once and never map to `ADMIN`, `CURATION_SIGNER` or `PUBLIC`. | `GovernanceConfig.validate` | `test_RejectsAMissingNetwork`, `test_RejectsGrantsOfNetworkRoles`, `test_RejectsInvalidGrants`, `test_RejectsInvalidTargets`, `test_RejectsOneSelectorInTwoClasses` |
 | GV-11 | Only `deployer` configures, once; the configurator ends with no role. | `GovernanceConfigurator.configure` | `test_OnlyDeployerCanConfigure`, `test_ConfigureIsOneShot` |
 | GV-12 | Genesis wiring has at most 64 allow-listed calls on configured targets, runs before mapping, and any revert aborts the configuration. | `GovernanceConfig.validateWiring` | `test_RejectsMoreThanTheWiringBound`, `testFuzz_OnlyGenesisSelectorsPassValidation`, `test_RejectsWiringOnAnUnconfiguredTarget`, `test_WiringRunsBeforeSelectorsAreMapped`, `test_RevertingWiringCallAbortsTheWholeConfiguration` |
@@ -171,7 +171,7 @@ The manager adds `NetworkTransferStarted`, `NetworkTransferred`, `BrakeSet` and
 
 ## References
 
-Code: [`WorksAccessManager.sol`](../../src/governance/WorksAccessManager.sol),
+Code: [`StreamAccessManager.sol`](../../src/governance/StreamAccessManager.sol),
 [`GovernanceConfigurator.sol`](../../src/governance/GovernanceConfigurator.sol),
 [`GovernanceConfig.sol`](../../src/governance/GovernanceConfig.sol),
 [`Roles.sol`](../../src/governance/Roles.sol), [`Modules.sol`](../../src/core/Modules.sol).

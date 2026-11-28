@@ -7,12 +7,12 @@ import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessMa
 import { Errors } from "@openzeppelin/contracts/utils/Errors.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
-import { WorksAccessManager } from "src/governance/WorksAccessManager.sol";
+import { StreamAccessManager } from "src/governance/StreamAccessManager.sol";
 import { GovernanceFixture } from "../helpers/GovernanceFixture.sol";
 import { GovernedTargetMock, PayableGovernedMock } from "../mocks/governance/GovernanceMocks.sol";
 
 /// @notice One authority (the network), one brake, three fixed delays (governance spec,
-///         GV-1 to GV-9), on a configured `WorksAccessManager`.
+///         GV-1 to GV-9), on a configured `StreamAccessManager`.
 contract NetworkAndBrakeTest is GovernanceFixture {
     function setUp() public {
         _deployGovernance();
@@ -90,8 +90,8 @@ contract NetworkAndBrakeTest is GovernanceFixture {
     /// @dev GV-2: the manager's own administration is the 7-day class.
     function test_ManagerAdministrationIsTheSevenDayClass() public {
         bytes[3] memory calls = [
-            abi.encodeCall(WorksAccessManager.setBrake, (outsider)),
-            abi.encodeCall(WorksAccessManager.transferNetwork, (outsider)),
+            abi.encodeCall(StreamAccessManager.setBrake, (outsider)),
+            abi.encodeCall(StreamAccessManager.transferNetwork, (outsider)),
             abi.encodeCall(IAccessManager.setTargetClosed, (address(target), true))
         ];
         for (uint256 i; i < calls.length; ++i) {
@@ -179,7 +179,7 @@ contract NetworkAndBrakeTest is GovernanceFixture {
             vm.warp(manager.getSchedule(id));
             vm.expectRevert(
                 abi.encodeWithSelector(
-                    WorksAccessManager.NetworkRoleNotGrantable.selector, roles[i]
+                    StreamAccessManager.NetworkRoleNotGrantable.selector, roles[i]
                 )
             );
             vm.prank(adminSafe);
@@ -215,11 +215,11 @@ contract NetworkAndBrakeTest is GovernanceFixture {
         bytes memory stale = abi.encodeCall(GovernedTargetMock.setFee, (666));
         _schedule(adminSafe, address(target), stale); // pending under the old network
 
-        bytes memory transfer = abi.encodeCall(WorksAccessManager.transferNetwork, (next));
+        bytes memory transfer = abi.encodeCall(StreamAccessManager.transferNetwork, (next));
         bytes32 id = _schedule(adminSafe, address(manager), transfer);
         vm.warp(manager.getSchedule(id));
         vm.expectEmit(address(manager));
-        emit WorksAccessManager.NetworkTransferStarted(adminSafe, next);
+        emit StreamAccessManager.NetworkTransferStarted(adminSafe, next);
         vm.prank(adminSafe);
         manager.execute(address(manager), transfer);
         assertEq(manager.pendingNetwork(), next);
@@ -228,13 +228,13 @@ contract NetworkAndBrakeTest is GovernanceFixture {
         assertFalse(nextHolds);
 
         vm.expectRevert(
-            abi.encodeWithSelector(WorksAccessManager.NotPendingNetwork.selector, outsider)
+            abi.encodeWithSelector(StreamAccessManager.NotPendingNetwork.selector, outsider)
         );
         vm.prank(outsider);
         manager.acceptNetwork();
 
         vm.expectEmit(address(manager));
-        emit WorksAccessManager.NetworkTransferred(adminSafe, next);
+        emit StreamAccessManager.NetworkTransferred(adminSafe, next);
         vm.prank(next);
         manager.acceptNetwork();
         assertEq(manager.network(), next);
@@ -269,7 +269,9 @@ contract NetworkAndBrakeTest is GovernanceFixture {
         vm.prank(next);
         manager.cancel(adminSafe, address(target), stale);
         // A second accept does nothing.
-        vm.expectRevert(abi.encodeWithSelector(WorksAccessManager.NotPendingNetwork.selector, next));
+        vm.expectRevert(
+            abi.encodeWithSelector(StreamAccessManager.NotPendingNetwork.selector, next)
+        );
         vm.prank(next);
         manager.acceptNetwork();
     }
@@ -277,16 +279,16 @@ contract NetworkAndBrakeTest is GovernanceFixture {
     function test_TransferCanBeWithdrawnOrReplaced() public {
         address first = makeAddr("first");
         address second = makeAddr("second");
-        _adminExecute(abi.encodeCall(WorksAccessManager.transferNetwork, (first)));
-        _adminExecute(abi.encodeCall(WorksAccessManager.transferNetwork, (second)));
+        _adminExecute(abi.encodeCall(StreamAccessManager.transferNetwork, (first)));
+        _adminExecute(abi.encodeCall(StreamAccessManager.transferNetwork, (second)));
         vm.expectRevert(
-            abi.encodeWithSelector(WorksAccessManager.NotPendingNetwork.selector, first)
+            abi.encodeWithSelector(StreamAccessManager.NotPendingNetwork.selector, first)
         );
         vm.prank(first);
         manager.acceptNetwork();
-        _adminExecute(abi.encodeCall(WorksAccessManager.transferNetwork, (address(0))));
+        _adminExecute(abi.encodeCall(StreamAccessManager.transferNetwork, (address(0))));
         vm.expectRevert(
-            abi.encodeWithSelector(WorksAccessManager.NotPendingNetwork.selector, second)
+            abi.encodeWithSelector(StreamAccessManager.NotPendingNetwork.selector, second)
         );
         vm.prank(second);
         manager.acceptNetwork();
@@ -305,7 +307,7 @@ contract NetworkAndBrakeTest is GovernanceFixture {
             manager.transferNetwork(others[i]);
         }
         // Not even the network at once: it must schedule and wait 7 days.
-        bytes memory data = abi.encodeCall(WorksAccessManager.transferNetwork, (outsider));
+        bytes memory data = abi.encodeCall(StreamAccessManager.transferNetwork, (outsider));
         vm.expectRevert(
             abi.encodeWithSelector(
                 IAccessManager.AccessManagerNotScheduled.selector,
@@ -325,24 +327,24 @@ contract NetworkAndBrakeTest is GovernanceFixture {
         uint48 ready = manager.getSchedule(id);
 
         vm.expectEmit(address(manager));
-        emit WorksAccessManager.OperationBraked(id, ready + 7 days);
+        emit StreamAccessManager.OperationBraked(id, ready + 7 days);
         vm.prank(brakeSafe);
         manager.brakeOnce(id);
         assertEq(manager.notBefore(id), ready + 7 days);
 
-        vm.expectRevert(abi.encodeWithSelector(WorksAccessManager.AlreadyBraked.selector, id));
+        vm.expectRevert(abi.encodeWithSelector(StreamAccessManager.AlreadyBraked.selector, id));
         vm.prank(brakeSafe);
         manager.brakeOnce(id);
 
         vm.warp(ready);
         vm.expectRevert(
-            abi.encodeWithSelector(WorksAccessManager.BrakeNotElapsed.selector, id, ready + 7 days)
+            abi.encodeWithSelector(StreamAccessManager.BrakeNotElapsed.selector, id, ready + 7 days)
         );
         vm.prank(adminSafe);
         manager.execute(address(target), data);
         vm.warp(ready + 7 days - 1);
         vm.expectRevert(
-            abi.encodeWithSelector(WorksAccessManager.BrakeNotElapsed.selector, id, ready + 7 days)
+            abi.encodeWithSelector(StreamAccessManager.BrakeNotElapsed.selector, id, ready + 7 days)
         );
         vm.prank(adminSafe);
         manager.execute(address(target), data);
@@ -363,7 +365,7 @@ contract NetworkAndBrakeTest is GovernanceFixture {
         vm.warp(manager.getSchedule(id));
         vm.expectRevert(
             abi.encodeWithSelector(
-                WorksAccessManager.BrakeNotElapsed.selector, id, manager.notBefore(id)
+                StreamAccessManager.BrakeNotElapsed.selector, id, manager.notBefore(id)
             )
         );
         vm.prank(adminSafe);
@@ -389,11 +391,11 @@ contract NetworkAndBrakeTest is GovernanceFixture {
         assertEq(manager.notBefore(id), until, "the mark survives");
         vm.warp(manager.getSchedule(id));
         vm.expectRevert(
-            abi.encodeWithSelector(WorksAccessManager.BrakeNotElapsed.selector, id, until)
+            abi.encodeWithSelector(StreamAccessManager.BrakeNotElapsed.selector, id, until)
         );
         vm.prank(adminSafe);
         manager.execute(address(target), data);
-        vm.expectRevert(abi.encodeWithSelector(WorksAccessManager.AlreadyBraked.selector, id));
+        vm.expectRevert(abi.encodeWithSelector(StreamAccessManager.AlreadyBraked.selector, id));
         vm.prank(brakeSafe);
         manager.brakeOnce(id);
 
@@ -412,14 +414,16 @@ contract NetworkAndBrakeTest is GovernanceFixture {
             _schedule(adminSafe, address(target), abi.encodeCall(GovernedTargetMock.setFee, (1)));
         address[4] memory others = [adminSafe, guardianA, platform, outsider];
         for (uint256 i; i < others.length; ++i) {
-            vm.expectRevert(abi.encodeWithSelector(WorksAccessManager.NotBrake.selector, others[i]));
+            vm.expectRevert(
+                abi.encodeWithSelector(StreamAccessManager.NotBrake.selector, others[i])
+            );
             vm.prank(others[i]);
             manager.brakeOnce(id);
         }
         // With no brake set, nobody can brake.
-        _adminExecute(abi.encodeCall(WorksAccessManager.setBrake, (address(0))));
+        _adminExecute(abi.encodeCall(StreamAccessManager.setBrake, (address(0))));
         assertEq(manager.brake(), address(0));
-        vm.expectRevert(abi.encodeWithSelector(WorksAccessManager.NotBrake.selector, brakeSafe));
+        vm.expectRevert(abi.encodeWithSelector(StreamAccessManager.NotBrake.selector, brakeSafe));
         vm.prank(brakeSafe);
         manager.brakeOnce(id);
     }
@@ -438,7 +442,7 @@ contract NetworkAndBrakeTest is GovernanceFixture {
         vm.prank(adminSafe);
         manager.schedule(address(target), veto, 0);
         bytes32 id = _id(adminSafe, address(target), veto);
-        vm.expectRevert(abi.encodeWithSelector(WorksAccessManager.NotBrakeable.selector, id));
+        vm.expectRevert(abi.encodeWithSelector(StreamAccessManager.NotBrakeable.selector, id));
         vm.prank(brakeSafe);
         manager.brakeOnce(id);
         vm.prank(adminSafe);
@@ -450,18 +454,18 @@ contract NetworkAndBrakeTest is GovernanceFixture {
         bytes32 id = _schedule(adminSafe, address(target), data);
         vm.prank(adminSafe);
         manager.cancel(adminSafe, address(target), data);
-        vm.expectRevert(abi.encodeWithSelector(WorksAccessManager.NotBrakeable.selector, id));
+        vm.expectRevert(abi.encodeWithSelector(StreamAccessManager.NotBrakeable.selector, id));
         vm.prank(brakeSafe);
         manager.brakeOnce(id);
 
         _scheduleAndExecute(adminSafe, address(target), data);
-        vm.expectRevert(abi.encodeWithSelector(WorksAccessManager.NotBrakeable.selector, id));
+        vm.expectRevert(abi.encodeWithSelector(StreamAccessManager.NotBrakeable.selector, id));
         vm.prank(brakeSafe);
         manager.brakeOnce(id);
 
         _schedule(adminSafe, address(target), data);
         vm.warp(manager.getSchedule(id) + manager.expiration());
-        vm.expectRevert(abi.encodeWithSelector(WorksAccessManager.NotBrakeable.selector, id));
+        vm.expectRevert(abi.encodeWithSelector(StreamAccessManager.NotBrakeable.selector, id));
         vm.prank(brakeSafe);
         manager.brakeOnce(id);
     }
@@ -529,13 +533,13 @@ contract NetworkAndBrakeTest is GovernanceFixture {
     /// @dev The brake can delay the network's own administration too, its own removal
     ///      included, once.
     function test_TheBrakeCanDelayItsOwnRemovalOnce() public {
-        bytes memory data = abi.encodeCall(WorksAccessManager.setBrake, (address(0)));
+        bytes memory data = abi.encodeCall(StreamAccessManager.setBrake, (address(0)));
         bytes32 id = _schedule(adminSafe, address(manager), data);
         vm.prank(brakeSafe);
         manager.brakeOnce(id);
         vm.warp(manager.notBefore(id));
         vm.expectEmit(address(manager));
-        emit WorksAccessManager.BrakeSet(brakeSafe, address(0));
+        emit StreamAccessManager.BrakeSet(brakeSafe, address(0));
         vm.prank(adminSafe);
         manager.execute(address(manager), data);
         assertEq(manager.brake(), address(0));
@@ -569,14 +573,14 @@ contract NetworkAndBrakeTest is GovernanceFixture {
         bytes[2] memory calls = [
             abi.encodeCall(
                 IAccessManager.setTargetFunctionRole,
-                (address(manager), _one(WorksAccessManager.transferNetwork.selector), Roles.PAUSER)
+                (address(manager), _one(StreamAccessManager.transferNetwork.selector), Roles.PAUSER)
             ),
             abi.encodeCall(IAccessManager.setTargetClosed, (address(manager), true))
         ];
         for (uint256 i; i < calls.length; ++i) {
             bytes32 id = _schedule(adminSafe, address(manager), calls[i]);
             vm.warp(manager.getSchedule(id));
-            vm.expectRevert(WorksAccessManager.ManagerSelfConfiguration.selector);
+            vm.expectRevert(StreamAccessManager.ManagerSelfConfiguration.selector);
             vm.prank(adminSafe);
             manager.execute(address(manager), calls[i]);
         }

@@ -41,7 +41,7 @@ contract SpdxIdTest is Test {
         assertTrue(_both("CC0-1.0"));
         assertTrue(_both("MIT"));
         assertTrue(_both("GPL-3.0+"));
-        assertTrue(_both("LicenseRef-6529.Works"));
+        assertTrue(_both("LicenseRef-6529.Stream"));
     }
 
     function test_LengthBounds() public view {

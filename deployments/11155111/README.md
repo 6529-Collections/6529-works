@@ -21,6 +21,13 @@
 > | `PRODUCT_FEDERATED`, slot `FEDERATION` | `PRODUCT_INDEPENDENT`, slot `INDEPENDENT_STREAM` |
 > | other identifiers containing `Federation` / `Federated` | the same with `IndependentStream` / `Independent` |
 
+> **Renamed on 28 November 2026.** The protocol was renamed from "6529 Works" to "6529 Stream"
+> after every round on this page (r1 to r9) was deployed. Their records and this page keep the
+> earlier name, and so do their contracts: the signing domains (`6529 Works ...`), the hash
+> domains (`6529WORKS_...`), `WorksAccessManager` and the configurator's `worksManager()`. From
+> that date the scripts, the keeper and the walkthrough read the new names and do not work with
+> these instances.
+
 Deployment records for 6529 Works on Sepolia. Each record is written by
 [`script/Deploy.s.sol`](https://github.com/6529-Collections/6529-works/blob/581cfb6f/script/Deploy.s.sol) and confirmed by
 [`script/Verify.s.sol`](https://github.com/6529-Collections/6529-works/blob/581cfb6f/script/Verify.s.sol); the runbook is

@@ -55,7 +55,7 @@ interface IReleaseVerifier {
     function releaseDigest(Authorization calldata authorization) external view returns (bytes32);
 
     /// @notice The EIP-712 domain separator on the current chain.
-    /// @return The separator for the domain "6529 Works Release Verifier", version "1", with the
+    /// @return The separator for the domain "6529 Stream Release Verifier", version "1", with the
     ///        ledger as the verifying contract.
     function domainSeparator() external view returns (bytes32);
 }

@@ -40,7 +40,7 @@ contract LogReplayStatementsTest is ReplayBase {
             address(stream),
             id,
             kind,
-            keccak256("6529-works/replay-statement/1"),
+            keccak256("6529-stream/replay-statement/1"),
             HashRef(HASH_SHA256, keccak256(bytes(uri))),
             uri,
             bytes32(0),

@@ -23,7 +23,7 @@ import { VrfEntropyModule } from "src/entropy/VrfEntropyModule.sol";
 import { IndependentStreamRegistry } from "src/independent/IndependentStreamRegistry.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { GovernanceConfigurator } from "src/governance/GovernanceConfigurator.sol";
-import { WorksAccessManager } from "src/governance/WorksAccessManager.sol";
+import { StreamAccessManager } from "src/governance/StreamAccessManager.sol";
 import { Accounts } from "src/identity/Accounts.sol";
 import { ConsolidationAdapter } from "src/identity/ConsolidationAdapter.sol";
 import { StatementLog } from "src/records/StatementLog.sol";
@@ -93,7 +93,7 @@ abstract contract CoreIntegrationBase is Test {
     MockVrfCoordinator internal coordinator;
 
     // ------------------------------------------------------------------ typed handles
-    WorksAccessManager internal manager;
+    StreamAccessManager internal manager;
     GovernanceConfigurator internal configurator;
     ContentStore internal store;
     StreamWorkFacts6529 internal facts;
@@ -152,7 +152,7 @@ abstract contract CoreIntegrationBase is Test {
     /// @dev The deployment's parameters. Suites override pieces (the VRF coordinator).
     function _params() internal view virtual returns (DeployCore.Params memory p) {
         p.deployer = deployer;
-        p.namespace = keccak256("6529-works/core-integration");
+        p.namespace = keccak256("6529-stream/core-integration");
         p.feeRecipient = feeSafe;
         p.museum = museumSafe;
         p.marketOwner = marketOwner;
@@ -215,7 +215,7 @@ abstract contract CoreIntegrationBase is Test {
         vm.label(address(ledger), "SplitLedger");
         vm.label(address(escrow), "RevenueEscrow");
         vm.label(address(store), "ContentStore");
-        vm.label(address(manager), "WorksAccessManager");
+        vm.label(address(manager), "StreamAccessManager");
         vm.label(address(accounts), "Accounts");
         vm.label(address(registry), "PackageRegistry");
         vm.label(address(statements), "StatementLog");
@@ -252,7 +252,7 @@ abstract contract CoreIntegrationBase is Test {
     }
 
     /// @dev The manager, typed.
-    function _manager() internal view returns (WorksAccessManager) {
+    function _manager() internal view returns (StreamAccessManager) {
         return deployment.manager;
     }
 

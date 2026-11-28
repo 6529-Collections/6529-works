@@ -8,7 +8,7 @@ import { Facts, Slots } from "src/interfaces/core/CoreTypes.sol";
 import { IWorkFacts } from "src/interfaces/core/IWorkFacts.sol";
 import { FileRole, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { License, PackageItem } from "src/interfaces/types/PackageTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { HostileModule } from "../mocks/core/CoreMocks.sol";
 import { CodeRenderer, ReenteringToken } from "../mocks/records/RulesMocks.sol";
 import { RulesFixture } from "../records/RulesFixture.sol";
@@ -130,7 +130,7 @@ contract WorkFactsTest is RulesFixture {
     function test_Open_RefusesNoMediaAndMoreThanTheLimit() public {
         MediaFile[] memory none = new MediaFile[](0);
         PackageItem memory item = _item(1, _single(1));
-        item.mediaHash = WorksHashing.mediaHash(none);
+        item.mediaHash = StreamHashing.mediaHash(none);
         uint256 id = _mintItem(bare, item);
         vm.expectRevert(abi.encodeWithSelector(IWorkFacts.InvalidRecord.selector, b, id));
         facts.open(b, id, item, none);
@@ -217,7 +217,7 @@ contract WorkFactsTest is RulesFixture {
         ReenteringToken t = new ReenteringToken(facts);
         MediaFile[] memory media = _single(1);
         PackageItem memory item = _item(1, media);
-        t.set(WorksHashing.itemHash(item), address(records), address(renderer));
+        t.set(StreamHashing.itemHash(item), address(records), address(renderer));
         t.arm(abi.encodeCall(IWorkFacts.open, (address(t), 1, item, media)));
         facts.open(address(t), 1, item, media);
         assertEq(t.reentered(), 0);
@@ -610,7 +610,7 @@ contract WorkFactsTest is RulesFixture {
         (uint256 id,) = _open(1);
         try records.setLicense(b, id, License(spdxId, textFileId)) { } catch { }
         Facts memory f = facts.factsOf(b, id);
-        assertEq(WorksHashing.licenseKey(f.licenseId), WorksHashing.CC0_LICENSE_KEY);
+        assertEq(StreamHashing.licenseKey(f.licenseId), StreamHashing.CC0_LICENSE_KEY);
         assertEq(f.licenseTextFileId, cc0Text);
     }
 }

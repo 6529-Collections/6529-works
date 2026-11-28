@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:6529-works:schema:declarations:v1",
+  "$id": "urn:6529-stream:schema:declarations:v1",
   "title": "Declarations document, version 1",
-  "description": "The creator's stated promises about a work that the contracts do not record. Carried as one AUXILIARY media file of MIME type application/vnd.6529-works.declarations+json, so the approved media hash fixes it. Every section is a convention the contracts do not enforce. Rules: docs/spec/declarations-and-conventions.md (DCL-1 to DCL-7, DCL-9, DCL-18, DCL-33).",
+  "description": "The creator's stated promises about a work that the contracts do not record. Carried as one AUXILIARY media file of MIME type application/vnd.6529-stream.declarations+json, so the approved media hash fixes it. Every section is a convention the contracts do not enforce. Rules: docs/spec/declarations-and-conventions.md (DCL-1 to DCL-7, DCL-9, DCL-18, DCL-33).",
   "type": "object",
   "additionalProperties": false,
   "required": ["v", "contentHash"],
@@ -10,7 +10,7 @@
     "v": { "const": 1 },
     "contentHash": {
       "description": "The work's content hash: the SHA-256 of the decoded PRIMARY file, as the package item commits it. Binds the document to its work.",
-      "$ref": "urn:6529-works:schema:common:v1#/$defs/bytes32"
+      "$ref": "urn:6529-stream:schema:common:v1#/$defs/bytes32"
     },
     "conservation": { "$ref": "#/$defs/conservation" },
     "custodians": {
@@ -37,7 +37,7 @@
       "required": ["waived"],
       "properties": {
         "waived": { "type": "boolean" },
-        "reason": { "$ref": "urn:6529-works:schema:common:v1#/$defs/text" }
+        "reason": { "$ref": "urn:6529-stream:schema:common:v1#/$defs/text" }
       },
       "if": { "properties": { "waived": { "const": true } } },
       "then": { "required": ["reason"] }
@@ -71,8 +71,8 @@
             "additionalProperties": false,
             "required": ["fileId", "sha256", "receipts"],
             "properties": {
-              "fileId": { "$ref": "urn:6529-works:schema:common:v1#/$defs/bytes32" },
-              "sha256": { "$ref": "urn:6529-works:schema:common:v1#/$defs/bytes32" },
+              "fileId": { "$ref": "urn:6529-stream:schema:common:v1#/$defs/bytes32" },
+              "sha256": { "$ref": "urn:6529-stream:schema:common:v1#/$defs/bytes32" },
               "receipts": {
                 "type": "array",
                 "minItems": 1,
@@ -92,18 +92,18 @@
       "required": ["network", "uri", "form", "provider"],
       "properties": {
         "network": { "enum": ["arweave", "ipfs"] },
-        "uri": { "$ref": "urn:6529-works:schema:common:v1#/$defs/contentAddress" },
+        "uri": { "$ref": "urn:6529-stream:schema:common:v1#/$defs/contentAddress" },
         "form": {
           "description": "Which bytes the copy holds: stored, the file's stored (encoded) stream, fileInfo.length bytes that decode to the declared SHA-256; or decoded, the decoded media, whose SHA-256 is the declared one. The same bytes for an Identity file (DCL-4).",
           "enum": ["stored", "decoded"]
         },
         "provider": {
           "description": "Who holds the copy: an Arweave gateway or bundler, or an IPFS pinning service or operator.",
-          "$ref": "urn:6529-works:schema:common:v1#/$defs/shortText"
+          "$ref": "urn:6529-stream:schema:common:v1#/$defs/shortText"
         },
         "receipt": {
           "description": "The provider's receipt or order identifier, if it issues one.",
-          "$ref": "urn:6529-works:schema:common:v1#/$defs/shortText"
+          "$ref": "urn:6529-stream:schema:common:v1#/$defs/shortText"
         }
       }
     },
@@ -123,7 +123,7 @@
             "additionalProperties": false,
             "required": ["fileId", "mimeType"],
             "properties": {
-              "fileId": { "$ref": "urn:6529-works:schema:common:v1#/$defs/bytes32" },
+              "fileId": { "$ref": "urn:6529-stream:schema:common:v1#/$defs/bytes32" },
               "mimeType": {
                 "type": "string",
                 "pattern": "^[a-z0-9+._-]+/[a-z0-9+._-]+$",
@@ -133,7 +133,7 @@
               "height": { "type": "integer", "minimum": 1 },
               "durationSeconds": { "type": "number", "exclusiveMinimum": 0 },
               "frameRate": { "type": "number", "exclusiveMinimum": 0 },
-              "colorSpace": { "$ref": "urn:6529-works:schema:common:v1#/$defs/shortText" }
+              "colorSpace": { "$ref": "urn:6529-stream:schema:common:v1#/$defs/shortText" }
             }
           }
         }
@@ -149,7 +149,7 @@
         "waived": true,
         "reason": true,
         "spdxId": { "type": "string", "pattern": "^[A-Za-z0-9.+-]{1,64}$" },
-        "textSha256": { "$ref": "urn:6529-works:schema:common:v1#/$defs/bytes32" }
+        "textSha256": { "$ref": "urn:6529-stream:schema:common:v1#/$defs/bytes32" }
       },
       "if": { "properties": { "waived": { "const": false } } },
       "then": { "required": ["spdxId", "textSha256"] }
@@ -166,8 +166,8 @@
           "additionalProperties": false,
           "required": ["address", "codeHash"],
           "properties": {
-            "address": { "$ref": "urn:6529-works:schema:common:v1#/$defs/address" },
-            "codeHash": { "$ref": "urn:6529-works:schema:common:v1#/$defs/bytes32" }
+            "address": { "$ref": "urn:6529-stream:schema:common:v1#/$defs/address" },
+            "codeHash": { "$ref": "urn:6529-stream:schema:common:v1#/$defs/bytes32" }
           }
         },
         "dependencies": {
@@ -180,14 +180,14 @@
             "properties": {
               "name": { "type": "string", "pattern": "^[a-z0-9._-]{1,32}$" },
               "version": { "type": "string", "pattern": "^[a-z0-9._-]{1,32}$" },
-              "fileId": { "$ref": "urn:6529-works:schema:common:v1#/$defs/bytes32" }
+              "fileId": { "$ref": "urn:6529-stream:schema:common:v1#/$defs/bytes32" }
             }
           }
         },
         "seedPolicy": { "enum": ["NONE", "ARTIST", "VRF"] },
         "runtime": {
           "description": "The environment the work was made for: browser engines and versions, required APIs.",
-          "$ref": "urn:6529-works:schema:common:v1#/$defs/text"
+          "$ref": "urn:6529-stream:schema:common:v1#/$defs/text"
         }
       },
       "if": { "properties": { "waived": { "const": false } } },
@@ -200,7 +200,7 @@
       "properties": {
         "waived": true,
         "reason": true,
-        "instructions": { "$ref": "urn:6529-works:schema:common:v1#/$defs/text" },
+        "instructions": { "$ref": "urn:6529-stream:schema:common:v1#/$defs/text" },
         "aspectRatio": { "type": "string", "pattern": "^[1-9][0-9]{0,4}:[1-9][0-9]{0,4}$" },
         "background": { "type": "string", "pattern": "^#[0-9a-f]{6}$" },
         "loop": { "type": "boolean" },
@@ -217,16 +217,16 @@
       "properties": {
         "address": {
           "description": "The account that signs the custodian's CustodyAttestation typed data (an EOA, an ERC-1271 contract or an EIP-7702 account).",
-          "$ref": "urn:6529-works:schema:common:v1#/$defs/address"
+          "$ref": "urn:6529-stream:schema:common:v1#/$defs/address"
         },
-        "name": { "$ref": "urn:6529-works:schema:common:v1#/$defs/shortText" },
+        "name": { "$ref": "urn:6529-stream:schema:common:v1#/$defs/shortText" },
         "objectId": {
           "description": "keccak256 of the UTF-8 bytes of the custodian's identifier for the object (for example its inventory number), as the attestation names it.",
-          "$ref": "urn:6529-works:schema:common:v1#/$defs/bytes32"
+          "$ref": "urn:6529-stream:schema:common:v1#/$defs/bytes32"
         },
         "object": {
           "description": "What the physical twin is.",
-          "$ref": "urn:6529-works:schema:common:v1#/$defs/text"
+          "$ref": "urn:6529-stream:schema:common:v1#/$defs/text"
         },
         "maxAttestationAgeDays": {
           "description": "A reader shows an attestation older than this as stale (DCL-21).",
@@ -241,13 +241,13 @@
       "additionalProperties": false,
       "required": ["work", "relation"],
       "properties": {
-        "work": { "$ref": "urn:6529-works:schema:common:v1#/$defs/workRef" },
-        "relation": { "$ref": "urn:6529-works:schema:common:v1#/$defs/citationRelation" },
+        "work": { "$ref": "urn:6529-stream:schema:common:v1#/$defs/workRef" },
+        "relation": { "$ref": "urn:6529-stream:schema:common:v1#/$defs/citationRelation" },
         "contentHash": {
           "description": "The cited work's content hash when it is known, so a reader can tell whether the cited token still shows what was cited.",
-          "$ref": "urn:6529-works:schema:common:v1#/$defs/hashRef"
+          "$ref": "urn:6529-stream:schema:common:v1#/$defs/hashRef"
         },
-        "note": { "$ref": "urn:6529-works:schema:common:v1#/$defs/text" }
+        "note": { "$ref": "urn:6529-stream:schema:common:v1#/$defs/text" }
       }
     },
     "timeCapsule": {
@@ -258,19 +258,19 @@
       "properties": {
         "revealAfter": {
           "description": "The Unix time after which the artist promises the content can be decrypted.",
-          "$ref": "urn:6529-works:schema:common:v1#/$defs/unixTime"
+          "$ref": "urn:6529-stream:schema:common:v1#/$defs/unixTime"
         },
         "scheme": {
           "description": "The encryption scheme and its parameters, for example tlock over a named drand chain, or age with a key the artist will publish.",
-          "$ref": "urn:6529-works:schema:common:v1#/$defs/shortText"
+          "$ref": "urn:6529-stream:schema:common:v1#/$defs/shortText"
         },
         "ciphertextFileId": {
           "description": "The file ID of the AUXILIARY media file that holds the ciphertext; it must be in the work's media list (DCL-7).",
-          "$ref": "urn:6529-works:schema:common:v1#/$defs/bytes32"
+          "$ref": "urn:6529-stream:schema:common:v1#/$defs/bytes32"
         },
         "plaintextCommitment": {
           "description": "A hash of the plaintext, so the decryption can be checked once revealed.",
-          "$ref": "urn:6529-works:schema:common:v1#/$defs/hashRef"
+          "$ref": "urn:6529-stream:schema:common:v1#/$defs/hashRef"
         },
         "policyStatus": { "const": "outside-v1-curation-policy" }
       }
@@ -287,7 +287,7 @@
           "uniqueItems": true,
           "items": { "enum": ["time", "block", "chain-state", "external-data", "viewer-input", "randomness"] }
         },
-        "note": { "$ref": "urn:6529-works:schema:common:v1#/$defs/text" },
+        "note": { "$ref": "urn:6529-stream:schema:common:v1#/$defs/text" },
         "suggestedRefreshSeconds": {
           "description": "How often a reader that caches a rendering should re-render it.",
           "type": "integer",

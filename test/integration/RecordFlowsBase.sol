@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import { ArtistIdentity } from "src/interfaces/types/IdentityTypes.sol";
 import { License } from "src/interfaces/types/PackageTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
 
 /// @notice Helpers shared by the record, content, credit and identity suites on the real stack:
@@ -75,7 +75,7 @@ abstract contract RecordFlowsBase is IntegrationBase {
                     rules.RELICENSE_TYPEHASH(),
                     address(stream),
                     tokenId,
-                    WorksHashing.licenseKey(next.spdxId),
+                    StreamHashing.licenseKey(next.spdxId),
                     next.textFileId,
                     state,
                     deadline

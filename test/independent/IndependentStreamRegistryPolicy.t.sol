@@ -11,7 +11,7 @@ import { IMintPolicy } from "src/interfaces/core/IMintPolicy.sol";
 import { MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { License, PackageItem, Party } from "src/interfaces/types/PackageTypes.sol";
 import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { SignatureVerifier } from "src/libraries/SignatureVerifier.sol";
 import { IndependentStreamFixture, IndSale } from "./IndependentStreamFixture.sol";
 
@@ -109,7 +109,7 @@ contract IndependentStreamRegistryPolicyTest is IndependentStreamFixture {
 
     function test_ApproveItem_ByAnyWalletLoggedAndBounded() public {
         (PackageItem memory item,) = _item(1);
-        bytes32 h = WorksHashing.itemHash(item);
+        bytes32 h = StreamHashing.itemHash(item);
         vm.expectEmit(address(registry));
         emit IIndependentStreamRegistry.ItemApproval(address(fStream), h, 4_000, true);
         vm.prank(wallet);
@@ -168,7 +168,7 @@ contract IndependentStreamRegistryPolicyTest is IndependentStreamFixture {
 
     function test_Authorize_NeedsAnApproval() public {
         (PackageItem memory item, MediaFile[] memory media) = _item(1);
-        vm.expectRevert(_notApproved(WorksHashing.itemHash(item)));
+        vm.expectRevert(_notApproved(StreamHashing.itemHash(item)));
         _start(item, media, new bytes[](0));
     }
 
@@ -176,7 +176,7 @@ contract IndependentStreamRegistryPolicyTest is IndependentStreamFixture {
         (PackageItem memory item, MediaFile[] memory media) = _item(1);
         _approve(address(fStream), item, RATE);
         _start(item, media, new bytes[](0));
-        bytes32 h = WorksHashing.itemHash(item);
+        bytes32 h = StreamHashing.itemHash(item);
         assertTrue(registry.itemOf(address(fStream), h).used);
         vm.expectRevert(_notApproved(h));
         _start(item, media, new bytes[](0));
@@ -191,7 +191,7 @@ contract IndependentStreamRegistryPolicyTest is IndependentStreamFixture {
     function test_RevokeItem_BeforeMintStopsIt() public {
         (PackageItem memory item, MediaFile[] memory media) = _item(1);
         _approve(address(fStream), item, RATE);
-        bytes32 h = WorksHashing.itemHash(item);
+        bytes32 h = StreamHashing.itemHash(item);
         vm.expectEmit(address(registry));
         emit IIndependentStreamRegistry.ItemApproval(address(fStream), h, 0, false);
         vm.prank(wallet);
@@ -212,7 +212,7 @@ contract IndependentStreamRegistryPolicyTest is IndependentStreamFixture {
     function test_Authorize_MediaCountBounds() public {
         (PackageItem memory item,) = _item(1);
         MediaFile[] memory none = new MediaFile[](0);
-        item.mediaHash = WorksHashing.mediaHash(none);
+        item.mediaHash = StreamHashing.mediaHash(none);
         _refused(item, none);
 
         (PackageItem memory big, MediaFile[] memory one) = _item(2);
@@ -220,7 +220,7 @@ contract IndependentStreamRegistryPolicyTest is IndependentStreamFixture {
         for (uint256 i; i < 33; ++i) {
             many[i] = MediaFile(one[0].fileId, one[0].sha256Hash, i == 0 ? 0 : 1);
         }
-        big.mediaHash = WorksHashing.mediaHash(many);
+        big.mediaHash = StreamHashing.mediaHash(many);
         _refused(big, many);
     }
 
@@ -230,7 +230,7 @@ contract IndependentStreamRegistryPolicyTest is IndependentStreamFixture {
         for (uint256 i; i < 32; ++i) {
             many[i] = MediaFile(one[0].fileId, one[0].sha256Hash, i == 0 ? 0 : 1);
         }
-        item.mediaHash = WorksHashing.mediaHash(many);
+        item.mediaHash = StreamHashing.mediaHash(many);
         _approve(address(fStream), item, RATE);
         _start(item, many, new bytes[](0));
     }
@@ -242,7 +242,7 @@ contract IndependentStreamRegistryPolicyTest is IndependentStreamFixture {
         (PackageItem memory zero, MediaFile[] memory m2) = _item(2);
         zero.contentHash = 0;
         m2[0].sha256Hash = 0;
-        zero.mediaHash = WorksHashing.mediaHash(m2);
+        zero.mediaHash = StreamHashing.mediaHash(m2);
         _refused(zero, m2);
     }
 
@@ -255,7 +255,7 @@ contract IndependentStreamRegistryPolicyTest is IndependentStreamFixture {
     function test_Authorize_FilesMustBeInTheStoreWithTheirDigest() public {
         (PackageItem memory item, MediaFile[] memory media) = _item(1);
         media[0].fileId = keccak256("unknown file");
-        item.mediaHash = WorksHashing.mediaHash(media);
+        item.mediaHash = StreamHashing.mediaHash(media);
         _approve(address(fStream), item, RATE);
         vm.expectRevert();
         _start(item, media, new bytes[](0));
@@ -264,7 +264,7 @@ contract IndependentStreamRegistryPolicyTest is IndependentStreamFixture {
         MediaFile[] memory pair = new MediaFile[](2);
         pair[0] = m2[0];
         pair[1] = MediaFile(m2[0].fileId, keccak256("not its digest"), 1);
-        two.mediaHash = WorksHashing.mediaHash(pair);
+        two.mediaHash = StreamHashing.mediaHash(pair);
         _refused(two, pair);
     }
 
@@ -273,11 +273,11 @@ contract IndependentStreamRegistryPolicyTest is IndependentStreamFixture {
         MediaFile[] memory pair = new MediaFile[](2);
         pair[0] = m[0];
         pair[1] = MediaFile(m[0].fileId, m[0].sha256Hash, 0); // a second primary
-        item.mediaHash = WorksHashing.mediaHash(pair);
+        item.mediaHash = StreamHashing.mediaHash(pair);
         _refused(item, pair);
         (PackageItem memory two, MediaFile[] memory m2) = _item(2);
         m2[0].role = 1; // the first is not primary
-        two.mediaHash = WorksHashing.mediaHash(m2);
+        two.mediaHash = StreamHashing.mediaHash(m2);
         _refused(two, m2);
     }
 
@@ -534,7 +534,7 @@ contract IndependentStreamRegistryPolicyTest is IndependentStreamFixture {
         address royalty = ledger.walletFor(Splits.royaltyPayees(seller, feeVault, SHARE), 0);
         assertEq(seller.code.length, 0);
         assertEq(royalty.code.length, 0);
-        bytes32 h = WorksHashing.itemHash(item);
+        bytes32 h = StreamHashing.itemHash(item);
         vm.expectEmit(address(registry));
         emit IIndependentStreamRegistry.ItemMinted(
             address(fStream), h, address(indSale), seller, royalty
@@ -593,7 +593,7 @@ contract IndependentStreamRegistryPolicyTest is IndependentStreamFixture {
         vm.prank(stranger); // anyone may preview
         (MintFacts memory pf, MintTerms memory pt) = registry.preview(address(fStream), req);
         assertEq(pf.seller.code.length, 0, "nothing deployed");
-        assertFalse(registry.itemOf(address(fStream), WorksHashing.itemHash(item)).used);
+        assertFalse(registry.itemOf(address(fStream), StreamHashing.itemHash(item)).used);
         (, MintFacts memory f, MintTerms memory t) =
             indSale.start(address(registry), address(fStream), req);
         assertEq(abi.encode(pf), abi.encode(f));
@@ -602,7 +602,7 @@ contract IndependentStreamRegistryPolicyTest is IndependentStreamFixture {
 
     function test_Preview_RefusesAnUnapprovedItem() public {
         (PackageItem memory item, MediaFile[] memory media) = _item(1);
-        vm.expectRevert(_notApproved(WorksHashing.itemHash(item)));
+        vm.expectRevert(_notApproved(StreamHashing.itemHash(item)));
         registry.preview(address(fStream), _request(item, media, new bytes[](0)));
     }
 
@@ -624,7 +624,7 @@ contract IndependentStreamRegistryPolicyTest is IndependentStreamFixture {
         _approve(address(fStream), item, RATE);
         (burned,,) = _start(item, media, new bytes[](0));
         indSale.burn(address(fStream), burned);
-        burnedHash = WorksHashing.itemHash(item);
+        burnedHash = StreamHashing.itemHash(item);
         again = item;
         again.recordFileId = _file("another record", "application/json");
     }
@@ -700,7 +700,7 @@ contract IndependentStreamRegistryPolicyTest is IndependentStreamFixture {
         (uint256 burned,,) = _start(item, media, new bytes[](0));
         indSale.burn(address(fStream), burned);
         registry.releaseContent(address(fStream), burned, item.contentHash, fArtistId);
-        bytes32 h = WorksHashing.itemHash(item);
+        bytes32 h = StreamHashing.itemHash(item);
         vm.expectRevert(
             abi.encodeWithSelector(
                 IIndependentStreamRegistry.ItemNotApproved.selector, address(second), h
@@ -713,7 +713,7 @@ contract IndependentStreamRegistryPolicyTest is IndependentStreamFixture {
         (uint256 burned, PackageItem memory again, MediaFile[] memory media,) = _burnedContent();
         _approve(address(fStream), again, RATE);
         registry.releaseContent(address(fStream), burned, again.contentHash, fArtistId);
-        bytes32 h = WorksHashing.itemHash(again);
+        bytes32 h = StreamHashing.itemHash(again);
         assertFalse(registry.isBarred(h));
         _start(again, media, new bytes[](0));
     }

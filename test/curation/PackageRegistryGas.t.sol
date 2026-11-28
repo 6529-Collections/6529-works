@@ -14,7 +14,7 @@ import {
     StreamMintRequest
 } from "src/interfaces/types/PackageTypes.sol";
 import { Limits } from "src/interfaces/types/Limits.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { ERC1271WalletMock } from "test/mocks/libraries/AdversarialTargets.sol";
 import { CurationBase } from "./CurationBase.sol";
 
@@ -46,7 +46,7 @@ contract PackageRegistryGasTest is CurationBase {
     /// @dev An edition master credited to a collaborator (two parties, two payees).
     function test_gas_consume_withCollaborator() public {
         PackageItem memory item = _masterItem(keccak256("master"));
-        bytes32 root = WorksHashing.leaf(_hash(item));
+        bytes32 root = StreamHashing.leaf(_hash(item));
         _register(root);
         _accept(root, leadKey);
         _accept(root, collabKey);
@@ -80,7 +80,7 @@ contract PackageRegistryGasTest is CurationBase {
             item.payees[i] = ISplitWallet.Payee(ids[i], address(0), 6_250);
         }
         bytes32[] memory proof = new bytes32[](Limits.MAX_PROOF_DEPTH);
-        bytes32 node = WorksHashing.leaf(_hash(item));
+        bytes32 node = StreamHashing.leaf(_hash(item));
         for (uint256 i; i < proof.length; ++i) {
             proof[i] = keccak256(abi.encode("sibling", i));
             (bytes32 a, bytes32 b) = node < proof[i] ? (node, proof[i]) : (proof[i], node);
@@ -144,7 +144,7 @@ contract PackageRegistryGasTest is CurationBase {
         for (uint256 i; i < size; ++i) {
             leaves[i] = keccak256(abi.encode("other item", i));
         }
-        leaves[index] = WorksHashing.leaf(_hash(item));
+        leaves[index] = StreamHashing.leaf(_hash(item));
         root = _root(leaves);
         proof = _proof(leaves, index);
         _register(root);

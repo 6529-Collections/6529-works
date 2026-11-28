@@ -82,7 +82,7 @@ CC0_KEY = floor.license_key("CC0-1.0")
 POWERS = ("ROYALTY_RATE", "RELICENSE", "RENDERER_REPIN")
 COVERS = {"ROYALTY_RATE": ["royalty_rate"], "RELICENSE": ["license"], "RENDERER_REPIN": ["renderer"]}
 UNTIL = {"record": "finalize", "burn_and_release": "settlement"}
-GENERATOR = {"name": "6529-works tools.conventions", "version": "1"}
+GENERATOR = {"name": "6529-stream tools.conventions", "version": "1"}
 
 
 class NoFactSheet(ToolError):

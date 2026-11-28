@@ -55,7 +55,7 @@ contract ReadbackLogsForkTest is Test {
 
     function test_ReadbackLogs_AreTheSameWhateverTheBlockRange() public {
         address manager =
-            vm.parseJsonAddress(vm.readFile(R8_RECORD), ".contracts.WorksAccessManager.address");
+            vm.parseJsonAddress(vm.readFile(R8_RECORD), ".contracts.StreamAccessManager.address");
         assertGt(block.number - forkBlock, 30, "several requests at the small ranges");
         string[4] memory ranges = ["5000", "13", "7", "2"];
         bytes32 managerLogs;

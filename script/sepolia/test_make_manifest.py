@@ -127,7 +127,11 @@ class R6Manifest(unittest.TestCase):
         self.m = json.loads((REPO / "config/sepolia-r6/manifest-epoch0.json").read_text(encoding="utf-8"))
 
     def test_names_every_contract_of_the_deployment(self):
-        self.assertEqual(list(self.m["contracts"]), make_manifest.CONTRACTS)
+        # r6 was deployed before the rename of 28 November 2026; its manifest is kept as
+        # deployed and names the manager by its earlier name.
+        earlier = {"WorksAccessManager": "StreamAccessManager"}
+        self.assertEqual(
+            [earlier.get(k, k) for k in self.m["contracts"]], make_manifest.CONTRACTS)
         self.assertEqual(len(set(make_manifest.CONTRACTS)), len(make_manifest.CONTRACTS))
 
     def test_policy_settings_and_dependencies(self):

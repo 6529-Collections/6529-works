@@ -12,7 +12,7 @@
     inside the configurator's constructor. A broadcast with --skip-simulation records no
     created contracts for a call, so the creation transaction of each contract is found from
     the call itself: `create(salt, code)` creates the factory's `addressOf(salt)`. The manager's
-    address is read from the configurator (`worksManager()`) and its creation transaction is
+    address is read from the configurator (`streamManager()`) and its creation transaction is
     the configurator's. Run it from the commit the record was deployed from, after
     `forge build`. Nothing is signed.
 
@@ -47,11 +47,11 @@ foreach ($p in $rec.PSObject.Properties) {
     if (@('deployer', 'delegation', 'forkBlock') -contains $p.Name) { continue }
     if ($p.Value -is [string] -and $p.Value -match '^0x[0-9a-fA-F]{40}$') { $addresses[$p.Name] = $p.Value }
 }
-$addresses['WorksAccessManager'] = (& cast call $addresses['GovernanceConfigurator'] 'worksManager()(address)' --rpc-url $Rpc).Trim()
+$addresses['StreamAccessManager'] = (& cast call $addresses['GovernanceConfigurator'] 'streamManager()(address)' --rpc-url $Rpc).Trim()
 if ($LASTEXITCODE -ne 0) { throw 'could not read the manager from the configurator' }
 $paths = [ordered]@{
     CoreFactory                 = 'script/CoreFactory.sol:CoreFactory'
-    WorksAccessManager                = 'src/governance/WorksAccessManager.sol:WorksAccessManager'
+    StreamAccessManager                = 'src/governance/StreamAccessManager.sol:StreamAccessManager'
     GovernanceConfigurator            = 'src/governance/GovernanceConfigurator.sol:GovernanceConfigurator'
     ContentStore                      = 'src/content/ContentStore.sol:ContentStore'
     StreamWorkFacts6529               = 'src/core/StreamWorkFacts6529.sol:StreamWorkFacts6529'
@@ -110,7 +110,7 @@ if (-not $StatusOnly) {
         }
     }
     # The manager is created by the configurator's constructor.
-    $manager = $addresses['WorksAccessManager'].ToLower()
+    $manager = $addresses['StreamAccessManager'].ToLower()
     if (-not $creation[$manager]) { $creation[$manager] = $creation[$addresses['GovernanceConfigurator'].ToLower()] }
 }
 # Earlier results are kept only for this record's addresses.

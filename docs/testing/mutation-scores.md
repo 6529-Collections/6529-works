@@ -121,7 +121,7 @@ final score minus two points, rounded down.
 | `src/governance/GovernanceConfig.sol` | 307 | 259 | 48 | 0 | 84.4% | 0 | 84.4% | 82 (was 83) |
 | `src/governance/GovernanceConfigurator.sol` | 22 | 22 | 0 | 0 | 100.0% | 0 | 100.0% | 98 |
 | `src/governance/Roles.sol` | 250 | 233 | 17 | 0 | 93.2% | 0 | 93.2% | 91 |
-| `src/governance/WorksAccessManager.sol` | 126 | 122 | 4 | 0 | 96.8% | 0 | 96.8% | 94 |
+| `src/governance/StreamAccessManager.sol` | 126 | 122 | 4 | 0 | 96.8% | 0 | 96.8% | 94 |
 | `src/identity/ConsolidationAdapter.sol` | 75 | 56 | 19 | 0 | 74.7% | 0 | 74.7% | 72 (was 83) |
 | `src/independent/IndependentEditionAuctionLens.sol` | 61 | 54 | 7 | 0 | 88.5% | 0 | 88.5% | 86 (was 85) |
 | `src/independent/IndependentStreamDeployer.sol` | 100 | 94 | 6 | 0 | 94.0% | 0 | 94.0% | 92 |
@@ -133,8 +133,8 @@ final score minus two points, rounded down.
 | `src/interfaces/types/SaleTypes.sol` | 4 | 4 | 0 | 0 | 100.0% | 0 | 100.0% | 98 |
 | `src/interfaces/types/StatementKinds.sol` | 15 | 15 | 0 | 0 | 100.0% | 0 | 100.0% | 98 |
 | `src/interfaces/types/StepLadder.sol` | 216 | 205 | 11 | 0 | 94.9% | 0 | 94.9% | 92 |
+| `src/interfaces/types/StreamHashing.sol` | 47 | 43 | 4 | 0 | 91.5% | 0 | 91.5% | 89 (was 87) |
 | `src/interfaces/types/Typehashes.sol` | 26 | 26 | 0 | 0 | 100.0% | 0 | 100.0% | 98 |
-| `src/interfaces/types/WorksHashing.sol` | 47 | 43 | 4 | 0 | 91.5% | 0 | 91.5% | 89 (was 87) |
 | `src/libraries/AgedCredits.sol` | 24 | 22 | 2 | 0 | 91.7% | 0 | 91.7% | 89 (was 90) |
 | `src/libraries/BoundedCall.sol` | 279 | 259 | 20 | 0 | 92.8% | 0 | 92.8% | 90 |
 | `src/libraries/DelegatedEOA.sol` | 47 | 41 | 6 | 0 | 87.2% | 0 | 87.2% | 85 |

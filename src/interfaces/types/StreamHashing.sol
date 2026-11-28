@@ -5,7 +5,7 @@ import { MerkleProof } from "@openzeppelin/contracts/utils/cryptography/MerklePr
 import { PackageItem } from "./PackageTypes.sol";
 import { MediaFile } from "./ContentTypes.sol";
 
-/// @title WorksHashing
+/// @title StreamHashing
 /// @notice The one definition of the hashes that identify package items, media lists and
 ///         licenses. Every contract and every off-chain tool must produce these exact bytes.
 /// @dev Conventions (ADR 0001 section 3, as amended by the integrator):
@@ -22,11 +22,11 @@ import { MediaFile } from "./ContentTypes.sol";
 ///      The canonical JSON package document (RFC 8785) maps field for field onto these structs;
 ///      the committed form is the ABI encoding. Every function is internal: nothing here is
 ///      linked bytecode. Callers bound array and string lengths before hashing.
-library WorksHashing {
+library StreamHashing {
     /// @notice Domain label of `PackageItem` hashes.
-    bytes32 internal constant PACKAGE_ITEM_DOMAIN = keccak256("6529WORKS_PACKAGE_ITEM_V1");
+    bytes32 internal constant PACKAGE_ITEM_DOMAIN = keccak256("6529STREAM_PACKAGE_ITEM_V1");
     /// @notice Domain label of media-list hashes.
-    bytes32 internal constant MEDIA_DOMAIN = keccak256("6529WORKS_MEDIA_V1");
+    bytes32 internal constant MEDIA_DOMAIN = keccak256("6529STREAM_MEDIA_V1");
     /// @notice The canonical key of CC0 1.0, whose dedication is irrevocable.
     bytes32 internal constant CC0_LICENSE_KEY = keccak256("cc0-1.0");
 

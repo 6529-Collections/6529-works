@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+- **The protocol is named 6529 Stream, and the code is licensed under Apache 2.0.** By the
+  owner's decisions of 28 November 2026 the protocol and its family of contracts are called
+  "6529 Stream"; the name "6529 Works" is no longer used. The shared ERC-721 `Stream6529` is
+  described as its curated 1/1 contract. **This changes contract bytecode and every signing
+  domain, so signatures, item hashes and package roots made for the earlier names are not
+  valid on the new code and a new test deployment is needed.** The Sepolia instances r1 to r9
+  keep the earlier names, and from this change the scripts, the keeper and the walkthrough do
+  not work with them.
+  - EIP-712 domain names: `6529 Stream Package Registry`, `6529 Stream Curation Verifier`,
+    `6529 Stream Records`, `6529 Stream Artist Registry`, `6529 Stream Statement Log`,
+    `6529 Stream Release Verifier`, `6529 Stream Rules` (`WorkRules.NAME`), and the off-chain
+    conventions `6529 Stream Custody Attestation` and `6529 Stream Control Proof` (each was
+    `6529 Works ...`).
+  - Hash domains: `6529STREAM_PACKAGE_ITEM_V1`, `6529STREAM_MEDIA_V1`,
+    `6529STREAM_WORK_STATE_V2`, `6529STREAM_INDEPENDENT_LISTING_V1`,
+    `6529STREAM_INDEPENDENT_CONSENT_V1` (each was `6529WORKS_...`), and
+    `6529.stream.StatementLog.entry.v1` and `6529.stream.StatementLog.head.v1` (were
+    `6529.works...`). Schema and label strings spelled `6529-works/...` are `6529-stream/...`,
+    the schema IDs are `urn:6529-stream:schema:<name>:v1` and the declarations MIME type is
+    `application/vnd.6529-stream.declarations+json`.
+  - The fallback token name of the renderer is `6529 Stream #<id>`.
+  - Identifiers: `WorksAccessManager` is `StreamAccessManager`, `WorksHashing` is
+    `StreamHashing`, and `GovernanceConfigurator.worksManager()` is `streamManager()` (a new
+    selector). Names in which "work" means an artwork (`WorkRules`, `StreamWorkFacts6529` and
+    the like) and the renderer's `window.works` object are unchanged.
+  - Licence: [LICENSE](LICENSE) is the Apache License 2.0, with a [NOTICE](NOTICE) file; the
+    SPDX header of every first-party file is `Apache-2.0` (it was `MIT`). The libraries under
+    `lib/` keep their own licences.
+  - The repository is `6529-Collections/6529-stream`. Entries below this one, the ADRs, the
+    release notes, the validation records and the deployment records are history and keep the
+    earlier name. The generated files (`abi/`, the ABI and storage snapshots, `docs/facts.json`,
+    the role matrix, the genesis example, the golden vectors and the mutation score tables) were
+    regenerated. The integrator page's work state hash now shows the formula the module uses
+    (`6529STREAM_WORK_STATE_V2`, with the module and the token contract).
 - **Tests: a validation record of `main` at `355a7a71`, and one fuzz test corrected.** A
   [validation record](docs/testing/validation-2026-11-28.md) of every test layer over one
   commit, after the changes below: the build with its size margins, the whole suite, the

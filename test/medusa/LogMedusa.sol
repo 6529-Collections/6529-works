@@ -85,8 +85,8 @@ contract LogMedusa is MedusaBase {
     uint256 internal constant HOLDERS = 2;
     uint256 internal constant UNCAPPED = type(uint40).max;
     bytes32 internal constant KIND = keccak256("NOTE");
-    bytes32 internal constant ENTRY_DOMAIN = keccak256("6529.works.StatementLog.entry.v1");
-    bytes32 internal constant HEAD_DOMAIN = keccak256("6529.works.StatementLog.head.v1");
+    bytes32 internal constant ENTRY_DOMAIN = keccak256("6529.stream.StatementLog.entry.v1");
+    bytes32 internal constant HEAD_DOMAIN = keccak256("6529.stream.StatementLog.head.v1");
 
     StatementLog public log;
     Stream6529 public stream;
@@ -719,7 +719,7 @@ contract LogMedusa is MedusaBase {
                 keccak256(
                     "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
                 ),
-                keccak256("6529 Works Statement Log"),
+                keccak256("6529 Stream Statement Log"),
                 keccak256("1"),
                 block.chainid,
                 address(log)

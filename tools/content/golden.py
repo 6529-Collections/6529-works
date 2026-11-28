@@ -48,7 +48,7 @@ GOLDEN_DIR = Path(__file__).resolve().parent / "golden"
 SAMPLES_DIR = GOLDEN_DIR / "samples"
 VECTORS_PATH = GOLDEN_DIR / "vectors.json"
 SOLIDITY_PATH = ROOT / "test" / "content" / "tooling" / "UploaderGoldenData.sol"
-SCHEMA = "6529-works/content-golden/v1"
+SCHEMA = "6529-stream/content-golden/v1"
 
 
 @dataclass(frozen=True)

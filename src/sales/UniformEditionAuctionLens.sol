@@ -23,7 +23,7 @@ import { CURRENCY_ETH, PRODUCT_EDITIONS, WorkTerms } from "../interfaces/types/E
 import { EditionTerms, ItemKind, PackageItem } from "../interfaces/types/PackageTypes.sol";
 import { SaleKind } from "../interfaces/types/SaleTypes.sol";
 import { StepLadder } from "../interfaces/types/StepLadder.sol";
-import { WorksHashing } from "../interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "../interfaces/types/StreamHashing.sol";
 import { BoundedCall } from "../libraries/BoundedCall.sol";
 import { UniformClearing } from "./UniformClearing.sol";
 
@@ -134,7 +134,7 @@ abstract contract UniformEditionAuctionLensBase is IUniformEditionAuctionLens {
         EditionTerms memory e = item.edition;
         if (
             work.kind != uint8(ItemKind.EDITION_MASTER) || work.itemHash == 0
-                || WorksHashing.itemHash(item) != work.itemHash
+                || StreamHashing.itemHash(item) != work.itemHash
                 || e.saleKind != SaleKind.UNIFORM_AUCTION || e.currency != CURRENCY_ETH
                 || e.params.length != 0
         ) revert ISaleAdapter.InvalidSaleTerms(token, id);

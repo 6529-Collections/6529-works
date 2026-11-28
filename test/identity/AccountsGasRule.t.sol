@@ -5,7 +5,7 @@ import { ConsolidationAdapter, IDelegationManagement } from "src/identity/Consol
 import { IAccounts } from "src/interfaces/core/IAccounts.sol";
 import { IConsolidationSource } from "src/interfaces/IArtistRegistry.sol";
 import { Burner, GasRuleAssertions } from "../helpers/GasRule.sol";
-import { ConsolidationSourceMock } from "../mocks/identity/IdentityWorksMocks.sol";
+import { ConsolidationSourceMock } from "../mocks/identity/IdentityStreamMocks.sol";
 import { AccountsFixture } from "./AccountsFixture.sol";
 
 /// @notice The gas rule on the registry's one live read: whether a wallet is consolidated with

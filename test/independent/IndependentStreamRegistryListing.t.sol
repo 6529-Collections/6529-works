@@ -11,7 +11,7 @@ import { Slots } from "src/interfaces/core/CoreTypes.sol";
 import { IMintPolicy } from "src/interfaces/core/IMintPolicy.sol";
 import { MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { SignatureVerifier } from "src/libraries/SignatureVerifier.sol";
 import { IndependentStreamFixture } from "./IndependentStreamFixture.sol";
 
@@ -443,7 +443,7 @@ contract IndependentStreamRegistryListingTest is IndependentStreamFixture {
         (PackageItem memory item, MediaFile[] memory media) = _item(1);
         _approve(address(fStream), item, RATE);
         IndependentStreamRegistry next = _successor();
-        bytes32 h = WorksHashing.itemHash(item);
+        bytes32 h = StreamHashing.itemHash(item);
         assertFalse(next.itemOf(address(fStream), h).approved);
         vm.expectRevert(
             abi.encodeWithSelector(

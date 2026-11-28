@@ -4,7 +4,7 @@ pragma solidity 0.8.37;
 import { IERC1271 } from "@openzeppelin/contracts/interfaces/IERC1271.sol";
 import { MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 
 /// @dev The two reads of the curation verifier (`Eip712CurationVerifier`) the gate needs.
 interface IOpenGateVerifier {
@@ -39,7 +39,7 @@ interface IOpenGateStream {
 /// @notice A SEPOLIA TEST CONVENIENCE. NEVER DEPLOY IT ON MAINNET. On a Sepolia test instance it
 ///         lets any wallet try the curated path of 6529 Stream with no curation step: it approves
 ///         every package root, and it lets anyone create a collection. It is not part of 6529
-///         Works, lives under `script/sepolia/` and is not used by any contract under `src/`.
+///         Stream, lives under `script/sepolia/` and is not used by any contract under `src/`.
 /// @dev The constructor reverts on every chain except Sepolia (11155111) and a local development
 ///      chain (31337), and both entry points refuse to answer anywhere else.
 ///
@@ -131,25 +131,25 @@ contract SepoliaOpenGate is IERC1271 {
     }
 
     /// @notice The hashes of a package of one item, for a tool that would rather read them than
-    ///         compute them (`WorksHashing`). Pure: it reads and checks nothing.
+    ///         compute them (`StreamHashing`). Pure: it reads and checks nothing.
     /// @param item The package's only item.
-    /// @return itemHash The item's hash (`WorksHashing.itemHash`).
+    /// @return itemHash The item's hash (`StreamHashing.itemHash`).
     /// @return packageRoot The root of the one-item package: the item's leaf. Its proof is empty.
     function oneItemPackage(PackageItem calldata item)
         external
         pure
         returns (bytes32 itemHash, bytes32 packageRoot)
     {
-        itemHash = WorksHashing.itemHashCalldata(item);
-        packageRoot = WorksHashing.leaf(itemHash);
+        itemHash = StreamHashing.itemHashCalldata(item);
+        packageRoot = StreamHashing.leaf(itemHash);
     }
 
     /// @notice The hash of an ordered media list, which `PackageItem.mediaHash` commits to
-    ///         (`WorksHashing.mediaHash`). Pure.
+    ///         (`StreamHashing.mediaHash`). Pure.
     /// @param media The media files, primary first.
     /// @return The media hash.
     function mediaHashOf(MediaFile[] calldata media) external pure returns (bytes32) {
-        return WorksHashing.mediaHash(media);
+        return StreamHashing.mediaHash(media);
     }
 
     /// @inheritdoc IERC1271
@@ -176,7 +176,7 @@ contract SepoliaOpenGate is IERC1271 {
     /// @param packageRoot The package root.
     /// @return The evidence hash; never zero in practice (a hash).
     function evidenceOf(bytes32 packageRoot) public view returns (bytes32) {
-        return keccak256(abi.encode("6529-works/sepolia/open-gate/evidence", this, packageRoot));
+        return keccak256(abi.encode("6529-stream/sepolia/open-gate/evidence", this, packageRoot));
     }
 
     function _isTestChain() private view returns (bool) {

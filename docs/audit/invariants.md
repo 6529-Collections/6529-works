@@ -220,7 +220,7 @@ on every ETH payment tries to make itself the destination and to pull the rest.
 
 [`CurationSignerInvariant.t.sol`](../../test/curation/CurationSignerInvariant.t.sol), handler
 `CurationSignerHandler` in the same file. Real `PackageRegistry`, `Eip712CurationVerifier` and
-`WorksAccessManager` (its grant counter matters: a revoke and re-grant in one block must not
+`StreamAccessManager` (its grant counter matters: a revoke and re-grant in one block must not
 revive an epoch); three signer keys, 24 roots. Signers sign at their current epoch, also while
 disabled or without the role; anyone submits (some tampered); the network disables, re-enables,
 swaps keys, kills approvals and revokes roots; a stranger tries the network's actions.
@@ -420,7 +420,7 @@ and 1.
 ## Governance
 
 [`GovernanceInvariant.t.sol`](../../test/governance/GovernanceInvariant.t.sol), handler
-`GovernanceHandler` in the same file. Real `GovernanceConfigurator` and `WorksAccessManager`;
+`GovernanceHandler` in the same file. Real `GovernanceConfigurator` and `StreamAccessManager`;
 mock `GovernedTargetMock`. Random actors, the network among them, hand the network over, accept,
 try to grant themselves network roles, grant and revoke an operational key, brake and run
 operations, and renounce roles; refused calls are caught.
@@ -531,7 +531,7 @@ Properties with no campaign of their own, or tested more directly outside one: b
 | PROP-GV-3 | Only genesis selectors pass wiring validation. | [`GenesisWiringPorted.t.sol`](../../test/governance/GenesisWiringPorted.t.sol) `testFuzz_OnlyGenesisSelectorsPassValidation`, `test_GenesisSelectorsAreExactlyTheAllowList` |
 | PROP-ID-1 | The value rules hold for any input: a royalty rate up to 100,000 rises or falls with agreement; a fee share only ever falls; an Independent Stream share in force never exceeds the deployed share; every release path pays the network its share; a mark never takes money that arrived after it; every edition sale closes 15 minutes after its 1/1. | ; `Stream.t.sol` ; ; [`NetworkShare.t.sol`](../../test/economics/NetworkShare.t.sol) `testFuzz_EveryReleasePathPaysTheNetwork`, `testFuzz_AMarkNeverTakesLaterMoney`; [`UniformEditionAuctionWindow.t.sol`](../../test/sales/edition/UniformEditionAuctionWindow.t.sol) `testFuzz_Window_TheCloseIsTheOneOfOneEndPlusFifteenMinutes` |
 | PROP-DSP-1 | Any append sequence matches the model, relays round-trip and never replay, and the nonce bitmap tracks exactly the spent nonces. | [`StatementLog.t.sol`](../../test/records/StatementLog.t.sol) `testFuzz_SequenceMatchesModel`, `testFuzz_RelayRoundTripAndReplay`, `testFuzz_NonceBitmapTracksExactlyTheSpentNonces` |
-| PROP-HASH-1 | The item hash binds the collection and the shares and does not depend on the chain. | [`WorksHashing.t.sol`](../../test/interfaces/WorksHashing.t.sol) `testFuzz_itemHash_bindsCollection`, `testFuzz_itemHash_bindsShares`, `testFuzz_itemHash_independentOfChain` |
+| PROP-HASH-1 | The item hash binds the collection and the shares and does not depend on the chain. | [`StreamHashing.t.sol`](../../test/interfaces/StreamHashing.t.sol) `testFuzz_itemHash_bindsCollection`, `testFuzz_itemHash_bindsShares`, `testFuzz_itemHash_independentOfChain` |
 | PROP-STR-2 | Retired: Stream holds no dependencies and no artist registry. | none |
 | PROP-STR-3 | `tokenURI` never falls back to another renderer: a finalized work uses its pin, an unfinalized one the RENDERER module, and a fault or shortfall reverts ([AUC-42](../spec/stream-and-auctions.md#rules-and-invariants)). | [`Stream.t.sol`](../../test/core/Stream.t.sol) `test_RendererOf_PinnedThenModuleThenNone`; [`StreamCorePolicyPorted.t.sol`](../../test/integration/StreamCorePolicyPorted.t.sol) `test_RendererOf_AFailingReadFailsClosed`, `test_RendererOf_ShortGasNeverServesAnotherRenderer`; [`StreamHostile.t.sol`](../../test/core/StreamHostile.t.sol) `test_Hostile_AsRenderer` |
 | PROP-ECO-10 | A governed vault forwards what it holds only to its destination, which only a compare-and-set FUNDS_SETTER action changes ([ECO-41](../spec/economics-and-payouts.md#rules-and-invariants)). | [`GovernedVault.t.sol`](../../test/economics/GovernedVault.t.sol) `test_AnyoneForwardsETHToTheDestinationOnly`, `test_SetDestinationIsCompareAndSet`, `test_SetDestinationIsGovernedInTheFundsClass` |

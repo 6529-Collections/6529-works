@@ -518,7 +518,7 @@ switch ($Step) {
         # exist. The package uses collection IDs 1 and 2, not names.
         $count = [int](Invoke-Cli 'cast' @('call', $stream, 'collectionCount()(uint256)', '--rpc-url', $Rpc)).Trim()
         foreach ($name in (@('Flows', 'Flows 2') | Select-Object -Skip $count)) {
-            $hash = (Invoke-Cli 'cast' @('keccak', "6529-works/sepolia/flows/collection/$name")).Trim()
+            $hash = (Invoke-Cli 'cast' @('keccak', "6529-stream/sepolia/flows/collection/$name")).Trim()
             $data = (Invoke-Cli 'cast' @('calldata', 'createCollection(string,bytes32)', $name, $hash)).Trim()
             Send-Planned "createCollection-$($name -replace ' ', '-')" 'platform' $stream '0' $data | Out-Null
         }
@@ -636,11 +636,11 @@ switch ($Step) {
     }
     'cancel' {
         # The network (the manager's `network()`; the manager is the configurator's
-        # `worksManager()`). -Safe overrides. Send-Safe refuses a Safe without configured signers.
+        # `streamManager()`). -Safe overrides. Send-Safe refuses a Safe without configured signers.
         $network = $Safe
         if (-not $network) {
             $manager = (Invoke-Cli 'cast' @('call', $Contracts.GovernanceConfigurator,
-                    'worksManager()(address)', '--rpc-url', $Rpc)).Trim()
+                    'streamManager()(address)', '--rpc-url', $Rpc)).Trim()
             $network = (Invoke-Cli 'cast' @('call', $manager, 'network()(address)', '--rpc-url', $Rpc)).Trim()
         }
         if (-not $SafeSigners[$network.ToLower()]) { throw "no signers configured for network Safe $network" }
@@ -652,7 +652,7 @@ switch ($Step) {
     'independentDeploy' {
         # The artist deploys its own 1/1 contract from the approved template; the address is
         # kept in the state file (notes.independentToken) for the steps that take -Token.
-        $salt = (Invoke-Cli 'cast' @('keccak', "6529-works/sepolia/flows/independent/$Salt")).Trim()
+        $salt = (Invoke-Cli 'cast' @('keccak', "6529-stream/sepolia/flows/independent/$Salt")).Trim()
         $plan = Invoke-Plan 'independentDeployTx(bytes32)' @($salt)
         $token = Get-Info $plan 'token'
         Send-Items $plan
@@ -689,7 +689,7 @@ switch ($Step) {
         # The artist deploys the editions contract of its 1/1 contract -Token; the address is kept
         # in the state file (notes.independentEditions) for the steps that take -Editions.
         if (-not $Token) { throw 'independentEditionsDeploy needs -Token (the 1/1 contract)' }
-        $salt = (Invoke-Cli 'cast' @('keccak', "6529-works/sepolia/flows/independent-editions/$Salt")).Trim()
+        $salt = (Invoke-Cli 'cast' @('keccak', "6529-stream/sepolia/flows/independent-editions/$Salt")).Trim()
         $plan = Invoke-Plan 'independentEditionsDeployTx(bytes32,address)' @($salt, $Token)
         $deployed = Get-Info $plan 'editions'
         Send-Items $plan

@@ -1,6 +1,6 @@
 # Integrator guide
 
-For marketplaces, wallets, indexers and front ends that read 6529 Works or send transactions to
+For marketplaces, wallets, indexers and front ends that read 6529 Stream or send transactions to
 it. Start with the [overview](../overview.md) for the shape of the system.
 
 > Pre-audit. See the [project status](../../README.md#status).

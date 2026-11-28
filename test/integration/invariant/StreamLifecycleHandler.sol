@@ -32,7 +32,7 @@ import {
     StreamMintRequest
 } from "src/interfaces/types/PackageTypes.sol";
 import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { ContentAddresses } from "../../helpers/ContentAddresses.sol";
 import { MockRenderer } from "../../mocks/core/CoreMocks.sol";
 import { IntegrationBase } from "../IntegrationBase.sol";
@@ -270,7 +270,7 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
             p.root = root;
             p.lead = lead;
             p.collaborator = works[j].item.parties.length == 2;
-            p.itemHash = WorksHashing.itemHash(works[j].item);
+            p.itemHash = StreamHashing.itemHash(works[j].item);
             p.contentHash = works[j].item.contentHash;
             p.mediaHash = works[j].item.mediaHash;
             p.fileId = works[j].media[0].fileId;
@@ -942,7 +942,7 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
                     ? License("CC-BY-4.0", byTextFileId)
                     : License("CC0-1.0", altCc0TextFileId))
             : (choice % 2 == 0 ? License("CC0-1.0", cc0TextFileId) : License("MIT", mitTextFileId));
-        bool same = WorksHashing.licenseKey(f.licenseId) == WorksHashing.licenseKey(next.spdxId)
+        bool same = StreamHashing.licenseKey(f.licenseId) == StreamHashing.licenseKey(next.spdxId)
             && f.licenseTextFileId == next.textFileId;
         bytes memory call = _relicenseCall(tokenId, next);
         // The network's call lands 3 days after it is scheduled: the parties' standing then
@@ -958,7 +958,7 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
             ++hits[t.cc0 ? bytes32("cc0Held") : bytes32("restrainedRelicense")];
             return;
         }
-        if (!same) t.cc0 = WorksHashing.licenseKey(next.spdxId) == WorksHashing.CC0_LICENSE_KEY;
+        if (!same) t.cc0 = StreamHashing.licenseKey(next.spdxId) == StreamHashing.CC0_LICENSE_KEY;
         ++hits["relicense"];
     }
 
@@ -1444,7 +1444,7 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
                     rules.RELICENSE_TYPEHASH(),
                     address(stream),
                     tokenId,
-                    WorksHashing.licenseKey(next.spdxId),
+                    StreamHashing.licenseKey(next.spdxId),
                     next.textFileId,
                     state,
                     deadline
@@ -1591,7 +1591,7 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
             address(stream),
             tokenId,
             StatementKinds.ARTIST_STATEMENT,
-            keccak256("6529-works/artist-statement/1"),
+            keccak256("6529-stream/artist-statement/1"),
             HashRef(HASH_SHA256, keccak256("a restrained statement")),
             "ar://lifecycle-artist-statement",
             bytes32(0),
@@ -1784,7 +1784,9 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
             }
             if (t.cc0) {
                 assertEq(
-                    WorksHashing.licenseKey(f.licenseId), WorksHashing.CC0_LICENSE_KEY, "CC0 stays"
+                    StreamHashing.licenseKey(f.licenseId),
+                    StreamHashing.CC0_LICENSE_KEY,
+                    "CC0 stays"
                 );
                 assertEq(f.licenseTextFileId, cc0TextFileId, "CC0 keeps the pinned text");
             }

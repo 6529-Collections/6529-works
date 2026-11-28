@@ -21,7 +21,7 @@ import { ReplayBase } from "./ReplayBase.sol";
 ///         and every permanent contract's indexer replays the whole run.
 contract RealVectorsTest is ReplayBase {
     string internal constant PATH = "test/fixtures/real/museum-work.json";
-    bytes32 internal constant ENTRY_DOMAIN = keccak256("6529.works.StatementLog.entry.v1");
+    bytes32 internal constant ENTRY_DOMAIN = keccak256("6529.stream.StatementLog.entry.v1");
 
     string internal json;
     address internal artist;

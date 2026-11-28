@@ -17,7 +17,7 @@ import {
     AlwaysConsolidated,
     ConsolidationSourceMock,
     PullOnlyPayeeMock
-} from "../mocks/identity/IdentityWorksMocks.sol";
+} from "../mocks/identity/IdentityStreamMocks.sol";
 import { YesToEveryInterface } from "../mocks/identity/AccountsMutationMocks.sol";
 import { AccountsFixture } from "./AccountsFixture.sol";
 
@@ -1002,7 +1002,7 @@ contract AccountsTest is AccountsFixture {
                 keccak256(
                     "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
                 ),
-                keccak256("6529 Works Artist Registry"),
+                keccak256("6529 Stream Artist Registry"),
                 keccak256("1"),
                 block.chainid,
                 address(registry)

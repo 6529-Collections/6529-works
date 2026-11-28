@@ -21,7 +21,7 @@ import {
     PartyRole,
     SaleTerms
 } from "src/interfaces/types/PackageTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { WorkRules } from "src/records/WorkRules.sol";
 import { WorkDelivery } from "src/stream/WorkDelivery.sol";
 import { StreamTerms } from "src/terms/StreamTerms.sol";
@@ -189,7 +189,7 @@ abstract contract RulesFixture is CoreFixture {
     {
         item.collectionId = 1;
         item.contentHash = media[0].sha256Hash;
-        item.mediaHash = WorksHashing.mediaHash(media);
+        item.mediaHash = StreamHashing.mediaHash(media);
         item.recordFileId = _record(salt);
         item.parties = new Party[](2);
         item.parties[0] = Party(artist, uint8(PartyRole.ARTIST));
@@ -205,7 +205,7 @@ abstract contract RulesFixture is CoreFixture {
     /// @dev Mints `item` into the sale contract's custody on `token`.
     function _mintItem(Stream6529 token, PackageItem memory item) internal returns (uint256) {
         MintFacts memory f;
-        f.itemHash = WorksHashing.itemHash(item);
+        f.itemHash = StreamHashing.itemHash(item);
         f.contentHash = item.contentHash;
         f.artistId = uint160(artist);
         f.collectionId = item.collectionId;
@@ -234,7 +234,7 @@ abstract contract RulesFixture is CoreFixture {
         bytes32 domain = keccak256(
             abi.encode(
                 EIP712_DOMAIN_TYPEHASH,
-                keccak256(bytes("6529 Works Rules")),
+                keccak256(bytes("6529 Stream Rules")),
                 keccak256(bytes("1")),
                 block.chainid,
                 address(rules)

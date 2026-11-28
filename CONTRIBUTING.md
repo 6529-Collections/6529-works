@@ -1,6 +1,6 @@
 # Contributing
 
-6529 Works is pre-audit and under active construction. Before you start:
+6529 Stream is pre-audit and under active construction. Before you start:
 
 1. Read the [three-page overview](docs/overview.md), then [ADR 0001](docs/adr/0001-v1-scope.md)
    for the scope and [ADR 0010](docs/adr/0010-plain-permanent-core.md) for what is permanent.

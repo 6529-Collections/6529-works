@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import { Vm } from "forge-std/Vm.sol";
 import { License } from "src/interfaces/types/PackageTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { IntegrationBase } from "../integration/IntegrationBase.sol";
 import { ContentIndexer } from "./ContentIndexer.sol";
 import { EditionsCoreIndexer } from "./EditionsCoreIndexer.sol";
@@ -153,7 +153,7 @@ abstract contract ReplayBase is IntegrationBase {
                 rules.RELICENSE_TYPEHASH(),
                 token,
                 tokenId,
-                WorksHashing.licenseKey(next.spdxId),
+                StreamHashing.licenseKey(next.spdxId),
                 next.textFileId,
                 state,
                 deadline

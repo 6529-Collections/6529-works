@@ -11,7 +11,7 @@ import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import { PartyAcceptance } from "src/interfaces/types/PackageTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { SignatureVerifier } from "src/libraries/SignatureVerifier.sol";
 import { EditionAuctionStack } from "../integration/EditionAuctionStack.sol";
 
@@ -173,11 +173,11 @@ contract SepoliaOpenGateTest is EditionAuctionStack {
         assertEq(stored, gate.evidenceOf(root));
     }
 
-    /// @dev The two pure helpers answer what `WorksHashing` computes.
-    function test_OpenGate_HashHelpersMatchWorksHashing() public {
+    /// @dev The two pure helpers answer what `StreamHashing` computes.
+    function test_OpenGate_HashHelpersMatchStreamHashing() public {
         Work memory w = _asMaster(_work(artist, collectionId), 3);
         (bytes32 itemHash, bytes32 root) = gate.oneItemPackage(w.item);
-        assertEq(itemHash, WorksHashing.itemHash(w.item));
+        assertEq(itemHash, StreamHashing.itemHash(w.item));
         assertEq(root, _rootOf(_one(w)));
         assertEq(gate.mediaHashOf(w.media), w.item.mediaHash);
     }

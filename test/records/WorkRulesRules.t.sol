@@ -9,7 +9,7 @@ import { IWorkFacts } from "src/interfaces/core/IWorkFacts.sol";
 import { IWorkRules } from "src/interfaces/core/IWorkRules.sol";
 import { FileRole, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { License, PackageItem } from "src/interfaces/types/PackageTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { WorkRules } from "src/records/WorkRules.sol";
 import { ContentAddresses as CA } from "../helpers/ContentAddresses.sol";
 import { HostileModule } from "../mocks/core/CoreMocks.sol";
@@ -147,7 +147,7 @@ contract WorkRulesRulesTest is RulesFixture {
                     rules.RELICENSE_TYPEHASH(),
                     s,
                     id,
-                    WorksHashing.licenseKey(next.spdxId),
+                    StreamHashing.licenseKey(next.spdxId),
                     next.textFileId,
                     state,
                     deadline

@@ -2,12 +2,12 @@
 pragma solidity 0.8.37;
 
 /// @title Roles
-/// @notice Canonical OpenZeppelin 5 `AccessManager` role IDs and delays for every 6529 Works
+/// @notice Canonical OpenZeppelin 5 `AccessManager` role IDs and delays for every 6529 Stream
 ///         contract. Import these constants; never hard-code a role ID.
 /// @dev Two kinds of role:
 ///      - Network roles (`ADMIN`, `NETWORK`, `PARAMETER_SETTER`, `FUNDS_SETTER`,
 ///        `SUCCESSOR_SETTER`) are held by one address only, the network
-///        (`WorksAccessManager.network`). Each is a delay class: the network acts through it
+///        (`StreamAccessManager.network`). Each is a delay class: the network acts through it
 ///        with that role's class delay. Nobody can be granted one.
 ///      - Operational roles (`PAUSER`, `CURATION_SIGNER`, `STORAGE_OPERATOR`, `MINTER`,
 ///        `KEEPER`, `PLATFORM`, `CURATOR`) are ordinary keys the network grants and revokes at
@@ -32,7 +32,7 @@ library Roles {
     ///         handing the network over and setting the brake.
     uint32 internal constant DELAY_7D = 7 days;
     /// @notice How much later than its ready time the brake can make one scheduled network
-    ///         action run, once per action (`WorksAccessManager.brakeOnce`).
+    ///         action run, once per action (`StreamAccessManager.brakeOnce`).
     uint32 internal constant BRAKE_DELAY = 7 days;
 
     // --------------------------------------------------------------------- role IDs

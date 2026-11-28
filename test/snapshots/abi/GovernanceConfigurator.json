@@ -438,6 +438,21 @@
     "type": "function"
   },
   {
+    "id": "0x34fe2676",
+    "inputs": [],
+    "name": "streamManager",
+    "outputs": [
+      {
+        "internalType": "contract StreamAccessManager",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "signature": "streamManager()",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "id": "0x6bb2127a",
     "inputs": [
       {
@@ -507,21 +522,6 @@
     "name": "verify",
     "outputs": [],
     "signature": "verify((address,address,(uint64,address)[],(address,(bytes4,uint64)[])[]))",
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "id": "0xfa55365b",
-    "inputs": [],
-    "name": "worksManager",
-    "outputs": [
-      {
-        "internalType": "contract WorksAccessManager",
-        "name": "",
-        "type": "address"
-      }
-    ],
-    "signature": "worksManager()",
     "stateMutability": "view",
     "type": "function"
   }

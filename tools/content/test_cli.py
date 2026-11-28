@@ -26,7 +26,7 @@ from tools.content.golden import counter_bytes
 from tools.content.rpc import JsonRpc
 
 STORE = checksum_address(STORE_ADDRESS)
-MEDIA = (b"6529 Works " * 1500) + counter_bytes(11, 20_000)
+MEDIA = (b"6529 Stream " * 1500) + counter_bytes(11, 20_000)
 
 
 def run(*argv: str) -> tuple[int, str, str]:

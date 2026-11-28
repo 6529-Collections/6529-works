@@ -30,7 +30,7 @@ import {
     SaleTerms
 } from "src/interfaces/types/PackageTypes.sol";
 import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { ExampleBase } from "./ExampleBase.sol";
 
 contract ExampleIndependentStreamDirectory is ExampleBase {
@@ -147,7 +147,7 @@ contract ExampleIndependentStreamDirectory is ExampleBase {
         // The artist approves one item for one mint, with its royalty rate.
         (PackageItem memory item, MediaFile[] memory media) = _independentItem();
         vm.prank(artist);
-        independentStream.approveItem(address(fStream), WorksHashing.itemHash(item), 5_000);
+        independentStream.approveItem(address(fStream), StreamHashing.itemHash(item), 5_000);
 
         // Anyone starts it in the English auction; the auction asks the Independent Stream module.
         assertEq(auction.policyOf(address(fStream)), address(independentStream));
@@ -174,7 +174,7 @@ contract ExampleIndependentStreamDirectory is ExampleBase {
         media[0] = MediaFile(_file(data, "image/png"), sha256(data), 0);
         item.collectionId = 1;
         item.contentHash = sha256(data);
-        item.mediaHash = WorksHashing.mediaHash(media);
+        item.mediaHash = StreamHashing.mediaHash(media);
         item.recordFileId = _record("An Independent Stream work");
         item.parties = new Party[](1);
         item.parties[0] = Party(artist, 0);

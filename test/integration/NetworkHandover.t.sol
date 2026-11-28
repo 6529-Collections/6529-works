@@ -7,7 +7,7 @@ import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessMa
 import { VerifyCore } from "script/VerifyCore.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { Roles } from "src/governance/Roles.sol";
-import { WorksAccessManager } from "src/governance/WorksAccessManager.sol";
+import { StreamAccessManager } from "src/governance/StreamAccessManager.sol";
 import { Statement } from "src/interfaces/IStatementLog.sol";
 import { HASH_SHA256, HashRef } from "src/interfaces/types/HashRef.sol";
 import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
@@ -109,13 +109,13 @@ contract NetworkHandoverTest is IntegrationBase {
     ///      the new network's scheduled operations once, its own removal included, which then
     ///      runs 7 days after its ready time and not before.
     function test_Handover_TheBrakeStaysUntilTheNewNetworkReplacesIt() public {
-        _sevenDay(network, abi.encodeCall(WorksAccessManager.setBrake, (network)));
+        _sevenDay(network, abi.encodeCall(StreamAccessManager.setBrake, (network)));
         assertEq(manager.brake(), network);
 
         _handOver();
         assertEq(manager.brake(), network, "the handover does not change the brake");
 
-        bytes memory removal = abi.encodeCall(WorksAccessManager.setBrake, (address(0)));
+        bytes memory removal = abi.encodeCall(StreamAccessManager.setBrake, (address(0)));
         vm.prank(next);
         (bytes32 operationId,) = manager.schedule(address(manager), removal, 0);
         vm.prank(network);
@@ -126,7 +126,7 @@ contract NetworkHandoverTest is IntegrationBase {
         vm.prank(next);
         vm.expectRevert(
             abi.encodeWithSelector(
-                WorksAccessManager.BrakeNotElapsed.selector, operationId, notBefore
+                StreamAccessManager.BrakeNotElapsed.selector, operationId, notBefore
             )
         );
         manager.execute(address(manager), removal);
@@ -136,7 +136,7 @@ contract NetworkHandoverTest is IntegrationBase {
         manager.execute(address(manager), removal);
         assertEq(manager.brake(), address(0));
         vm.prank(network);
-        vm.expectRevert(abi.encodeWithSelector(WorksAccessManager.NotBrake.selector, network));
+        vm.expectRevert(abi.encodeWithSelector(StreamAccessManager.NotBrake.selector, network));
         manager.brakeOnce(operationId);
     }
 
@@ -190,7 +190,7 @@ contract NetworkHandoverTest is IntegrationBase {
 
     /// @dev The network names `next` (a 7-day action) and `next` accepts.
     function _handOver() internal {
-        _sevenDay(network, abi.encodeCall(WorksAccessManager.transferNetwork, (next)));
+        _sevenDay(network, abi.encodeCall(StreamAccessManager.transferNetwork, (next)));
         vm.prank(next);
         manager.acceptNetwork();
         assertEq(manager.network(), next);
@@ -210,7 +210,7 @@ contract NetworkHandoverTest is IntegrationBase {
             address(accounts),
             7,
             StatementKinds.DISPUTE_OUTCOME,
-            keccak256("6529-works/dispute-outcome/1"),
+            keccak256("6529-stream/dispute-outcome/1"),
             HashRef(HASH_SHA256, keccak256(bytes(uri))),
             uri,
             bytes32(0),

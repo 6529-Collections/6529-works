@@ -125,7 +125,7 @@ interface IPackageRegistry is IERC165 {
     function setEntropyModule(address expected, address next) external;
     /// @notice Registers an approved package root. Permissionless; the verifier decides.
     /// @param packageRoot The package root: the Merkle root over its items'
-    ///        `WorksHashing.leaf(itemHash)` values.
+    ///        `StreamHashing.leaf(itemHash)` values.
     /// @param evidenceHash The nonzero hash committing to the approval evidence.
     /// @param attestation The verifier's approval proof (for the v1 verifier,
     ///        `abi.encode(address signer, bytes signature)`).

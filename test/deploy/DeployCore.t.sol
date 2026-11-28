@@ -28,7 +28,7 @@ contract DeployCoreTest is CoreDeployFixture {
             assertEq(a, DeployCore.addressOf(q, list[i]), list[i]);
             assertGt(a.code.length, 0, list[i]);
         }
-        assertEq(address(d.manager), address(d.configurator.worksManager()));
+        assertEq(address(d.manager), address(d.configurator.streamManager()));
         assertEq(DeployCore.PERMANENT_COUNT, 11);
         assertEq(list[DeployCore.PERMANENT_COUNT - 1], "StreamEditions6529");
     }

@@ -10,7 +10,7 @@ import { IModuleSlots } from "src/interfaces/core/IModules.sol";
 import { Slots } from "src/interfaces/core/CoreTypes.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { PackageItem, SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { BoundedCall } from "src/libraries/BoundedCall.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
 import { EntropyBase } from "./EntropyBase.sol";
@@ -513,7 +513,7 @@ contract VrfEntropyIndependentTest is EntropyBase {
         bytes32 key = _key(token, item.contentHash);
         PackageItem memory curated = _makeItem(ITEM_SALT + 2, SeedPolicy.VRF);
         curated.contentHash = key;
-        bytes32 curatedRoot = WorksHashing.leaf(_hash(curated));
+        bytes32 curatedRoot = StreamHashing.leaf(_hash(curated));
         registry.setStatus(curatedRoot, IPackageRegistry.PackageStatus.APPROVED);
 
         uint256 id = module.requestSeed(curated, curatedRoot, new bytes32[](0));

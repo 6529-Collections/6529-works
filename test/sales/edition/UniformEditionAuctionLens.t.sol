@@ -8,7 +8,7 @@ import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
 import { IUniformEditionAuctionLens } from "src/interfaces/IUniformEditionAuctionLens.sol";
 import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { EditionAuctionBase } from "./EditionAuctionBase.sol";
 
 /// @notice Another sale contract that creates an edition directly.

@@ -14,7 +14,7 @@ import { Stream6529 } from "src/core/Stream6529.sol";
 import { VrfEntropyModule } from "src/entropy/VrfEntropyModule.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { Roles } from "src/governance/Roles.sol";
-import { WorksAccessManager } from "src/governance/WorksAccessManager.sol";
+import { StreamAccessManager } from "src/governance/StreamAccessManager.sol";
 import { IModuleSlots } from "src/interfaces/core/IModules.sol";
 import { Slots } from "src/interfaces/core/CoreTypes.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
@@ -865,7 +865,7 @@ contract DeployCoreSafetyTest is Test {
         this.verifyConfiguredExternal(d, reordered, _manifest(), _calls(d), one);
 
         DeployCore.Deployment memory elsewhere = d;
-        elsewhere.manager = WorksAccessManager(outsider);
+        elsewhere.manager = StreamAccessManager(outsider);
         vm.expectRevert(
             abi.encodeWithSelector(VerifyCore.Mismatch.selector, "GovernanceConfigured.manager", c)
         );

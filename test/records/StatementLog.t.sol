@@ -47,7 +47,7 @@ contract StatementLogTest is StatementLogFixture {
         assertEq(stored, head);
         assertEq(
             head,
-            keccak256(abi.encode(keccak256("6529.works.StatementLog.head.v1"), bytes32(0), entry))
+            keccak256(abi.encode(keccak256("6529.stream.StatementLog.head.v1"), bytes32(0), entry))
         );
     }
 

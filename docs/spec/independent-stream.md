@@ -61,7 +61,7 @@ is the wait that applies to a change of who may mint Independent Stream tokens.
 | IND-7 | A mint needs the Independent Stream module's `canMint` for the caller; a delisted contract, or one of a suspended or revoked template, mints nothing. | `test_Start_ADelistedSuspendedOrRevokedContractMintsNothing`, `test_Mint_RefusedForAContractTheGateDoesNotAdmit`, `test_Authorize_CallerMustBeAnActiveSaleContract` |
 | IND-8 | There is no exit: nothing leaves Independent Stream. | `test_NoExit_ADelistedContractStaysListed`, `test_SetStatus_SkipsUnlistedAndRefusesNone` |
 | IND-9 | (Removed in the second pass: there are no minters of the artist's own.) | |
-| IND-10 | A work is a `PackageItem` with its media list; `itemHash` is `WorksHashing.itemHash`. | `test_Flow_MintRecordFinalizeAndRender`, `test_Authorize_MediaHashMustCommit`, `test_Authorize_MediaCountBounds` |
+| IND-10 | A work is a `PackageItem` with its media list; `itemHash` is `StreamHashing.itemHash`. | `test_Flow_MintRecordFinalizeAndRender`, `test_Authorize_MediaHashMustCommit`, `test_Authorize_MediaCountBounds` |
 | IND-11 | The artist approves one mint per approval in the Independent Stream module and sets the work's royalty rate (at most 100,000); a revoke withdraws it. | `test_ApproveItem_ByAnyWalletLoggedAndBounded`, `test_Authorize_AnItemMintsOnce`, `test_RevokeItem_BeforeMintStopsIt`, `test_Authorize_NeedsAnApproval` |
 | IND-12 | Retired: the mint request is the Independent Stream module's `authorize` input. | |
 | IND-13 | Retired: the record opens in `StreamWorkFacts6529` (WS-2). | |

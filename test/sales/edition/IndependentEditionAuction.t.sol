@@ -27,7 +27,7 @@ import {
     SeedPolicy
 } from "src/interfaces/types/PackageTypes.sol";
 import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import {
     MockEditionRenderer,
     MockMasterStream,
@@ -194,7 +194,7 @@ contract IndependentEditionAuctionTest is Test {
         item.seedPolicy = uint8(SeedPolicy.NONE);
         item.sale = SaleTerms(SaleKind.ENGLISH_AUCTION, CURRENCY_ETH, "");
         item.edition = EditionTerms(0, CURRENCY_ETH, SaleKind.UNIFORM_AUCTION, "");
-        master.setWork(ID, WorksHashing.itemHash(item), ItemKind.EDITION_MASTER);
+        master.setWork(ID, StreamHashing.itemHash(item), ItemKind.EDITION_MASTER);
     }
 
     function _open() internal returns (uint256) {
@@ -502,7 +502,7 @@ contract IndependentEditionAuctionTest is Test {
         uint256 second = ID + 1;
         PackageItem memory item = _item();
         item.contentHash = keccak256("a second Independent Stream content");
-        master.setWork(second, WorksHashing.itemHash(item), ItemKind.EDITION_MASTER);
+        master.setWork(second, StreamHashing.itemHash(item), ItemKind.EDITION_MASTER);
         english.set(
             address(master),
             second,

@@ -13,7 +13,7 @@ import { IModuleSlots } from "src/interfaces/core/IModules.sol";
 import { IStream } from "src/interfaces/core/IStream.sol";
 import { IWorkFacts } from "src/interfaces/core/IWorkFacts.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
-import { InterfaceStub } from "../mocks/identity/IdentityWorksMocks.sol";
+import { InterfaceStub } from "../mocks/identity/IdentityStreamMocks.sol";
 import { AccountsFixture } from "./AccountsFixture.sol";
 
 /// @notice The accounts module's wiring: constructor arguments, the payout refusals that follow

@@ -71,9 +71,9 @@ class CliTest(unittest.TestCase):
 
     def test_digests(self) -> None:
         code, out, _ = run("control-proof", "digest", str(EXAMPLES / "control-proof.json"))
-        self.assertEqual((code, out.strip()), (0, "0x2548db021144b031169071ded42000449c5128184168ca0bd94e5d56c4e0a057"))
+        self.assertEqual((code, out.strip()), (0, "0x30131e8926649b07f8edabe55dcc60473c397a998eee6a47a9fdd16c6317b7a7"))
         code, out, _ = run("custody", "digest", str(EXAMPLES / "custody-attestation.json"))
-        self.assertEqual((code, out.strip()), (0, "0xa03cc2c3767834df2ef6c583fd5d08e6d65ddd616d2f90a96e0ad8e00e152e2a"))
+        self.assertEqual((code, out.strip()), (0, "0x6baa5fab8796d1ba91748da78a4a9f20a2a4118c3b1914c7483f703a0b20ee13"))
 
     def test_floor(self) -> None:
         inp = testdata.still_floor_input()

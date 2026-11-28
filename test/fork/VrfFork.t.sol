@@ -7,8 +7,8 @@ import { DeployCore } from "script/DeployCore.sol";
 import { VrfEntropyModule } from "src/entropy/VrfEntropyModule.sol";
 import { IEntropyModule } from "src/interfaces/IEntropyModule.sol";
 import { SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
-import { CoreForkBase, IVrfSubscriptions } from "./WorksForkBase.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
+import { CoreForkBase, IVrfSubscriptions } from "./StreamForkBase.sol";
 
 /// @notice The entropy module `DeployCore` deploys, against the real Chainlink VRF v2.5
 ///         coordinator on a Sepolia fork: a new native-funded subscription with the module as
@@ -97,7 +97,7 @@ contract VrfSepoliaForkTest is CoreForkBase {
     ///         lets the auction start, and the work carries and renders the seed.
     function test_Vrf_RequestReachesTheCoordinatorAndAFulfilmentStartsTheWork() public {
         Work[] memory works = _package(root);
-        bytes32 itemHash = WorksHashing.itemHash(works[0].item);
+        bytes32 itemHash = StreamHashing.itemHash(works[0].item);
         vm.recordLogs();
         uint256 requestId = entropy.requestSeed(works[0].item, root, _proofOf(works, 0));
         _assertRequestLogged(vm.getRecordedLogs(), requestId);

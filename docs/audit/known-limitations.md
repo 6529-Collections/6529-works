@@ -1,6 +1,6 @@
 # Known limitations and accepted risks
 
-Every known limitation and accepted risk of 6529 Works v1, one row per risk, for auditors: what
+Every known limitation and accepted risk of 6529 Stream v1, one row per risk, for auditors: what
 it is, what follows, what mitigates it, and where it is recorded. Rows cite spec rule IDs. No external audit has happened yet.
 
 > Pre-audit. See the [project status](../../README.md#status).
@@ -44,7 +44,7 @@ Gas figures are owned by [ADR 0004's table][adr4-table]; rows quote only a headl
 | LIM-GV-3 | Accepted | **Revocation is per root, not per item**, and disabling a signer stops only future registrations ([CUR-16, CUR-17][cur]). | An item listed in two roots stays consumable through the other. | The network revokes every root that lists the item (`revokePackage`, at once), or stops every package a signer registered with `killSignerApprovals` (24 hours, [CUR-23][cur]); use a fresh signer key after a suspected compromise. | [Curation: failure modes](../spec/curation.md#failure-modes-and-recovery) |
 | LIM-GV-6 | Accepted | **Readback blind spots.** OpenZeppelin cannot list role members, and `configurator.verify` cannot see what the wiring did ([GV-13][gv]). | `verify` misses holders outside the configuration. | `VerifyCore.s.sol` fails on unexpected grants, pending operations, selector remaps, role-admin and role-guardian changes and target closures outside the configuration since genesis, and on a network that has not accepted (`NetworkNotAccepted`), and recomputes the wiring. | [Governance: genesis configure](../spec/governance.md#genesis-configure); [runbook, step 11](../../script/README.md#4-after-the-broadcast) |
 | LIM-GV-7 | Accepted | **"At most 2× per step" limits each operation, not each window** ([GV-19][gv]). | Several raises scheduled together can reach a parameter's ceiling within one delay window. | The ceiling bounds the result; the network can cancel scheduled raises, and the brake, when set, can delay each once. | [ADR 0002](../adr/0002-access-manager-hardening.md#security-impact) |
-| LIM-GV-8 | Accepted | **The `Multicall` exception.** `WorksAccessManager` inherits OpenZeppelin `Multicall`, whose self-`DELEGATECALL` is the one sanctioned delegatecall. | `tools/check_budgets.py` scans only `src/`, so the gate does not see it. | It batches calls into the manager itself and is not a proxy; each batched call still waits its own class delay. | [ADR 0002](../adr/0002-access-manager-hardening.md#security-impact) |
+| LIM-GV-8 | Accepted | **The `Multicall` exception.** `StreamAccessManager` inherits OpenZeppelin `Multicall`, whose self-`DELEGATECALL` is the one sanctioned delegatecall. | `tools/check_budgets.py` scans only `src/`, so the gate does not see it. | It batches calls into the manager itself and is not a proxy; each batched call still waits its own class delay. | [ADR 0002](../adr/0002-access-manager-hardening.md#security-impact) |
 | LIM-GV-9 | Accepted | **Off-chain votes, trusted execution.** TDH votes are off-chain until the 6529 chain, and the network address (one 6529 Safe until the TDH bridge exists) executes their result. | A governed outcome is only as reliable as that Safe and the PLATFORM key that records it. | Governed actions wait their class and are public; the brake, when set, can delay a scheduled one once; a dispute cancel and a contested replacement cite the recorded outcome ([DSP-18][dsp], [ID-7][id]). | [ADR 0003](../adr/0003-build-time-decisions.md#owner-decisions-11-october-2026) |
 | LIM-GV-10 | Accepted | **ARTIST statements are only as strong as the artist resolver** and the 7-day `setArtistResolver` behind it ([DSP-7, DSP-8][dsp]). | A resolver that vouches for anyone would make its ARTIST entries meaningless. | A code hash checked at every use; every entry records its resolver, so readers can discard a resolver's entries. | [Trust assumptions](trust-assumptions.md#resolvers-and-renderer-pins); [Disputes and statements](../spec/disputes-and-statements.md#who-may-write) |
 | LIM-GV-11 | Accepted | **One-contract concentration.** Every work lives in one Stream contract, which is not a proxy. | A defect in Stream reaches every work and cannot be patched; only its modules change. | Stream is small, plain code with every rule in replaceable modules, held to CI budgets; an external audit before mainnet. | [ADR 0001](../adr/0001-v1-scope.md#accepted-risks) |
@@ -293,8 +293,8 @@ See the [register](../spec/README.md#differences-from-the-adrs).
 [flows]: ../../deployments/11155111/flows.md#budgets-under-glamsterdam-r2
 [r4-gas]: ../../deployments/11155111/README.md
 [script-vrf]: ../../script/README.md#4-after-the-broadcast
-[review-4]: https://github.com/6529-Collections/6529-works/blob/581cfb6f/docs/security/internal-review-2026-10.md#4-decisions-and-accepted-risks
-[review-6]: https://github.com/6529-Collections/6529-works/blob/581cfb6f/docs/security/internal-review-2026-10.md#6-residual-risks-and-recommended-next-steps
+[review-4]: https://github.com/6529-Collections/6529-stream/blob/581cfb6f/docs/security/internal-review-2026-10.md#4-decisions-and-accepted-risks
+[review-6]: https://github.com/6529-Collections/6529-stream/blob/581cfb6f/docs/security/internal-review-2026-10.md#6-residual-risks-and-recommended-next-steps
 [auc]: ../spec/stream-and-auctions.md#rules-and-invariants
 [exit]: ../spec/stream-and-auctions.md#a-token-that-will-not-settle
 [cur]: ../spec/curation.md#rules-and-invariants

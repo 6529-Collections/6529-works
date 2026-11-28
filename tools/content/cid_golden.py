@@ -32,7 +32,7 @@ from .cid import CHUNK_SIZE, MAX_LINKS, cid_of_bytes, locator_accepted
 ROOT = Path(__file__).resolve().parents[2]
 VECTORS_PATH = Path(__file__).resolve().parent / "golden" / "cid-vectors.json"
 SOLIDITY_PATH = ROOT / "test" / "content" / "tooling" / "CidGoldenData.sol"
-SCHEMA = "6529-works/cid-golden/v1"
+SCHEMA = "6529-stream/cid-golden/v1"
 
 _BLOCK = bytes(range(256)) * (CHUNK_SIZE // 256)
 

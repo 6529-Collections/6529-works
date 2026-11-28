@@ -63,7 +63,7 @@ class ExampleTest(unittest.TestCase):
     def test_digest_matches_the_spec(self) -> None:
         """DCL-19: the example's digest."""
         self.assertEqual(custody.attestation_digest(testdata.example("custody-attestation.json")).hex(),
-                         "a03cc2c3767834df2ef6c583fd5d08e6d65ddd616d2f90a96e0ad8e00e152e2a")
+                         "6baa5fab8796d1ba91748da78a4a9f20a2a4118c3b1914c7483f703a0b20ee13")
 
     def test_signature_check_uses_the_custodian_and_the_digest(self) -> None:
         """DCL-20: the custodian's signature, checked as SignatureVerifier does (stub backend)."""

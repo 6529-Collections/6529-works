@@ -113,7 +113,7 @@ contract DeployCoreScript is ScriptIO {
     ///         these lines), the manager and the CC0 file ID.
     function log(DeployCore.Params memory p, DeployCore.Deployment memory d) internal pure {
         console2.log(string.concat("CoreFactory: ", vm.toString(d.coreFactory)));
-        console2.log(string.concat("WorksAccessManager: ", vm.toString(address(d.manager))));
+        console2.log(string.concat("StreamAccessManager: ", vm.toString(address(d.manager))));
         string[] memory list = DeployCore.order(p);
         for (uint256 i; i < list.length; ++i) {
             console2.log(

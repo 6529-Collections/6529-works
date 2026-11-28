@@ -11,7 +11,7 @@ import { Typehashes } from "../interfaces/types/Typehashes.sol";
 import { BoundedCall } from "../libraries/BoundedCall.sol";
 import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 
-/// @dev The grant counter the 6529 Works manager keeps (`WorksAccessManager.grantCount`).
+/// @dev The grant counter the 6529 Stream manager keeps (`StreamAccessManager.grantCount`).
 interface IGrantCount {
     /// @notice How many grants made `account` a member of `roleId`.
     /// @param roleId The role.

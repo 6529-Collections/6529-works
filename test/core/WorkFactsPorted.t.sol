@@ -10,7 +10,7 @@ import { IWorkFacts } from "src/interfaces/core/IWorkFacts.sol";
 import { FileRole, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { Limits } from "src/interfaces/types/Limits.sol";
 import { License, PackageItem } from "src/interfaces/types/PackageTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { WorkRules } from "src/records/WorkRules.sol";
 import { RulesFixture } from "../records/RulesFixture.sol";
 
@@ -92,12 +92,12 @@ contract WorkFactsPortedTest is RulesFixture {
         MediaFile[] memory media = _single(1);
         PackageItem memory item = _item(1, media);
         uint256 id = _mintItem(bare, item);
-        bytes32 minted = WorksHashing.itemHash(item);
+        bytes32 minted = StreamHashing.itemHash(item);
         bool below;
         bool above;
         for (uint256 i = 1; !(below && above); ++i) {
             item.recordFileId = keccak256(abi.encode("another record", i));
-            bool lower = WorksHashing.itemHash(item) < minted;
+            bool lower = StreamHashing.itemHash(item) < minted;
             if (lower ? below : above) continue;
             if (lower) below = true;
             else above = true;
@@ -117,7 +117,7 @@ contract WorkFactsPortedTest is RulesFixture {
         bool above;
         for (uint256 i = 1; !(below && above); ++i) {
             other[1] = _mediaFile(100 + i, FileRole.AUXILIARY, false);
-            bool lower = WorksHashing.mediaHash(other) < item.mediaHash;
+            bool lower = StreamHashing.mediaHash(other) < item.mediaHash;
             if (lower ? below : above) continue;
             if (lower) below = true;
             else above = true;
@@ -182,8 +182,8 @@ contract WorkFactsPortedTest is RulesFixture {
             facts.open(b, id, item, media);
         }
         string[2] memory ids = ["mit", "unlicense"];
-        assertLt(uint256(WorksHashing.licenseKey(ids[0])), uint256(WorksHashing.CC0_LICENSE_KEY));
-        assertGt(uint256(WorksHashing.licenseKey(ids[1])), uint256(WorksHashing.CC0_LICENSE_KEY));
+        assertLt(uint256(StreamHashing.licenseKey(ids[0])), uint256(StreamHashing.CC0_LICENSE_KEY));
+        assertGt(uint256(StreamHashing.licenseKey(ids[1])), uint256(StreamHashing.CC0_LICENSE_KEY));
         for (uint256 i; i < ids.length; ++i) {
             (uint256 id,) = _withLicense(20 + i, License(ids[i], cc0Text));
             assertEq(facts.factsOf(b, id).licenseId, ids[i]);

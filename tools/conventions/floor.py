@@ -58,7 +58,7 @@ from tools.content.plan import chunk_hash, manifest_id, split_chunks
 from . import jcs
 from .schema import validate
 
-DECLARATIONS_MIME = "application/vnd.6529-works.declarations+json"
+DECLARATIONS_MIME = "application/vnd.6529-stream.declarations+json"
 MAX_DECLARATIONS_BYTES = 24_575
 FACTS = ("storage", "format", "license", "generative", "display")
 SCRIPT_MIMES = frozenset({"text/html", "text/javascript", "application/javascript", "text/ecmascript",
@@ -94,7 +94,7 @@ def record_declares_dependencies(record_deps: Any) -> bool:
 
 
 def license_key(spdx_id: str) -> bytes:
-    """`WorksHashing.licenseKey`: keccak256 of the ASCII-lowercased identifier."""
+    """`StreamHashing.licenseKey`: keccak256 of the ASCII-lowercased identifier."""
     lowered = "".join(c.lower() if "A" <= c <= "Z" else c for c in spdx_id)
     return keccak256(lowered.encode("ascii", "replace"))
 

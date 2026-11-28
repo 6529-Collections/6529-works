@@ -5,7 +5,7 @@ import { StreamDirectory6529 } from "src/core/StreamDirectory6529.sol";
 import { Eip712CurationVerifier } from "src/curation/Eip712CurationVerifier.sol";
 import { PackageRegistry } from "src/curation/PackageRegistry.sol";
 import { Roles } from "src/governance/Roles.sol";
-import { WorksAccessManager } from "src/governance/WorksAccessManager.sol";
+import { StreamAccessManager } from "src/governance/StreamAccessManager.sol";
 import { ICurationVerifier } from "src/interfaces/ICurationVerifier.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { HandlerReach } from "../helpers/HandlerReach.sol";
@@ -40,7 +40,7 @@ contract CurationSignerHandler is CurationHelpers {
         uint64 killEpoch;
     }
 
-    WorksAccessManager internal immutable manager;
+    StreamAccessManager internal immutable manager;
     Eip712CurationVerifier internal immutable verifier;
     PackageRegistry internal immutable registry;
     address internal immutable admin;
@@ -73,7 +73,7 @@ contract CurationSignerHandler is CurationHelpers {
     uint256 public killedRoots;
 
     constructor(
-        WorksAccessManager manager_,
+        StreamAccessManager manager_,
         Eip712CurationVerifier verifier_,
         PackageRegistry registry_,
         address admin_
@@ -239,18 +239,18 @@ contract CurationSignerHandler is CurationHelpers {
 /// @notice The curation signer lifecycle around live approvals (the gap the invariants page
 ///         named): disable, re-enable, role swaps and kills never let an approval signed at an
 ///         earlier epoch, or while disabled, register a root, and the registry's view of every
-///         root follows the model. Uses the 6529 Works access manager, whose grant counter
+///         root follows the model. Uses the 6529 Stream access manager, whose grant counter
 ///         keeps a revoke and re-grant in one block from reviving an epoch. Run with the
 ///         foundry.toml campaign (256 runs x depth 128, `fail_on_revert`).
 contract CurationSignerInvariantTest is CurationHelpers {
     CurationSignerHandler internal handler;
-    WorksAccessManager internal manager;
+    StreamAccessManager internal manager;
     Eip712CurationVerifier internal verifier;
     PackageRegistry internal registry;
     address internal admin = makeAddr("installer");
 
     function setUp() public {
-        manager = new WorksAccessManager(admin);
+        manager = new StreamAccessManager(admin);
         CurationArtistRegistryMock artists = new CurationArtistRegistryMock();
         verifier = new Eip712CurationVerifier(address(manager));
         registry = new PackageRegistry(

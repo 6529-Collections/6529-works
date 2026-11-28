@@ -949,7 +949,7 @@ contract LedgerMedusa is MedusaBase {
                 keccak256(
                     "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
                 ),
-                keccak256("6529 Works Release Verifier"),
+                keccak256("6529 Stream Release Verifier"),
                 keccak256("1"),
                 block.chainid,
                 address(ledger)

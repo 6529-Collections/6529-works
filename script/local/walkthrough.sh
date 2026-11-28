@@ -57,7 +57,7 @@ step "Deploy, configure and accept the network (script/DeployCore.s.sol)"
 DEPLOY_OUT="$(GENESIS_CONFIG="$GENESIS" NETWORK_FEE_RECIPIENT="$FEE_RECIPIENT" ACCEPT_NETWORK=1 \
   forge script script/DeployCore.s.sol --rpc-url "$RPC" --broadcast --slow \
   --unlocked --sender "$DEPLOYER" 2>&1)" || { echo "$DEPLOY_OUT"; exit 1; }
-echo "$DEPLOY_OUT" | grep -E '^\s+(WorksAccessManager|Stream|Editions|Directory|WorkFacts): |^\s+recorded '
+echo "$DEPLOY_OUT" | grep -E '^\s+(StreamAccessManager|Stream|Editions|Directory|WorkFacts): |^\s+recorded '
 RECORD="$(echo "$DEPLOY_OUT" | sed -n 's/^ *recorded *\(deployments\/31337\/core-[0-9]*\.json\).*/\1/p')"
 [[ -n "$RECORD" ]] || { echo "no deployment record in the deploy output" >&2; exit 1; }
 STATE="${RECORD%.json}.walkthrough.json"

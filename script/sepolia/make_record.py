@@ -108,15 +108,15 @@ def main(argv):
     run = json.loads((REPO / f"broadcast/DeployCore.s.sol/{CHAIN_ID}/run-latest.json").read_text(encoding="utf-8"))
     made, blocks = creations(run)
     # The manager is created by the configurator's constructor: read it from the configurator
-    # (`worksManager()`).
+    # (`streamManager()`).
     manager = checksum(rpc(url, "eth_call", [{"to": names["GovernanceConfigurator"], "data": "0xfa55365b"}, "latest"])[-40:])
     contracts = {}
-    for name, address in sorted({**names, "WorksAccessManager": manager}.items()):
+    for name, address in sorted({**names, "StreamAccessManager": manager}.items()):
         code = bytes.fromhex(rpc(url, "eth_getCode", [address, "latest"])[2:])
         if not code:
             raise SystemExit(f"{name} ({address}): no code")
         # The manager has no transaction of its own: it is created in the configurator's.
-        key = address.lower() if name != "WorksAccessManager" else names["GovernanceConfigurator"].lower()
+        key = address.lower() if name != "StreamAccessManager" else names["GovernanceConfigurator"].lower()
         if key not in made:
             raise SystemExit(f"{name} ({address}): no creation transaction in the broadcast cache")
         tx, block = made[key]
@@ -151,7 +151,7 @@ def checksum(address):
 def keccak(data):
     """Keccak-256 as hex, with the repository's own implementation (tools/content/keccak.py)."""
     import importlib.util
-    spec = importlib.util.spec_from_file_location("works_keccak_record", REPO / "tools/content/keccak.py")
+    spec = importlib.util.spec_from_file_location("stream_keccak_record", REPO / "tools/content/keccak.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module.keccak256(data).hex()

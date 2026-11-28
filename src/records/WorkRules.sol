@@ -15,7 +15,7 @@ import { ITerms } from "../interfaces/core/ITerms.sol";
 import { IWorkFacts } from "../interfaces/core/IWorkFacts.sol";
 import { IWorkRules } from "../interfaces/core/IWorkRules.sol";
 import { License, PackageItem } from "../interfaces/types/PackageTypes.sol";
-import { WorksHashing } from "../interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "../interfaces/types/StreamHashing.sol";
 import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 
 /// @title WorkRules
@@ -47,7 +47,7 @@ contract WorkRules is AccessManaged, EIP712, IWorkRules, IWorkPowers, IDeliveryH
     /// @notice The most added stores: a bound on the list, not a policy.
     uint256 public constant MAX_STORES = 15;
     /// @notice The EIP-712 domain name.
-    string public constant NAME = "6529 Works Rules";
+    string public constant NAME = "6529 Stream Rules";
     /// @notice Every party agrees to relicense a work.
     bytes32 public constant RELICENSE_TYPEHASH = keccak256(
         "Relicense(address token,uint256 tokenId,bytes32 licenseKey,bytes32 textFileId,"
@@ -64,7 +64,7 @@ contract WorkRules is AccessManaged, EIP712, IWorkRules, IWorkPowers, IDeliveryH
         "uint64 deadline)"
     );
 
-    bytes32 private constant STATE_DOMAIN = keccak256("6529WORKS_WORK_STATE_V2");
+    bytes32 private constant STATE_DOMAIN = keccak256("6529STREAM_WORK_STATE_V2");
     /// @dev The powers whose renunciation also needs the network's call.
     uint16 private constant NETWORK_POWERS = WorkPowers.ROYALTY_RATE | WorkPowers.RELICENSE;
 
@@ -425,7 +425,7 @@ contract WorkRules is AccessManaged, EIP712, IWorkRules, IWorkPowers, IDeliveryH
                 tokenId,
                 versionOf[token][tokenId],
                 f.recordFileId,
-                WorksHashing.licenseKey(f.licenseId),
+                StreamHashing.licenseKey(f.licenseId),
                 f.licenseTextFileId,
                 IStream(token).workOf(tokenId).royaltyRate,
                 renderer
@@ -457,9 +457,9 @@ contract WorkRules is AccessManaged, EIP712, IWorkRules, IWorkPowers, IDeliveryH
     ) private view returns (bytes32) {
         Facts memory f = _open(token, tokenId);
         if (f.licenseLocked) revert PowerRenounced(token, tokenId, WorkPowers.RELICENSE);
-        bytes32 nextKey = WorksHashing.licenseKey(next.spdxId);
+        bytes32 nextKey = StreamHashing.licenseKey(next.spdxId);
         if (
-            nextKey == WorksHashing.licenseKey(f.licenseId)
+            nextKey == StreamHashing.licenseKey(f.licenseId)
                 && next.textFileId == f.licenseTextFileId
         ) return 0;
         bytes32 state = _checkState(token, tokenId, expectedStateHash);
@@ -535,7 +535,7 @@ contract WorkRules is AccessManaged, EIP712, IWorkRules, IWorkPowers, IDeliveryH
         uint64 deadline,
         bytes[] calldata signatures
     ) private view {
-        if (WorksHashing.itemHashCalldata(item) != IStream(token).itemHashOf(tokenId)) {
+        if (StreamHashing.itemHashCalldata(item) != IStream(token).itemHashOf(tokenId)) {
             revert InvalidConsent(token, tokenId);
         }
         SignatureVerifier.checkDeadline(deadline);

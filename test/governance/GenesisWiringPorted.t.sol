@@ -272,7 +272,7 @@ contract GenesisWiringPortedTest is GovernanceFixture {
             token: address(manager),
             id: 0,
             kind: StatementKinds.GOVERNANCE_MANIFEST,
-            schema: keccak256("6529-works/governance-manifest/1"),
+            schema: keccak256("6529-stream/governance-manifest/1"),
             content: HashRef(HASH_SHA256, keccak256("signed epoch-0 manifest")),
             uri: "ar://epoch-0-manifest",
             fileId: bytes32(0),

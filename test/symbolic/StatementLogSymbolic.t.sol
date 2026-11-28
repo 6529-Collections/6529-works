@@ -33,8 +33,8 @@ contract StatementLogSymbolicTest is SymHelpers {
     uint64 internal constant CURATOR_ROLE = 1;
     uint64 internal constant PLATFORM_ROLE = 2;
     uint64 internal constant GOVERNANCE_ROLE = 3;
-    bytes32 internal constant ENTRY_DOMAIN = keccak256("6529.works.StatementLog.entry.v1");
-    bytes32 internal constant HEAD_DOMAIN = keccak256("6529.works.StatementLog.head.v1");
+    bytes32 internal constant ENTRY_DOMAIN = keccak256("6529.stream.StatementLog.entry.v1");
+    bytes32 internal constant HEAD_DOMAIN = keccak256("6529.stream.StatementLog.head.v1");
 
     address internal constant ADMIN = address(0xAD);
     address internal constant ARTIST = address(0xA471);

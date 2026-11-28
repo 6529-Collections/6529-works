@@ -5,7 +5,7 @@ import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { IStream } from "src/interfaces/core/IStream.sol";
 import { IWorkFacts } from "src/interfaces/core/IWorkFacts.sol";
 import { License, MoveAuthorization, PackageItem } from "src/interfaces/types/PackageTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StreamHashing } from "src/interfaces/types/StreamHashing.sol";
 import { StreamDirectory6529 } from "src/core/StreamDirectory6529.sol";
 import { Slots } from "src/interfaces/core/CoreTypes.sol";
 import { CurationArtistRegistryMock } from "../mocks/curation/CurationArtistRegistryMock.sol";
@@ -21,7 +21,7 @@ contract PackageRegistryFixesTest is CurationBase {
     {
         item = _item(lead, sha);
         item.license = license;
-        root = WorksHashing.leaf(_hash(item));
+        root = StreamHashing.leaf(_hash(item));
         _register(root);
         _accept(root, leadKey);
         move = _move(leadKey, root, _hash(item), 0);
