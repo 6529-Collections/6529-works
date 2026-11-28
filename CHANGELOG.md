@@ -14,7 +14,8 @@
     listing is a `Consent` to `IndependentStreamRegistry.listingSubject`. The integrator page
     listed the removed values and now lists the ones in force.
   - The unused enum `PrimaryOutcome` is removed; the stored outcome is `Outcome`, which the
-    NatSpec of `IStream.workOf` now names.
+    NatSpec of `IStream.workOf` now names. The fact-sheet schema's `outcome` values are the
+    stored ones too: `NONE`, `SOLD`, `UNSOLD`, `RESCUED` (it listed `UNBID` and `FROZEN_OUT`).
   - NatSpec states facts it left out: `EnglishAuction.auction` keeps a returned bid's amount
     in `bid` as the reserve while `bidder` is zero; `artistIdOf` answers for a root wallet
     only; every party of a relicense or royalty-rate change signs the same deadline;
@@ -26,8 +27,9 @@
     more payees than parties passed the preview and was refused, with `InvalidItem`, only
     when its sale started. It now runs every item check of `authorize` with the same errors
     (the content, seed and edition fields and the party and payee rules included) and leaves
-    out only what exists once the package is signed: the approved root, the proof, the
-    acceptances and the move. It also answers before the lead artist's first acceptance,
+    out the others: the approved root, the proof, the acceptances, the move, the content
+    rules (content a live token already holds, or reserved after a burn) and a VRF item's
+    delivered seed. It also answers before the lead artist's first acceptance,
     where it reverted with `InvalidLeadArtist`: a party with no identity counts as the artist
     its acceptance will create.
   - NatSpec of two permanent contracts, with no change to their code: `SplitLedger.release`

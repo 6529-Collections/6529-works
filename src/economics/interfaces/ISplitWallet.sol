@@ -144,7 +144,8 @@ interface ISplitWallet {
     ///         `asset`, at its payout address. Anyone may call for a fixed payee; only the current
     ///         payout address may call for an artist-resolved payee.
     /// @dev For a payee named by artist ID the caller must be the account's payout address
-    ///      itself: the account's root and its other wallets are refused. Any other wallet, a
+    ///      itself. The account's root and its other wallets are refused unless they are that
+    ///      address (at registration the root is the payout address). Any other wallet, a
     ///      relayer included, releases with the payout address's signature through
     ///      `ISplitLedger.releaseWithAuthorization`.
     /// @param payees The wallet's payee list.

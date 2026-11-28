@@ -84,9 +84,10 @@ struct Collection {
 /// @notice An edition: two storage slots.
 /// @param minter The one sale contract that may mint it; zero until the edition is created.
 /// @param maxSupply The most copies that may ever exist. Until the seal it is the creator's cap
-///        (`type(uint40).max` for no cap); the seal overwrites it with the final supply, which
-///        is at least the count minted and at most that cap. The cap itself is not stored
-///        after the seal: it stays in the `EditionCreated` event.
+///        (`type(uint40).max` for no cap); the seal overwrites it with the final maximum,
+///        which is at least the count minted and at most that cap (copies up to it may still
+///        be minted by the edition's minter). The cap itself is not stored after the seal: it
+///        stays in the `EditionCreated` event.
 /// @param minted Copies minted so far. Burned copies still count.
 /// @param supplySealed True once the supply is fixed for good.
 /// @param royaltyReceiver Where ERC-2981 royalties are paid.

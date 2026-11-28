@@ -41,10 +41,12 @@ interface IMintPolicy {
         returns (MintFacts memory facts, MintTerms memory terms);
 
     /// @notice What `authorize` would answer, unverified and consuming nothing.
-    /// @dev The check to run on an item before anyone signs it, since a signed package cannot
-    ///      be corrected: it refuses an item for the reasons `authorize` would, apart from what
-    ///      only exists once the package is signed (the genesis policy: an approved root, the
-    ///      proof, the acceptances and the move).
+    /// @dev Which of `authorize`'s checks a preview runs is the policy's own: see its NatSpec.
+    ///      The genesis policy of 6529 Stream (`PackageRegistry`) runs the item rules and none
+    ///      of the checks on the root, the proof, the acceptances, the move, the content
+    ///      already minted or reserved and the delivered seed, so that an item can be checked
+    ///      before anyone signs; the Independent Stream registry previews only an item it has
+    ///      already approved.
     /// @param token The token contract.
     /// @param request As for `authorize`.
     /// @return facts The facts.

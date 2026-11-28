@@ -117,7 +117,7 @@
       "additionalProperties": false,
       "required": ["outcome"],
       "properties": {
-        "outcome": { "enum": ["NONE", "SOLD", "UNBID", "FROZEN_OUT", "RESCUED"] },
+        "outcome": { "enum": ["NONE", "SOLD", "UNSOLD", "RESCUED"] },
         "currency": { "$ref": "urn:6529-stream:schema:common:v1#/$defs/address" },
         "price": { "$ref": "urn:6529-stream:schema:common:v1#/$defs/uint256" },
         "edition": {

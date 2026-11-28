@@ -64,9 +64,12 @@ currency, the seed policy and seed, the license ID, the content and edition fiel
 party and payee rules (`InvalidItem`): a lead who is an `ARTIST`, parties of distinct artists,
 no more payees than parties, payees strictly ascending by `(artistId, account)` with exactly
 one of the two set, no zero share, shares summing to 100,000, every payee a party (by account
-or by artist ID), and no fixed payee equal to the lead artist's account. It does not check what
-only exists once the package is signed: the approval of the root, the proof, the acceptances,
-the move, and the media files, which the record checks when it is opened.
+or by artist ID), and no fixed payee equal to the lead artist's account. It does not check the
+approval of the root, the proof, the acceptances or the move, which exist only once the package
+is signed; nor the content rules, so an item whose content a live token already holds, or whose
+content is reserved after a burn, passes the preview and is refused at the start (read
+`Stream6529.tokenOfContent` and `PackageRegistry.releasedTo`); nor that a VRF item's seed is
+delivered; nor the media files, which the record checks when it is opened.
 
 **The move signature.** Any wallet of the lead artist's account signs, in the package registry's
 EIP-712 domain, `MoveToStream(bytes32 packageRoot,bytes32 itemHash,uint256 nonce,uint64 deadline)`;

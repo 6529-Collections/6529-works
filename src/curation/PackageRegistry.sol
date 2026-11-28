@@ -350,10 +350,11 @@ contract PackageRegistry is
     /// @dev The check to run on an item before anyone signs: an item that breaks a rule can be
     ///      approved and accepted, and is refused only when its sale starts. It runs every item
     ///      check of `authorize`, with the same errors: the item rules, the content, seed and
-    ///      edition fields, and the party and payee rules. It does not ask for what comes with
-    ///      the signatures: an approved root, a proof, the parties' acceptances, the move, the
-    ///      content rules after a burn, or a VRF item's delivered seed (the seed reads zero
-    ///      until it is delivered). A party that has not accepted the root counts as the artist
+    ///      edition fields, and the party and payee rules. It does not run the others: an
+    ///      approved root, a proof, the parties' acceptances, the move, a VRF item's delivered
+    ///      seed (the seed reads zero until it is delivered), and the content rules
+    ///      (`ContentUsed`, `ContentReserved`: content a live token holds, or reserved after a
+    ///      burn), which depend on what was minted and are read from the token. A party that has not accepted the root counts as the artist
     ///      it would be accepted as: its artist ID, or its own address as a number while it has
     ///      none, so the item of a new artist can be checked before any acceptance. The creator
     ///      is the lead's active authority now, or the lead's own address while it has no

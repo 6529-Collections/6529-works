@@ -14,7 +14,10 @@ off-chain. Events are in [Events and indexing](events-and-indexing.md), addresse
 [`abi/`](../../abi/) holds the ABIs of the code on this commit, exported from the build by
 [`tools/export_abis.py`](../../tools/export_abis.py) (`--check` fails when they differ). They
 are the ABIs of `main`, not of a deployment: for a deployed instance, build its commit.
-`abi/manifest.json` lists each file with its kind, source path, interface ID and hash.
+`abi/manifest.json` lists each file with its kind, source path, interface ID and hash. One
+entry is not part of the protocol: `SepoliaOpenGate`, a Sepolia test contract that is never
+deployed on mainnet, carries `"testOnly": true`; a consumer that iterates `contracts` filters on
+that field.
 
 ```bash
 forge build && python tools/export_abis.py          # rewrite abi/

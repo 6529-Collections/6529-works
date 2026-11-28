@@ -60,7 +60,7 @@ struct PrimaryTerms {
 ///         token moved it itself.
 /// @dev Static, so the adapter decodes it cheaply. `seller`, `feeRecipient` and `feeShare` are
 ///      as in `PrimaryTerms`. `holder` is nonzero when the token moved the work out of the
-///      adapter's custody itself: 6529 Stream's museum, for UNBID and FROZEN_OUT. An adapter
+///      adapter's custody itself: 6529 Stream's museum, for a work that ended unsold. An adapter
 ///      that is left an unsold work reads its creator from `IMintTarget.primaryTerms`. The
 ///      English auction does not trust `holder`: it reads `ownerOf` after the call, so a token
 ///      that reports a holder without moving the work still has it delivered.

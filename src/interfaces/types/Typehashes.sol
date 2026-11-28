@@ -12,10 +12,12 @@ pragma solidity 0.8.37;
 ///         Stream listing is an `ACCOUNT_CONSENT` to
 ///         `IIndependentStreamRegistry.listingSubject`; it has no typehash of its own.
 /// @dev Each signing contract uses the EIP-712 domain `(name, DOMAIN_VERSION, chainid, itself)`.
-///      Every signature here binds a deadline, and a move also a single-use nonce, except
-///      `ACCOUNT_CONSENT`: a consent binds only the contract and what it consents to (for an
-///      Independent Stream item, the item hash, used once), and has no deadline. Constants
-///      only; nothing here is linked bytecode.
+///      Every artist or party signature here binds a deadline (a move and an account's own
+///      identity change also a single-use nonce), except `ACCOUNT_CONSENT`: a consent binds
+///      only the contract and what it consents to (for an Independent Stream item, the item
+///      hash, used once), and has no deadline. A curation approval (`PACKAGE_APPROVAL`) binds
+///      no deadline either: it binds the signer's epoch. Constants only; nothing here is linked
+///      bytecode.
 library Typehashes {
     /// @notice The EIP-712 domain version of every v1 contract.
     string internal constant DOMAIN_VERSION = "1";
