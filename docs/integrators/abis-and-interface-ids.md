@@ -220,6 +220,19 @@ The media list is in approved order, primary first; `role` is 0 PRIMARY, 1 PREVI
 2 AUXILIARY. The **content hash** is not computed on-chain: it is the declared SHA-256 of the
 fully decoded primary media, `media[0].sha256Hash`.
 
+### Independent Stream collaborator consent
+
+From `Core.independentConsent` in [`CoreTypes.sol`](../../src/interfaces/core/CoreTypes.sol):
+the `what` a collaborator of an Independent Stream work consents to, signed as a `Consent`
+whose `subject` is the token contract (`Accounts.consentDigest(token, what)`).
+
+```text
+INDEPENDENT_CONSENT_DOMAIN = keccak256("6529STREAM_INDEPENDENT_CONSENT_V1")
+                           = 0x22fa010d48b30efa0ad886886afa983972547c8d73a243ed9c0bb0fe4c451283
+what = keccak256(abi.encode(INDEPENDENT_CONSENT_DOMAIN, itemHash, royaltyRate))
+       // types: (bytes32, bytes32, uint24)
+```
+
 ### File ID and chunk hash
 
 From [`IContentStore.sol`](../../src/interfaces/IContentStore.sol) (`manifestId`):

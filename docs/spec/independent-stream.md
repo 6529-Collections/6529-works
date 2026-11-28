@@ -37,8 +37,9 @@ is the wait that applies to a change of who may mint Independent Stream tokens.
 ## How an Independent Stream sale flows
 
 1. The artist approves an item in the Independent Stream module and sets its royalty rate. Each
-   collaborator consents to `Core.independentConsent(itemHash, royaltyRate)`, so a collaborator
-   signs the rate their income depends on.
+   collaborator consents to `Core.independentConsent(itemHash, royaltyRate)`, which is
+   `keccak256(abi.encode(keccak256("6529STREAM_INDEPENDENT_CONSENT_V1"), itemHash, royaltyRate))`,
+   so a collaborator signs the rate their income depends on.
 2. Anyone starts the sale. The auction asks the Independent Stream module (`authorize`), which
    checks the listing, the approval and the consents, deploys the vaults, and answers the mint facts
    and the fee share recorded for the token.
