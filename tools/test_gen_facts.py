@@ -223,20 +223,20 @@ class TreeTest(unittest.TestCase):
         newest = max(directory.glob("*.json"), key=lambda p: json.loads(p.read_text())["timestamp"])
         data = json.loads(newest.read_text(encoding="utf-8"))
         data["timestamp"] += 1
-        data["genesisConfig"] = "config/sepolia-r9/genesis.json"
+        data["genesisConfig"] = "config/sepolia-r99/genesis.json"
         (directory / "9999999999.json").write_text(json.dumps(data), encoding="utf-8")
-        with self.assertRaisesRegex(gf.FactError, "sepolia-r9"):
+        with self.assertRaisesRegex(gf.FactError, "sepolia-r99"):
             gf.generate(self.tmp)
         readme = directory / "README.md"
         readme.write_text(
             readme.read_text(encoding="utf-8")
-            + "\n## sepolia-r9: 1 November 2026 (current)\n\n| Source | `main` at `abcdef1` |\n",
+            + "\n## sepolia-r99: 1 November 2026 (current)\n\n| Source | `main` at `abcdef1` |\n",
             encoding="utf-8",
         )
         sepolia = gf.generate(self.tmp)["networks"]["sepolia"]
         self.assertEqual(
             (sepolia["instance"], sepolia["sourceCommit"], sepolia["deployedOn"]),
-            ("sepolia-r9", "abcdef1", "2026-11-01"),
+            ("sepolia-r99", "abcdef1", "2026-11-01"),
         )
 
     def test_the_edition_auction_launch_values_are_what_genesis_deploys(self) -> None:

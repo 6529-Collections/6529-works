@@ -1,7 +1,7 @@
 # The open gate: the curated path for any wallet, on a Sepolia test instance
 
 This note is for the engineer who builds a test page against a Sepolia instance of 6529 Works
-(r9 is the first one prepared for it), and for the operator who opens and closes the gate.
+(r9 is the first one), and for the operator who opens and closes the gate.
 
 On a normal instance two steps of the curated path need someone with a role: a curation signer
 approves each package of works, and the platform key creates collections.
@@ -12,6 +12,26 @@ replaceable contracts are the ones `main` builds.
 > **A Sepolia test convenience. Never deploy it on mainnet.** With the gate open, nothing is
 > curated: every package anyone submits is approved. The contract refuses to deploy or answer on
 > any chain but Sepolia (11155111) and a local development chain (31337). The code is pre-audit.
+
+## On r9
+
+| | |
+| --- | --- |
+| The gate | [`0x843d8DCdD279215225f39AFCA33a5Fd4E84370Ac`](https://sepolia.etherscan.io/address/0x843d8DCdD279215225f39AFCA33a5Fd4E84370Ac), created on 28 November 2026 in block 12,227,880; its source is verified on [Sourcify](https://repo.sourcify.dev/11155111/0x843d8DCdD279215225f39AFCA33a5Fd4E84370Ac) |
+| State | **Open**: it holds `CURATION_SIGNER` and `PLATFORM` since blocks 12,227,881 and 12,227,882 |
+| r9's addresses | [`core-1795840548.json`](../../deployments/11155111/core-1795840548.json); the round is described in the [Sepolia README](../../deployments/11155111/README.md#sepolia-r9-28-november-2026-current-instance-with-an-open-gate) |
+| What ran through it | [flows-r9.md](../../deployments/11155111/flows-r9.md) |
+
+To close the gate on r9, the network Safe revokes the two roles (two Safe transactions, two
+owner signatures each, effective at once):
+
+```powershell
+./script/sepolia/flows.ps1 -SignerModule <path> -State <state.json> -Record deployments/11155111/core-1795840548.json -Step gateRevoke
+```
+
+`-Step gateState` then prints `curationSigner false` and `platform false`. Packages registered
+before stay approved; `PackageRegistry.killSignerApprovals(0x843d8DCdD279215225f39AFCA33a5Fd4E84370Ac)`,
+a network call, stops those too. `-Step gateGrant` opens the gate again.
 
 ## What the gate is
 
@@ -65,12 +85,11 @@ with `--fork-block-number` at a block before the grants.
 
 ## For the frontend: the curated flow through the gate
 
-Addresses come from the instance's deployment record
-(`deployments/11155111/core-<timestamp>.json`, one `<name>: <address>` object); the planned
-addresses of r9 are in [`config/sepolia-r9/manifest-epoch0.json`](../../config/sepolia-r9/manifest-epoch0.json)
-(`contracts`). ABIs are in [`abi/`](../../abi/). The gate's address is printed by `gateState`;
-for r9's planned addresses and the gate's code at this commit it is
-`0x843d8DCdD279215225f39AFCA33a5Fd4E84370Ac` (any change to the gate's source moves it).
+Addresses come from the instance's deployment record, one `<name>: <address>` object: for r9,
+[`core-1795840548.json`](../../deployments/11155111/core-1795840548.json). ABIs are in
+[`abi/`](../../abi/). The gate's address is printed by `gateState`; on r9 it is
+`0x843d8DCdD279215225f39AFCA33a5Fd4E84370Ac`. (On another instance it differs: it depends on
+the gate's code and on that instance's `CurationVerifier` and `Stream6529`.)
 
 Everything is an ordinary transaction or an EIP-712 signature (`eth_signTypedData_v4`) by the
 connected wallet. `W` is that wallet. Steps 3 and 4 are the only ones that differ from a normal
@@ -260,7 +279,7 @@ template, lists it and approves each work itself
 
 | | r8 | r9 with the gate open |
 | --- | --- | --- |
-| Addresses | [`core-1795440624.json`](../../deployments/11155111/core-1795440624.json) | A new record; planned addresses in the r9 manifest |
+| Addresses | [`core-1795440624.json`](../../deployments/11155111/core-1795440624.json) | [`core-1795840548.json`](../../deployments/11155111/core-1795840548.json) |
 | Code | `main` at `961bc956` | `main` at `355a7a71`. Every function above has the same signature; `Accounts`, `EnglishAuction` and `PackageRegistry` gained functions (use the ABIs of this commit) |
 | Registering a package (step 4) | The attestation is a curation signer's signature, made by the operator | The attestation comes from `gate.attestationOf(root)`: no signature, nobody to ask |
 | The curator's statement | Appended by the curator key after registration (not required by any contract) | Left out |
@@ -270,25 +289,27 @@ template, lists it and approves each work itself
 The usual curation signers and the platform key keep their roles on r9, so the operator's own
 flows run as on r8.
 
-## Gas measured in the rehearsal
+## Gas
 
-Measured on a local anvil fork of Sepolia (28 November 2026), where gas is priced as on
-mainnet today. Sepolia prices state creation higher, so its receipts for the steps that create
-state will be several times these (r8's deployment used 6.2 times its local estimate).
+The first column was measured on a local anvil fork of Sepolia before the broadcast
+(28 November 2026), where gas is priced as on mainnet today. The second is the receipt on r9
+for the steps that ran there ([flows-r9.md](../../deployments/11155111/flows-r9.md)): Sepolia
+prices state creation higher, so a step that creates state costs several times the first
+figure. Sepolia's gas price is a fraction of a gwei, so even those cost little test ETH.
 
-| Step | Gas |
-| --- | ---: |
-| Deploy the gate | 842,550 |
-| Each role grant (the Safe's `execTransaction`) | 110,887 |
-| `gate.createCollection` | 135,234 |
-| A record: `writeChunk` and `registerManifest` | 120,842 and 147,970 |
-| A media file registered only | 145,412 |
-| `registerPackage` with the gate's attestation | 112,693 |
-| `acceptPackage` (the first: it creates the account) | 229,880 |
-| `SaleStarter.start` | 576,404 |
-| `startWithBid`, then `StreamWorkFacts6529.open` | 386,373 and 206,212 |
-| `UniformEditionAuction.open` | 400,591 |
-| A 1/1 bid; an edition bid | 74,182; 86,127 |
-| 1/1 `settle`; edition `settle` (two bids) | 137,186; 149,727 |
-| `claimBid`; `claim` of an outbid 1/1 bid | 74,168; 31,996 |
-| `release` to the artist | 101,658 |
+| Step | Local fork | r9 (Sepolia) |
+| --- | ---: | ---: |
+| Deploy the gate | 842,550 | 5,780,518 |
+| Each role grant (the Safe's `execTransaction`) | 110,887 | 294,257 |
+| `gate.createCollection` | 135,234 | 481,954 |
+| A record: `writeChunk` and `registerManifest` | 120,842 and 147,970 | 621,958 and 581,870 |
+| A media file registered only | 145,412 | 579,336 |
+| `registerPackage` with the gate's attestation | 112,693 | 284,033 |
+| `acceptPackage` (the first: it creates the account) | 229,880 | 841,740 |
+| `SaleStarter.start` | 576,404 | 2,761,886 (the instance's first sale) |
+| `startWithBid`, then `StreamWorkFacts6529.open` | 386,373 and 206,212 | |
+| `UniformEditionAuction.open` | 400,591 | |
+| A 1/1 bid; an edition bid | 74,182; 86,127 | |
+| 1/1 `settle`; edition `settle` (two bids) | 137,186; 149,727 | |
+| `claimBid`; `claim` of an outbid 1/1 bid | 74,168; 31,996 | |
+| `release` to the artist | 101,658 | |
