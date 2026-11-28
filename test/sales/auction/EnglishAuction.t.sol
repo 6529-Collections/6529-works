@@ -614,9 +614,50 @@ contract EnglishAuctionTest is AuctionFixture {
         assertEq(auction.claimable(alice), 0);
     }
 
-    /// @dev A sold work waiting for its delivery, an unsold work in the museum and a work in a
-    ///      running sale are not rescued works: `sendRescuedToMuseum` moves none of them. Called
-    ///      on a rescued sale before its settlement, it sends the work on and the settlement
+    /// @dev A sold work waiting for its delivery and an unsold work in the museum are not
+    ///      rescued works: `sendRescuedToMuseum` moves neither, also once the auction is a
+    ///      removed minter and the rescue wait has passed, and the buyer still claims its work.
+    function test_SendRescuedToMuseum_RefusesAPendingDeliveryAndAnUnsoldWork() public {
+        BidderContract b = new BidderContract(IEnglishAuction(address(auction)));
+        b.set(false, true, false);
+        uint256 sold = _start(1);
+        uint256 unsold = _start(2);
+        b.bid{ value: 1 ether }(sold, address(0));
+        _end(sold);
+        auction.settle(sold);
+        auction.settle(unsold);
+        assertEq(auction.pendingDelivery(sold), address(b), "sold, waiting for its delivery");
+        assertEq(stream.ownerOf(1), address(auction));
+        assertEq(uint256(stream.workOf(1).outcome), uint256(Outcome.SOLD));
+        assertEq(stream.ownerOf(2), museum, "unsold, in the museum");
+        assertEq(uint256(stream.workOf(2).outcome), uint256(Outcome.UNSOLD));
+
+        _expectNotRescued(sold);
+        _expectNotRescued(unsold);
+        stream.removeMinter(address(auction));
+        vm.warp(block.timestamp + stream.rescueDelay());
+        _expectNotRescued(sold);
+        _expectNotRescued(unsold);
+        assertEq(stream.ownerOf(1), address(auction), "not moved");
+        assertEq(stream.ownerOf(2), museum, "not moved");
+
+        b.claimDelivery(sold, carol);
+        assertEq(stream.ownerOf(1), carol, "the buyer's claim is untouched");
+    }
+
+    function _expectNotRescued(uint256 saleId) internal {
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IEnglishAuction.InvalidAuctionState.selector,
+                saleId,
+                IEnglishAuction.AuctionState.SETTLED
+            )
+        );
+        auction.sendRescuedToMuseum(saleId);
+    }
+
+    /// @dev A work in a running sale is not a rescued work either. Called on a rescued sale
+    ///      before its settlement, `sendRescuedToMuseum` sends the work on and the settlement
     ///      still refunds the bid.
     function test_SendRescuedToMuseum_OnlyARescuedWork() public {
         uint256 running = _start(1);

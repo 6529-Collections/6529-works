@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **A test for what `sendRescuedToMuseum` refuses.** AUC-58 says a work waiting for a pending
+  delivery is never moved; `test_SendRescuedToMuseum_RefusesAPendingDeliveryAndAnUnsoldWork`
+  now shows it, with an unsold work in the museum, before and after the auction is a removed
+  minter. LIM-SAL-10 no longer quotes an estimate for a sweep that is not implemented. Tests
+  and documents only.
+
 - **Deployment read-back, wallet guard and handover documents: hardening.** Scripts, tests,
   tools and documents only; no contract under `src/` changed, so the build is still
   `v1.0.0-rc.3`'s.
