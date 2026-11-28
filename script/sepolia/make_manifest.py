@@ -39,6 +39,9 @@ CONTRACTS = [
     "IndependentEditionAuction", "SaleStarter",
 ]
 POLICY = "config/genesis.core.example.json"
+# The manifest schema `script/DeployCore.sol` hashes (MANIFEST_SCHEMA) and the repository's address.
+SCHEMA = "6529-stream/governance-manifest/1"
+REPOSITORY = "https://github.com/6529-Collections/6529-stream"
 
 
 def env(new):
@@ -129,7 +132,10 @@ def main(new, prev, commit, sim_path=None):
     e = env(new)
     m = json.loads((REPO / f"config/sepolia-{prev}/manifest-epoch0.json").read_text(encoding="utf-8"))
     label = f"6529-stream/sepolia/{new}"
+    # Not copied from the earlier manifest: up to r9 these carried the protocol's earlier name.
+    m["schema"] = SCHEMA
     m["deployment"] = f"sepolia-{new}"
+    m["source"]["repository"] = REPOSITORY
     m["source"]["commit"] = commit
     m["namespace"] = {"label": label, "keccak256": e["DEPLOY_NAMESPACE"]}
     genesis = f"config/sepolia-{new}/genesis.json"

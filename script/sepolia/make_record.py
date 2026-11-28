@@ -109,7 +109,7 @@ def main(argv):
     made, blocks = creations(run)
     # The manager is created by the configurator's constructor: read it from the configurator
     # (`streamManager()`).
-    manager = checksum(rpc(url, "eth_call", [{"to": names["GovernanceConfigurator"], "data": "0xfa55365b"}, "latest"])[-40:])
+    manager = checksum(rpc(url, "eth_call", [{"to": names["GovernanceConfigurator"], "data": "0x34fe2676"}, "latest"])[-40:])
     contracts = {}
     for name, address in sorted({**names, "StreamAccessManager": manager}.items()):
         code = bytes.fromhex(rpc(url, "eth_getCode", [address, "latest"])[2:])

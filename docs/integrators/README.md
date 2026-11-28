@@ -5,9 +5,10 @@ it. Start with the [overview](../overview.md) for the shape of the system.
 
 > Pre-audit. See the [project status](../../README.md#status).
 
-There is no mainnet deployment, and interfaces may change before an audit. Four Sepolia
-instances run this design: r9, the current instance, which a test-only gate opens to any wallet
-with no curation step, r8, r7, the reference instance from before the module fixes of
+There is no mainnet deployment, and interfaces may change before an audit. Five Sepolia
+instances run this design: r10, the current instance, which a test-only gate opens to any wallet
+with no curation step, r9, which is open in the same way and keeps the protocol's earlier name,
+r8, r7, the reference instance from before the module fixes of
 23 November 2026, and r6 ([Addresses](addresses.md)).
 
 ## The pages
